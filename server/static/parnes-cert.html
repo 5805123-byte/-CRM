@@ -62,6 +62,8 @@
   /* מאיר: "השם שלו ושל אמא שלו יהיה באותה שורה" — אחרי החתן / הכלה השורה לא נשברת, רק מוקטנת */
   .nline.nkeep{white-space:nowrap}
   .nline.nben{line-height:.75}
+  .usel{outline:3px dashed #3b2f5e;outline-offset:3px;border-radius:6px}
+  .editing .names{cursor:pointer}
   .nrow{display:block}
   /* חדר קפה */
   .cdate{font-size:1.05em;font-weight:700;color:var(--deep);width:100%;margin-bottom:.35em}
@@ -121,6 +123,29 @@
   <button id="sendBtn" style="background:#25D366">📤 שלח לתורם (תמונה)</button>
   <button onclick="window.print()">🖨️ הדפס / שמור PDF</button>
   <button class="g" id="addBtn">➕ הוסף שם</button>
+  <button class="g" id="editBtn">✏️ עריכה וגודל</button>
+  <div id="editPanel" style="display:none;margin:10px auto 0;max-width:720px;background:#fff;border:1px solid #c9b57a;border-radius:10px;padding:10px 12px;text-align:right">
+    <div style="font-weight:700;margin-bottom:6px">גודל האותיות (לתעודה הזו בלבד)</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <span>שמות:</span><button class="g" data-sz="n-">−</button><b id="szN">100%</b><button class="g" data-sz="n+">+</button>
+      <span style="margin-right:14px">בקשות ופתיח:</span><button class="g" data-sz="r-">−</button><b id="szR">100%</b><button class="g" data-sz="r+">+</button>
+      <button class="g" data-sz="reset" style="margin-right:14px">↺ איפוס</button></div>
+    <div style="font-weight:700;margin:10px 0 4px">שורה בתעודה <small style="font-weight:400">— לחץ על שורה בתעודה, ואז:</small></div>
+    <div id="rowBar" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <span id="rowSel" style="color:#6b6249">לא נבחרה שורה</span>
+      <button class="g" data-row="names" title="להפוך לשם — אותיות גדולות ומודגשות">🔠 שם (גדול)</button>
+      <button class="g" data-row="req" title="להפוך לבקשה — אותיות קטנות">🔡 בקשה (קטן)</button>
+      <button class="g" data-row="s+" title="להגדיל רק את השורה הזו">A+</button>
+      <button class="g" data-row="s-" title="להקטין רק את השורה הזו">A−</button>
+      <button class="g" data-row="b" title="מודגש / רגיל"><b>B</b></button>
+      <button class="g" data-row="up" title="להעלות שורה">⬆</button>
+      <button class="g" data-row="down" title="להוריד שורה">⬇</button>
+      <button class="g" data-row="del" title="למחוק את השורה" style="color:#8f2a1b">✕</button></div>
+    <div style="font-weight:700;margin:6px 0">הטקסט</div>
+    <textarea id="edTxt" style="width:100%;box-sizing:border-box;min-height:120px;font:inherit;direction:rtl" placeholder="כל שם בשורה משלו: שם בן/בת שם האם, ואחריו הבקשה"></textarea>
+    <div style="display:flex;gap:8px;margin-top:6px"><button id="edApply" style="background:#3b2f5e">✔ החל טקסט</button><button class="g" id="edClose">סגור</button></div>
+    <div class="tip" style="margin-top:6px">אפשר גם ללחוץ ישירות על השמות בתעודה ולערוך שם. "החל טקסט" מסדר מחדש לפי הכללים, וכפתורי הגודל משנים רק את התעודה הזו.</div>
+  </div>
   <button class="g" onclick="history.length>1?history.back():window.close()">← חזרה</button>
   <div class="tip">"📋 העתק תמונה" — ואז מדביקים בוואטסאפ או במייל. "📤 שלח לתורם" שולח את התעודה כתמונה — בטלפון ישר לוואטסאפ, במחשב מועתקת להדבקה.<br>מלא את הפרטים — הגופן מתאים את עצמו אוטומטית לכמות הטקסט וממלא את כל הדף. השמות מודגשים וגדולים.<br><small id="buildstamp" style="opacity:.55"></small></div>
 </div>
@@ -128,7 +153,7 @@
 <script>
 // חותמת גרסה גלויה (לא מודפסת) — כך רואים מיד אם הדף שנטען הוא הגרסה
 // החדשה או עותק ישן שנשמר בזיכרון הדפדפן
-const BUILD = "v485";
+const BUILD = "v486";
 const q = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const KIND = q.get('kind') || 'parnes';
@@ -764,7 +789,35 @@ function splitAtBen(){
   });
   return n;
 }
-function fitParnes(){
+// מאיר: "עוד כפתור של עריכת הטקסט והגודל שאוכל לתאם לפעמים את הגודל אם יש בעיה" — מקדם ידני לשמות ולבקשות,
+// מוחל אחרי כל ההתאמה האוטומטית, לתעודה הזו בלבד
+let USR={n:1,r:1};
+// מאיר: "שיהיה אפשרי לערוך כמו בוורד" — לכל שורה אפשר לקבוע בעצמך: שם/בקשה, גודל, מודגש. נשמר לפי הטקסט של
+// השורה, ולכן נשאר גם אחרי שהתעודה מסודרת מחדש (עריכת טקסט)
+let OVR={}, EDIT=false, SELROW=null;
+const rowKey=el=>(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim();
+function applyRoleOverrides(){
+  document.querySelectorAll('#pairs .nline,#pairs .nrow').forEach(el=>{
+    const o=OVR[rowKey(el)]; if(!o||!o.role) return;
+    const ws=rowKey(el).split(' ').filter(Boolean);
+    if(o.role==='names' && !el.classList.contains('nline')){ el.className='nline'; el.innerHTML=fmtWords(ws); }
+    if(o.role==='req' && !el.classList.contains('nreq')){ el.className='nrow nreq'; el.textContent=ws.join(' '); }
+  });
+}
+function applyUserScale(){
+  document.querySelectorAll('#pairs .nline,#pairs .nrow').forEach(el=>{
+    const o=OVR[rowKey(el)]; if(!o) return;
+    if(o.s&&o.s!==1){ const v=parseFloat(getComputedStyle(el).fontSize)||0; if(v) el.style.setProperty('font-size',(v*o.s).toFixed(2)+'px','important'); }
+    if(o.b===true) el.style.setProperty('font-weight','700','important'); else if(o.b===false) el.style.setProperty('font-weight','400','important');
+    el.classList.toggle('usel', EDIT && el===SELROW);
+  });
+  const sc=(sel,f)=>{ if(f===1)return; document.querySelectorAll(sel).forEach(e=>{ const v=parseFloat(getComputedStyle(e).fontSize)||0; if(v) e.style.setProperty('font-size',(v*f).toFixed(2)+'px','important'); }); };
+  sc('#pairs .nline',USR.n); sc('#pairs .nreq,#pairs .nevt,#pairs .nlead,#pairs .nttl',USR.r);
+  const n=document.getElementById('szN'), r=document.getElementById('szR');
+  if(n) n.textContent=Math.round(USR.n*100)+'%'; if(r) r.textContent=Math.round(USR.r*100)+'%';
+}
+function fitParnes(){ applyRoleOverrides(); fitParnes0(); applyUserScale(); }
+function fitParnes0(){
   const c=$('content'), body=document.getElementById('cbody');
   fitNusach();
   // שלושה שמות ומעלה: שורת שם לא נשברת (שם ושם האם יחד), אלא מתכווצת — וכל השמות יחד (parnesSizes)
@@ -893,6 +946,32 @@ if(KIND==='coffee' || KIND==='breakfast'){
   };
   addPair(q.get('names')||'');
   $('addBtn').onclick=()=>addPair('');
+  // ✏️ עריכה וגודל
+  const setEdit=on=>{ EDIT=on; document.body.classList.toggle('editing',on);
+    document.querySelectorAll('#pairs .names').forEach(n=>n.setAttribute('contenteditable',on?'false':'true'));
+    if(!on){ SELROW=null; document.querySelectorAll('.usel').forEach(x=>x.classList.remove('usel')); }
+    const rs=$('rowSel'); if(rs) rs.textContent='לא נבחרה שורה'; };
+  $('editBtn').onclick=()=>{ const p=$('editPanel'); const open=p.style.display==='none'; p.style.display=open?'block':'none';
+    setEdit(open); if(open){ $('edTxt').value=certRows().map(r=>r.t).join('\n'); } };
+  // בחירת שורה בתעודה (במצב עריכה)
+  $('pairs').addEventListener('click',ev=>{ if(!EDIT)return; const el=ev.target.closest('#pairs .nline,#pairs .nrow'); if(!el)return;
+    ev.preventDefault(); document.querySelectorAll('.usel').forEach(x=>x.classList.remove('usel')); SELROW=el; el.classList.add('usel');
+    $('rowSel').textContent='נבחר: '+rowKey(el).slice(0,40); });
+  document.querySelectorAll('#rowBar [data-row]').forEach(b=>b.onclick=()=>{ if(!SELROW||!SELROW.isConnected){ $('rowSel').textContent='קודם לחץ על שורה בתעודה'; return; }
+    const k=b.dataset.row, key=rowKey(SELROW), o=OVR[key]||(OVR[key]={});
+    if(k==='names'||k==='req'){ o.role=k; }
+    else if(k==='s+'){ o.s=Math.min(3,+((o.s||1)+0.1).toFixed(2)); } else if(k==='s-'){ o.s=Math.max(0.3,+((o.s||1)-0.1).toFixed(2)); }
+    else if(k==='b'){ const cur=o.b!=null?o.b:((parseInt(getComputedStyle(SELROW).fontWeight,10)||400)>=600); o.b=!cur; }
+    else if(k==='up'){ const pv=SELROW.previousElementSibling; if(pv&&pv.matches('.nline,.nrow')) pv.before(SELROW); }
+    else if(k==='down'){ const nx=SELROW.nextElementSibling; if(nx&&nx.matches('.nline,.nrow')) nx.after(SELROW); }
+    else if(k==='del'){ SELROW.remove(); SELROW=null; $('rowSel').textContent='השורה נמחקה'; }
+    fit(); if(typeof schedulePrep==='function') schedulePrep(); });
+  $('edClose').onclick=()=>{ $('editPanel').style.display='none'; setEdit(false); };
+  $('edApply').onclick=()=>{ const nd=document.querySelector('#pairs .names'); if(!nd)return;
+    nd.innerHTML=formatLines($('edTxt').value); fit(); schedulePrep&&schedulePrep(); };
+  document.querySelectorAll('#editPanel [data-sz]').forEach(b=>b.onclick=()=>{ const k=b.dataset.sz;
+    if(k==='reset'){ USR={n:1,r:1}; } else { const key=k[0], d=k[1]==='+'?0.08:-0.08; USR[key]=Math.min(2.5,Math.max(0.3,+(USR[key]+d).toFixed(2))); }
+    fit(); if(typeof schedulePrep==='function') schedulePrep(); });
 }
 
 // ----- שליחת התעודה לתורם כתמונה (מהתוכן שעל המסך, כולל עריכות) -----
