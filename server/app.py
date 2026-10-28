@@ -17330,6 +17330,60 @@ def cardlink_note(con, did, b):
     return {'ok': True}
 
 
+# מאיר (28.10.2026): "תמיד תמחק את האנגלית מהקוויטל ושלח לי את זה באימייל, שאני אטפל בזה אישית אם יש אנגלית
+# בקוויטל" — הקוויטל בעברית בלבד. כל רצף באותיות לטיניות יורד מהקוויטל, והטקסט שירד נשלח במייל ונרשם בקשר של התורם
+_KV_EN = re.compile(r"[(\[]?[ \t]*[A-Za-z][A-Za-z0-9'\u2019\- \t,.!?:;()\[\]&/]*")
+
+
+def kv_strip_en(text):
+    """-> (הטקסט בלי אנגלית, מה שירד). שורות ורווחים מסודרים מחדש; ריק אם לא נשאר עברית."""
+    t = str(text or '')
+    if not re.search(r'[A-Za-z]', t):
+        return t, ''
+    removed = [re.sub(r'\s+', ' ', m.group(0)).strip(' ,.;:-()[]') for m in _KV_EN.finditer(t)]
+    out = _KV_EN.sub(' ', t)
+    out = '\n'.join(re.sub(r'[ \t]{2,}', ' ', ln).strip(' ,;-') for ln in out.split('\n'))
+    out = re.sub(r'\n{3,}', '\n\n', out).strip()
+    if not re.search(r'[\u05d0-\u05ea]', out):
+        out = ''
+    return out, ' · '.join(x for x in removed if x)
+
+
+def kvittel_en_scan(con):
+    """בעליית השרת: אנגלית שנכנסה לקוויטל (מכל מקור) יורדת ממנו — ומייל אחד עם הכל לטיפול אישי."""
+    found = []
+    for r in con.execute("SELECT p.id, p.donor_id, p.text, d.last, d.first, d.english FROM prayers p LEFT JOIN donors d ON d.id=p.donor_id "
+                         "WHERE p.text GLOB '*[A-Za-z]*'").fetchall():
+        heb, en = kv_strip_en(r['text'])
+        if not en:
+            continue
+        if heb:
+            con.execute("UPDATE prayers SET text=? WHERE id=?", (heb, r['id']))
+        else:
+            con.execute("DELETE FROM prayers WHERE id=?", (r['id'],))
+        nm = ((r['last'] or '') + ' ' + (r['first'] or '')).strip() or 'לא משויך לתורם'
+        if r['donor_id']:
+            con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                        (r['donor_id'], today_iso(), 'מערכת', '🔤 הוסר מהקוויטל טקסט באנגלית (לטיפול אישי): "%s"' % en[:600], '', now_iso()))
+        found.append('• %s%s%s:\n  %s' % (nm, (' (%s)' % r['english']) if r['english'] else '', (' · כרטיס #%s' % r['donor_id']) if r['donor_id'] else '', en[:1500]))
+    if not found:
+        return 0
+    con.commit()
+    to = (os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or '').strip()
+    if to:
+        body = 'הטקסט באנגלית הבא הוסר מהקוויטל (הקוויטל בעברית בלבד), לטיפול אישי:\n\n' + '\n\n'.join(found) + \
+               '\n\n(נרשם גם בקשר של כל תורם במערכת)'
+        def run():
+            try:
+                import mailer
+                if mailer.configured():
+                    mailer.send(to, '🔤 אנגלית בקוויטל — %d לטיפול אישי' % len(found), body, [])
+            except Exception as e:
+                print('  kvittel english mail error:', e)
+        threading.Thread(target=run, daemon=True).start()
+    return len(found)
+
+
 def cardlink_alert(con, did, what):
     """מאיר: "אם מישהו הכניס אשראי אחר או עדכן קוויטל או כתובת וכו' — שאקבל אימייל על זה". נשלח ברקע
     ל-ALERT_EMAIL (ואם לא הוגדר — לתיבת GMAIL_USER של המערכת)."""
@@ -17450,14 +17504,21 @@ def cardlink_save(con, did, b):
         old_rows = con.execute("SELECT tier FROM prayers WHERE donor_id=? ORDER BY id", (did,)).fetchall()
         tier = (old_rows[0]['tier'] if old_rows and old_rows[0]['tier'] else (d['tier'] or ''))
         _k = lambda x: re.sub(r'[\s,.;:\-"\'׳״]+', '', str(x or ''))
-        if not cur_n or _k(cur_n) in _k(nn):
+        # אנגלית לא נכנסת לקוויטל — נשלחת במייל לטיפול אישי
+        new_txt, _en = kv_strip_en(new_txt)
+        nn = re.sub(r'\s+', ' ', new_txt).strip()
+        if _en:
+            lines.append('🔤 כתב באנגלית — לא נכנס לקוויטל, לטיפול אישי: "%s"' % _en[:600])
+        if not nn or nn == cur_n:
+            pass
+        elif not cur_n or _k(cur_n) in _k(nn):
             con.execute("DELETE FROM prayers WHERE donor_id=?", (did,))
             con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did, new_txt, tier))
             lines.append('שמות לתפילה עודכנו בקוויטל. היה: "%s" → עכשיו: "%s"' % (cur_n[:300] or '—', nn[:300]))
         else:
             con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did, new_txt, tier))
             lines.append('נוסף לקוויטל (השמות הקיימים נשארו): "%s"' % nn[:300])
-        out['names_changed'] = True
+        out['names_changed'] = bool(nn and nn != cur_n)
     if lines:
         con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
                     (did, today_iso(), 'קישור', '🔗 התורם עדכן דרך הקישור האישי: ' + ' · '.join(lines), '', now_iso()))
@@ -33209,6 +33270,14 @@ def serve():
             print('  shared phones removed from %d members' % n)
     except Exception as e:
         print('  shared phones fix error:', e)
+    try:
+        con = db()
+        n_en = kvittel_en_scan(con)
+        con.close()
+        if n_en:
+            print('  קוויטל: טקסט באנגלית הוסר מ-%d שורות ונשלח במייל' % n_en)
+    except Exception as e:
+        print('  kvittel english scan error:', e)
     try:
         con = db()
         # מאיר: "הודעה קולית לכל האברכים של הכולל חצות" — האברכים שבדוח המלגות החודשי האחרון של כולל חצות
