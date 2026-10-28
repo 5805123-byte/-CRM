@@ -9158,8 +9158,7 @@ function parnesCertUrl(d,p){
   // פרנס, זה לא שייך לקוויטל" — התעודה מקבלת רק את השמות שנכתבו על יום
   // הפרנס עצמו. אין יותר נפילה לשמות הקוויטל של התורם כשהשדה ריק.
   const names=(p.dedication&&p.dedication.trim())||'';
-  // pid — כדי ש"💾 שמור" בתעודה יחזיר את הטקסט והעריכות ללילה הזה
-  return location.origin+'/parnes-cert?'+new URLSearchParams({kind:p.kind||'parnes',date,names,pid:String(p.id||'')}).toString();
+  return location.origin+'/parnes-cert?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString();
 }
 // למה יום צמוד לא נכנס לאותה תעודה — מוצג מיד, במקום לנחש
 function runWhyNot(d,p){
