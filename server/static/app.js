@@ -278,6 +278,16 @@ function izHistHTML(d){
     ${rows.slice(0,40).map(c=>line(esc(c.summary))).join('')}</details>`;
 }
 const HMORD = ['תשרי','חשון','כסלו','טבת','שבט','אדר','ניסן','אייר','סיון','תמוז','אב','אלול'];
+// מאיר: "אני רוצה תאריך עברי גם לראות — ככה זה מקל עלי יותר" — תאריך לועזי (ISO) → "כ"ח חשון תשפ"ז".
+// מהדפדפן עצמו (לוח עברי של Intl); אם הדפדפן לא יודע — ריק, ולא נופל
+const _HMONTH_FIX={'חשוון':'חשון','מרחשון':'חשון','מרחשוון':'חשון','כסליו':'כסלו','סיוון':'סיון','אדר א׳':'אדר א\'','אדר ב׳':'אדר ב\'','אדר א':'אדר א\'','אדר ב':'אדר ב\''};
+function heYearStr(n){n=+n;if(!n)return '';n=n%1000;const H=[[400,'ת'],[300,'ש'],[200,'ר'],[100,'ק'],[90,'צ'],[80,'פ'],[70,'ע'],[60,'ס'],[50,'נ'],[40,'מ'],[30,'ל'],[20,'כ'],[10,'י'],[9,'ט'],[8,'ח'],[7,'ז'],[6,'ו'],[5,'ה'],[4,'ד'],[3,'ג'],[2,'ב'],[1,'א']];
+  let s='';for(const[v,l]of H){while(n>=v){if((n===15&&v===10)||(n===16&&v===10)){s+=n===15?'טו':'טז';n=0;break;}s+=l;n-=v;}}
+  return s.length>1?s.slice(0,-1)+'"'+s.slice(-1):s+"'";}
+function hebOfIso(iso){try{if(!iso)return '';const d=new Date(String(iso).slice(0,10)+'T12:00:00');if(isNaN(d))return '';
+  const P={};new Intl.DateTimeFormat('he-u-ca-hebrew',{day:'numeric',month:'long',year:'numeric'}).formatToParts(d).forEach(p=>P[p.type]=p.value);
+  const day=parseInt(P.day,10),mo=_HMONTH_FIX[P.month]||P.month||'',yr=parseInt(P.year,10);
+  if(!day||!mo||!yr)return '';return heDay(day)+' '+mo+' '+heYearStr(yr);}catch(e){return '';}}
 function heDay(n){const ones=['','א','ב','ג','ד','ה','ו','ז','ח','ט'],tens=['','י','כ','ל'];let s;if(n===15)s='טו';else if(n===16)s='טז';else s=(tens[Math.floor(n/10)]||'')+(ones[n%10]||'');return s.length<=1?s+"'":s.slice(0,-1)+'"'+s.slice(-1);}
 const view = document.getElementById('view'), chips = document.getElementById('chips'),
       ov = document.getElementById('ov'), sheet = document.getElementById('sheet'),
@@ -2223,7 +2233,7 @@ function mkOpen(c){
         ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`)}
         <div class="mktile mkedit" id="mkprice" title="לחיצה — לשנות את המחיר"><span>💲 מחיר המנוי${c.price!=null?' (אישי)':' (של הקבוצה)'} ✎</span><b>${c.price!=null?mkNis(c.price):(g&&g.price!=null?mkNis(g.price):'—')}</b></div>
         <div class="mktile" id="mkpaid" data-id="${esc(c.id)}" title="מה ששילם במקווה (במכשיר / במערכת המקווה)"><span>💳 שילם במקווה</span><b>${mkPaidTxt(c.id)}</b></div>
-        <div class="mktile mkedit ${mkPast(c.sub_end)?'bad':'ok'}" id="mksub" title="לחיצה — לשנות את תאריך ההתחלה / הסיום של המנוי במקווה"><span>📅 מנוי ✎</span><b>${esc(mkDate(c.sub_end))||'—'}</b>${c.sub_start?`<small style="display:block;color:#777">מ-${esc(mkDate(c.sub_start))}</small>`:''}</div>
+        <div class="mktile mkedit ${mkPast(c.sub_end)?'bad':'ok'}" id="mksub" title="לחיצה — לשנות את תאריך ההתחלה / הסיום של המנוי במקווה"><span>📅 מנוי עד ✎</span><b>${esc(mkDate(c.sub_end))||'—'}</b>${c.sub_end&&hebOfIso(c.sub_end)?`<small style="display:block;color:#555">${esc(hebOfIso(c.sub_end))}</small>`:''}${c.sub_start?`<small style="display:block;color:#777">מ-${esc(mkDate(c.sub_start))}${hebOfIso(c.sub_start)?' · '+esc(hebOfIso(c.sub_start)):''}</small>`:''}</div>
         ${tile('רישיון עד',esc(mkDate(c.lic_exp)),mkPast(c.lic_exp)?'bad':'')}
         <div class="mktile mkedit ${mkTowel(c)?'ok':''}" id="mktwl" title="לחיצה — להוסיף / להסיר מנוי מגבות (מתעדכן במקווה)"><span>🧺 מנוי מגבות ✎</span><b>${mkTowel(c)?({small:'קטנות',large:'גדולות'}[mkTowelSize(c)]||'כן')+(mkTwPr(c)!=null?' · ₪'+esc(mkTwPr(c))+(MKTW&&MKTW.hmonth?' <small>('+esc(MKTW.hmonth.split(' ')[0])+')</small>':''):''):'לא'}</b></div>
         ${mkTowel(c)&&mkTwPr(c)!=null&&(c.price!=null||(g&&g.price!=null))?`<div class="mktile ok"><span>💰 סה״כ לחודש${MKTW&&MKTW.hmonth?' '+esc(MKTW.hmonth.split(' ')[0]):''}</span><b>${mkNis((c.price!=null?c.price:g.price)+mkTwPr(c))}</b><small style="display:block;color:#777">מנוי ${mkNis(c.price!=null?c.price:g.price)} + מגבות ₪${esc(mkTwPr(c))}</small></div>`:''}
@@ -2582,9 +2592,11 @@ async function mkSubEdit(c){
     const o=document.createElement('div');o.className='confirmov';
     o.innerHTML=`<div class="confirmbox"><div class="cm">📅 תאריכי המנוי — ${esc(mkName(c))}</div>
       <label class="cmsub" style="display:block;margin-bottom:4px">תחילת המנוי${cs?' (עכשיו '+esc(mkDate(cs))+')':''}</label>
-      <input class="cinp" type="date" id="mksd_s" value="${esc(cs)}">
+      <input class="cinp" type="date" id="mksd_s" value="${esc(cs)}" style="margin-bottom:4px">
+      <div class="mksub" id="mksd_sh" style="margin:0 0 12px;font-weight:800;color:var(--accent)">${esc(hebOfIso(cs))||'&nbsp;'}</div>
       <label class="cmsub" style="display:block;margin-bottom:4px">סוף המנוי${ce?' (עכשיו '+esc(mkDate(ce))+')':''}</label>
-      <input class="cinp" type="date" id="mksd_e" value="${esc(ce)}">
+      <input class="cinp" type="date" id="mksd_e" value="${esc(ce)}" style="margin-bottom:4px">
+      <div class="mksub" id="mksd_eh" style="margin:0 0 12px;font-weight:800;color:var(--accent)">${esc(hebOfIso(ce))||'&nbsp;'}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-8px 0 12px"><button class="btn sm ghost" data-add="30">+30 יום לסוף</button><button class="btn sm ghost" data-add="365">+שנה לסוף</button><button class="btn sm ghost" data-add="m1">חודש מההתחלה</button></div>
       <label class="cmsub" style="display:block;margin-bottom:4px">הערה (לא חובה) — למשל: אישור מיוחד, התחיל באמצע החודש</label>
       <input class="cinp" id="mksd_n" placeholder="הערה">
@@ -2592,10 +2604,13 @@ async function mkSubEdit(c){
     document.body.appendChild(o);
     const S=o.querySelector('#mksd_s'), E=o.querySelector('#mksd_e'), N=o.querySelector('#mksd_n');
     const isoOf=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    // התאריך העברי מתעדכן מיד כשבוחרים תאריך
+    const heb=()=>{o.querySelector('#mksd_sh').innerHTML=esc(hebOfIso(S.value))||'&nbsp;';o.querySelector('#mksd_eh').innerHTML=esc(hebOfIso(E.value))||'&nbsp;';};
+    S.oninput=S.onchange=heb;E.oninput=E.onchange=heb;
     o.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{
       const k=b.dataset.add;
-      if(k==='m1'){const base=S.value?new Date(S.value+'T00:00:00'):new Date();base.setMonth(base.getMonth()+1);base.setDate(base.getDate()-1);E.value=isoOf(base);return;}
-      const base=E.value?new Date(E.value+'T00:00:00'):new Date();base.setDate(base.getDate()+parseInt(k,10));E.value=isoOf(base);});
+      if(k==='m1'){const base=S.value?new Date(S.value+'T00:00:00'):new Date();base.setMonth(base.getMonth()+1);base.setDate(base.getDate()-1);E.value=isoOf(base);heb();return;}
+      const base=E.value?new Date(E.value+'T00:00:00'):new Date();base.setDate(base.getDate()+parseInt(k,10));E.value=isoOf(base);heb();});
     const done=v=>{o.remove();res(v);};
     o.querySelector('.cno').onclick=()=>done(null);
     o.querySelector('.cyes').onclick=()=>done({start:S.value,end:E.value,note:N.value.trim()});
@@ -2609,7 +2624,7 @@ async function mkSubEdit(c){
   const r=await api('POST','/api/mikveh/subdates',{id:c.id,start,end,note:r0.note}).catch(()=>null);
   if(!r||!r.ok){mkOpen(c);return uiAlert('תאריכי המנוי לא עודכנו במקווה:\n'+((r&&r.error)||'אין תשובה מהשרת'));}
   c.sub_end=r.sub_end;c.sub_start=r.sub_start;const x=(MK.clients||[]).find(y=>y.id===c.id);if(x){x.sub_end=r.sub_end;x.sub_start=r.sub_start;}
-  toast('✓ המנוי'+(r.sub_start?' מ-'+mkDate(r.sub_start):'')+' עד '+mkDate(r.sub_end)+' — עודכן במקווה');mkOpen(c);}
+  toast('✓ המנוי'+(r.sub_start?' מ-'+mkDate(r.sub_start):'')+' עד '+mkDate(r.sub_end)+(hebOfIso(r.sub_end)?' ('+hebOfIso(r.sub_end)+')':'')+' — עודכן במקווה');mkOpen(c);}
 async function mkBalanceEdit(c){
   const cur=c.balance!=null?c.balance/100:null;
   const v=await uiPrompt('היתרה של '+mkName(c)+' במקווה'+(cur!=null?' (עכשיו ₪'+cur.toLocaleString('he-IL')+')':'')+'\nכתוב יתרה חדשה בש"ח, או +50 / -50 כדי להוסיף / להוריד:', cur!=null?String(cur):'');
