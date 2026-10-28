@@ -4681,6 +4681,15 @@ def ensure_schema():
     except Exception as e:
         print('  anshin avreich link error:', e)
 
+    # מאיר (28.10.2026): "מי שלא ענה שייצא אליו שוב שיחה בשעה 19:00 בדיוק" — החיוג החוזר של משלוחי מירון היום
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='meron_redial_1900_v1'").fetchone():
+            kv_set(con, 'ym_redial_at', json.dumps({'like': 'מירון', 'at': '2026-10-28 19:00'}, ensure_ascii=False))
+            con.execute("INSERT INTO seed_flags(name) VALUES('meron_redial_1900_v1')"); con.commit()
+            print('  חיוג חוזר למירון נקבע ל-28.10.2026 19:00')
+    except Exception as e:
+        print('  meron redial seed error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
@@ -18532,6 +18541,46 @@ def remind_call_scan():
         con.close()
 
 
+def ym_redial_at_scan():
+    """📞 מאיר (28.10.2026, מירון): "מי שלא ענה שייצא אליו שוב שיחה בשעה 19:00 בדיוק" — חיוג חוזר בשעה קבועה
+    למי שלא ענה / לא שמע / עוד לא נבדק, מכל המשלוחים של היום שהתווית שלהם מכילה את המילה (app_kv ym_redial_at:
+    {"like": "מירון", "at": "YYYY-MM-DD HH:MM"}). מי שכבר נרשם או כבר קיבל ניסיון חוזר — לא."""
+    con = db()
+    try:
+        try:
+            cfg = json.loads(kv_get(con, 'ym_redial_at', '') or '{}')
+        except ValueError:
+            cfg = {}
+        at = str(cfg.get('at') or '')
+        if not at or cfg.get('done') or il_now().strftime('%Y-%m-%d %H:%M') < at:
+            return
+        like = '%' + str(cfg.get('like') or '').strip() + '%'
+        day = at[:10]
+        jobs = [r['id'] for r in con.execute("SELECT id FROM ym_job WHERE channel='voice' AND COALESCE(test,0)=0 AND retry_of IS NULL "
+                                             "AND label LIKE ? AND created LIKE ? ORDER BY id", (like, day + '%'))]
+    finally:
+        con.close()
+    for jid in jobs:
+        try:
+            ym_check_job(jid)       # קודם מעדכנים מהיומן של ימות מי ענה
+        except Exception as e:
+            print('  redial-at check error:', e)
+    con = db()
+    try:
+        total = 0
+        for jid in jobs:
+            lst = con.execute("SELECT m.* FROM ym_msg m WHERE m.job=? AND m.status='sent' AND m.retried IS NULL AND COALESCE(m.reg,'')='' "
+                              "AND COALESCE(m.paid_at,'')='' AND (m.answered IS NULL OR " + YM_NOT_HEARD_SQL + ")", (jid,)).fetchall()
+            if lst:
+                ym_redial(con, jid, lst, (con.execute("SELECT label FROM ym_job WHERE id=?", (jid,)).fetchone()['label'] or '') + ' · חיוג חוזר ' + at[11:])
+                total += len(lst)
+        cfg['done'] = 1; cfg['sent'] = total; cfg['jobs'] = jobs
+        kv_set(con, 'ym_redial_at', json.dumps(cfg, ensure_ascii=False)); con.commit()
+        print('  חיוג חוזר %s: %d שיחות (%s)' % (at, total, ', '.join(str(j) for j in jobs) or '—'))
+    finally:
+        con.close()
+
+
 def _ym_sched_loop():
     while True:
         time.sleep(30)
@@ -18539,6 +18588,10 @@ def _ym_sched_loop():
             ym_sched_scan()
         except Exception as e:
             print('  ym sched loop error:', e)
+        try:
+            ym_redial_at_scan()
+        except Exception as e:
+            print('  ym redial-at error:', e)
         try:
             remind_call_scan()
         except Exception as e:
