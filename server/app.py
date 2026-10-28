@@ -18680,6 +18680,10 @@ def ym_worker(job_id, wait=True):
             ym_gm = kv_get(con, 'ym_gmodel', '')
             ym_en = pron_en_list(con)
             ym_nik = ym_nikud_on(con)
+            # מאיר (28.10.2026, מירון): "בניסיון החוזר אני רואה שזה עדיין לא נשלח חלק" — כש-Gemini נופל, כל הודעה חיכתה
+            # כמה דקות (3 ניסיונות × 90 שניות) לפני שנפלה לקול של ימות. במשלוח גדול: ניסיון אחד בלבד, ואחרי
+            # הודעה אחת שנפלה לימות — כל שאר המשלוח יוצא ישר בקול של ימות, בלי לחכות
+            big_job = (job['total'] or 0) > 3
             for m in con.execute("SELECT * FROM ym_msg WHERE job=? AND status='queued' ORDER BY id", (job_id,)).fetchall():
                 con.execute("UPDATE ym_msg SET sent_ts=? WHERE id=?", (il_now().strftime('%Y-%m-%d %H:%M:%S'), m['id']))
                 _ym.begin_trace()
@@ -18696,7 +18700,11 @@ def ym_worker(job_id, wait=True):
                                         en=ym_en if ym_engine == 'gemini' else None)
                     ok, res = _ym.send_tts(m['phone'], vt_, voice=ym_voice,
                                            engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True, gmodel=ym_gm,
-                                           hints=pron_en_for(ym_en, vt_, ym_pron) or pron_en_for(ym_en, m['text']))
+                                           hints=pron_en_for(ym_en, vt_, ym_pron) or pron_en_for(ym_en, m['text']),
+                                           gtries=1 if big_job else 3)
+                    if ok and isinstance(res, dict) and ym_engine == 'gemini' and res.get('engine') == 'yemot' and big_job:
+                        ym_engine = ''
+                        print('  ימות: Gemini לא ענה — שאר המשלוח %s יוצא בקול של ימות' % job_id)
                     if ok and isinstance(res, dict):
                         con.execute("UPDATE ym_msg SET engine=?, ym_file=? WHERE id=?", (res.get('engine') or '', res.get('file') or '', m['id']))
                         wav_ = res.pop('wav', None)
