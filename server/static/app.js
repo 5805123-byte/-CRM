@@ -11305,7 +11305,7 @@ async function avYmOpen(){
         <div class="ympv"><b>👂 כך זה יישמע${prevA?' אצל '+esc(nm(prevA)):''}:</b> ${esc(prev)}</div>
         <div class="hintxt">אחרי "הקישו 1" הטלפון שואל לבד: ${esc('לחיוב דמי ההרשמה מהוראת הקבע שלכם בכרטיס המסתיים ב-XXXX הקישו 1 · לתשלום בכרטיס אשראי אחר הקישו 2 · להרשמה ותשלום במזומן הקישו 3 · להשארת הודעה הקישו 4')}. למי שאין הוראת קבע — בלי האפשרות הראשונה. כל הרשמה נרשמת כאן ובכרטיס האברך; מזומן והודעה פותחים משימה.</div>
         <div class="mksec" style="margin-top:12px">👨‍🎓 למי <small>${selN} נבחרו מתוך ${good.length} עם טלפון תקין${bad.length?' · '+bad.length+' בלי טלפון':''}</small></div>
-        <div class="mlfrow"><button class="btn sm" id="avy_all">✅ סמן את כולם</button><button class="btn sm ghost" id="avy_none">נקה</button></div>
+        <div class="mlfrow"><button class="btn sm" id="avy_all">✅ סמן את כולם</button><button class="btn sm ghost" id="avy_none">נקה</button><button class="btn sm ghost" id="avy_ndph" title="לאברך בלי טלפון — הטלפון מהעסקאות / הוראות הקבע שלו בנדרים פלוס, לפי השם">🔄 להשלים טלפונים מנדרים פלוס</button></div>
         <div class="ymlist">${good.map(a=>`<div class="ymrow${AVYM.sel.has(a.aid)?' on':''}" data-aid="${a.aid}"><span class="mlck">${AVYM.sel.has(a.aid)?'✔':''}</span><span class="ymnm">${esc(nm(a))}</span><span class="ymph" dir="ltr">${esc(ymPhone(a.phone))}</span></div>`).join('')}</div>
         ${bad.length?`<details style="margin-top:6px"><summary class="mksub">בלי טלפון תקין (${bad.length}) — לא יקבלו</summary><div class="mksub">${bad.map(a=>esc(nm(a))).join(' · ')}</div></details>`:''}
         <div class="mksec" style="margin-top:12px">📤 שליחה</div>
@@ -11327,6 +11327,11 @@ async function avYmOpen(){
     const dl=g('avy_del');if(dl)dl.onclick=async()=>{if(!await uiConfirm('למחוק את הנוסח "'+AVYM.cur+'"?'))return;
       const r=await api('POST','/api/avym/tpls',{delete:AVYM.cur}).catch(()=>null);if(!r||!r.ok){toast('לא נמחק');return;}AVYM.tpls=r.tpls;AVYM.cur='';toast('נמחק');draw();};
     g('avy_all').onclick=()=>{good.forEach(a=>AVYM.sel.add(a.aid));draw();};
+    g('avy_ndph').onclick=async()=>{const bt=g('avy_ndph');bt.disabled=true;bt.textContent='⏳ בודק בנדרים פלוס…';
+      const r=await api('POST','/api/avreich/phones_nd',{}).catch(()=>null);
+      if(!r||!r.ok){toast('לא הצליח');bt.disabled=false;draw();return;}
+      toast(r.n?('✓ הושלמו '+r.n+' טלפונים: '+r.rows.map(x=>x.name).join(', ')):'לא נמצאו טלפונים חדשים בנדרים פלוס');
+      AVLIST=[];clearInterval(AVYM.poll);o.remove();await avYmOpen();};
     g('avy_none').onclick=()=>{AVYM.sel.clear();draw();};
     o.querySelectorAll('.ymrow[data-aid]').forEach(r=>r.onclick=()=>{const id=+r.dataset.aid;if(AVYM.sel.has(id))AVYM.sel.delete(id);else AVYM.sel.add(id);draw();});
     const body=(test)=>{keep();const b={channel:'voice',text:AVYM.text,amount:AVYM.amount,billing:1,event:AVYM.event,label:'אברכים · '+(AVYM.event||'הודעה'),for:''};

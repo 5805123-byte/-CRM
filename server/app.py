@@ -13652,6 +13652,44 @@ _AV_PREFIX = {'בן', 'בת', 'בר', 'אבו', 'אבן', 'דה', 'די', 'דל'
               'ואן', 'פון', 'לה', 'אל', 'בני'}
 
 
+def av_phones_from_nd(con):
+    """📞 מאיר: "יש אברכים שאולי אין את המספר שלהם במערכת שלנו אבל כנראה יש לנו את זה בנדרים פלוס —
+    תסנכרן… להוסיף להם את המספר שקיים בנדרים פלוס לכרטיס האברך". לאברך בלי טלפון: הטלפון מהעסקאות /
+    הוראות הקבע בנדרים פלוס על אותו שם (משפחה-פרטי או פרטי-משפחה; גם שם עם שם אמצעי נוסף), ורק אם כל
+    השורות מסכימות על מספר אחד — אחרת לא נוגעים. מחזיר [(שם, טלפון)]."""
+    import yemot as _ym
+    key = lambda x: re.sub(r'["\'׳״\-\s]+', '', str(x or ''))
+    # כל השמות בנדרים פלוס עם הטלפונים שלהם (עסקאות + הוראות קבע)
+    byname = {}
+    for tbl in ('nd_tx', 'nd_keva'):
+        for r in con.execute("SELECT TRIM(name) nm, phone FROM %s WHERE COALESCE(TRIM(name),'')<>'' AND COALESCE(phone,'')<>''" % tbl):
+            for p in re.split(r'[;,/|\s]+', str(r['phone'] or '')):
+                np_ = _ym.norm_phone(p)
+                if np_:
+                    byname.setdefault(key(r['nm']), set()).add(np_)
+    out = []
+    for a in con.execute("SELECT id, name, last, first FROM avreichim WHERE COALESCE(TRIM(phone),'')='' AND COALESCE(ended,'')=''").fetchall():
+        l, f = (a['last'] or '').strip(), (a['first'] or '').strip()
+        if not l or not f:
+            l, f = _split_av(a['name'])
+        if not l or not f:
+            continue
+        k1, k2 = key(l + f), key(f + l)
+        phones = set()
+        for nk, ps in byname.items():
+            if nk == k1 or nk == k2 or (len(nk) > len(k1) and (nk.startswith(k1) or nk.startswith(k2))):
+                phones |= ps
+        if len(phones) == 1:
+            ph = next(iter(phones))
+            con.execute("UPDATE avreichim SET phone=? WHERE id=?", (ph, a['id']))
+            con.execute("INSERT INTO avreich_log(avreich,donor_id,date,hdate,text,at) VALUES(?,NULL,?,'',?,?)",
+                        (a['name'], today_iso(), '📞 הטלפון %s הושלם מנדרים פלוס (לפי השם)' % ph, now_iso()))
+            out.append((a['name'], ph))
+    if out:
+        con.commit()
+    return out
+
+
 def _split_av(name):
     """שם אברך נשמר כ"משפחה פרטי" — מפרידים כדי למיין לפי שם משפחה."""
     p = re.sub(r'\s+', ' ', (name or '').strip()).split(' ')
@@ -24578,6 +24616,14 @@ class H(BaseHTTPRequestHandler):
             con = db()
             kv_set(con, 'cm_debt_cats', json.dumps(out, ensure_ascii=False)); con.commit(); con.close()
             return self._send(200, {'ok': True, 'cats': out})
+        if self.path == '/api/avreich/phones_nd':
+            # 📞 השלמת טלפונים לאברכים מנדרים פלוס (לפי השם) — מהכפתור בחלון ההודעה הקולית
+            con = db()
+            try:
+                got = av_phones_from_nd(con)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'n': len(got), 'rows': [{'name': a, 'phone': b} for a, b in got]})
         if self.path == '/api/avym/tpls':
             # 📞 נוסחים שמורים להודעה הקולית לאברכים: save = {name,event,amount,text} (מחליף נוסח באותו שם), delete = name
             con = db()
@@ -33018,6 +33064,14 @@ def serve():
             print('  shared phones removed from %d members' % n)
     except Exception as e:
         print('  shared phones fix error:', e)
+    try:
+        con = db()
+        got = av_phones_from_nd(con)
+        con.close()
+        if got:
+            print('  אברכים: טלפונים שהושלמו מנדרים פלוס: %d' % len(got))
+    except Exception as e:
+        print('  avreich phones from nedarim error:', e)
     load_mail_cfg()
     import threading
     threading.Thread(target=_intake_daily_loop, daemon=True).start()
