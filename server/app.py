@@ -23300,6 +23300,58 @@ class H(BaseHTTPRequestHandler):
                 cur = {}
             con.close()
             return self._send(200, {'ok': True, 'tpl': cur})
+        if self.path.split('?')[0] == '/api/nd/paid_since':
+            # 💳 מאיר (28.10.2026): "תסכם לי מנדרים פלוס כמה שילמו 20 שקל מהשעה 5 וחצי היום — שזה על מירון, אבל לא הכל
+            # רשום מירון בדיוק" — כל העסקאות בנדרים פלוס (כל החשבונות) מאז השעה, בסכום הזה, לפי מה שנמשך מנדרים;
+            # fresh=1 — קודם מושכים את ההיסטוריה העדכנית. ליד כל אחד: האברך שזוהה לפי טלפון / שם, וההרשמה בשיחה
+            import yemot as _ym
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            since = re.sub(r'[^\d: -]', '', (qs.get('since') or [''])[0])[:16] or il_now().strftime('%Y-%m-%d 00:00')
+            try:
+                amt = float((qs.get('amount') or ['0'])[0] or 0)
+            except ValueError:
+                amt = 0
+            con = db()
+            try:
+                if (qs.get('fresh') or [''])[0] == '1':
+                    try:
+                        nd_history_sync(con)
+                    except Exception as e:
+                        print('  paid_since sync error:', e)
+                key = lambda x: re.sub(r'["\'׳״\-\s]+', '', str(x or ''))
+                avs = [dict(r) for r in con.execute("SELECT name,last,first,phone FROM avreichim WHERE COALESCE(ended,'')=''")]
+                byph = {}
+                for a in avs:
+                    for p_ in _phones_of(a['phone'] or ''):
+                        byph[_ym.norm_phone(p_) or p_] = a['name']
+                bynm = {}
+                for a in avs:
+                    l, f = (a['last'] or '').strip(), (a['first'] or '').strip()
+                    if l and f:
+                        bynm[key(l + f)] = a['name']; bynm[key(f + l)] = a['name']
+                import nedarim as _nd
+                anames = {('' if x['main'] else x['mosad']): x['name'] for x in _nd.accounts()}
+                rows = []
+                for t in con.execute("SELECT id,iso,phone,name,amount,keva,groupe,comments,mosad,conf,last4 FROM nd_tx WHERE iso>=? AND amount>0 "
+                                     + ("AND ABS(amount-?)<0.01 " if amt else "") + "ORDER BY iso", ((since + ':00')[:19],) + ((amt,) if amt else ())).fetchall():
+                    ph = _ym.norm_phone(t['phone'] or '')
+                    av = byph.get(ph) or bynm.get(key(t['name']))
+                    if not av:
+                        nk = key(t['name'])
+                        av = next((v for k, v in bynm.items() if k and nk.startswith(k)), None)
+                    kv = str(t['keva'] or '')
+                    how = 'הוראת קבע (חיוב בטלפון)' if kv.startswith('-') else ('הוראת קבע' if kv.strip() else 'כרטיס')
+                    rows.append({'at': t['iso'], 'name': t['name'] or '', 'phone': ph, 'amount': t['amount'], 'how': how,
+                                 'kupa': anames.get(t['mosad'] or '') or ('מוסד ' + t['mosad'] if t['mosad'] else 'כולל חצות'),
+                                 'what': ' · '.join(x for x in (t['groupe'], t['comments']) if x)[:120], 'avreich': av or '', 'conf': t['conf'] or ''})
+                # מי שנרשם בשיחה במזומן / הודעה (לא עבר בנדרים)
+                regs = [dict(r) for r in con.execute("SELECT name,phone,reg,reg_at,reg_note,event FROM ym_msg WHERE COALESCE(reg,'')<>'' AND COALESCE(reg_at,'')>=? ORDER BY reg_at",
+                                                     (since[:16],))]
+                last = {a['mosad']: kv_get(con, 'nd_hist_at:' + a['mosad'], '') for a in _nd.accounts()}
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'since': since, 'amount': amt, 'rows': rows, 'regs': regs,
+                                    'total': round(sum(r['amount'] for r in rows), 2), 'synced': last})
         if self.path.split('?')[0] == '/api/avym/tpls':
             # 📞 מאיר: "רוצה שיהיה לי כל פעם אפשרות לנוסח אחר… נוסח מירון, או הודעות אחרות" — נוסחים שמורים
             # להודעה הקולית לאברכים (שם, אירוע, סכום, טקסט), לכל המכשירים

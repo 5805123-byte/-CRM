@@ -11297,6 +11297,36 @@ function renderAvreich(){
 // 📞 מאיר (28.10.2026): "אני מארגן הערב נסיעה למירון באוטובוס לאברכי הכולל חצות… דמי הרשמה 20 שקל. אני רוצה לשלוח
 // הודעה קולית לכל האברכים עם השם שלהם… אם הוא רוצה להירשם שיקיש 1, ואז אם יש לו הוראת קבע — האם לחייב את הכרטיס
 // שאצלנו, או דרך מספר אשראי אחר, או להירשם ולשלם מזומן, או שישאיר הודעה… שיהיה בחלונית של אברכים, ומקושר לימות המשיח"
+// 💳 מאיר: "תסכם לי מנדרים פלוס כמה שילמו 20 שקל מהשעה 5 וחצי היום — שזה על מירון, אבל לא הכל רשום מירון בדיוק" —
+// כל העסקאות בנדרים פלוס מאז השעה ובסכום שבוחרים, עם האברך שזוהה; ומי שנרשם בשיחה במזומן / הודעה
+async function avPaidOpen(){
+  const o=document.createElement('div');o.className='mkov';document.body.appendChild(o);
+  const t=new Date(),p2=n=>String(n).padStart(2,'0'),day=t.getFullYear()+'-'+p2(t.getMonth()+1)+'-'+p2(t.getDate());
+  let since=day+' 17:30', amt=(AVYM&&AVYM.amount)||'20', R=null, busy=false;
+  const RG={keva:'💳 הו"ק בטלפון',card:'💳 כרטיס בטלפון',cash:'💵 מזומן',msg:'🎙️ השאיר הודעה'};
+  const draw=()=>{
+    const rows=(R&&R.rows)||[], regs=((R&&R.regs)||[]).filter(x=>x.reg==='cash'||x.reg==='msg');
+    const sy=R&&R.synced?Object.values(R.synced).filter(Boolean).sort().pop():'';
+    o.innerHTML=`<div class="mkdlg" role="dialog"><div class="mkdh"><div class="mkav">💳</div><div><b>מי שילם בנדרים פלוס</b><span class="mksub">כל החשבונות · לפי שעה וסכום</span></div><button class="x2" id="avp_x">✕</button></div>
+      <div class="mkdb">
+        <div class="mlfrow"><label class="fld" style="flex:1"><span>מאז</span><input id="avp_since" type="datetime-local" value="${esc(since.replace(' ','T'))}"></label>
+          <label class="fld" style="flex:0 0 110px"><span>סכום ₪ (ריק = הכל)</span><input id="avp_amt" inputmode="decimal" value="${esc(amt)}"></label></div>
+        <button class="btn" id="avp_go" style="width:100%;margin-top:6px" ${busy?'disabled':''}>${busy?'⏳ מושך מנדרים פלוס…':'🔄 לבדוק עכשיו בנדרים פלוס'}</button>
+        ${R?`<div class="mksec" style="margin-top:12px">✅ שילמו: <b>${rows.length}</b> · סה״כ <b>₪${Math.round(R.total||0).toLocaleString('he-IL')}</b> <small>${sy?'נמשך מנדרים '+esc(sy):''}</small></div>
+          <div class="mklist">${rows.map((x,i)=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${i+1}. ${esc(x.avreich||x.name||'—')}${x.avreich&&x.name&&x.avreich!==x.name?' <small>('+esc(x.name)+')</small>':''}</b>
+            <div class="mksub">${esc(String(x.at||'').slice(11,16))} · ${esc(x.how)} · ${esc(x.kupa)}${x.phone?' · <span dir="ltr">'+esc(x.phone)+'</span>':''}${x.what?' · '+esc(x.what):''}${x.avreich?'':' · <b style="color:#b26b00">לא זוהה כאברך</b>'}</div></div><b>₪${esc(String(x.amount))}</b></div>`).join('')||'<div class="hintxt">אין עסקאות בנדרים פלוס מאז השעה הזו בסכום הזה.</div>'}</div>
+          ${regs.length?`<div class="mksec" style="margin-top:12px">📞 נרשמו בשיחה בלי לשלם בנדרים: <b>${regs.length}</b></div>
+          <div class="mklist">${regs.map(x=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(x.name||'')}</b><div class="mksub">${esc(String(x.reg_at||'').slice(11,16))}${x.phone?' · <span dir="ltr">'+esc(x.phone)+'</span>':''}${x.event?' · '+esc(x.event):''}</div></div><b>${esc(RG[x.reg]||x.reg)}</b></div>`).join('')}</div>`:''}`:''}
+      </div></div>`;
+    const g=id=>o.querySelector('#'+id);
+    g('avp_x').onclick=()=>o.remove();
+    g('avp_go').onclick=()=>run(true);};
+  const run=async fresh=>{const sv=o.querySelector('#avp_since'),av=o.querySelector('#avp_amt');if(sv)since=sv.value.replace('T',' ');if(av)amt=av.value.trim();
+    busy=true;draw();const r=await api('GET','/api/nd/paid_since?since='+encodeURIComponent(since)+'&amount='+encodeURIComponent(amtNum(amt)||'')+(fresh?'&fresh=1':'')).catch(()=>null);
+    busy=false;if(!r||!r.ok){toast('לא נטען');draw();return;}R=r;draw();};
+  o.onclick=e=>{if(e.target===o)o.remove();};
+  draw();run(true);
+}
 let AVYM={text:'שלום {שם}, כאן כולל חצות. הערב יוצא אוטובוס לנסיעה למירון לאברכי הכולל. היציאה בשעה אחת עשרה וארבעים וחמש דקות בלילה. דמי ההרשמה עשרים שקלים. להרשמה הקישו 1.',
   event:'נסיעה למירון',amount:'20',sel:new Set(),job:null,poll:null,tpls:null,cur:''};
 async function avYmOpen(){
@@ -11332,6 +11362,7 @@ async function avYmOpen(){
         <div class="mksec" style="margin-top:12px">📤 שליחה</div>
         <div class="mlfrow"><input id="avy_tp" dir="ltr" inputmode="tel" placeholder="05X-XXXXXXX — בדיקה אליי קודם" value="${esc((()=>{try{return localStorage.getItem('kc_ymtp')||'';}catch(e){return '';}})())}"><button class="btn sm ghost" id="avy_test">🔊 שלח בדיקה אליי</button></div>
         <button class="btn" id="avy_go" style="width:100%;margin-top:8px" ${selN?'':'disabled'}>📞 להתקשר ל-${selN} אברכים</button>
+        <button class="btn sm ghost" id="avy_paid" style="width:100%;margin-top:6px">💳 מי שילם בנדרים פלוס</button>
         ${res}
       </div></div>`;
     const g=id=>o.querySelector('#'+id);
@@ -11348,6 +11379,7 @@ async function avYmOpen(){
     const dl=g('avy_del');if(dl)dl.onclick=async()=>{if(!await uiConfirm('למחוק את הנוסח "'+AVYM.cur+'"?'))return;
       const r=await api('POST','/api/avym/tpls',{delete:AVYM.cur}).catch(()=>null);if(!r||!r.ok){toast('לא נמחק');return;}AVYM.tpls=r.tpls;AVYM.cur='';toast('נמחק');draw();};
     g('avy_all').onclick=()=>{good.forEach(a=>AVYM.sel.add(a.aid));draw();};
+    g('avy_paid').onclick=()=>avPaidOpen();
     g('avy_ndph').onclick=async()=>{const bt=g('avy_ndph');bt.disabled=true;bt.textContent='⏳ בודק בנדרים פלוס…';
       const r=await api('POST','/api/avreich/phones_nd',{}).catch(()=>null);
       if(!r||!r.ok){toast('לא הצליח');bt.disabled=false;draw();return;}
@@ -13765,14 +13797,15 @@ async function renderStip(){
     +'<span style="flex-basis:100%"></span>'
     +[['monthly','📅 מלגות חודשיות'],['holiday','🎉 מלגות חגים']].concat(stipKollel==='חצות'?[['iz','🤝 יששכר־זבולון']]:[]).map(([k,l])=>`<button class="chip ${stipView===k?'on':''}" data-v="${k}">${l}</button>`).join('')
     // מאיר: "אני רוצה את זה כאן בלשונית אברכים, זה הכי ריאלי" — השיחה הקולית לכל האברכים מכאן
-    +'<button class="chip" id="stymbtn" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button>';
+    +'<button class="chip" id="stymbtn" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button>'
+    +'<button class="chip" id="stpaidbtn" title="מי שילם בנדרים פלוס מאז שעה מסוימת, בסכום מסוים (למשל 20 ₪ על מירון)">💳 מי שילם בנדרים פלוס</button>';
   chips.querySelectorAll('.chip[data-k]').forEach(c=>c.onclick=()=>{stipKollel=c.dataset.k;if(stipView==='iz'&&stipKollel!=='חצות')stipView='monthly';stipEdit=null;renderStip();});
   chips.querySelectorAll('.chip[data-v]').forEach(c=>c.onclick=()=>{stipView=c.dataset.v;stipEdit=null;renderStip();});
-  {const sb=document.getElementById('stymbtn');if(sb)sb.onclick=avYmOpen;}
+  {const sb=document.getElementById('stymbtn');if(sb)sb.onclick=avYmOpen;const pb=document.getElementById('stpaidbtn');if(pb)pb.onclick=()=>avPaidOpen();}
   if(stipView==='iz'){const keep=chips.innerHTML;await renderAvByAv();chips.innerHTML=keep;
     chips.querySelectorAll('.chip[data-k]').forEach(c=>c.onclick=()=>{stipKollel=c.dataset.k;if(stipKollel!=='חצות')stipView='monthly';renderStip();});
     chips.querySelectorAll('.chip[data-v]').forEach(c=>c.onclick=()=>{stipView=c.dataset.v;renderStip();});
-    {const sb=document.getElementById('stymbtn');if(sb)sb.onclick=avYmOpen;}return;}
+    {const sb=document.getElementById('stymbtn');if(sb)sb.onclick=avYmOpen;const pb=document.getElementById('stpaidbtn');if(pb)pb.onclick=()=>avPaidOpen();}return;}
   const rows=STIP.filter(r=>r.kollel===stipKollel&&r.kind===stipView);
   const qq=String(q||'').trim();
   // קבוצות לפי תקופה — חודשים מהחדש לישן; חגים לפי סדר הוספה (החדש למעלה)
