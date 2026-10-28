@@ -13678,6 +13678,7 @@ function campAddDonorForm(box,preset,opts){
 אפשרות להוסיף אצל כל אברך אם הוספתי לו עוד כסף… לכתוב הערות על כל תשלום…
 ובסוף סיכום סופי סה"כ לכל ייעוד. תמיד שהכולל חצות יהיה מופרד לגמרי מכולל הוראה." */
 let stipKollel='חצות', stipView='monthly', STIP=null, STIPLBL={}, STIPNAMES={}, stipOpen={}, stipEdit=null;
+let STSEL=new Set();   // מאיר: "כפתור לסמן למי לשלוח ולשלוח ביחד למי שסימנתי" — שמות האברכים שסומנו להודעה קולית
 // מאיר: "כאן למעלה שיהיה את כל הלשוניות של מלגות שיש למטה… ואוכל לבחור אחד
 // מהם ולראות את הרשימה בלי להצטרך לגלול" — התקופה שנבחרה לכל כולל/תצוגה
 let stipPer={};
@@ -13797,7 +13798,7 @@ async function renderStip(){
     const base=all.reduce((s,r)=>s+(+r.amount||0),0), ext=all.reduce((s,r)=>s+(+r.extra||0),0);
     return `<div class="stgrp" data-per="${esc(per)}">
       <div class="stgh stghd" data-per="${esc(per)}"><span class="stcar">${open?'▼':'◀'}</span><b>${esc(stipLabel(stipView,per))}</b><span class="stn">${all.length} אברכים</span><span class="sttot">${stMoney(base+ext)}</span></div>
-      ${open?`${isCash(per)?`<div class="sthead"><span class="stidx">#</span><span class="stname">האברך · פירוט המזומנים</span><span class="stamt">מזומנים</span><span class="stusdh">100$ לאשה</span><span class="stgoth">קיבל</span></div>`:''}${list.map((r,i)=>`<div class="strow${isCash(per)?' cash':''}" data-id="${r.id}"><span class="stidx">${i+1}</span>
+      ${open?`${isCash(per)?`<div class="sthead"><span class="stidx">#</span><span class="stname">האברך · פירוט המזומנים</span><span class="stamt">מזומנים</span><span class="stusdh">100$ לאשה</span><span class="stgoth">קיבל</span></div>`:''}${list.map((r,i)=>`<div class="strow${isCash(per)?' cash':''}${STSEL.has(r.name)?' stselon':''}" data-id="${r.id}"><span class="stidx"><input type="checkbox" class="stsel" data-nm="${esc(r.name)}" ${STSEL.has(r.name)?'checked':''} title="לסמן להודעה קולית"><small>${i+1}</small></span>
           <span class="stname"><a href="#" class="stav" data-nm="${esc(r.name)}" title="כל הפרטים של האברך">${esc(r.name)}</a>${(()=>{const a=(AVLIST||[]).find(x=>x.name===r.name),ph=a&&ymPhone(a.phone);return ph?` <small dir="ltr" title="הטלפון מכרטיס האברך">📞 ${esc(ph)}</small>`:'';})()}${r.details?`<small title="${esc(r.details)}">${esc(r.details)}</small>`:''}${r.note?`<small class="stnote">📝 ${esc(r.note)}</small>`:''}</span>
           <span class="stamt">${stMoney(tot(r))}${+r.extra?`<small>+${stMoney(r.extra)} תוספת</small>`:''}</span>
           ${isCash(per)?`<button class="stusd${+r.usd?' on':''}" data-id="${r.id}" title="${+r.usd?'קיבלה 100$ — לחץ לבטל':'לחץ לסמן 100$ לאשה'}">${+r.usd?'$'+Math.round(+r.usd):'—'}</button>`:''}
@@ -13829,7 +13830,13 @@ async function renderStip(){
       <input class="stq_note stwide" placeholder="📝 הערה — למשל: תוספת לחג, חתונה, שולם במזומן">
       <button class="btn sm stq_save">💾 שמור</button><button class="btn sm ghost ste_x">ביטול</button>
       <div class="hintxt" style="width:100%">אברך שכבר ברשימה של אותה תקופה: ב"תוספת" הסכום מתווסף למלגה שלו והשורה מראה "+תוספת"; ב"מלגה" הסכום מחליף את הסכום שלו.</div></div>`:'';
-  view.innerHTML=perBar+`<div class="stbar">
+  // מאיר: "אני רוצה כפתור לסמן למי לשלוח ולשלוח ביחד למי שסימנתי" — סימון בשורות, ושליחה לסומנים בלבד
+  const shownNames=[...new Set(shownPeriods.flatMap(p=>rows.filter(r=>r.period===p).map(r=>r.name)))];
+  const selBar=`<div class="mlfrow stselbar" style="margin:0 2px 8px;align-items:center">
+      <button class="btn sm" id="stsel_send" style="background:#2d2a6e;color:#fff" ${STSEL.size?'':'disabled'}>📞 שלח הודעה קולית ל-<b id="stsel_n">${STSEL.size}</b> שסומנו</button>
+      <button class="btn sm ghost" id="stsel_all">☑️ סמן את כל הרשימה (${shownNames.length})</button><button class="btn sm ghost" id="stsel_none">נקה סימון</button>
+      <span class="hintxt" style="margin:0">מסמנים ✔ ליד השמות, ואז שולחים רק להם.</span></div>`;
+  view.innerHTML=perBar+selBar+`<div class="stbar">
       <button class="btn" id="stquick" style="flex-basis:100%">➕ הוסף אברך / תוספת לרשימה</button>
       ${quick}
       <label class="btn sm ghost" style="cursor:pointer">📥 העלה דוח חודשי (PDF)<input type="file" id="stpdf" accept="application/pdf,.pdf" hidden></label>
@@ -13842,6 +13849,16 @@ async function renderStip(){
       ${(()=>{const u=rows.filter(r=>+r.usd);return u.length?`<div class="r"><span>💵 100$ לאשה <small style="color:var(--muted)">${u.length} אברכים</small></span><b>$${u.reduce((s,r)=>s+(+r.usd||0),0).toLocaleString('en-US')}</b></div>`:'';})()}
       <div class="r tot"><span>סה"כ</span><span>${stMoney(grand)}${rows.some(r=>+r.usd)?` + $${rows.reduce((s,r)=>s+(+r.usd||0),0).toLocaleString('en-US')}`:''}</span></div></div>`:''}`;
   view.querySelectorAll('.stav').forEach(a=>a.onclick=e=>{e.preventDefault();e.stopPropagation();avCard(a.dataset.nm);});
+  // סימון לשליחה — בלי רינדור מחדש (שלא יקפוץ המסך); המונה והכפתור מתעדכנים
+  const selSync=()=>{const n=document.getElementById('stsel_n'),b=document.getElementById('stsel_send');if(n)n.textContent=STSEL.size;if(b)b.disabled=!STSEL.size;};
+  view.querySelectorAll('.stsel').forEach(c=>{c.onclick=e=>e.stopPropagation();c.onchange=()=>{if(c.checked)STSEL.add(c.dataset.nm);else STSEL.delete(c.dataset.nm);c.closest('.strow').classList.toggle('stselon',c.checked);selSync();};});
+  {const a=document.getElementById('stsel_all');if(a)a.onclick=()=>{shownNames.forEach(n=>STSEL.add(n));renderStip();};
+   const z=document.getElementById('stsel_none');if(z)z.onclick=()=>{STSEL.clear();renderStip();};
+   const s=document.getElementById('stsel_send');if(s)s.onclick=async()=>{if(!STSEL.size)return;if(!(AVLIST||[]).length)await loadAvList();
+     const ok=[],noph=[],nocard=[];
+     STSEL.forEach(nm=>{const a=(AVLIST||[]).find(x=>x.name===nm);if(!a||!a.aid)nocard.push(nm);else if(!ymPhone(a.phone))noph.push(nm);else ok.push(a.aid);});
+     if(noph.length||nocard.length)await uiAlert((ok.length?'יישלח ל-'+ok.length+' אברכים.\n':'')+(noph.length?'\nבלי טלפון תקין ('+noph.length+'): '+noph.join(', '):'')+(nocard.length?'\nלא ברשימת האברכים ('+nocard.length+'): '+nocard.join(', '):''));
+     if(!ok.length)return;AVYM.sel=new Set(ok);avYmOpen();};}
   view.querySelectorAll('.stghd').forEach(h=>h.onclick=()=>{const k=stipKollel+'|'+stipView+'|'+h.dataset.per;stipOpen[k]=!stipOpen[k];renderStip();});
   view.querySelectorAll('.stpc[data-per]').forEach(b=>b.onclick=()=>{stipPer[selKey]=b.dataset.per;stipEdit=null;renderStip();window.scrollTo({top:0,behavior:'smooth'});});
   view.querySelectorAll('.stpc[data-fam]').forEach(b=>b.onclick=()=>{stipFamSel[selKey]=b.dataset.fam;stipPer[selKey]=undefined;stipEdit=null;renderStip();window.scrollTo({top:0,behavior:'smooth'});});
