@@ -2243,6 +2243,7 @@ function mkOpen(c){
       </div>`:''}
       <div style="display:flex;gap:10px;margin-top:16px;align-items:center;flex-wrap:wrap">
         <button class="mkbtn gh" id="mkmsg1"${c.phone||mkHasMail(c)?'':' disabled'}>💬 שליחת הודעה / ✉️ מייל</button>
+        <button class="mkbtn" id="mksub2" title="לקבוע ידנית את תאריך ההתחלה ותאריך הסיום של המנוי — כמו באתר המקווה">📅 תאריכי מנוי ידני (התחלה / סוף)</button>
         <button class="mkbtn gh" id="mkrenew" title="חידוש רישיון / חידוש תוקף מנוי / הוספת יתרת פעימות — כמו באתר המקווה">🔁 חידוש אוטומטי</button>
         <span id="mksent" data-id="${esc(c.id)}" style="font-weight:700;color:var(--muted)">${mkSentTxt(c)}</span></div>
       <div class="mksec" style="margin-top:18px">📜 היסטוריה <small>הודעות ששלחנו לו והתוצאות, והעברות קבוצה — רק של המקווה</small></div>
@@ -2256,6 +2257,7 @@ function mkOpen(c){
     document.getElementById('mkprice').onclick=()=>mkPriceEdit(c);
     document.getElementById('mkbal').onclick=()=>mkBalanceEdit(c);
     const _ms=document.getElementById('mksub'); if(_ms)_ms.onclick=()=>mkSubEdit(c);
+    const _ms2=document.getElementById('mksub2'); if(_ms2)_ms2.onclick=()=>mkSubEdit(c);
     document.getElementById('mkweb').onclick=e=>{e.preventDefault();mkOpenWeb(c);};
     document.getElementById('mkwebset').onclick=e=>{e.preventDefault();mkOpenWeb(c,true);};
     document.getElementById('mktwl').onclick=()=>mkTowelEdit(c);
