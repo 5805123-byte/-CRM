@@ -33066,6 +33066,22 @@ def serve():
         print('  shared phones fix error:', e)
     try:
         con = db()
+        # מאיר: "הודעה קולית לכל האברכים של הכולל חצות" — האברכים שבדוח המלגות החודשי האחרון של כולל חצות
+        # נכנסים לרשימת האברכים (לא רק מי שיש לו זבולון), כדי שיהיה להם כרטיס, טלפון ושיחה
+        n_add = 0
+        last_p = con.execute("SELECT MAX(period) p FROM stipends WHERE kollel='חצות' AND kind='monthly' AND period LIKE '____-__'").fetchone()['p']
+        if last_p:
+            have = {re.sub(r'\s+', ' ', (r['name'] or '')).strip() for r in con.execute("SELECT name FROM avreichim")}
+            for r in con.execute("SELECT DISTINCT TRIM(name) nm FROM stipends WHERE kollel='חצות' AND kind='monthly' AND period=? AND COALESCE(TRIM(name),'')<>''", (last_p,)).fetchall():
+                nm = re.sub(r'\s+', ' ', r['nm']).strip()
+                if nm in have or not _is_avreich(nm) or len(nm.split(' ')) < 2:
+                    continue
+                l, f = _split_av(nm)
+                con.execute("INSERT OR IGNORE INTO avreichim(name,last,first,note,started,created) VALUES(?,?,?,'',?,?)", (nm, l, f, '', today_iso()))
+                have.add(nm); n_add += 1
+            if n_add:
+                con.commit()
+                print('  אברכים מרשימת המלגות (%s) שנוספו לרשימת הכולל: %d' % (last_p, n_add))
         got = av_phones_from_nd(con)
         con.close()
         if got:

@@ -13736,6 +13736,8 @@ async function avCard(name){
 }
 async function renderStip(){
   if(!STIP){chips.innerHTML='';view.innerHTML='<div class="cnt">טוען מלגות…</div>';await loadStip();}
+  // מאיר: "איפה מופיע פה הטלפונים" — הטלפון של כל אברך (מכרטיס האברך) ליד השם
+  if(!(AVLIST||[]).length)await loadAvList();
   const has=k=>STIP.some(r=>r.kollel===k);
   chips.innerHTML=STIP_KOL.filter(([k])=>k!=='חיים טובים'||has(k)).map(([k,l])=>`<button class="chip ${stipKollel===k?'on':''}" data-k="${k}">${l}</button>`).join('')
     +'<span style="flex-basis:100%"></span>'
@@ -13790,7 +13792,7 @@ async function renderStip(){
     return `<div class="stgrp" data-per="${esc(per)}">
       <div class="stgh stghd" data-per="${esc(per)}"><span class="stcar">${open?'▼':'◀'}</span><b>${esc(stipLabel(stipView,per))}</b><span class="stn">${all.length} אברכים</span><span class="sttot">${stMoney(base+ext)}</span></div>
       ${open?`${isCash(per)?`<div class="sthead"><span class="stidx">#</span><span class="stname">האברך · פירוט המזומנים</span><span class="stamt">מזומנים</span><span class="stusdh">100$ לאשה</span><span class="stgoth">קיבל</span></div>`:''}${list.map((r,i)=>`<div class="strow${isCash(per)?' cash':''}" data-id="${r.id}"><span class="stidx">${i+1}</span>
-          <span class="stname"><a href="#" class="stav" data-nm="${esc(r.name)}" title="כל הפרטים של האברך">${esc(r.name)}</a>${r.details?`<small title="${esc(r.details)}">${esc(r.details)}</small>`:''}${r.note?`<small class="stnote">📝 ${esc(r.note)}</small>`:''}</span>
+          <span class="stname"><a href="#" class="stav" data-nm="${esc(r.name)}" title="כל הפרטים של האברך">${esc(r.name)}</a>${(()=>{const a=(AVLIST||[]).find(x=>x.name===r.name),ph=a&&ymPhone(a.phone);return ph?` <small dir="ltr" title="הטלפון מכרטיס האברך">📞 ${esc(ph)}</small>`:'';})()}${r.details?`<small title="${esc(r.details)}">${esc(r.details)}</small>`:''}${r.note?`<small class="stnote">📝 ${esc(r.note)}</small>`:''}</span>
           <span class="stamt">${stMoney(tot(r))}${+r.extra?`<small>+${stMoney(r.extra)} תוספת</small>`:''}</span>
           ${isCash(per)?`<button class="stusd${+r.usd?' on':''}" data-id="${r.id}" title="${+r.usd?'קיבלה 100$ — לחץ לבטל':'לחץ לסמן 100$ לאשה'}">${+r.usd?'$'+Math.round(+r.usd):'—'}</button>`:''}
           <button class="stgot${+r.got?' on':''}" data-id="${r.id}" title="${+r.got?'קיבל ✓ — לחץ לבטל':'לחץ לסמן שקיבל'}">✓</button>
