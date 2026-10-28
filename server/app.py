@@ -33096,6 +33096,28 @@ def serve():
         print('  avreich phones from nedarim error:', e)
     load_mail_cfg()
     import threading
+    # מאיר (28.10.2026, מירון): "מה עם כל אלה שלא מסומן עליהם כלום?" — השרת עלה מחדש באמצע משלוח (כל דחיפה
+    # מפעילה מחדש), והשיחות שנשארו בתור לא יצאו. עכשיו משלוח שנקטע ממשיך לבד מהמקום שבו נעצר
+    def _ym_resume():
+        time.sleep(20)
+        try:
+            con = db()
+            try:
+                jobs = [r['id'] for r in con.execute(
+                    "SELECT j.id FROM ym_job j WHERE j.status IN ('queued','sending') "
+                    "AND EXISTS (SELECT 1 FROM ym_msg m WHERE m.job=j.id AND m.status='queued') ORDER BY j.id")]
+                for jid in jobs:
+                    con.execute("UPDATE ym_job SET status='queued' WHERE id=?", (jid,))
+                con.commit()
+            finally:
+                con.close()
+            if jobs:
+                print('  ימות: משלוחים שנקטעו וממשיכים: %s' % ', '.join(str(j) for j in jobs))
+            for jid in jobs:
+                ym_worker(jid)
+        except Exception as e:
+            print('  ym resume error:', e)
+    threading.Thread(target=_ym_resume, daemon=True).start()
     threading.Thread(target=_intake_daily_loop, daemon=True).start()
     threading.Thread(target=_authnet_loop, daemon=True).start()
     threading.Thread(target=_bq_loop, daemon=True).start()
