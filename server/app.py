@@ -22861,9 +22861,25 @@ class H(BaseHTTPRequestHandler):
                     if v is not None:
                         try: bal = int(round(float(v))); break
                         except (TypeError, ValueError): pass
-                return self._send(200, {'ok': True, 'ms': int((time.time() - t0) * 1000), 'balance': bal})
+                # מאיר: "פה אני רוצה לראות גם תעודת זהות שלו ואימייל שלו" — חיים מהמקווה, לא נשמרים אצלנו
+                return self._send(200, {'ok': True, 'ms': int((time.time() - t0) * 1000), 'balance': bal,
+                                        'email': str(cl.get('email') or '').strip() if isinstance(cl, dict) else '',
+                                        'ident': _mk.ident(cl)})
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
+        m = re.match(r'/api/mikveh/activity/([0-9a-fA-F-]{36})$', self.path.split('?')[0])
+        if m:
+            # 🗓️ מאיר: "ואת כל הפעילות שלו כמו שרואים באתר של המקווה" — יומן הפעילות של הלקוח, שנה אחורה
+            import mikveh as _mk
+            if 'fresh=1' in self.path:
+                _mk._ATT['fail_at'] = 0
+            try:
+                rows = _mk.activity(m.group(1))
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            if rows is None:
+                return self._send(200, {'ok': False, 'error': 'יומן הפעילות של המקווה לא ענה'})
+            return self._send(200, {'ok': True, 'rows': rows[:400], 'total': len(rows)})
         if self.path.split('?')[0] == '/api/mikveh/get':
             # רק קריאה (GET), רק למנהל — כדי לבדוק נתיבים של המקווה מהשרת, בלי לשנות שם כלום
             import mikveh as _mk

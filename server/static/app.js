@@ -2246,7 +2246,12 @@ function mkOpen(c){
   const G={}; MK.groups.forEach(x=>G[x.id]=x);
   // היתרה החיה מהמקווה (לא "האחרונה" מהרשימה) — מתעדכנת בקוביה ברגע שמגיעה
   api('GET','/api/mikveh/prefetch?id='+encodeURIComponent(c.id)).then(r=>{
-    if(!r||!r.ok||r.balance==null)return; c.balance=r.balance;
+    if(!r||!r.ok)return;
+    // מאיר: "פה אני רוצה לראות גם תעודת זהות שלו ואימייל שלו" — מהמקווה, חי; הת.ז. נחשפת בלחיצה ולא נשמרת
+    if(r.email){c.email=r.email;const m=document.getElementById('mkmail');if(m){m.textContent=r.email;m.style.display='';}}
+    const idb=document.getElementById('mkident');
+    if(idb){if(r.ident){idb.style.display='';idb.textContent='🪪 ת.ז. ••••'+String(r.ident).slice(-3);idb.onclick=e=>{e.preventDefault();idb.textContent='🪪 ת.ז. '+r.ident;};}else idb.style.display='none';}
+    if(r.balance==null)return; c.balance=r.balance;
     const el=document.getElementById('mkbal'); if(!el)return;
     el.classList.toggle('bad',r.balance<0);
     el.querySelector('span').textContent=(r.balance>0?'💳 יתרה / זיכוי':'💰 יתרה')+' ✎';
@@ -2260,7 +2265,7 @@ function mkOpen(c){
     const busy=state==='busy';
     rs.innerHTML=`<button class="x" id="rx">✕</button>
       <div class="mkhead"><div class="mkav lg" style="background:${esc(mkColor(g))}">${esc(mkInit(c))}</div>
-        <div><h2><a href="#" id="mkweb" class="mkweb" title="לפתוח את הכרטיס שלו באתר המקווה">${esc(mkName(c))} <small>↗</small></a></h2><div class="mksub">${c.phone?`<span dir="ltr"${mkPhoneOk(c.phone)?'':' style="color:#c0392b" title="המספר לא תקין"'}>${mkPhoneOk(c.phone)?'':'⚠️ '}${esc(c.phone)}</span>`:'אין טלפון'}<span>#${esc(c.code||'')}</span><a href="#" id="mkwebset" title="לשנות את הקישור לאתר המקווה" style="text-decoration:none">⚙️</a>
+        <div><h2><a href="#" id="mkweb" class="mkweb" title="לפתוח את הכרטיס שלו באתר המקווה">${esc(mkName(c))} <small>↗</small></a></h2><div class="mksub">${c.phone?`<span dir="ltr"${mkPhoneOk(c.phone)?'':' style="color:#c0392b" title="המספר לא תקין"'}>${mkPhoneOk(c.phone)?'':'⚠️ '}${esc(c.phone)}</span>`:'אין טלפון'}<span>#${esc(c.code||'')}</span><span id="mkmail" dir="ltr" style="${c.email?'':'display:none'}">${esc(c.email||'')}</span><a href="#" id="mkident" title="תעודת זהות (מהמקווה) — לחיצה מראה את המספר המלא" style="text-decoration:none;display:${c.ident?'':'none'}">🪪 ת.ז. ${c.ident?'••••'+esc(String(c.ident).slice(-3)):''}</a><a href="#" id="mkwebset" title="לשנות את הקישור לאתר המקווה" style="text-decoration:none">⚙️</a>
           <button class="mkbtn ${c.phone&&!mkPhoneOk(c.phone)?'':'gh'}" id="mkphed" style="padding:6px 12px;font-size:.9rem">📞 ${c.phone&&!mkPhoneOk(c.phone)?'לתקן את הטלפון':'שינוי טלפון'}</button>
           ${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
       <div class="mktiles">
@@ -2293,8 +2298,12 @@ function mkOpen(c){
       <div class="mksec" style="margin-top:18px">📜 היסטוריה <small>הודעות ששלחנו לו והתוצאות, והעברות קבוצה — רק של המקווה</small></div>
       <div id="mkhist" data-id="${esc(c.id)}">${mkHistHTML(c.id)}</div>
       <div class="mksec" style="margin-top:18px">💳 תשלומים <small>מה ששילם במקווה — במכשיר ובמערכת המקווה</small></div>
-      <div id="mkpay" data-id="${esc(c.id)}">${mkPayHTML(c.id)}</div>`;
+      <div id="mkpay" data-id="${esc(c.id)}">${mkPayHTML(c.id)}</div>
+      <div class="mksec" style="margin-top:18px">🗓️ פעילות במקווה <small>כניסות, תשלומים וכישלונות — כמו "פעילויות" באתר המקווה, שנה אחורה</small></div>
+      <div id="mkact" data-id="${esc(c.id)}">${MKACT[c.id]?mkActHTML(c.id):`<button class="btn sm" id="mkactload">📂 להציג את כל הפעילות שלו</button>`}</div>`;
     mkHistLoad(c.id); mkPayLoad(c.id);
+    const _al=document.getElementById('mkactload'); if(_al)_al.onclick=()=>mkActLoad(c.id);
+    if(c.ident){const idb=document.getElementById('mkident');if(idb)idb.onclick=e=>{e.preventDefault();idb.textContent='🪪 ת.ז. '+c.ident;};}
     document.getElementById('rx').onclick=()=>{if(!busy)remov.classList.remove('show');};
     document.getElementById('mkmsg1').onclick=()=>mkNotify(c,'free');
     document.getElementById('mkrenew').onclick=()=>mkRenewOpen(c);
@@ -2563,6 +2572,26 @@ async function mkPayLoad(cid,fresh){if(!fresh&&MKPAY[cid]&&Date.now()-MKPAY[cid]
   MKPAY[cid]=r&&r.ok?r:{ok:false,error:(r&&r.error)||'לא נטען'};MKPAY[cid]._at=Date.now();
   const el=document.getElementById('mkpay');if(el&&el.dataset.id===cid)el.innerHTML=mkPayHTML(cid);
   const pt=document.getElementById('mkpaid');if(pt&&pt.dataset.id===cid)pt.querySelector('b').innerHTML=mkPaidTxt(cid);}
+// 🗓️ מאיר: "ואת כל הפעילות שלו כמו שרואים באתר של המקווה" — יומן הפעילות של הלקוח, נטען בלחיצה (המקווה איטי)
+let MKACT={};
+async function mkActLoad(cid,fresh){
+  const el=document.getElementById('mkact'); if(el&&el.dataset.id===cid)el.innerHTML='<div class="mksub">⏳ טוען את היומן מהמקווה…</div>';
+  let r=null;try{r=await api('GET','/api/mikveh/activity/'+encodeURIComponent(cid)+(fresh?'?fresh=1':''));}catch(e){}
+  MKACT[cid]=r&&r.ok?r:{ok:false,error:(r&&r.error)||'לא נטען'};
+  const el2=document.getElementById('mkact'); if(el2&&el2.dataset.id===cid)el2.innerHTML=mkActHTML(cid);
+  const b=document.getElementById('mkactagain'); if(b)b.onclick=()=>mkActLoad(cid,true);}
+function mkActHTML(cid){const A=MKACT[cid];if(!A)return '';
+  if(!A.ok)return `<div class="mksub">⚠️ ${esc(A.error||'')}</div><button class="btn sm" id="mkactagain" style="margin-top:6px">🔄 לנסות שוב</button>`;
+  const KN={pay:'💳 תשלום',entry:'🚪 כניסה',entry_fail:'⛔ כניסה שנדחתה',other:'📝'};
+  const XL={balancebefore:'יתרה לפני',balanceafter:'יתרה אחרי',cash:'מזומן',credit:'אשראי',pulse:'פעימות',surplus:'עודף',change:'עודף'};
+  const xl=k=>{const n=k.toLowerCase().replace(/[_\s]/g,'');for(const p in XL)if(n.indexOf(p)>=0)return XL[p];return k;};
+  const d=s=>{const [dd,tt]=String(s||'').split(' ');return (dd?dd.slice(8,10)+'/'+dd.slice(5,7)+'/'+dd.slice(2,4):'')+(tt?' '+tt:'');};
+  if(!(A.rows||[]).length)return '<div class="mksub">אין לו פעילות ביומן המקווה בשנה האחרונה.</div><button class="btn sm ghost" id="mkactagain" style="margin-top:6px">🔄 לבדוק שוב</button>';
+  return `<div class="mksub" style="margin:4px 2px 8px">${A.total} פעולות בשנה האחרונה${A.total>(A.rows||[]).length?' (מוצגות '+A.rows.length+' האחרונות)':''}</div>
+    <div class="mklist">${A.rows.map(x=>`<div class="mkrow schrow ${x.kind==='entry_fail'?'bad':''}" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(d(x.at))} · ${esc(KN[x.kind]||x.kind)}</b>
+      <div class="mksub">${esc(x.text||'')}${x.method?' · '+esc(x.method):''}${Object.keys(x.extra||{}).filter(k=>x.extra[k]).map(k=>' · '+esc(xl(k))+' '+esc(String(x.extra[k]))).join('')}</div></div>
+      <b style="${x.kind==='entry_fail'?'color:#c0392b':''}">${x.amount!=null&&x.amount!==0?esc(mkNis(x.amount)):''}</b></div>`).join('')}</div>
+    <button class="btn sm ghost" id="mkactagain">🔄 לרענן מהמקווה</button>`;}
 // 💳 מה ששילם במקווה עצמו (לא נדרים פלוס) — סכום 30 הימים האחרונים והתשלום האחרון
 function mkPaidTxt(cid){const P=MKPAY[cid];if(!P)return '⏳';if(!P.ok)return '—';
   const pd=(P.tx||[]).filter(x=>!x.failed&&(+x.amount||0)>0), t=pd[0];

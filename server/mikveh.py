@@ -225,6 +225,76 @@ def slim(c):
 
 _CL = {'at': 0.0, 'rows': None}
 
+# מאיר: "פה אני רוצה לראות גם תעודת זהות שלו ואימייל שלו" — תעודת הזהות נקראת מהמקווה כשפותחים את
+# הכרטיס, ולא נשמרת אצלנו. קודם לפי שם שדה; אם אין — ערך של 9 ספרות עם ספרת ביקורת תקינה (לא טלפון/קוד)
+_IDENT_KEY = re.compile(r'id_?num|identity|identif|^tz$|teudat|personal_?id|national|citizen|passport|^ssn$|idcard|id_?card', re.I)
+
+
+def _il_id_ok(d):
+    d = re.sub(r'\D', '', str(d or ''))
+    if len(d) not in (8, 9):
+        return False
+    d = d.zfill(9)
+    t = 0
+    for i, ch in enumerate(d):
+        n = int(ch) * (1 if i % 2 == 0 else 2)
+        t += n if n < 10 else n - 9
+    return t % 10 == 0
+
+
+def ident(c):
+    """תעודת הזהות כמו שהיא רשומה במקווה (מחרוזת), או ''."""
+    if not isinstance(c, dict):
+        return ''
+    skip = {str(c.get(k) or '') for k in ('id', 'phone', 'clientCode', 'phone2', 'mobile')}
+    for k, v in c.items():
+        if isinstance(v, (str, int)) and not isinstance(v, bool) and _IDENT_KEY.search(k):
+            sv = str(v).strip()
+            if re.fullmatch(r'\d{5,12}', sv) and sv not in skip:
+                return sv
+    for k, v in c.items():
+        if k in ('id', 'phone', 'clientCode', 'phone2', 'mobile', 'balance', 'lastBalance') or isinstance(v, bool):
+            continue
+        if isinstance(v, (str, int)):
+            sv = str(v).strip()
+            if re.fullmatch(r'\d{8,9}', sv) and sv not in skip and not sv.startswith('05') and _il_id_ok(sv):
+                return sv
+    return ''
+
+
+def activity(cid, days=365):
+    """כל הפעילות של הלקוח ביומן המקווה (כניסות, תשלומים, כישלונות) — כמו המסך "פעילויות" באתר שלהם.
+    שורה: {'at','kind','text','amount','method','extra':{שדה מספרי: ערך}}; None אם היומן לא ענה."""
+    t = datetime.date.today()
+    raw = attendance((t - datetime.timedelta(days=days)).isoformat(), (t + datetime.timedelta(days=1)).isoformat(), cid)
+    if raw is None:
+        return None
+    rows = [(att_norm(r), r) for r in raw]
+    if any(n['cid'] for n, _ in rows):
+        rows = [(n, r) for n, r in rows if str(n['cid'] or '') == str(cid)]
+    else:
+        try:
+            c0 = client(cid, max_age=120)
+            nk = lambda x: re.sub(r'\s+', '', str(x or ''))
+            full = {nk((c0.get('firstName') or '') + (c0.get('lastName') or '')), nk((c0.get('lastName') or '') + (c0.get('firstName') or ''))}
+            rows = [(n, r) for n, r in rows if nk(n['name']) in full]
+        except Exception:
+            rows = []
+    out = []
+    for n, r in rows:
+        if not n['at']:
+            continue
+        extra = {}
+        for k, v in r.items():
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and re.search(r'balance|surplus|change|cash|credit|pulse|paid|amount|sum|total|price', k, re.I):
+                extra[k] = v
+        out.append({'at': n['at'].strftime('%Y-%m-%d %H:%M'), 'kind': n['kind'], 'text': n['text'][:120], 'amount': n['amount'],
+                    'method': n['method'][:40], 'extra': extra})
+    out.sort(key=lambda x: x['at'], reverse=True)
+    return out
+
+
+
 
 def clients(fresh=False):
     """כל הלקוחות (GET /Client). זיכרון של 2 דקות בלבד — לא נשמר בבסיס הנתונים."""
