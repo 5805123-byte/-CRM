@@ -7533,6 +7533,11 @@ def ensure_schema():
         #    שם היוצא והתאריך, בדיוק כמו כפתור "יצא מהכולל"
         # (עליס שמואל דוד חזר לכולל מא' תשרי תשפ"ז — הוצא מכאן, אחרת היה "יוצא" שוב בכל עלייה)
         _out = ['קעניג יעקב מנחם', 'הניג פנחס']
+        # מאיר (28.10.2026): "תוציא את חיים גוטליב מכל הרשימה של האברכים… הוא יצא מהכולל, אז תוציא אותו גם
+        # מהיששכר זבולון" — יורד מהרשימה, והמקום אצל הזבולון שלו נפתח (כמו כפתור "יצא מהכולל")
+        _gc = con.execute("SELECT name FROM avreichim WHERE name LIKE '%גוטליב%' AND name LIKE '%חיים%'").fetchall()
+        if len(_gc) == 1:
+            _out.append(_gc[0]['name'])
         _left = 0
         for anm in _out:
             r = con.execute("SELECT id,ended FROM avreichim WHERE name=?", (anm,)).fetchone()
