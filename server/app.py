@@ -17955,6 +17955,41 @@ def mk_req_sync(days=None):
     return r
 
 
+def _mk_goldman_once():
+    """מאיר (כ"ח תשרי / 28.10.2026): "גולדמן יעקב שילם 70 על מנוי חודשי… ברעיון זה מתחיל מראש חודש תמיד,
+    ואצלו נתתי אישור שמהיום שלושים יום" — לקוח #1744: תחילת המנוי 28.10.2026, סוף 27.11.2026, במקווה עצמו.
+    חד־פעמי; אם המקווה לא ענה — מנסים שוב כמה פעמים, ואם לא הצליח, שוב בהפעלה הבאה."""
+    time.sleep(60)
+    for _ in range(6):
+        try:
+            con = db()
+            try:
+                if con.execute("SELECT 1 FROM seed_flags WHERE name='goldman_1744_subdates_v1'").fetchone():
+                    return
+            finally:
+                con.close()
+            import mikveh as _mk
+            c = next((x for x in _mk.clients(fresh=True) if str(x.get('clientCode') or '') == '1744'
+                      and re.sub(r'\D', '', str(x.get('phone') or '')).endswith('504100328')), None)
+            if not c:
+                print('  goldman 1744: לא נמצא במקווה')
+                return
+            res = _mk.set_sub_dates(str(c.get('id')), end='2026-11-27', start='2026-10-28')
+            con = db()
+            try:
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (str(c.get('id')), now_iso(), 'sub', '📅 תחילת המנוי: 2026-10-28 · מנוי עד: %s · אישור מיוחד של מאיר — שלושים יום מהיום (שילם 70₪)' % res['sub_end']))
+                con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES('goldman_1744_subdates_v1')")
+                con.commit()
+            finally:
+                con.close()
+            print('  goldman 1744: המנוי נקבע 28.10.2026 → %s' % res['sub_end'])
+            return
+        except Exception as e:
+            print('  goldman 1744 subdates error:', e)
+            time.sleep(600)
+
+
 def _mk_req_loop():
     time.sleep(90)
     while True:
@@ -32816,6 +32851,7 @@ def serve():
     threading.Thread(target=_ym_retry_loop, daemon=True).start()
     threading.Thread(target=_ym_sched_loop, daemon=True).start()
     threading.Thread(target=_mk_req_loop, daemon=True).start()
+    threading.Thread(target=_mk_goldman_once, daemon=True).start()
     threading.Thread(target=_nd_err_loop, daemon=True).start()
     threading.Thread(target=_push_loop, daemon=True).start()
     threading.Thread(target=_weekly_report_loop, daemon=True).start()
