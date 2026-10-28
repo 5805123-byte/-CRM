@@ -812,6 +812,9 @@ def ensure_schema():
         except Exception: pass
     try: con.execute("ALTER TABLE parnes ADD COLUMN night_date TEXT")
     except Exception: pass
+    # מאיר: "איפה אני עושה פה שמור?" — עריכות התעודה (שם/בקשה, גודל, מודגש לכל שורה) נשמרות על הלילה עצמו
+    try: con.execute("ALTER TABLE parnes ADD COLUMN cert_ovr TEXT")
+    except Exception: pass
     # 🤝 חלוקה בסכום קבוע (מאיר, 27.10.2026: "אירני משלם מהכרטיס שלו בשביל בליסקו… 720 במקום 180"):
     # fixed = כמה מכל חיוב הולך לשותף (0 = לפי אחוז); on_amount = רק כשהחיוב הוא בדיוק הסכום הזה (0 = כל חיוב)
     for _c in ("fixed REAL DEFAULT 0", "on_amount REAL DEFAULT 0"):
@@ -19705,6 +19708,18 @@ class H(BaseHTTPRequestHandler):
             return
         if self.path.split('?')[0] == '/iz-slips':
             return self._send(200, open(os.path.join(STATIC, 'izslips.html'), 'rb').read(), 'text/html')
+        m = re.match(r'/api/parnes/(\d+)/cert$', self.path.split('?')[0])
+        if m:
+            # התעודה טוענת את הטקסט והעריכות השמורות של הלילה (מאיר: "איפה אני עושה פה שמור?")
+            con = db()
+            try:
+                r = con.execute("SELECT id,dedication,cert_ovr,date_text,hyear,kind FROM parnes WHERE id=?", (int(m.group(1)),)).fetchone()
+            finally:
+                con.close()
+            if not r:
+                return self._send(404, {'ok': False})
+            return self._send(200, {'ok': True, 'id': r['id'], 'names': r['dedication'] or '', 'cert_ovr': r['cert_ovr'] or '',
+                                    'date_text': r['date_text'] or '', 'hyear': r['hyear'] or '', 'kind': r['kind'] or 'parnes'})
         if self.path.split('?')[0] == '/parnes-cert':
             return self._send(200, open(os.path.join(STATIC, 'parnes-cert.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/reconcile':
@@ -23516,7 +23531,7 @@ class H(BaseHTTPRequestHandler):
             b = self._body(); pid = int(m.group(1))
             con = db()
             sets=[];vals=[]
-            for k in ('day','month','date_text','amount','dedication','kind','status','photo','paid','night_date','hyear','method','currency'):
+            for k in ('day','month','date_text','amount','dedication','kind','status','photo','paid','night_date','hyear','method','currency','cert_ovr'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             # אם התאריך העברי השתנה — חשב מחדש את תאריך הלילה הלועזי (לסימון הירח), לפי השנה העברית
             if 'date_text' in b and 'night_date' not in b:
