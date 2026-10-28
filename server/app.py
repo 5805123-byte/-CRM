@@ -1075,6 +1075,11 @@ def ensure_schema():
     # מאיר: "שאל תבלבל ואל תערב את נתן תתן עם הקהילה" — לאיזו קופה שייכת ההודעה ('' = הקהילה, 'natan')
     try: con.execute("ALTER TABLE ym_msg ADD COLUMN fund TEXT")
     except Exception: pass
+    # 🚌 מאיר: "נסיעה למירון… להרשמה שיקיש 1… הוראת קבע / כרטיס אחר / מזומן / הודעה" — הודעה של אירוע עם הרשמה:
+    # event = שם האירוע; reg = איך נרשם (keva/card/cash/msg), reg_at, reg_note
+    for col in ('event', 'reg', 'reg_at', 'reg_note'):
+        try: con.execute("ALTER TABLE ym_msg ADD COLUMN %s TEXT" % col)
+        except Exception: pass
     # מאיר: "מרדכי ליפשיץ ועדן בידני ואהוב האופק — תורמים של הכולל, והם בנדרים פלוס… לסנכרן את
     # התרומות שלהם בשמות התורמים". קישור משלם בנדרים פלוס (טלפון / הו"ק / שם) לכרטיס תורם;
     # התשלומים שלו נכנסים כתרומות ב-₪ בכרטיס (tid='ND'+מזהה העסקה), ולא נספרים בקהילה
@@ -17800,18 +17805,21 @@ def ym_recipients(con, recs):
                 seen.add(ph)
                 out.append({'k': 'x', 'id': 0, 'name': (r.get('name') or '').strip()[:60], 'phone': ph, 'amount': ym_amt(r.get('amount')), 'link': ym_link_ok(r.get('link')), 'for': str(r.get('for') or '')[:120]})
             continue
-        k = 'd' if (r.get('k') == 'd') else 'm'
+        k = 'd' if (r.get('k') == 'd') else ('a' if r.get('k') == 'a' else 'm')
         try:
             rid = int(r.get('id'))
         except (TypeError, ValueError):
             continue
         if k == 'm':
             row = con.execute("SELECT id,last,first,phone FROM members WHERE id=?", (rid,)).fetchone()
+        elif k == 'a':
+            # מאיר: "הודעה קולית לכל האברכים של הכולל חצות עם השם שלהם" — מרשימת האברכים
+            row = con.execute("SELECT id,last,first,phone,name FROM avreichim WHERE id=?", (rid,)).fetchone()
         else:
             row = con.execute("SELECT id,last,first,phone FROM donors WHERE id=?", (rid,)).fetchone()
         if not row:
             continue
-        nm = ((row['first'] or '') + ' ' + (row['last'] or '')).strip()
+        nm = ((row['first'] or '') + ' ' + (row['last'] or '')).strip() or (row['name'] if k == 'a' else '')
         ph = ''
         for part in re.split(r'[,;/|]|\s{2,}', str(row['phone'] or '')):
             ph = _ym.norm_phone(part)
@@ -18620,6 +18628,11 @@ def ym_worker(job_id, wait=True):
                         elif m['kind'] == 'd':
                             con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,?,?,'')",
                                         (m['ref_id'], today_iso(), 'ימות המשיח', lbl + ': ' + (m['text'] or '')[:300]))
+                        elif m['kind'] == 'a':
+                            av_ = con.execute("SELECT name FROM avreichim WHERE id=?", (m['ref_id'],)).fetchone()
+                            if av_:
+                                con.execute("INSERT INTO avreich_log(avreich,donor_id,date,hdate,text,at) VALUES(?,NULL,?,'',?,?)",
+                                            (av_['name'], today_iso(), lbl + ' נשלחה אל ' + m['phone'] + ': ' + (m['text'] or '')[:300], now_iso()))
                     except Exception:
                         pass
                 con.commit()
@@ -23257,7 +23270,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             con = db()
             job = con.execute("SELECT * FROM ym_job WHERE id=?", (int(m.group(1)),)).fetchone()
-            msgs = [dict(r) for r in con.execute("SELECT id,kind,ref_id,name,phone,status,error,at,campaign,answered,secs,call_status,checked_at,amount,listen_secs,pressed,pressed_secs,call_id,sent_ts,engine,retry_of,retried,retry_at,retry_note FROM ym_msg WHERE job=? ORDER BY id", (int(m.group(1)),))]
+            msgs = [dict(r) for r in con.execute("SELECT id,kind,ref_id,name,phone,status,error,at,campaign,answered,secs,call_status,checked_at,amount,listen_secs,pressed,pressed_secs,call_id,sent_ts,engine,retry_of,retried,retry_at,retry_note,event,reg,reg_at,reg_note FROM ym_msg WHERE job=? ORDER BY id", (int(m.group(1)),))]
             con.close()
             if not job:
                 return self._send(404, {'ok': False})
@@ -25701,10 +25714,12 @@ class H(BaseHTTPRequestHandler):
             con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path) VALUES(?,?,?,?,?,'queued',?,?,?)",
                         (now_iso(), ch, text, amount, len(recs), 1 if b.get('test') else 0, (b.get('label') or '').strip()[:80], bill_path))
             jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+            # 🚌 אירוע עם הרשמה (נסיעה למירון): הקשה 1 בשיחה פותחת תפריט הרשמה — הו"ק / כרטיס אחר / מזומן / הודעה
+            event = re.sub(r'\s+', ' ', str(b.get('event') or '')).strip()[:60] if ch == 'voice' else ''
             for r in recs:
                 ra = r.get('amount') or ym_amt(amount) or amount
-                con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount) VALUES(?,?,?,?,?,?,'queued',?)",
-                            (jid, r['k'], r['id'], r['name'], r['phone'], ym_fill(text, r['name'], ra, r.get('link') or '', r.get('for') or b.get('for') or ''), r.get('amount') or ''))
+                con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,event) VALUES(?,?,?,?,?,?,'queued',?,?)",
+                            (jid, r['k'], r['id'], r['name'], r['phone'], ym_fill(text, r['name'], ra, r.get('link') or '', r.get('for') or b.get('for') or ''), r.get('amount') or '', event))
             # לאיזו קופה המשלוח: נתן תתן (החוב / הקישור של החשבון שלה) או הקהילה
             nm_ = natan_mosad(con)
             dids_ = [int(x) for x in (b.get('debt_ids') or []) if str(x).isdigit()]
@@ -32452,6 +32467,61 @@ def ivr_answer(P):
                                  (dm, 'natan' if nat_call else '')).fetchone()[0]
                 job_amt = _ivr_amt(ob)
 
+        # 🚌 מאיר (28.10.2026): "נסיעה למירון… דמי הרשמה 20 שקל, אם הוא רוצה להירשם שיקיש 1, ואז אם יש לו הוראת
+        # קבע אצלנו שזה יגיד לו האם לחייב את הכרטיס שאצלנו, או דרך מספר אשראי אחר, או להירשם ולשלם מזומן,
+        # או שישאיר הודעה" — ההודעה האחרונה למספר הזה הייתה של אירוע (event): תפריט הרשמה במקום תפריט התשלום
+        ev = con.execute("SELECT id, event, job, amount, name, kind, ref_id, COALESCE(reg,'') reg FROM ym_msg WHERE phone=? AND status='sent' "
+                         "AND COALESCE(sent_ts,'')>=? AND COALESCE(event,'')<>'' ORDER BY id DESC LIMIT 1",
+                         (phone, (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d'))).fetchone() if phone else None
+        reg_mark = None
+        if ev:
+            job_amt = _ivr_amt(ev['amount']) or job_amt
+            job = ev['job']
+            av_row = con.execute("SELECT name FROM avreichim WHERE id=?", (ev['ref_id'],)).fetchone() if ev['kind'] == 'a' else None
+
+            def reg_mark(how, note=''):
+                con.execute("UPDATE ym_msg SET reg=?, reg_at=?, reg_note=? WHERE id=?", (how, now_iso(), (note or '')[:200], ev['id']))
+                who = (ev['name'] or '').strip() or phone
+                txt = {'keva': 'שילם מהוראת הקבע', 'card': 'שילם בכרטיס אשראי', 'cash': 'ישלם במזומן', 'msg': 'השאיר הודעה'}.get(how, how)
+                line = '🚌 נרשם ל%s — %s%s' % (ev['event'], txt, (' · ' + note) if note else '')
+                if av_row:
+                    con.execute("INSERT INTO avreich_log(avreich,donor_id,date,hdate,text,at) VALUES(?,NULL,?,'',?,?)", (av_row['name'], today_iso(), line, now_iso()))
+                elif ev['kind'] == 'm' and ev['ref_id']:
+                    con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                                (ev['ref_id'], today_iso(), 'ימות המשיח', line, '', 'in', '', now_iso()))
+                if how in ('cash', 'msg'):
+                    tnote = '🚌 %s נרשם ל%s בטלפון — %s (₪%g, טל\' %s)' % (who, ev['event'], 'לגבות במזומן' if how == 'cash' else 'השאיר הודעה קולית, לשמוע', job_amt, phone)
+                    if not con.execute("SELECT 1 FROM tasks WHERE donor_id IS NULL AND note=? AND COALESCE(done,0)=0", (tnote,)).fetchone():
+                        con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(NULL,?,?,?)", (today_iso(), 'other', tnote))
+                con.commit()
+
+            if 'VmRec' in P:
+                if not ev['reg']:
+                    reg_mark('msg')
+                return ivr_rec(P)
+            if ev['reg'] and 'Reg' not in P:
+                return 'id_list_message=t-' + _ivr_t('כבר נרשמתם ל' + ev['event'] + ', תודה רבה') + END
+            if 'Reg' not in P:
+                parts = ['t-' + _ivr_t('להרשמה ל' + ev['event'])]
+                if ks:
+                    l40 = re.sub(r'\D', '', ks[0]['last4'] or '') or '0'
+                    parts += ['t-' + _ivr_t('לחיוב דמי ההרשמה של'), _ivr_n(job_amt), 't-' + _ivr_t('שקלים מהוראת הקבע שלכם בכרטיס המסתיים בספרות'), _ivr_d(l40), 't-' + _ivr_t('הקישו 1')]
+                parts += ['t-' + _ivr_t('לתשלום בכרטיס אשראי אחר הקישו 2'), 't-' + _ivr_t('להרשמה ותשלום במזומן הקישו 3'), 't-' + _ivr_t('להשארת הודעה הקישו 4')]
+                return 'read=' + '.'.join(parts) + '=Reg,no,1,1,10,NO,yes,yes,,%s,2,,,,no' % ('1234' if ks else '234')
+            rg = str(P.get('Reg') or '')
+            if rg == '3':
+                if not ev['reg']:
+                    reg_mark('cash')
+                return ('id_list_message=t-' + _ivr_t('נרשמתם ל' + ev['event'] + ', התשלום של') + '.' + _ivr_n(job_amt) +
+                        '.t-' + _ivr_t('שקלים במזומן, תודה רבה ונסיעה טובה') + END)
+            if rg == '4':
+                return ivr_rec(P)
+            P = dict(P)
+            if rg == '1' and ks:
+                P['Way'], P['Choice'] = '1', '1'          # הו"ק, הסכום של ההרשמה
+            else:
+                P['Way'], P['CChoice'] = '2', '1'         # כרטיס אחר, הסכום של ההרשמה
+
         def fallback(amt=0):
             # סליקה רגילה בנדרים פלוס — הקשת כרטיס (הערך השמיני: מספר המוסד).
             # מאיר: "בטלפון לא לנעול סכום" — קודם בוחרים: הסכום מההודעה או סכום אחר
@@ -32499,6 +32569,8 @@ def ivr_answer(P):
             nd_history_soon()      # נדרים פלוס יאשרו את התשלום, וההודעה תסומן "שילם"
             if P['CreditCard_CODE'] == 'GoBack':
                 return 'id_list_message=t-' + _ivr_t('התשלום בוטל') + END
+            if reg_mark and ev and not ev['reg']:
+                reg_mark('card', str(P.get('CreditCard_CODE') or '')[:60])
             if ks:
                 # יש לו הוראת קבע ושילם עכשיו בכרטיס אחר — תמיד שואלים אם להעביר אליו את ההוראה
                 return ('read=t-' + _ivr_t('התשלום התקבל, תודה רבה') + '.t-' +
@@ -32591,6 +32663,8 @@ def ivr_answer(P):
         fk2 = fund_strict(con, k['mosad'] if 'mosad' in k.keys() else '')
         if ok and fk2 is not None:
             ym_mark_paid(con, phone, amt, 'הוראת קבע בטלפון', fund='natan' if (nat_tag and fk2 == '') else fk2)
+        if ok and reg_mark and ev and not ev['reg']:
+            reg_mark('keva', 'אישור ' + conf)
         con.commit()
         if ok:
             return ('id_list_message=t-' + _ivr_t('התשלום על סך') + '.' + _ivr_n(amt) + '.t-' + _ivr_t('שקלים התקבל בהצלחה, מספר אישור') +

@@ -11241,7 +11241,8 @@ function renderAvreich(){
   const totalAv=DB.reduce((s,d)=>s+(d.partners||[]).filter(p=>p.active!=0).length,0);
   view.innerHTML=`<div class="avbar">
       ${avSortSel('avsort')}
-      <button class="btn sm" id="avbyavbtn">👨‍🎓 לפי אברכים</button><button class="btn sm" id="avtablebtn">🖨️ טבלה</button><button class="btn sm" id="avrptbtn" style="background:#6b1d1d;color:#fff">📊 דו"ח תשלומים</button></div>
+      <button class="btn sm" id="avbyavbtn">👨‍🎓 לפי אברכים</button><button class="btn sm" id="avtablebtn">🖨️ טבלה</button><button class="btn sm" id="avrptbtn" style="background:#6b1d1d;color:#fff">📊 דו"ח תשלומים</button>
+      <button class="btn sm" id="avymbtn" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
     <div class="cnt" id="avcnt"></div>
     <div class="avlist" id="avlistwrap"></div>`;
   const sortSel=document.getElementById('avsort'); sortSel.value=avSort;
@@ -11268,8 +11269,70 @@ function renderAvreich(){
   }
   document.getElementById('avtablebtn').onclick=()=>{avView='table';render();};
   document.getElementById('avbyavbtn').onclick=()=>{avView='byav';render();};
+  document.getElementById('avymbtn').onclick=avYmOpen;
   sortSel.onchange=()=>{avSort=sortSel.value;paintList();};
   paintList();
+}
+// 📞 מאיר (28.10.2026): "אני מארגן הערב נסיעה למירון באוטובוס לאברכי הכולל חצות… דמי הרשמה 20 שקל. אני רוצה לשלוח
+// הודעה קולית לכל האברכים עם השם שלהם… אם הוא רוצה להירשם שיקיש 1, ואז אם יש לו הוראת קבע — האם לחייב את הכרטיס
+// שאצלנו, או דרך מספר אשראי אחר, או להירשם ולשלם מזומן, או שישאיר הודעה… שיהיה בחלונית של אברכים, ומקושר לימות המשיח"
+let AVYM={text:'שלום {שם}, כאן כולל חצות. הערב יוצא אוטובוס לנסיעה למירון לאברכי הכולל. היציאה בשעה אחת עשרה וארבעים וחמש דקות בלילה. דמי ההרשמה עשרים שקלים. להרשמה הקישו 1.',
+  event:'נסיעה למירון',amount:'20',sel:new Set(),job:null,poll:null};
+async function avYmOpen(){
+  if(!(AVLIST||[]).length)await loadAvList();
+  const o=document.createElement('div');o.className='mkov';
+  const all=(AVLIST||[]).filter(a=>a.aid&&!(a.ended||'').trim());
+  const good=all.filter(a=>ymPhone(a.phone)), bad=all.filter(a=>!ymPhone(a.phone));
+  if(!AVYM.sel.size)good.forEach(a=>AVYM.sel.add(a.aid));
+  const nm=a=>((a.first||'')+' '+(a.last||'')).trim()||a.name;
+  const draw=()=>{
+    const selN=good.filter(a=>AVYM.sel.has(a.aid)).length;
+    const prevA=good.find(a=>AVYM.sel.has(a.aid))||good[0];
+    const prev=String(AVYM.text||'').replace(/\{שם\}/g,prevA?nm(prevA):'יעקב כהן').replace(/\{סכום\}/g,AVYM.amount||'');
+    const J=AVYM.job;
+    const RG={keva:'💳 שילם מהו"ק',card:'💳 שילם בכרטיס',cash:'💵 מזומן',msg:'🎙️ השאיר הודעה'};
+    const res=J?`<div class="mksec" style="margin-top:12px">📊 תוצאות <small>${J.job.status==='done'?'הסתיים':J.job.status==='sending'?'שולח…':esc(J.job.status)} · נשלחו ${J.job.sent||0} מתוך ${J.job.total||0}${J.job.failed?' · '+J.job.failed+' נכשלו':''} · 🚌 נרשמו <b>${(J.msgs||[]).filter(m=>m.reg).length}</b></small></div>
+      <div class="mklist">${(J.msgs||[]).map(m=>`<div class="mkrow schrow ${m.status==='failed'?'bad':''}" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(m.name||'')}</b><div class="mksub"><span dir="ltr">${esc(m.phone||'')}</span>${m.status==='failed'?' · ✗ '+esc(m.error||''):m.answered==null?' · ממתין':m.answered?' · ענה'+(m.listen_secs?' · שמע '+m.listen_secs+' שנ\'':'')+(m.pressed?' · הקיש '+esc(m.pressed):''):' · לא ענה'}</div></div><b>${m.reg?esc(RG[m.reg]||m.reg)+(m.reg_note?' <small>'+esc(m.reg_note)+'</small>':''):''}</b></div>`).join('')}</div>`:'';
+    o.innerHTML=`<div class="mkdlg" role="dialog"><div class="mkdh"><div class="mkav">📞</div><div><b>הודעה קולית לאברכים</b><span class="mksub">ימות המשיח · שיחה עם השם של כל אחד · הקשה 1 = הרשמה ותשלום</span></div><button class="x2" id="avy_x">✕</button></div>
+      <div class="mkdb">
+        <div class="mklbl"><span>🚌 שם האירוע (נאמר בתפריט ההרשמה)</span></div><input id="avy_ev" value="${esc(AVYM.event)}" placeholder="למשל: נסיעה למירון">
+        <div class="mklbl"><span>💲 דמי הרשמה בש"ח (הסכום שנגבה בהקשה 1)</span></div><input id="avy_amt" inputmode="decimal" value="${esc(AVYM.amount)}">
+        <div class="mklbl"><span>🔊 הטקסט שיוקרא ({שם} = שם האברך)</span></div><textarea id="avy_txt" rows="5">${esc(AVYM.text)}</textarea>
+        <div class="ympv"><b>👂 כך זה יישמע${prevA?' אצל '+esc(nm(prevA)):''}:</b> ${esc(prev)}</div>
+        <div class="hintxt">אחרי "הקישו 1" הטלפון שואל לבד: ${esc('לחיוב דמי ההרשמה מהוראת הקבע שלכם בכרטיס המסתיים ב-XXXX הקישו 1 · לתשלום בכרטיס אשראי אחר הקישו 2 · להרשמה ותשלום במזומן הקישו 3 · להשארת הודעה הקישו 4')}. למי שאין הוראת קבע — בלי האפשרות הראשונה. כל הרשמה נרשמת כאן ובכרטיס האברך; מזומן והודעה פותחים משימה.</div>
+        <div class="mksec" style="margin-top:12px">👨‍🎓 למי <small>${selN} נבחרו מתוך ${good.length} עם טלפון תקין${bad.length?' · '+bad.length+' בלי טלפון':''}</small></div>
+        <div class="mlfrow"><button class="btn sm" id="avy_all">✅ סמן את כולם</button><button class="btn sm ghost" id="avy_none">נקה</button></div>
+        <div class="ymlist">${good.map(a=>`<div class="ymrow${AVYM.sel.has(a.aid)?' on':''}" data-aid="${a.aid}"><span class="mlck">${AVYM.sel.has(a.aid)?'✔':''}</span><span class="ymnm">${esc(nm(a))}</span><span class="ymph" dir="ltr">${esc(ymPhone(a.phone))}</span></div>`).join('')}</div>
+        ${bad.length?`<details style="margin-top:6px"><summary class="mksub">בלי טלפון תקין (${bad.length}) — לא יקבלו</summary><div class="mksub">${bad.map(a=>esc(nm(a))).join(' · ')}</div></details>`:''}
+        <div class="mksec" style="margin-top:12px">📤 שליחה</div>
+        <div class="mlfrow"><input id="avy_tp" dir="ltr" inputmode="tel" placeholder="05X-XXXXXXX — בדיקה אליי קודם" value="${esc((()=>{try{return localStorage.getItem('kc_ymtp')||'';}catch(e){return '';}})())}"><button class="btn sm ghost" id="avy_test">🔊 שלח בדיקה אליי</button></div>
+        <button class="btn" id="avy_go" style="width:100%;margin-top:8px" ${selN?'':'disabled'}>📞 להתקשר ל-${selN} אברכים</button>
+        ${res}
+      </div></div>`;
+    const g=id=>o.querySelector('#'+id);
+    const keep=()=>{AVYM.text=g('avy_txt').value;AVYM.event=g('avy_ev').value.trim();AVYM.amount=g('avy_amt').value.trim();};
+    ['avy_txt','avy_ev','avy_amt'].forEach(id=>g(id).onchange=()=>{keep();draw();});
+    g('avy_x').onclick=()=>{clearInterval(AVYM.poll);o.remove();};
+    g('avy_all').onclick=()=>{good.forEach(a=>AVYM.sel.add(a.aid));draw();};
+    g('avy_none').onclick=()=>{AVYM.sel.clear();draw();};
+    o.querySelectorAll('.ymrow[data-aid]').forEach(r=>r.onclick=()=>{const id=+r.dataset.aid;if(AVYM.sel.has(id))AVYM.sel.delete(id);else AVYM.sel.add(id);draw();});
+    const body=(test)=>{keep();const b={channel:'voice',text:AVYM.text,amount:AVYM.amount,billing:1,event:AVYM.event,label:'אברכים · '+(AVYM.event||'הודעה'),for:''};
+      if(test){const tp=g('avy_tp').value.trim();try{localStorage.setItem('kc_ymtp',tp);}catch(e){}Object.assign(b,{test:1,test_phone:tp,test_name:'בדיקה',test_amount:AVYM.amount});}
+      else b.recipients=good.filter(a=>AVYM.sel.has(a.aid)).map(a=>({k:'a',id:a.aid}));return b;};
+    const track=jid=>{clearInterval(AVYM.poll);const tick=async()=>{const r=await api('GET','/api/yemot/job/'+jid).catch(()=>null);if(!r||!r.ok)return;AVYM.job=r;if(document.body.contains(o))draw();
+        if(['done','stopped','error'].includes(r.job.status)&&(r.msgs||[]).every(m=>m.status!=='sent'||m.answered!=null))clearInterval(AVYM.poll);};
+      tick();AVYM.poll=setInterval(tick,4000);};
+    g('avy_test').onclick=async()=>{keep();if(!AVYM.text.trim()){toast('חסר טקסט');return;}const b=body(true);if(!b.test_phone){toast('כתוב את המספר שלך');return;}
+      g('avy_test').disabled=true;const r=await api('POST','/api/yemot/send',b).catch(()=>null);g('avy_test').disabled=false;
+      if(!r||!r.ok){uiAlert('הבדיקה לא יצאה:\n'+((r&&r.error)||'אין תשובה'));return;}toast('📞 מתקשר אליך לבדיקה…');track(r.job);};
+    g('avy_go').onclick=async()=>{keep();if(!AVYM.text.trim()){toast('חסר טקסט');return;}const n=good.filter(a=>AVYM.sel.has(a.aid)).length;
+      if(!await uiConfirm('להתקשר עכשיו ל-'+n+' אברכים?\n"'+AVYM.event+'" · דמי הרשמה ₪'+AVYM.amount,'📞 להתקשר','ביטול'))return;
+      g('avy_go').disabled=true;const r=await api('POST','/api/yemot/send',body(false)).catch(()=>null);
+      if(!r||!r.ok){g('avy_go').disabled=false;uiAlert('לא נשלח:\n'+((r&&r.error)||'אין תשובה'));return;}
+      toast('📞 יוצאות '+(r.total||n)+' שיחות');track(r.job);};
+  };
+  document.body.appendChild(o);draw();
+  o.onclick=e=>{if(e.target===o){clearInterval(AVYM.poll);o.remove();}};
 }
 // שותפים לאותו אברך — מקישור ידני (partner_with) וגם זיהוי אוטומטי של תורמים אחרים שמחזיקים אותו אברך
 function avCoHolders(p){
