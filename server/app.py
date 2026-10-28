@@ -815,6 +815,10 @@ def ensure_schema():
     # מאיר: "איפה אני עושה פה שמור?" — עריכות התעודה (שם/בקשה, גודל, מודגש לכל שורה) נשמרות על הלילה עצמו
     try: con.execute("ALTER TABLE parnes ADD COLUMN cert_ovr TEXT")
     except Exception: pass
+    # מאיר: "במשימות ביומן של פרנס לילה צריך גם אפשרות של וי שבוצע ואז זה נמחק מהיומן משימות" — וי ביומן בלבד;
+    # הלילה נשאר בלוח הפרנס ובכרטיס התורם
+    try: con.execute("ALTER TABLE parnes ADD COLUMN cal_done INTEGER DEFAULT 0")
+    except Exception: pass
     # 🤝 חלוקה בסכום קבוע (מאיר, 27.10.2026: "אירני משלם מהכרטיס שלו בשביל בליסקו… 720 במקום 180"):
     # fixed = כמה מכל חיוב הולך לשותף (0 = לפי אחוז); on_amount = רק כשהחיוב הוא בדיוק הסכום הזה (0 = כל חיוב)
     for _c in ("fixed REAL DEFAULT 0", "on_amount REAL DEFAULT 0"):
@@ -15624,7 +15628,7 @@ def push_scan():
         tomorrow = (today + datetime.timedelta(days=1)).isoformat()
         try:
             pn = con.execute("SELECT p.id,p.night_date,p.kind,p.date_text,p.dedication,p.donor_id,d.last,d.first FROM parnes p "
-                             "LEFT JOIN donors d ON d.id=p.donor_id WHERE COALESCE(p.status,'')<>'suggested' AND p.night_date IN (?,?)",
+                             "LEFT JOIN donors d ON d.id=p.donor_id WHERE COALESCE(p.status,'')<>'suggested' AND COALESCE(p.cal_done,0)=0 AND p.night_date IN (?,?)",
                              (today.isoformat(), tomorrow)).fetchall()
         except Exception:
             pn = []
@@ -23534,7 +23538,7 @@ class H(BaseHTTPRequestHandler):
             b = self._body(); pid = int(m.group(1))
             con = db()
             sets=[];vals=[]
-            for k in ('day','month','date_text','amount','dedication','kind','status','photo','paid','night_date','hyear','method','currency','cert_ovr'):
+            for k in ('day','month','date_text','amount','dedication','kind','status','photo','paid','night_date','hyear','method','currency','cert_ovr','cal_done'):
                 if k in b: sets.append(f'{k}=?'); vals.append(b[k])
             # אם התאריך העברי השתנה — חשב מחדש את תאריך הלילה הלועזי (לסימון הירח), לפי השנה העברית
             if 'date_text' in b and 'night_date' not in b:

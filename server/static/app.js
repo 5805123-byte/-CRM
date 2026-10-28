@@ -14149,7 +14149,10 @@ function calEntries(){
   const out=[]; const td=todayStr();
   DB.forEach(d=>{const nm=(d.last+' '+d.first).trim();
     (d.tasks||[]).forEach(t=>{if(t.done&&t.done!=0)return;out.push({kind:t.kind==='event'?'event':'task',date:t.due_date||'',time:t.at_time||'',title:nm,text:t.note||'',place:t.place||'',t:t,d:d,icon:kindLabel(t.kind).split(' ')[0]});});
-    (d.parnes||[]).forEach(p=>{if(p.status==='suggested'||!p.night_date)return;out.push({kind:'parnes',date:p.night_date,time:'',title:nm,text:(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'')+(p.dedication?(' — '+p.dedication):''),place:'',p:p,d:d,icon:(DAYKIND[p.kind]||'🌙').split(' ')[0]});});});
+    // פרנס שסומן ✓ ביומן — יורד מהיומן (נשאר בלוח הפרנס ובכרטיס). בריבוע היום רק תחילת ההקדשה; הכל — בלחיצה
+    (d.parnes||[]).forEach(p=>{if(p.status==='suggested'||!p.night_date||+p.cal_done)return;const ded=String(p.dedication||'').replace(/\s+/g,' ').trim();
+      const head=(DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):'');
+      out.push({kind:'parnes',date:p.night_date,time:'',title:nm,text:head+(ded?(' — '+(ded.length>70?ded.slice(0,70)+'…':ded)):''),full:head+(ded?(' — '+ded):''),place:'',p:p,d:d,icon:(DAYKIND[p.kind]||'🌙').split(' ')[0]});});});
   GTASKS.forEach(t=>{if(t.done&&t.done!=0)return;out.push({kind:t.kind==='event'?'event':'task',date:t.due_date||'',time:t.at_time||'',title:t.note||'משימה',text:'',place:t.place||'',t:t,d:null,icon:kindLabel(t.kind).split(' ')[0]});});
   return out.filter(e=>/^\d{4}-\d{2}-\d{2}$/.test(e.date)).sort((a,b)=>(a.date+(a.time||'99')).localeCompare(b.date+(b.time||'99')));
 }
@@ -14216,7 +14219,7 @@ async function renderCalTab(){
     // היום שנבחר נפתח במקומו: כל מה שיש בו עם ✎ לתיקון, ושורת הוספה בתוכו
     const entSel=e=>{const t=e.t;
       if(t&&calEdit===t.id)return `<div class="bced" data-id="${t.id}"><input class="bce_note" value="${esc(t.note||'')}" placeholder="מה?"><div class="two"><input type="time" class="bce_time" value="${esc(t.at_time||'')}" title="שעה (רשות)"><input class="bce_place" value="${esc(t.place||'')}" placeholder="📍 מקום (רשות)"></div><div class="bcea"><button class="btn sm bce_save">💾 שמור</button><button class="btn sm ghost bce_cancel">ביטול</button><button class="btn sm ghost bce_del" title="מחק">🗑</button></div></div>`;
-      return `<div class="bcer">${ent(e)}${t?`<span class="bcea"><button class="btn sm ghost bcedit" data-id="${t.id}" title="תקן">✎</button><button class="btn sm ghost bcdone2" data-id="${t.id}" title="בוצע">✓</button></span>`:''}</div>`;};
+      return `<div class="bcer">${ent(e)}${t?`<span class="bcea"><button class="btn sm ghost bcedit" data-id="${t.id}" title="תקן">✎</button><button class="btn sm ghost bcdone2" data-id="${t.id}" title="בוצע">✓</button></span>`:e.p?`<span class="bcea"><button class="btn sm ghost bcpdone" data-pid="${e.p.id}" data-did="${e.d?e.d.id:''}" title="בוצע — יורד מהיומן">✓</button></span>`:''}</div>`;};
     const inner=isSel?(L.map(entSel).join('')+`<div class="bcin">
         <input id="bc_note" placeholder="✍️ מה? (למשל: חתונה של…, להתקשר ל…)" autocomplete="off">
         <div class="two"><select id="bc_kind">${taskKindOpts('event')}</select><input type="time" id="bc_time" title="שעה (רשות)"></div>
@@ -14229,7 +14232,7 @@ async function renderCalTab(){
   const tp=hebTodayParts();
   const dayPanel=calSel?`<div class="sec bcday" id="bcday"><h3>📅 ${esc(selHeb)} ${esc(HM.year)} <small>· ${fmtGreg(calSel)} · יום ${DOW[new Date(calSel+'T12:00:00').getDay()]}${calSel===today?' · היום':''}</small></h3>
       ${sel.length?sel.map((e,i)=>`<div class="bcrow"><div class="bcrow-m">${e.time?`<b class="bct">${esc(e.time)}</b>`:''}${e.icon} <b>${esc(e.title)}</b>${e.text?(' — '+esc(e.text)):''}${e.place?`<div class="miss2">📍 ${esc(e.place)}</div>`:''}${e.d?contactBtns(e.d):''}</div>
-        <div class="meta">${e.t?`<button class="btn sm bcdone" data-i="${i}">✓ בוצע</button>`:''}${e.d?`<button class="btn sm ghost bcopen" data-i="${i}">📋 כרטיס</button>`:''}${e.p?`<button class="btn sm ghost bcboard" data-i="${i}">🌙 בלוח הפרנס</button>`:''}${e.t&&gcalLink(e.t,e.title)?`<a class="gcal" href="${gcalLink(e.t,e.title)}" target="_blank" rel="noopener">ליומן Google</a>`:''}</div></div>`).join(''):'<div class="hintxt">אין כלום ביום הזה.</div>'}</div>`:'';
+        <div class="meta">${e.t?`<button class="btn sm bcdone" data-i="${i}">✓ בוצע</button>`:e.p?`<button class="btn sm bcpdone" data-pid="${e.p.id}" data-did="${e.d?e.d.id:''}" title="יורד מהיומן — נשאר בלוח הפרנס">✓ בוצע</button>`:''}${e.d?`<button class="btn sm ghost bcopen" data-i="${i}">📋 כרטיס</button>`:''}${e.p?`<button class="btn sm ghost bcboard" data-i="${i}">🌙 בלוח הפרנס</button>`:''}${e.t&&gcalLink(e.t,e.title)?`<a class="gcal" href="${gcalLink(e.t,e.title)}" target="_blank" rel="noopener">ליומן Google</a>`:''}</div></div>`).join(''):'<div class="hintxt">אין כלום ביום הזה.</div>'}</div>`:'';
   const yn=HM.ynum||0;
   view.innerHTML=`<div class="bigcal">
     <div class="calnav">
@@ -14270,6 +14273,8 @@ async function renderCalTab(){
       calEdit=null; checkReminders(); render(); toast('נמחק');};
     ed.querySelector('.bce_note').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();ed.querySelector('.bce_save').click();}});}
   view.querySelectorAll('.bcdone').forEach(b=>b.onclick=async()=>{const e=sel[b.dataset.i];if(!e||!e.t)return;if(!await doneWithNote({...e.t,donor:e.title,dref:e.d},e.d))return;checkReminders();render();toast('בוצע ✓');});
+  // ✓ על פרנס יום — יורד מהיומן בלבד (נשאר בלוח הפרנס ובכרטיס התורם)
+  view.querySelectorAll('.bcpdone').forEach(b=>b.onclick=async e=>{e.stopPropagation();await parnesCalDone(b.dataset.pid,b.dataset.did);});
   view.querySelectorAll('.bcopen').forEach(b=>b.onclick=()=>{const e=sel[b.dataset.i];if(e&&e.d)openDonor(e.d,e.t?'tasks':'details');});
   view.querySelectorAll('.bcboard').forEach(b=>b.onclick=()=>{const e=sel[b.dataset.i];if(!e||!e.p)return;tab='parnes';pyKind=e.p.kind||'parnes';pyMonth=e.p.month;pyDay=+e.p.day;flt='';plaque=null;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));render();window.scrollTo(0,0);});
   // הוספה מהירה ליום שנבחר
@@ -14344,6 +14349,13 @@ function calPasteOpen(){
     IT=r.items||[];paint();
     if(r.src==='simple'&&r.error)g('cp_res').insertAdjacentHTML('afterbegin',`<div class="hintxt">זיהוי פשוט (${esc(r.error)}) — כדאי לבדוק.</div>`);};}
 // חלון פרטים של פריט ביומן — הטקסט המלא, שעה, מקום, התורם, ופעולות
+// מאיר: "במשימות ביומן של פרנס לילה צריך גם אפשרות של וי שבוצע ואז זה נמחק מהיומן משימות" — מסמנים על
+// הלילה cal_done; הוא יורד מהיומן ומהתזכורת של הבוקר, ונשאר בלוח הפרנס ובכרטיס התורם
+async function parnesCalDone(pid,did){
+  const d=DB.find(x=>x.id==+did), p=(d&&d.parnes||[]).find(x=>x.id==+pid); if(!p)return;
+  const r=await api('PUT','/api/parnes/'+p.id,{cal_done:1}).catch(()=>null);
+  if(!r||!r.ok){toast('לא נשמר');return;}
+  p.cal_done=1; render(); toast('בוצע ✓ — ירד מהיומן (נשאר בלוח הפרנס)');}
 function calShowEntry(e){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   const DOW=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
@@ -14351,13 +14363,13 @@ function calShowEntry(e){
   const gl=e.t&&gcalLink(e.t,e.title);
   rs.innerHTML=`<button class="x" id="rx">✕</button><h2>${e.icon} ${esc(e.title)}</h2>
     <div class="hintxt">📅 יום ${esc(dow)} · ${esc(fmtGreg(e.date))}${e.time?` · 🕒 <b>${esc(e.time)}</b>`:''}</div>
-    ${e.text?`<div class="calfull">${esc(e.text)}</div>`:''}
+    ${(e.full||e.text)?`<div class="calfull">${esc(e.full||e.text)}</div>`:''}
     ${e.place?`<div class="hintxt">📍 ${esc(e.place)}</div>`:''}
     ${e.d?`<div class="hintxt">👤 ${esc(((e.d.last||'')+' '+(e.d.first||'')).trim())} ${contactBtns(e.d)}</div>`:''}
     <div class="addrow" style="flex-wrap:wrap;gap:6px;margin-top:10px">
       ${e.t?`<button class="btn sm" id="ce_edit">✎ תקן</button><button class="btn sm ghost" id="ce_done">✓ בוצע</button>`:''}
       ${e.d?`<button class="btn sm ghost" id="ce_card">📋 כרטיס התורם</button>`:''}
-      ${e.p?`<button class="btn sm ghost" id="ce_board">🌙 בלוח הפרנס</button>`:''}
+      ${e.p?`<button class="btn sm ghost" id="ce_pdone" title="יורד מהיומן — נשאר בלוח הפרנס">✓ בוצע</button><button class="btn sm ghost" id="ce_board">🌙 בלוח הפרנס</button>`:''}
       ${gl?`<a class="btn sm ghost" href="${gl}" target="_blank" rel="noopener">ליומן Google</a>`:''}
     </div>`;
   remov.classList.add('show');
@@ -14367,6 +14379,7 @@ function calShowEntry(e){
   if(g('ce_edit'))g('ce_edit').onclick=()=>{close();calSel=e.date;calEdit=e.t.id;render();setTimeout(()=>{const i=view.querySelector('.bce_note');if(i)i.focus();},60);};
   if(g('ce_done'))g('ce_done').onclick=async()=>{close();if(!await doneWithNote({...e.t,donor:e.title,dref:e.d},e.d))return;checkReminders();render();toast('בוצע ✓');};
   if(g('ce_card'))g('ce_card').onclick=()=>{close();openDonor(e.d,e.p?'details':'tasks');};
+  if(g('ce_pdone'))g('ce_pdone').onclick=async()=>{close();await parnesCalDone(e.p.id,e.d?e.d.id:'');};
   if(g('ce_board'))g('ce_board').onclick=()=>{close();tab='parnes';pyKind=e.p.kind||'parnes';pyMonth=e.p.month;pyDay=+e.p.day;flt='';plaque=null;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='parnes'));render();window.scrollTo(0,0);};
 }
 let NT_OPEN=false;
