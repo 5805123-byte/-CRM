@@ -857,16 +857,32 @@ def probe_payments(cid):
     return {'paths': _DISC['paths'], 'files': _DISC['files'], 'error': _DISC['error'], 'tries': tries}
 
 
+PAYDIAG = {}
+
+
 def payments(cid):
-    """התשלומים של הלקוח במערכת המקווה. מחזיר (רשימה, מאיפה, שמות שדות לאבחון)"""
+    """התשלומים של הלקוח במערכת המקווה. מחזיר (רשימה, מאיפה, שמות שדות לאבחון).
+    מאיר: "שילם במכשיר של המקווה 70 שקל, למה זה לא מופיע?" — PAYDIAG[cid] שומר מה בדיוק קרה מול יומן הפעילות,
+    כדי שבמסך יהיה כתוב למה אין שורות (היומן לא ענה / ענה בלי שורות של הלקוח / ענה בלי שורות תשלום)."""
+    diag = {}
+    PAYDIAG[str(cid)] = diag
     # קודם יומן הפעילויות של הלקוח (שנה אחורה) — שורות "תשלום"
     try:
         t = datetime.date.today()
         raw = attendance((t - datetime.timedelta(days=365)).isoformat(), (t + datetime.timedelta(days=1)).isoformat(), cid)
-    except Exception:
+    except Exception as e:
         raw = None
+        diag['err'] = str(e)[:200]
+    if raw is None:
+        diag['log'] = 'none'
+        diag['throttled'] = bool(not _ATT['tpl'] and time.time() - (_ATT.get('fail_at') or 0) < 600)
+        diag['tries'] = [{'code': x.get('code'), 'resp': str(x.get('resp') or '')[:160]} for x in (_ATT.get('tries') or [])[:4]]
     if raw is not None:
         rows = [att_norm(r) for r in raw]
+        diag['log'] = 'ok'
+        diag['rows'] = len(raw)
+        diag['keys'] = sorted(raw[0].keys())[:25] if raw else []
+        diag['by'] = 'cid' if any(n['cid'] for n in rows) else 'name'
         if any(n['cid'] for n in rows):
             mine = [n for n in rows if str(n['cid'] or '') == str(cid)]
         else:
@@ -876,8 +892,16 @@ def payments(cid):
                 nk = lambda x: re.sub(r'\s+', '', str(x or ''))
                 full = {nk((c0.get('firstName') or '') + (c0.get('lastName') or '')), nk((c0.get('lastName') or '') + (c0.get('firstName') or ''))}
                 mine = [n for n in rows if nk(n['name']) in full]
-            except Exception:
+                diag['names'] = sorted({n['name'] for n in rows if n['name']})[:8]
+            except Exception as e:
                 mine = []
+                diag['err'] = str(e)[:200]
+        diag['mine'] = len(mine)
+        diag['kinds'] = {}
+        for n in mine:
+            diag['kinds'][n['kind']] = diag['kinds'].get(n['kind'], 0) + 1
+        diag['sample'] = [{'at': n['at'].strftime('%d.%m %H:%M') if n['at'] else '', 'kind': n['kind'], 'amount': n['amount'], 'text': n['text'][:70]}
+                          for n in sorted(mine, key=lambda n: n['at'] or datetime.datetime.min, reverse=True)[:5]]
         if raw == [] or mine:
             out = []
             for n in mine:

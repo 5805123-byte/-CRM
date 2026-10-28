@@ -2555,8 +2555,9 @@ async function mkHistLoad(cid){const r=await api('GET','/api/mikveh/log/'+encode
 // 💳 מאיר: "במקווה אני רוצה לראות אצל כל אחד כמה המחיר שהוא משלם למנוי, ואת ההיסטוריה תשלומים שלו עד היום למטה"
 const MKPAY={};
 const mkNis=n=>n==null||n===''?'':'₪'+(+n).toLocaleString('he-IL',{maximumFractionDigits:2});
-async function mkPayLoad(cid){if(MKPAY[cid]&&Date.now()-MKPAY[cid]._at<60000)return;
-  let r=null;try{r=await api('GET','/api/mikveh/pay/'+encodeURIComponent(cid));}catch(e){}
+async function mkPayLoad(cid,fresh){if(!fresh&&MKPAY[cid]&&Date.now()-MKPAY[cid]._at<60000)return;
+  if(fresh){delete MKPAY[cid];const el0=document.getElementById('mkpay');if(el0&&el0.dataset.id===cid)el0.innerHTML='<div class="mksub">⏳ בודק שוב במקווה…</div>';}
+  let r=null;try{r=await api('GET','/api/mikveh/pay/'+encodeURIComponent(cid)+(fresh?'?fresh=1':''));}catch(e){}
   MKPAY[cid]=r&&r.ok?r:{ok:false,error:(r&&r.error)||'לא נטען'};MKPAY[cid]._at=Date.now();
   const el=document.getElementById('mkpay');if(el&&el.dataset.id===cid)el.innerHTML=mkPayHTML(cid);
   const pt=document.getElementById('mkpaid');if(pt&&pt.dataset.id===cid)pt.querySelector('b').innerHTML=mkPaidTxt(cid);}
@@ -2755,13 +2756,22 @@ async function mkPayProbe(cid,btn){btn.disabled=true;btn.innerHTML='<span class=
 function mkPayHTML(cid){const P=MKPAY[cid];if(!P)return '<div class="mksub">⏳ טוען…</div>';
   if(!P.ok)return '<div class="mksub">⚠️ '+esc(P.error||'')+'</div>';
   const d=t=>esc(String(t.iso||'').slice(8,10)+'/'+String(t.iso||'').slice(5,7)+'/'+String(t.iso||'').slice(0,4));
-  if(!P.src)return `<div class="mksub">לא מצאתי במערכת המקווה את רשימת התשלומים של הלקוח.</div>
-    <button class="btn sm" onclick="mkPayProbe('${esc(cid)}',this)" style="margin-top:6px">🔎 לחפש איפה המקווה שומר תשלומים</button><div id="mkprobe"></div>
+  // מאיר: "שילם במכשיר של המקווה 70 שקל, למה זה לא מופיע?" — כותבים בדיוק מה קרה מול יומן הפעילות של המקווה
+  const G=P.diag||{};const KN={pay:'תשלום',entry:'כניסה',entry_fail:'כניסה שנדחתה',other:'אחר'};
+  const why=G.log==='none'?`<div class="mksub" style="color:#c0392b;font-weight:700">⚠️ יומן הפעילות של המקווה לא ענה${G.throttled?' (נכשל לפני פחות מ-10 דקות — לא ניסינו שוב)':''}${G.err?' · '+esc(G.err):''}</div>
+      ${(G.tries||[]).length?`<small dir="ltr" style="display:block;word-break:break-all;color:#777">${G.tries.map(t=>esc(t.code+' '+(t.resp||''))).join('<br>')}</small>`:''}`
+    :G.log==='ok'?`<div class="mksub">יומן הפעילות של המקווה ענה: <b>${G.rows||0}</b> שורות בשנה האחרונה, מהן <b>${G.mine||0}</b> של הלקוח הזה${G.by==='name'?' (זיהוי לפי שם, בשורות אין מזהה לקוח)':''}${G.mine?' — '+Object.keys(G.kinds||{}).map(k=>(KN[k]||k)+' '+G.kinds[k]).join(', '):''}</div>
+      ${(G.sample||[]).length?`<div class="mklist">${G.sample.map(x=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(x.at)} · ${esc(KN[x.kind]||x.kind)}</b><div class="mksub">${esc(x.text||'')}</div></div><b>${x.amount!=null?esc(String(x.amount)):''}</b></div>`).join('')}</div>`:''}
+      ${G.by==='name'&&(G.names||[]).length?`<small style="display:block;color:#777">שמות שיש ביומן: ${esc(G.names.join(' · '))}</small>`:''}`
+    :'';
+  if(!P.src)return `<div class="mksub">לא מצאתי במערכת המקווה את רשימת התשלומים של הלקוח.</div>${why}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn sm" onclick="mkPayLoad('${esc(cid)}',true)">🔄 לבדוק שוב במקווה</button>
+    <button class="btn sm ghost" onclick="mkPayProbe('${esc(cid)}',this)">🔎 לחפש איפה המקווה שומר תשלומים</button></div><div id="mkprobe"></div>
     ${(P.keys||[]).length?`<details style="margin-top:6px"><summary class="mksub">שמות השדות של הלקוח במקווה</summary><small dir="ltr" style="word-break:break-all">${esc(P.keys.join(', '))}</small></details>`:''}`;
   return (P.tx||[]).length?`<div class="mksub" style="margin:4px 2px 8px">שילם <b>${P.count}</b> פעמים · סה״כ <b>${esc(mkNis(P.sum))}</b>${P.since?' · מאז '+d({iso:P.since}):''}</div>
     <div class="mklist">${P.tx.map(t=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${d(t)}${t.time?' '+esc(t.time):''}${t.failed?' · ✗ נכשל':''}</b>
       <div class="mksub">${esc([t.desc,t.how].filter(Boolean).join(' · '))}</div></div><b style="${t.failed||(+t.amount||0)<0?'color:#c0392b':''}">${esc(mkNis(t.amount))}</b></div>`).join('')}</div>`
-    :'<div class="mksub">אין לו תשלומים במערכת המקווה.</div>';}
+    :`<div class="mksub">ביומן המקווה אין לו שורות תשלום.</div>${why}<button class="btn sm" onclick="mkPayLoad('${esc(cid)}',true)" style="margin-top:6px">🔄 לבדוק שוב במקווה</button>`;}
 // הכרטיס פתוח על אותו לקוח — מעדכנים בו את שורת "הודעה אחרונה"
 function mkCardRefresh(c){const el=document.getElementById('mksent');if(!el||el.dataset.id!==c.id)return;el.innerHTML=mkSentTxt(c);}
 const mkSentTxt=c=>{const s=c.sent;if(!s)return '';

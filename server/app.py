@@ -22738,12 +22738,15 @@ class H(BaseHTTPRequestHandler):
             if not c:
                 return self._send(200, {'ok': False, 'error': 'הלקוח לא נמצא במקווה'})
             # רק ממערכת המקווה — מה שהוא משלם במקווה / במכשיר. לא מנדרים פלוס
+            # ?fresh=1 — "לבדוק שוב": מתעלמים מהחסימה של 10 דקות אחרי כישלון של יומן הפעילות
+            if 'fresh=1' in self.path:
+                _mk._ATT['fail_at'] = 0
             try:
                 tx, src, keys = _mk.payments(cid)
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
             paid = [t for t in tx if not t['failed'] and (t['amount'] or 0) > 0]
-            return self._send(200, {'ok': True, 'tx': tx, 'src': src, 'keys': keys,
+            return self._send(200, {'ok': True, 'tx': tx, 'src': src, 'keys': keys, 'diag': _mk.PAYDIAG.get(cid) or {},
                                     'sum': round(sum(t['amount'] for t in paid), 2), 'count': len(paid),
                                     'since': min((t['iso'] for t in paid if t['iso']), default='')})
         if self.path.split('?')[0] == '/api/mikveh/log':
