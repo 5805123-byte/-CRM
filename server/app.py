@@ -23347,8 +23347,16 @@ class H(BaseHTTPRequestHandler):
                 import nedarim as _nd
                 anames = {('' if x['main'] else x['mosad']): x['name'] for x in _nd.accounts()}
                 rows = []
+                # מאיר: "תחפש לי בנדרים האם שמעון אלחדד שילם… הוא אומר שעשה תשלומים באשראי" — חיפוש גם לפי שם / טלפון
+                qq = re.sub(r'\s+', ' ', (qs.get('q') or [''])[0]).strip()[:40]
+                wq, aq = '', ()
+                if qq:
+                    dq = re.sub(r'\D', '', qq)
+                    parts = [x for x in qq.split(' ') if x]
+                    wq = ' AND (' + ' AND '.join(["name LIKE ?"] * len(parts)) + (' OR phone LIKE ?' if len(dq) >= 6 else '') + ')'
+                    aq = tuple('%' + x + '%' for x in parts) + (('%' + dq[-9:] + '%',) if len(dq) >= 6 else ())
                 for t in con.execute("SELECT id,iso,phone,name,amount,keva,groupe,comments,mosad,conf,last4 FROM nd_tx WHERE iso>=? AND amount>0 "
-                                     + ("AND ABS(amount-?)<0.01 " if amt else "") + "ORDER BY iso", ((since + ':00')[:19],) + ((amt,) if amt else ())).fetchall():
+                                     + ("AND ABS(amount-?)<0.01 " if amt else "") + wq + " ORDER BY iso", ((since + ':00')[:19],) + ((amt,) if amt else ()) + aq).fetchall():
                     ph = _ym.norm_phone(t['phone'] or '')
                     av = byph.get(ph) or bynm.get(key(t['name']))
                     if not av:

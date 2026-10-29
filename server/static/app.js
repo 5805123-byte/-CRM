@@ -11299,16 +11299,19 @@ function renderAvreich(){
 // שאצלנו, או דרך מספר אשראי אחר, או להירשם ולשלם מזומן, או שישאיר הודעה… שיהיה בחלונית של אברכים, ומקושר לימות המשיח"
 // 💳 מאיר: "תסכם לי מנדרים פלוס כמה שילמו 20 שקל מהשעה 5 וחצי היום — שזה על מירון, אבל לא הכל רשום מירון בדיוק" —
 // כל העסקאות בנדרים פלוס מאז השעה ובסכום שבוחרים, עם האברך שזוהה; ומי שנרשם בשיחה במזומן / הודעה
-async function avPaidOpen(){
+async function avPaidOpen(q0){
   const o=document.createElement('div');o.className='mkov';document.body.appendChild(o);
   const t=new Date(),p2=n=>String(n).padStart(2,'0'),day=t.getFullYear()+'-'+p2(t.getMonth()+1)+'-'+p2(t.getDate());
-  let since=day+' 17:30', amt=(AVYM&&AVYM.amount)||'20', R=null, busy=false;
+  const y1=new Date(Date.now()-365*864e5),yday=y1.getFullYear()+'-'+p2(y1.getMonth()+1)+'-'+p2(y1.getDate());
+  // חיפוש לפי שם (מכרטיס / מהחובות): שנה אחורה, כל סכום
+  let qn=q0||'', since=q0?yday+' 00:00':day+' 17:30', amt=q0?'':((AVYM&&AVYM.amount)||'20'), R=null, busy=false;
   const RG={keva:'💳 הו"ק בטלפון',card:'💳 כרטיס בטלפון',cash:'💵 מזומן',msg:'🎙️ השאיר הודעה'};
   const draw=()=>{
     const rows=(R&&R.rows)||[], regs=((R&&R.regs)||[]).filter(x=>x.reg==='cash'||x.reg==='msg');
     const sy=R&&R.synced?Object.values(R.synced).filter(Boolean).sort().pop():'';
-    o.innerHTML=`<div class="mkdlg" role="dialog"><div class="mkdh"><div class="mkav">💳</div><div><b>מי שילם בנדרים פלוס</b><span class="mksub">כל החשבונות · לפי שעה וסכום</span></div><button class="x2" id="avp_x">✕</button></div>
+    o.innerHTML=`<div class="mkdlg" role="dialog"><div class="mkdh"><div class="mkav">💳</div><div><b>מי שילם בנדרים פלוס</b><span class="mksub">כל החשבונות · לפי שם, שעה וסכום</span></div><button class="x2" id="avp_x">✕</button></div>
       <div class="mkdb">
+        <label class="fld"><span>🔍 שם או טלפון (ריק = כולם)</span><input id="avp_q" value="${esc(qn)}" placeholder="למשל: אלחדד שמעון"></label>
         <div class="mlfrow"><label class="fld" style="flex:1"><span>מאז</span><input id="avp_since" type="datetime-local" value="${esc(since.replace(' ','T'))}"></label>
           <label class="fld" style="flex:0 0 110px"><span>סכום ₪ (ריק = הכל)</span><input id="avp_amt" inputmode="decimal" value="${esc(amt)}"></label></div>
         <button class="btn" id="avp_go" style="width:100%;margin-top:6px" ${busy?'disabled':''}>${busy?'⏳ מושך מנדרים פלוס…':'🔄 לבדוק עכשיו בנדרים פלוס'}</button>
@@ -11321,8 +11324,8 @@ async function avPaidOpen(){
     const g=id=>o.querySelector('#'+id);
     g('avp_x').onclick=()=>o.remove();
     g('avp_go').onclick=()=>run(true);};
-  const run=async fresh=>{const sv=o.querySelector('#avp_since'),av=o.querySelector('#avp_amt');if(sv)since=sv.value.replace('T',' ');if(av)amt=av.value.trim();
-    busy=true;draw();const r=await api('GET','/api/nd/paid_since?since='+encodeURIComponent(since)+'&amount='+encodeURIComponent(amtNum(amt)||'')+(fresh?'&fresh=1':'')).catch(()=>null);
+  const run=async fresh=>{const sv=o.querySelector('#avp_since'),av=o.querySelector('#avp_amt'),qv=o.querySelector('#avp_q');if(sv)since=sv.value.replace('T',' ');if(av)amt=av.value.trim();if(qv)qn=qv.value.trim();
+    busy=true;draw();const r=await api('GET','/api/nd/paid_since?since='+encodeURIComponent(since)+'&amount='+encodeURIComponent(amtNum(amt)||'')+'&q='+encodeURIComponent(qn)+(fresh?'&fresh=1':'')).catch(()=>null);
     busy=false;if(!r||!r.ok){toast('לא נטען');draw();return;}R=r;draw();};
   o.onclick=e=>{if(e.target===o)o.remove();};
   draw();run(true);
@@ -17045,8 +17048,10 @@ async function cmNdPaint(m,showAll,boxId){
         <button class="btn sm cdn_go">💾 רשום</button></div></details>`;
   const errHTML=ER.length?`<details class="cmdonadd"><summary>🔴 סירובים בנדרים פלוס (${ER.length})</summary>${ER.map(e=>`<div class="bqpay"><span><b>${esc(ndDate(e.iso||''))}</b> · ${ndMoney(e.amount)}${e.groupe?' · '+esc(e.groupe):''}${e.last4?' · ****'+esc(e.last4):''} · <span class="ndbad">${esc(e.error||'')}</span>${+e.done?' <small class="ndok">טופל</small>':''}</span></div>`).join('')}</details>`:'';
   // מאיר: "ביקשתי שאל תערבב בין שניהם בכלל אף פעם" — חבר שהופרד: לא משייכים לו תשלומים מנדרים פלוס לפי טלפון
-  const splitHTML=r.nd_nomatch?`<div class="hintxt" style="color:#c0392b;font-weight:700">⛔ מופרד מנדרים פלוס — לא משייכים לו תשלומים לפי טלפון (מוצג רק מה ששויך אליו ידנית). <button class="btn sm ghost cdn_split" data-on="0" style="width:auto">להחזיר שיוך לפי טלפון</button></div>`
-    :`<div style="display:flex;justify-content:flex-end"><button class="btn sm ghost cdn_split" data-on="1" style="width:auto;flex:0 0 auto" title="אם התשלומים שמופיעים כאן הם של מישהו אחר עם אותו טלפון — ניתוק: מה ששויך אוטומטית יורד, ולא ישויך לו יותר לפי טלפון">⛔ התשלומים כאן לא שלו</button></div>`;
+  // 🔍 מאיר: "תחפש לי בנדרים האם שמעון אלחדד שילם… הוא אומר שעשה תשלומים באשראי" — חיפוש בכל נדרים לפי השם שלו
+  const ndFind=`<div style="display:flex;justify-content:flex-end;margin-bottom:4px"><button class="btn sm ghost cdn_find" style="width:auto" title="חיפוש בכל העסקאות בנדרים פלוס לפי השם שלו — גם תשלומים שלא שויכו אליו">🔍 לחפש תשלומים שלו בנדרים פלוס (לפי השם)</button></div>`;
+  const splitHTML=ndFind+(r.nd_nomatch?`<div class="hintxt" style="color:#c0392b;font-weight:700">⛔ מופרד מנדרים פלוס — לא משייכים לו תשלומים לפי טלפון (מוצג רק מה ששויך אליו ידנית). <button class="btn sm ghost cdn_split" data-on="0" style="width:auto">להחזיר שיוך לפי טלפון</button></div>`
+    :`<div style="display:flex;justify-content:flex-end"><button class="btn sm ghost cdn_split" data-on="1" style="width:auto;flex:0 0 auto" title="אם התשלומים שמופיעים כאן הם של מישהו אחר עם אותו טלפון — ניתוק: מה ששויך אוטומטית יורד, ולא ישויך לו יותר לפי טלפון">⛔ התשלומים כאן לא שלו</button></div>`);
   box.innerHTML=`${splitHTML}${kevaHTML}${errHTML}${addHTML}
     ${rows.length?`<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn sm ghost cmrcon${rcOn?' on':''}" title="להוציא לו קבלה — מנדרים פלוס או מכאן" style="width:auto;flex:0 0 auto">${rcOn?'✕ סגור קבלות':'🧾 קבלות'}</button></div><div class="bqhsum" style="margin-top:4px"><b>${rows.filter(x=>+x.amount>0&&!x.fund).length} תרומות לקהילה · ${ndMoney(rows.reduce((t,x)=>t+(+x.amount>0&&!x.fund?+x.amount:0),0))}</b>${r.since?` · מאז ${esc(ndDate(r.since))}`:''}<div class="bqhyrs">${yrs}</div>
         ${(()=>{const ot={};rows.filter(x=>+x.amount>0&&x.fund).forEach(x=>{const k=x.acct||'חשבון אחר';ot[k]=ot[k]||{n:0,s:0};ot[k].n++;ot[k].s+=+x.amount;});
@@ -17057,6 +17062,7 @@ async function cmNdPaint(m,showAll,boxId){
       ${rows.length>lim?`<button class="btn sm ghost" id="cm_ndmore">📜 הצג את כל התרומות (${rows.length})</button>`:''}`
       :'<div class="hintxt" style="margin-top:6px">עוד לא נמשכו תרומות שלו מנדרים פלוס (ההיסטוריה נמשכת בסנכרון, 45 יום אחורה בפעם הראשונה).</div>'}`;
   const more=box.querySelector('#cm_ndmore'); if(more)more.onclick=()=>cmNdPaint(m,true,boxId);
+  const fnd=box.querySelector('.cdn_find'); if(fnd)fnd.onclick=()=>avPaidOpen(((m.last||'')+' '+(m.first||'')).trim());
   const spl=box.querySelector('.cdn_split'); if(spl)spl.onclick=async()=>{const on=spl.dataset.on==='1';
     if(on&&!await uiConfirm('לנתק את '+((m.last||'')+' '+(m.first||'')).trim()+' מנדרים פלוס?\nכל מה ששויך אליו אוטומטית (הוראות קבע ותשלומים) יורד מהכרטיס ונשאר לא־משויך, ולא ישויך לו יותר לפי טלפון.'))return;
     const x=await api('POST','/api/members/'+m.id+'/nd_nomatch',{on:on?1:0}).catch(()=>null);
