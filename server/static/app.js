@@ -8373,7 +8373,7 @@ function bqTxRow(r){const op=bqOpen==='t'+r.id, s=BQ_ST[r.status]||[r.status||'?
         <label class="fld"><span>🎯 עבור מה</span><select id="bqt_cat">${bqForOpts('')}</select></label></div>
         <div class="bqacts"><button class="btn sm" data-bqa="post" data-id="${r.id}">➕ רשום בכרטיס</button></div>
         <div class="hintxt">רישום ידני ומכוון. לפני הרישום המערכת בודקת שאין כבר תרומה כזו בכרטיס.</div>`:''}
-      <div class="bqacts">${r.donor_id?`<button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס התורם</button>`:''}${bqRefBtn(r,who)}${bad&&!fixed?`<button class="btn sm bqgo bqretry" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" data-card="${esc(r.card||'')}" title="לנסות לחייב שוב את אותו כרטיס שמור בבנק ווסט, על הסכום שלא עבר">🔁 לנסות לחייב שוב</button>`:''}${bad&&!fixed&&(r.schedule_id||r.donor_id)?`<button class="btn sm ghost bqnewcard" data-sid="${r.schedule_id||''}" data-did="${r.donor_id||''}" data-amt="${esc(r.amount)}" title="התורם שלח כרטיס חדש — להכניס אותו בטופס המאובטח של בנק ווסט, לחייב את הסכום שחזר ולשמור לחיוב החודשי">💳 עדכון כרטיס</button>`:''}${bad?`<button class="btn sm ghost bqfixb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" title="לתקן אם זה סודר או לא">✎ סודר / לא סודר</button>`:''}${bad?`<button class="btn sm ghost bqnoteb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" data-did="${r.donor_id||''}" title="שלחתי וואטסאפ / מייל, שוחחתי בטלפון, אמר לגבות בחודש הבא — נרשם גם בקשר בכרטיס התורם">📝 הערה</button>`:''}</div>
+      <div class="bqacts">${r.donor_id?`<button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס התורם</button>`:''}${bqRefBtn(r,who)}${bad&&!fixed?`<button class="btn sm bqgo bqretry" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" data-card="${esc(r.card||'')}" title="לנסות לחייב שוב את אותו כרטיס שמור בבנק ווסט, על הסכום שלא עבר">🔁 לנסות לחייב שוב</button>`:''}${bad&&!fixed&&(r.schedule_id||r.donor_id)?`<button class="btn sm ghost bqnewcard" data-sid="${r.schedule_id||''}" data-did="${r.donor_id||''}" data-amt="${esc(r.amount)}" title="התורם שלח כרטיס חדש — להכניס אותו בטופס המאובטח של בנק ווסט, לחייב את הסכום שחזר ולשמור לחיוב החודשי">💳 עדכון כרטיס</button>`:''}${bad&&!fixed&&r.schedule_id?`<button class="btn sm ghost bqpause" data-tx="${r.id}" data-who="${esc(who)}" title="להשהות את החיוב האוטומטי שלו — עד תאריך מסוים או לתמיד">⏸ השהה</button>`:''}${bad?`<button class="btn sm ghost bqfixb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" title="לתקן אם זה סודר או לא">✎ סודר / לא סודר</button>`:''}${bad?`<button class="btn sm ghost bqnoteb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" data-did="${r.donor_id||''}" title="שלחתי וואטסאפ / מייל, שוחחתי בטלפון, אמר לגבות בחודש הבא — נרשם גם בקשר בכרטיס התורם">📝 הערה</button>`:''}</div>
     </div>`:''}</div>`;}
 function bqDonorDL(){return `<datalist id="bq_dl">${DB.slice(0,4000).map(d=>`<option value="${esc(((d.last||'')+' '+(d.first||'')).trim())} #${d.id}">`).join('')}</datalist>`;}
 function bqPickDonor(v){const m=/#(\d+)\s*$/.exec(v||'');if(m)return +m[1];
@@ -18837,6 +18837,30 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   e.preventDefault();e.stopPropagation();
   if(!b.dataset.did){uiAlert('החיוב לא משויך לתורם — שייך אותו קודם לכרטיס תורם');return;}
   if(await bqNoteFlow(+b.dataset.tx,b.dataset.amt,b.dataset.who||''))renderBQ();});
+// ⏸ מאיר: "אצל תורם שלא עבר לו — אפשרות של השהה, להשהות את החיוב האוטומטי שלו, עד לתאריך — שזה ישאל אם לתמיד או תאריך מסוים"
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.bqpause');if(!b)return;
+  e.preventDefault();e.stopPropagation();
+  const p2=n=>String(n).padStart(2,'0'),iso=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());
+  const nm=new Date();nm.setMonth(nm.getMonth()+1);
+  const v=await new Promise(res=>{const o=document.createElement('div');o.className='confirmov';
+    o.innerHTML=`<div class="confirmbox" style="text-align:right"><div class="cm">⏸ להשהות את החיוב האוטומטי של ${esc(b.dataset.who||'')}</div>
+      <label class="gvall" style="margin:6px 0"><input type="radio" name="bqpm" value="until" checked> <b>עד תאריך</b> — החיוב הבא יהיה בתאריך הזה, ומשם ממשיך לבד כל חודש</label>
+      <input class="cinp" type="date" id="bqp_d" value="${iso(nm)}" min="${iso(new Date(Date.now()+864e5))}">
+      <div class="mksub" id="bqp_h" style="margin:-8px 0 10px;font-weight:800;color:var(--accent)"></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 10px">${[['חודש',1],['חודשיים',2],['שלושה חודשים',3]].map(([l,n])=>`<button type="button" class="btn sm ghost" data-bqm="${n}">${l}</button>`).join('')}</div>
+      <label class="gvall" style="margin:6px 0"><input type="radio" name="bqpm" value="forever"> <b>לתמיד</b> — ההוראה מושהית בבנק ווסט עד שמחזירים אותה</label>
+      <input class="cinp" id="bqp_n" placeholder="הערה (לא חובה) — למשל: ביקש להפסיק עד אחרי החגים">
+      <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">⏸ להשהות</button></div></div>`;
+    document.body.appendChild(o);const D=o.querySelector('#bqp_d'),H=o.querySelector('#bqp_h');
+    const hh=()=>{H.textContent=typeof hebOfIso==='function'?hebOfIso(D.value):'';};D.oninput=D.onchange=()=>{o.querySelector('[value=until]').checked=true;hh();};hh();
+    o.querySelectorAll('[data-bqm]').forEach(x=>x.onclick=()=>{const d=new Date();d.setMonth(d.getMonth()+(+x.dataset.bqm));D.value=iso(d);o.querySelector('[value=until]').checked=true;hh();});
+    const done=r=>{o.remove();res(r);};o.querySelector('.cno').onclick=()=>done(null);o.onclick=ev=>{if(ev.target===o)done(null);};
+    o.querySelector('.cyes').onclick=()=>{const fv=o.querySelector('[value=forever]').checked;done({forever:fv,until:fv?'':D.value,note:o.querySelector('#bqp_n').value.trim()});};});
+  if(!v)return;
+  if(v.forever&&!await uiConfirm('להשהות את החיוב האוטומטי של '+(b.dataset.who||'')+' לתמיד?\nהוא לא יחויב יותר עד שתחזיר את ההוראה.','⏸ כן, לתמיד','ביטול'))return;
+  b.disabled=true;const r=await api('POST','/api/bq/tx/'+b.dataset.tx+'/pause',v).catch(()=>null);b.disabled=false;
+  if(!r||!r.ok){uiAlert('לא הושהה:\n'+((r&&r.error)||'אין תשובה מהשרת'));return;}
+  toast(r.forever?'⏸ הושהה לתמיד — נרשם בכרטיס התורם':'⏸ הושהה — החיוב הבא ב-'+String(r.next_run||'').split('-').reverse().join('.'));await load();render();});
 // 🔁 מאיר: "אצל תורם שנדחה — כפתור של ניסיון חיוב שוב, שינסה לחייב אותו על הסכום שלא עבר"
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.bqretry');if(!b)return;
   e.preventDefault();e.stopPropagation();

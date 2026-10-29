@@ -28659,6 +28659,47 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             bump_data()
             return self._send(200, {'ok': True, 'task_id': task_id})
+        m = re.match(r'/api/bq/tx/(\d+)/pause$', self.path)
+        if m:
+            # ⏸ מאיר (29.10.2026): "אצל תורם שלא עבר לו, כמו כאן בחיובים — אפשרות של השהה, להשהות את החיוב האוטומטי
+            # שלו, עד לתאריך — שזה ישאל אם לתמיד או תאריך מסוים". עד תאריך = החיוב הבא של ההוראה בבנק ווסט נדחה
+            # לתאריך הזה (ומשם ממשיך לבד כל חודש); לתמיד = ההוראה מושהית בבנק ווסט עד שמחזירים אותה
+            import banquest as _bq
+            con = db()
+            try:
+                t = con.execute("SELECT * FROM bq_tx WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not t:
+                    return self._send(200, {'ok': False, 'error': 'העסקה לא נמצאה'})
+                sid = t['schedule_id']
+                if not sid:
+                    return self._send(200, {'ok': False, 'error': 'החיוב הזה לא יצא מהוראת קבע — אין מה להשהות'})
+                row = con.execute("SELECT * FROM bq_sched WHERE id=?", (sid,)).fetchone()
+                until = str(b.get('until') or '').strip()[:10]
+                forever = bool(b.get('forever'))
+                if not forever and not re.match(r'^\d{4}-\d{2}-\d{2}$', until):
+                    return self._send(200, {'ok': False, 'error': 'תאריך לא תקין'})
+                if not forever and until <= today_iso():
+                    return self._send(200, {'ok': False, 'error': 'התאריך צריך להיות אחרי היום'})
+                code, res = _bq.update_schedule(sid, active=False) if forever else _bq.update_schedule(sid, next_run_date=until, active=True)
+                if code != 200 or not isinstance(res, dict):
+                    return self._send(200, {'ok': False, 'error': 'בנק ווסט לא עדכן: ' + (_bq.LAST.get('error') or str(code))})
+                if row:
+                    con.execute("UPDATE bq_sched SET active=?, next_run=? WHERE id=?",
+                                (0 if forever else 1, res.get('next_run_date') or (row['next_run'] if forever else until), sid))
+                dmy = lambda x: '.'.join(reversed(str(x or '')[:10].split('-')))
+                amt_s = '$' + ('%.2f' % ((row['amount'] if row else t['amount']) or 0)).rstrip('0').rstrip('.')
+                what = ('⏸ החיוב האוטומטי %s הושהה לתמיד (עד שמחזירים אותו)' % amt_s) if forever else \
+                       ('⏸ החיוב האוטומטי %s הושהה עד %s — משם ממשיך לבד כל חודש' % (amt_s, dmy(until)))
+                note = str(b.get('note') or '').strip()[:300]
+                if t['donor_id']:
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (t['donor_id'], today_iso(), 'בנק ווסט', what + ((' · ' + note) if note else ''), '', now_iso()))
+                con.execute("UPDATE bq_tx SET pay_note=? WHERE id=?", ((what + ((' · ' + note) if note else ''))[:300], t['id']))
+                con.commit()
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'next_run': res.get('next_run_date') or until, 'forever': forever})
         m = re.match(r'/api/bq/tx/(\d+)/fix$', self.path)
         if m:
             # ✎ מצב "סודר" ידני לחיוב שנדחה: auto (לפי הסכום) / no / yes / partial
