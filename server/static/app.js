@@ -11304,7 +11304,7 @@ async function avPaidOpen(q0){
   const t=new Date(),p2=n=>String(n).padStart(2,'0'),day=t.getFullYear()+'-'+p2(t.getMonth()+1)+'-'+p2(t.getDate());
   const y1=new Date(Date.now()-365*864e5),yday=y1.getFullYear()+'-'+p2(y1.getMonth()+1)+'-'+p2(y1.getDate());
   // חיפוש לפי שם (מכרטיס / מהחובות): שנה אחורה, כל סכום
-  let qn=q0||'', since=q0?yday+' 00:00':day+' 17:30', amt=q0?'':((AVYM&&AVYM.amount)||'20'), R=null, busy=false;
+  let qn=String(q0||'').trim(), since=q0?yday+' 00:00':day+' 17:30', amt=q0?'':((AVYM&&AVYM.amount)||'20'), R=null, busy=false;
   const RG={keva:'💳 הו"ק בטלפון',card:'💳 כרטיס בטלפון',cash:'💵 מזומן',msg:'🎙️ השאיר הודעה'};
   const draw=()=>{
     const rows=(R&&R.rows)||[], regs=((R&&R.regs)||[]).filter(x=>x.reg==='cash'||x.reg==='msg');
@@ -14978,6 +14978,7 @@ function renderComm(){
       <button class="btn" id="cm_zm" style="flex:2">🕰️ זמני תפילות</button>
       <button class="btn" id="cm_sch" style="flex:2" title="הודעות מתוזמנות, ניסיון חוזר למי שלא ענה, מיילים בתור">⏰ מתוזמנים</button>
       <button class="btn" id="cm_jobs" style="flex:2">✅ משימות צוות${CMJOBS&&CMJOBS.rows?` <b>${CMJOBS.rows.filter(j=>j.status!=='done').length||''}</b>`:''}</button>
+      <button class="btn" id="cm_ndfind" style="flex:2" title="חיפוש בכל העסקאות בנדרים פלוס לפי שם / טלפון — גם תשלומים שלא שויכו לאף כרטיס">🔍 חיפוש תשלומים בנדרים פלוס</button>
     </div>
     ${smSectionHTML()}
     <div class="addrow avnewbox"><input id="cm_new" placeholder="➕ חבר חדש — שם משפחה ואז שם פרטי (אפשר גם טלפון ומייל באותה שורה)"><button class="btn sm" id="cm_newbtn">הוסף</button></div>
@@ -15030,6 +15031,8 @@ function renderComm(){
   // מאיר: "נתן תתן צריך להיות תחת לשונית קהילה… גם תרומות וגם כל מה שיש בקהילה, אבל לא לערב את התרומות"
   document.getElementById('cm_natan').onclick=()=>{cmSub='debts';cdFund='natan';cdData=null;cdKind='';cdSel=new Set();cdImp=null;cdAdd=false;cdMember=0;render();window.scrollTo(0,0);};
   document.getElementById('cm_jobs').onclick=()=>{cmSub='jobs';CMJOBS=null;render();window.scrollTo(0,0);};
+  // 🔍 מאיר: "לא הבנתי איפה אני רואה את זה פה, נדרים פלוס" — החיפוש ישר מהמסך הראשי של הקהילה
+  document.getElementById('cm_ndfind').onclick=async()=>{const v=await uiPrompt('את מי לחפש בנדרים פלוס? שם (למשל: אלחדד שמעון) או טלפון','');if(v===null)return;avPaidOpen(String(v).trim()||' ');};
   document.getElementById('cm_sch').onclick=()=>{const sb=document.getElementById('cm_schbox');if(sb){SCH=null;renderSched(sb);sb.scrollIntoView({behavior:'smooth',block:'start'});}else{cmSub='sched';render();}};
   document.getElementById('cm_zm').onclick=()=>{cmSub='zmanim';render();window.scrollTo(0,0);};
   if(CMJOBS===null)api('GET','/api/cm/jobs').then(r=>{if(!r||!r.ok||CMJOBS)return;CMJOBS=r;const n=r.rows.filter(j=>j.status!=='done').length,bt=document.getElementById('cm_jobs');if(bt&&n)bt.innerHTML='✅ משימות צוות <b>'+n+'</b>';});
