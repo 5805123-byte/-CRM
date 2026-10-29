@@ -18876,8 +18876,9 @@ def ym_worker(job_id, wait=True):
                     lbl = '📞 הודעה קולית' if job['channel'] == 'voice' else '💬 SMS'
                     try:
                         if m['kind'] == 'm':
-                            con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,'out','',?)",
-                                        (m['ref_id'], today_iso(), 'ימות המשיח', lbl + ' נשלחה אל ' + m['phone'], m['text'], now_iso()))
+                            # מאיר: "שזה גם יהיה תמיד בחלון שלו, בקשר אצלו" — מזהה ההודעה נשמר, כדי לשמוע / להוריד את ההקלטה מהכרטיס
+                            con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,'out',?,?)",
+                                        (m['ref_id'], today_iso(), 'ימות המשיח', lbl + ' נשלחה אל ' + m['phone'], m['text'], 'ym:%d' % m['id'], now_iso()))
                         elif m['kind'] == 'd':
                             con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,?,?,'')",
                                         (m['ref_id'], today_iso(), 'ימות המשיח', lbl + ': ' + (m['text'] or '')[:300]))
@@ -23643,8 +23644,22 @@ class H(BaseHTTPRequestHandler):
         if m:
             con = db()
             rows = [dict(r) for r in con.execute(
-                "SELECT id,date,channel,summary,body,direction,at,q_id FROM member_log "
+                "SELECT id,date,channel,summary,body,direction,at,q_id,msg_id FROM member_log "
                 "WHERE member_id=? ORDER BY date DESC, id DESC", (int(m.group(1)),))]
+            # 🎧 ההודעה הקולית שנשלחה — מזהה ההודעה בימות (שורות ישנות: לפי הנוסח והיום)
+            try:
+                for r_ in rows:
+                    mid_ = str(r_.get('msg_id') or '')
+                    if mid_.startswith('ym:'):
+                        r_['ym_id'] = int(mid_[3:]); continue
+                    if r_.get('channel') == 'ימות המשיח' and r_.get('direction') == 'out' and 'הודעה קולית' in str(r_.get('summary') or ''):
+                        y_ = con.execute("SELECT y.id FROM ym_msg y JOIN ym_job j ON j.id=y.job WHERE j.channel='voice' AND y.kind='m' AND y.ref_id=? "
+                                         "AND y.text=? AND substr(COALESCE(y.sent_ts,y.at,''),1,10)=? ORDER BY y.id DESC LIMIT 1",
+                                         (int(m.group(1)), r_.get('body') or '', str(r_.get('date') or ''))).fetchone()
+                        if y_:
+                            r_['ym_id'] = y_['id']
+            except Exception as e:
+                print('  member log ym error:', e)
             # 👁 מאיר: "אני רוצה לראות אם הוא ראה את האימייל ששלחתי לו" — לכל מייל שיצא: נפתח מתי וכמה פעמים
             # (לפי השורה בתור; במיילים ישנים — לפי הנושא והיום)
             try:
@@ -31237,13 +31252,15 @@ def ym_req_rows(con, st='open'):
     אותה. שולמו / הכל — 90 יום אחורה."""
     days = YM_REQ_DAYS if st == 'open' else 90
     since = (il_now() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
-    w = {'open': " AND COALESCE(m.paid_at,'')='' AND COALESCE(m.req_off,'')=''",
-         'paid': " AND COALESCE(m.paid_at,'')<>''", 'canceled': " AND COALESCE(m.req_off,'')<>''"}.get(st, '') + " AND COALESCE(m.req_off,'')<>'debt'"
+    # מאיר: "שר רפאל — 600" — החיוג החוזר הוא אותה בקשה, לא בקשה נוספת; מה ששולם על החיוג החוזר סוגר את המקורית
+    w = {'open': " AND COALESCE(m.paid_at,'')='' AND COALESCE(m.req_off,'')='' AND COALESCE((SELECT r.paid_at FROM ym_msg r WHERE r.id=m.retried),'')=''",
+         'paid': " AND COALESCE(NULLIF(m.paid_at,''),(SELECT r.paid_at FROM ym_msg r WHERE r.id=m.retried),'')<>''", 'canceled': " AND COALESCE(m.req_off,'')<>''"}.get(st, '') + " AND COALESCE(m.req_off,'')<>'debt'"
     # מאיר (28.10.2026): "כל מי שקיבל טלפון ולא נרשם למירון רשום בחובות של הקהילה?? מה הקשר בכלל לקהילה ולמה
     # חובות?" — הזמנה לאירוע עם דמי הרשמה (event) היא לא חוב ולא בקשת תשלום; לא מופיעה כאן בכלל
-    w += " AND COALESCE(m.event,'')='' AND COALESCE(m.kind,'')<>'a'"
+    w += " AND COALESCE(m.event,'')='' AND COALESCE(m.kind,'')<>'a' AND m.retry_of IS NULL"
     rows = [dict(r) for r in con.execute(
-        "SELECT m.id,m.kind,m.ref_id,m.name,m.phone,m.amount,m.sent_ts,m.paid_at,m.paid_amount,m.paid_via,m.req_off,m.job,"
+        "SELECT m.id,m.kind,m.ref_id,m.name,m.phone,m.amount,m.sent_ts,COALESCE(NULLIF(m.paid_at,''),(SELECT r.paid_at FROM ym_msg r WHERE r.id=m.retried)) paid_at,"
+        "COALESCE(m.paid_amount,(SELECT r.paid_amount FROM ym_msg r WHERE r.id=m.retried)) paid_amount,COALESCE(NULLIF(m.paid_via,''),(SELECT r.paid_via FROM ym_msg r WHERE r.id=m.retried)) paid_via,m.req_off,m.job,m.retried,j.channel jch,"
         "j.label jlabel FROM ym_msg m LEFT JOIN ym_job j ON j.id=m.job WHERE m.status='sent' AND CAST(COALESCE(m.amount,'0') AS REAL)>0 "
         # מאיר: "מה זה ה-10 שקל, לא הבנתי" — שיחות בדיקה אליי הן לא חוב
         "AND COALESCE(j.test,0)=0 AND COALESCE(m.kind,'')<>'t' "

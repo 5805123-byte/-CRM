@@ -16372,7 +16372,11 @@ function cdRemRes(d){if(!d||!d.reminded_at)return '';const v=d.reminded_via;
   const chk=t.startsWith('⏳ בודק')&&d.y_job?` <button type="button" class="cdchk" data-ymchk="${d.y_job}" title="לבדוק עכשיו ביומן של ימות">🔄 בדוק עכשיו</button>`:'';
   // מאיזו קופה יצאה ההודעה — כדי שלא יתבלבלו בין שיחה של הקהילה לשיחה של נתן תתן
   if(d.y_st&&(d.y_fund||'')!==(d.fund||''))t+=d.y_fund==='natan'?' · (שיחה של נתן תתן)':' · (שיחה של הקהילה)';
-  return `<small class="cdres ${c}" title="${esc('נשלח '+String(d.y_sent||d.reminded_at||'').slice(0,16)+(d.y_call?' · '+d.y_call:''))}">${esc(t)}${chk}</small>`;}
+  // 🎧 מאיר: "אני רוצה לראות בחלון שלו את ההודעה הקולית שהוא קיבל ולשמוע את זה, וגם להוריד את ההקלטה"
+  const aud=d.y_id&&d.y_st==='sent'&&(!d.reminded_via||d.reminded_via==='voice')?` <button type="button" class="btn sm ghost ymaud" data-ymid="${d.y_id}" data-nm="${esc(((d.ml||'')+' '+(d.mf||'')).trim()||d.name||'')}" title="לשמוע את ההודעה שקיבל — ומשם להוריד / לשלוח">🎧 לשמוע</button>`:'';
+  return `<small class="cdres ${c}" title="${esc('נשלח '+String(d.y_sent||d.reminded_at||'').slice(0,16)+(d.y_call?' · '+d.y_call:''))}">${esc(t)}${chk}</small>${aud}`;}
+// לחיצה על 🎧 בכל מקום (חובות, כרטיס חבר) — ההקלטה ששלחנו, עם הורדה ושיתוף
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.ymaud');if(!b)return;e.preventDefault();e.stopPropagation();ymAudio(b.dataset.ymid,b.dataset.nm,b);},true);
 // 🎙️ מאיר: "אם אחד השאיר הודעה במערכת של ימות המשיח — שההודעה תהיה בכרטיס שלו וגם בחלון החובות"
 function cdVmHTML(v){return `<div class="cdvm ${v.heard?'':'new'}"><b>🎙️ השאיר הודעה ${esc(ndDate(v.at))} ${esc(String(v.at||'').slice(11,16))}</b>${v.heard?'':' <small class="cdres bad">חדשה</small>'}
   <audio controls preload="none" src="/api/yemot/vm/${v.id}.wav" data-vmid="${v.id}"></audio>${(v.transcript||'').trim()?`<div class="cdvmt">📝 ${esc(v.transcript)}</div>`:''}</div>`;}
@@ -16480,7 +16484,8 @@ function cdReqRow(d){
   return `<div class="cdrow ${d.status}"><span></span>
     <div class="cdmain"><b class="cdname" data-cdm="${d.member_id||''}" title="כל החובות שלו">${esc(nm)}</b> <span class="cdk cdk-msg">📞 הודעה</span>
       <span class="cdtitle">${esc(d.title||'')}</span>
-      <small class="cdmeta">נשלחה ${esc((d.sent_ts||'').slice(0,16))}${d.phone?` · <span dir="ltr">${esc(d.phone)}</span>`:''}${d.status==='open'?' · מוצע בשלוחת התשלום':''}</small></div>
+      <small class="cdmeta">נשלחה ${esc((d.sent_ts||'').slice(0,16))}${d.phone?` · <span dir="ltr">${esc(d.phone)}</span>`:''}${d.status==='open'?' · מוצע בשלוחת התשלום':''}${+d.retried>0?' · כולל החיוג החוזר':''}</small>
+      ${d.jch!=='sms'?`<button type="button" class="btn sm ghost ymaud" data-ymid="${d.id}" data-nm="${esc(nm)}" title="לשמוע את ההודעה שקיבל — ומשם להוריד / לשלוח">🎧 לשמוע את ההודעה</button>`:''}</div>
     <div class="cdamt"><b>${cdMoney(d.amount)}</b>${d.status==='paid'?`<small class="ndok">✓ שולם ${cdMoney(d.paid_amount)}${d.paid_via?' · '+esc(d.paid_via):''}</small>`:(d.status==='canceled'?'<small>בוטל</small>':'')}</div>
     <div class="bqacts">${d.status==='open'?`<button class="btn sm ghost" data-cdr="paid" data-id="${d.id}" title="שולם">✓</button>
       <button class="btn sm ghost" data-cdr="amount" data-id="${d.id}" title="שנה סכום">✎</button>
@@ -16975,8 +16980,8 @@ function openMember(m){
         (x.opened_at?` <small class="cdres ok" title="מספר הפתיחות נמדד בתמונה זעירה — מי שחוסם תמונות לא נספר">👁 נפתח ${esc(ndDate(x.opened_at))} ${esc(String(x.opened_at).slice(11,16))}${+x.opens>1?' (×'+x.opens+')':''}</small>`
           :` <small class="cdres" title="ייתכן שקרא בלי להציג תמונות — אז זה לא נמדד">⏳ עוד לא נפתח</small>`));
       box.innerHTML=`<div style="display:flex;justify-content:flex-end;margin-bottom:4px"><button class="btn sm ghost" id="cm_reps">📥 לבדוק אם ענה במייל</button></div>`
-        +(rows.length?rows.map(x=>x.vm?cdVmHTML({id:x.vm,at:x.at,heard:x.heard,transcript:x.body}):`<div class="cmlog${x.direction==='in'&&x.channel==='אימייל'?' cmin':''}"><div><b>${esc(x.date||'')}</b> · ${esc(x.summary||'')}${opn(x)} <button class="fdel cmlogdel" data-id="${x.id}" title="מחק">✕</button></div>
-        ${(x.body||'').trim()&&(x.direction==='out'||x.channel==='אימייל')?`<details${x.direction==='in'?' open':''}><summary>${x.direction==='in'?'הצג את התשובה שלו':'הצג את המכתב'}</summary><pre class="mhe">${esc(x.body)}</pre></details>`:''}</div>`).join('')
+        +(rows.length?rows.map(x=>x.vm?cdVmHTML({id:x.vm,at:x.at,heard:x.heard,transcript:x.body}):`<div class="cmlog${x.direction==='in'&&x.channel==='אימייל'?' cmin':''}"><div><b>${esc(x.date||'')}</b> · ${esc(x.summary||'')}${opn(x)}${x.ym_id?` <button type="button" class="btn sm ghost ymaud" data-ymid="${x.ym_id}" data-nm="${esc(mName(m))}" title="לשמוע את ההודעה שקיבל — ומשם להוריד / לשלוח">🎧 לשמוע</button>`:''} <button class="fdel cmlogdel" data-id="${x.id}" title="מחק">✕</button></div>
+        ${(x.body||'').trim()&&(x.direction==='out'||x.channel==='אימייל')?`<details${x.direction==='in'?' open':''}><summary>${x.direction==='in'?'הצג את התשובה שלו':(x.channel==='ימות המשיח'?'הצג את נוסח ההודעה':'הצג את המכתב')}</summary><pre class="mhe">${esc(x.body)}</pre></details>`:''}</div>`).join('')
         :'<div class="hintxt">עדיין לא נשלח אליו כלום.</div>');
       const rb=document.getElementById('cm_reps');if(rb)rb.onclick=async()=>{rb.disabled=true;rb.textContent='⏳ בודק בתיבת המייל…';
         const r=await api('POST','/api/members/replies/sync',{}).catch(()=>null);
