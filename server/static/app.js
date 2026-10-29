@@ -8564,9 +8564,21 @@ async function bqDonorBlock(d,body){
         <button class="btn sm ghost" data-bqgs="${s.id}" title="לפתוח את הוראת הקבע בדף החיובים — סכום, תאריך, עבור מה, השהיה">↗ בדף החיובים</button></span></div>`).join('')}
     ${tx.length?`<div class="bqhsum"><b>${r.n_ok||0} חיובים שעברו · ${bqMoney(r.sum_ok)}</b>${r.since?` · מאז ${esc(bqDate(r.since))}`:''}
         <div class="bqhyrs">${Object.entries(r.years||{}).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,v])=>`<span>${esc(y)}: <b>${bqMoney(v)}</b></span>`).join('')}</div></div>
-      <div class="bqpays" id="bqd_pays">${tx.map((t,i)=>{const s=BQ_ST[t.status]||[t.status,'off'];return `<div class="bqpay" ${i>=8?'hidden':''}><span>${esc(bqDate(t.created))} · <b>${bqMoney(t.amount)}</b>${t.description?(' · '+esc(t.description)):''}${t.card?(' · '+esc(t.card)):''}</span>
-      <span class="bqst ${s[1]}">${esc(s[0])}${BQ_BAD.includes(t.status)&&t.error?(': '+esc(t.error)):''}</span>${BQ_BAD.includes(t.status)?bqFixLine(t)+bqNoteLine(t):''}${bqRefBtn(t,d.last+' '+(d.first||''))}</div>`;}).join('')}</div>
-      ${tx.length>8?`<button class="btn sm ghost" id="bqd_more">📜 הצג את כל ההיסטוריה (${tx.length})</button>`:''}`:''}</div>`;
+      ${(()=>{
+        // מאיר: "למה כזה בלגן בכרטיס תורם על כל חיוב שלא עבר ובסוף סודר — זה מבלבל. תהיה קצר, קולע ופשוט: עבר, סודר,
+        // ובתאריך ושעה. תמחק מהכרטיס את כל ההיסטוריה שלא עבר, ואת ההיסטוריה הזו תשמור במקום אחר — מקבץ של כל מה שלא
+        // עבר לו ובסוף עבר". ברשימה: מה שעבר + מה שעדיין פתוח. מה שחזר ובסוף הסתדר — למטה, מקופל
+        const isFixed=t=>BQ_BAD.includes(t.status)&&((t.fix||{}).state==='fixed');
+        const main=tx.filter(t=>!isFixed(t)), fixedT=tx.filter(isFixed);
+        const tm=x=>{const v=String(x||'');return esc(bqDate(v.slice(0,10)))+(v.length>=16?' '+esc(v.slice(11,16)):'');};
+        const nFix=t=>fixedT.filter(x=>{const f=x.fix||{};return (f.ref&&(String(f.ref)===String(t.ref||'')||String(f.ref)===String(t.id)));}).length;
+        const row=(t,i)=>{const s=BQ_ST[t.status]||[t.status,'off'],ok=s[1]==='ok',bad=BQ_BAD.includes(t.status),nf=ok?nFix(t):0;
+          return `<div class="bqpay" ${i>=8?'hidden':''}><span>${tm(t.created)} · <b>${bqMoney(t.amount)}</b>${t.description?(' · '+esc(t.description)):''}${t.card?(' · '+esc(t.card)):''}</span>
+            <span class="bqst ${s[1]}">${esc(s[0])}${bad&&t.error?(': '+esc(t.error)):''}${nf?` <small class="bqsod">✅ סודר (אחרי ${nf} ${nf===1?'ניסיון שחזר':'ניסיונות שחזרו'})</small>`:''}</span>${bad?bqFixLine(t)+bqNoteLine(t):''}${bqRefBtn(t,d.last+' '+(d.first||''))}</div>`;};
+        return `<div class="bqpays" id="bqd_pays">${main.map(row).join('')}</div>
+          ${main.length>8?`<button class="btn sm ghost" id="bqd_more">📜 הצג את כל ההיסטוריה (${main.length})</button>`:''}
+          ${fixedT.length?`<details class="bqfixgrp"><summary>📁 חזרו ובסוף עברו (${fixedT.length})</summary>${fixedT.map(t=>{const f=t.fix||{};
+            return `<div class="bqpay bqfixrow"><span>${tm(t.created)} · ${bqMoney(t.amount)} · <span class="bqst bad">חזר</span></span><span class="bqst ok">✅ ${f.manual?('סומן כמסודר'+(f.note?' · '+esc(f.note):'')):('עבר '+tm(f.at)+(f.via?' · '+esc((chCfg(f.via)||{}).l||f.via):''))}</span></div>`;}).join('')}</details>`:''}`;})()}`:''}</div>`;
   const more=box.querySelector('#bqd_more'); if(more)more.onclick=()=>{box.querySelectorAll('#bqd_pays .bqpay[hidden]').forEach(e=>e.hidden=false);more.remove();};
   const go=k=>()=>{const cx=document.getElementById('cx');if(cx)cx.click();tab='charges';try{localStorage.setItem('kc_tab','charges');}catch(e){}
     document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='charges'));render();setTimeout(()=>bqOpenForm(k,d.id),300);};
