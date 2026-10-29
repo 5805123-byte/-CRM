@@ -9533,8 +9533,20 @@ function renderParnesEdit(d){
     <label class="fld" style="margin:4px 0"><span>🌙 השמות והבקשות של יום הפרנס הזה (לתעודה — בנפרד מהקוויטל)</span><textarea class="pyded" data-id="${p.id}" rows="2" placeholder="השמות שיוזכרו ביום הפרנס (למשל: יעקב בן שרה לרפואה שלמה)">${esc(p.dedication||'')}</textarea></label>
     ${kvPullBtnHTML('pykvpull').replace('class="','data-id="'+p.id+'" class="')}
     <button class="btn sm pydsave" data-id="${p.id}" style="margin:-2px 0 4px;width:100%">💾 שמור את הפרנס</button>
-    <div class="txctl"><button class="dnpaid ${+p.paid?'yes':'no'} pypaid" data-id="${p.id}">${+p.paid?'נגבה ✓':'🔴 טרם נגבה'}</button><button class="btn sm ghost pycert" data-id="${p.id}">🖨️ תעודת פרנס</button><button class="btn sm ghost pypic" data-id="${p.id}">${p.photo==='sent'?'📷 תמונת הקדשה נשלחה ✓':'📷 סמן: תמונת הקדשה נשלחה'}</button>${p.photo==='sent'?'<span class="fbchip on">✓ נשלחה תמונת הקדשה</span>':''}</div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`;}).join('')||'<div class="hintxt">אין עדיין.</div>');
+    <div class="txctl"><button class="dnpaid ${+p.paid?'yes':'no'} pypaid" data-id="${p.id}" title="${+p.paid?'לחץ כדי לסמן שעוד לא נגבה':'לחץ כדי לסמן שנגבה'}">${+p.paid?'✓ נגבה · לחץ לבטל':'🔴 טרם נגבה · לחץ לסמן'}</button>${+p.paid===1||sg?'':`<button class="btn sm bqgo pycharge" data-id="${p.id}" title="לגבות עכשיו מהכרטיס השמור שלו בבנק ווסט — התרומה נרשמת על הלילה הזה">💳 לגבות עכשיו באשראי</button>`}<button class="btn sm ghost pycert" data-id="${p.id}">🖨️ תעודת פרנס</button><button class="btn sm ghost pypic" data-id="${p.id}">${p.photo==='sent'?'📷 תמונת הקדשה נשלחה ✓':'📷 סמן: תמונת הקדשה נשלחה'}</button>${p.photo==='sent'?'<span class="fbchip on">✓ נשלחה תמונת הקדשה</span>':''}</div><label class="remset">🔔 תזכורת: <input type="date" class="pyrem" data-txt="${esc(p.date_text)}"></label></div>`;}).join('')||'<div class="hintxt">אין עדיין.</div>');
   el.querySelectorAll('.pykvpull').forEach(b=>b.onclick=()=>kvPullInto(el.querySelector('.pyded[data-id="'+b.dataset.id+'"]'),d));
+  // 💳 מאיר: "איפה אני גובה ממנו פה על פרנס יום… שאוכל מיד לגבות על זה באשראי שלו, ושזה יהיה על הפרנס הזה"
+  el.querySelectorAll('.pycharge').forEach(b=>b.onclick=async()=>{const p=d.parnes.find(x=>x.id==b.dataset.id);if(!p)return;
+    const ps=(d.donations||[]).filter(y=>String(y.parnes_id||'')===String(p.id)).reduce((s2,y)=>s2+amtNum(y.amount),0);
+    const price=amtNum(p.amount)||((p.kind||'parnes')==='parnes'?480:0), left=Math.max(0,price-ps);
+    const v=await uiPrompt('לגבות מ'+(d.last+' '+(d.first||'')).trim()+' באשראי השמור בבנק ווסט, על '+(DAYKIND[p.kind]||'פרנס')+' · '+(p.date_text||'')+'?'+(ps?'\nכבר שולם $'+Math.round(ps)+'.':'')+'\nהסכום ($):',left?String(Math.round(left*100)/100):'');
+    if(v===null)return;const a=amtNum(v);if(!(a>0)){toast('סכום לא תקין');return;}
+    b.disabled=true;const t0=b.textContent;b.textContent='⏳ מחייב…';
+    const r=await api('POST','/api/parnes/'+p.id+'/charge',{amount:a}).catch(()=>null);
+    b.disabled=false;b.textContent=t0;
+    if(!r||!r.ok){uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'אין תשובה מהשרת'));return;}
+    toast('✅ נגבו $'+a+(r.card?' · '+r.card:'')+(r.full?' — הלילה נגבה':' — נשאר לגבות')+' · נרשם על הלילה');
+    await load();const nd=DB.find(x=>x.id==d.id);if(nd)Object.assign(d,nd);renderParnesEdit(d);});
   el.querySelectorAll('.pyded').forEach(t=>{autoGrow(t);t.addEventListener('input',()=>autoGrow(t));t.onblur=async()=>{const p=d.parnes.find(x=>x.id==t.dataset.id);if(!p||(p.dedication||'')===t.value)return;p.dedication=t.value;await api('PUT','/api/parnes/'+p.id,{dedication:t.value});toast('נשמר ✓');};});
   // מאיר: "איך אני שומר את זה? תעשה שיהיה כפתור שמירה" — כל שדה נשמר גם
   // לבד ברגע שמשנים אותו, אבל הכפתור שומר את כל הפרנס בבת אחת: סכום, סוג,

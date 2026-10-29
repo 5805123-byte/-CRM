@@ -28544,6 +28544,58 @@ class H(BaseHTTPRequestHandler):
             con.close()
             bump_data()
             return self._send(200, out)
+        m = re.match(r'/api/parnes/(\d+)/charge$', self.path)
+        if m:
+            # 💳 מאיר (29.10.2026): "איפה אני גובה ממנו פה על פרנס יום?… שאוכל מיד לגבות על זה באשראי שלו, ושזה יהיה על
+            # הפרנס הזה, וכך יהיה כתוב שזה נגבה" — חיוב מהכרטיס השמור של התורם בבנק ווסט; התרומה נקשרת ללילה,
+            # והלילה מסומן "נגבה" כשהכל שולם
+            import banquest as _bq
+            if not _bq.configured():
+                return self._send(200, {'ok': False, 'error': 'בנק ווסט לא מוגדר ב-Render'})
+            pid = int(m.group(1))
+            amt = round(_amt2(b.get('amount')), 2)
+            if amt <= 0:
+                return self._send(200, {'ok': False, 'error': 'חסר סכום'})
+            con = db()
+            try:
+                pr = con.execute("SELECT * FROM parnes WHERE id=?", (pid,)).fetchone()
+                if not pr or not pr['donor_id']:
+                    return self._send(200, {'ok': False, 'error': 'הלילה לא נמצא'})
+                did = pr['donor_id']
+                pm = int(b.get('pm_id') or 0)
+                p = con.execute("SELECT * FROM bq_pm WHERE id=?", (pm,)).fetchone() if pm else con.execute(
+                    "SELECT p.* FROM bq_pm p JOIN bq_cust c ON c.id=p.customer_id WHERE c.donor_id=? ORDER BY p.is_default DESC, p.id DESC LIMIT 1", (did,)).fetchone()
+                if not p:
+                    return self._send(200, {'ok': False, 'error': 'אין לתורם כרטיס אשראי שמור בבנק ווסט — קודם "💳 החלפת כרטיס" בקופסת בנק ווסט בכרטיס שלו'})
+                cu = con.execute("SELECT * FROM bq_cust WHERE id=?", (p['customer_id'],)).fetchone()
+                kind_cat = {'parnes': 'פרנס לילה', 'coffee': 'חדר קפה', 'breakfast': 'ארוחת בוקר'}.get(pr['kind'] or 'parnes', 'פרנס לילה')
+                desc = '%s · %s%s' % (kind_cat, pr['date_text'] or '', (' ' + pr['hyear']) if pr['hyear'] else '')
+                code, res = _bq.charge_pm(p['id'], amt, description=desc, customer_id=p['customer_id'],
+                                          email=(cu['email'] if cu else '') or '', send_receipt=True)
+                if code != 200 or not isinstance(res, dict):
+                    return self._send(200, {'ok': False, 'error': bq_hint(_bq.LAST.get('error') or 'החיוב נכשל')})
+                out = bq_record_charge(con, res, amt, desc, kind_cat, did, p['customer_id'],
+                                       ('%s %s' % (p['card_type'] or '', p['last4'] or '')).strip(), (cu['identifier'] if cu else ''))
+                full = False
+                if out.get('ok'):
+                    tid = 'BQ%d' % int(out.get('ref') or 0)
+                    con.execute("UPDATE donations SET parnes_id=?, category=? WHERE donor_id=? AND tid=?", (pid, kind_cat, did, tid))
+                    psum = con.execute("SELECT COALESCE(SUM(CAST(REPLACE(REPLACE(amount,',',''),'$','') AS REAL)),0) FROM donations WHERE parnes_id=?", (pid,)).fetchone()[0] or 0
+                    price = _amt2(pr['amount'])
+                    if price <= 0:
+                        con.execute("UPDATE parnes SET amount=? WHERE id=?", ('%g' % amt, pid)); price = amt
+                    full = psum + 0.5 >= price
+                    con.execute("UPDATE parnes SET paid=? WHERE id=?", (1 if full else 0, pid))
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (did, today_iso(), 'בנק ווסט', '💳 נגבה $%g על %s · %s · אסמכתא %s%s' % (amt, desc, ('%s %s' % (p['card_type'] or '', p['last4'] or '')).strip(), out.get('ref') or '',
+                                 '' if full else ' — נשאר $%g' % round(price - psum, 2)), '', now_iso()))
+                con.commit()
+                out['full'] = full
+                out['card'] = ('%s %s' % (p['card_type'] or '', p['last4'] or '')).strip()
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, out)
         if self.path == '/api/bq/sched/new':
             # 🔁 הוראת קבע חדשה על כרטיס שמור
             import banquest as _bq
