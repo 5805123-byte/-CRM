@@ -8280,7 +8280,8 @@ function bqExpired(s){let y=+s.exp_y||0,m=+s.exp_m||0;if(!y||!m)return false;if(
 function bqRefBtn(t,who){const s=BQ_ST[t.status]||['','off'],left=(+t.amount||0)-(+t.refunded||0);
   const done=+t.refunded>0.005?` <small class="bqst off">↩️ הוחזר ${bqMoney(t.refunded)}</small>`:'';
   if(s[1]!=='ok'||!['','charge'].includes(t.type||'')||left<=0.005)return done;
-  return done+` <button class="btn sm ghost bqrefb" data-tx="${t.id}" data-left="${left.toFixed(2)}" data-amt="${esc(t.amount)}" data-st="${esc(t.status)}" data-who="${esc(who||t.donor_name||t.name||'')}" data-card="${esc(t.card||'')}" data-did="${t.donor_id||''}" title="ביטול החיוב או החזר של חלק ממנו לכרטיס">↩️ ביטול / החזר</button>`;}
+  // מאיר: "מפריע לו הכפתור הגדול הזה אצל כל חיוב, ביטול החזר — זה אמור להיות משהו מאוד שולי וקטן למקרה חירום" — אייקון קטן
+  return done+` <button class="bqrefb bqrefmini" data-tx="${t.id}" data-left="${left.toFixed(2)}" data-amt="${esc(t.amount)}" data-st="${esc(t.status)}" data-who="${esc(who||t.donor_name||t.name||'')}" data-card="${esc(t.card||'')}" data-did="${t.donor_id||''}" title="ביטול החיוב או החזר של חלק ממנו לכרטיס — למקרה חירום">↩︎</button>`;}
 async function bqHistLoad(sid){bqHist[sid]={loading:true};renderBQ(false);const h=await api('GET','/api/bq/sched/'+sid+'/history');bqHist[sid]=(h&&h.ok)?h:{rows:[],error:(h&&h.error)||''};renderBQ(false);}
 const bqLocalDate=s=>String(s||'').slice(0,10);
 // מאיר: "שזה יופיע גם בכרטיס תורם שסודר… ואם כתוב סודר והאמת שלא סודר כי זה תשלום אחר —
@@ -18595,7 +18596,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   if(!await uiConfirm((full?(unsettled?'לבטל את כל החיוב של ':'להחזיר את כל החיוב של '):'להחזיר ל')+who+' '+bqMoney(amt)+(full?'':' מתוך '+bqMoney(left))+'?\nהכסף חוזר לכרטיס שלו'+(b.dataset.card?' ('+b.dataset.card+')':'')+'. התרומה בכרטיס אצלנו '+(full?'תימחק':'תוקטן')+' בהתאם.','↩️ כן, '+(full?'לבטל':'להחזיר'),'ביטול'))return;
   b.disabled=true;b.textContent='שולח לבנק ווסט…';
   const r=await api('POST','/api/bq/tx/'+b.dataset.tx+'/refund',{amount:amt,reason:why.trim()});
-  if(!r||!r.ok){b.disabled=false;b.textContent='↩️ ביטול / החזר';await uiAlert('לא בוצע:\n'+((r&&r.error)||'שגיאה'));return;}
+  if(!r||!r.ok){b.disabled=false;b.textContent=b.classList.contains('bqrefmini')?'↩︎':'↩️ ביטול / החזר';await uiAlert('לא בוצע:\n'+((r&&r.error)||'שגיאה'));return;}
   toast(r.kind==='void'?'↩️ החיוב בוטל ✓':'↩️ הוחזרו '+bqMoney(r.amount)+' לכרטיס ✓');
   if(r.warn)await uiAlert(r.warn);
   const did=+b.dataset.did, inCard=!!b.closest('#bqdonor');

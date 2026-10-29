@@ -30814,6 +30814,39 @@ def bq_fix_annotate(con, rows):
             r['fix'] = {'state': 'fixed', 'manual': 0, 'at': h['created'], 'amount': h['amount'], 'ref': h['ref'] or h['id'], 'via': h.get('via') or ''}
         else:
             r['fix'] = {'state': 'open', 'manual': 0}
+    # מאיר (29.10.2026, גאלד יעקב): "למה גאלד מופיע כלא עבר אם בסוף כבר הסתדר" — כשחיוב של $1,000 נדחה, ניסו
+    # באותם ימים סכומים קטנים יותר ($500, $300) והם נדחו גם; ה-$1,000 עבר אחר כך. הניסיונות הקטנים האלה שייכים
+    # לאותו חיוב — כשהחיוב הגדול שלידם (עד 3 ימים, אותו תורם / לקוח) סודר, גם הם מסודרים
+    def _k(r):
+        return r.get('donor_id') or ('c%s' % r.get('customer_id'))
+    def _d(r):
+        try:
+            return datetime.date.fromisoformat(str(r.get('created') or '')[:10])
+        except ValueError:
+            return None
+    for r in bad:
+        if (r.get('fix') or {}).get('state') != 'open' or (r.get('fix') or {}).get('manual'):
+            continue
+        d0, a0 = _d(r), _amt2(r.get('amount'))
+        if not d0:
+            continue
+        big = next((x for x in bad if x is not r and _k(x) == _k(r) and (x.get('fix') or {}).get('state') == 'fixed'
+                    and _amt2(x.get('amount')) > a0 + 0.5 and _d(x) and abs((_d(x) - d0).days) <= 3), None)
+        if big:
+            f = big['fix']
+            r['fix'] = {'state': 'fixed', 'manual': 0, 'at': f.get('at'), 'amount': f.get('amount'), 'ref': f.get('ref'), 'via': f.get('via') or '',
+                        'note': 'ניסיון בסכום קטן יותר על החיוב של ' + ('$%g' % _amt2(big.get('amount')))}
+    # ניסיון קודם של אותו חיוב (אותו סכום, עד 14 יום לפני) — מסודר כשהניסיון שאחריו מסודר (כמו הקיבוץ במסך)
+    for r in sorted(bad, key=lambda x: str(x.get('created') or ''), reverse=True):
+        if (r.get('fix') or {}).get('state') != 'open' or (r.get('fix') or {}).get('manual'):
+            continue
+        d0, a0 = _d(r), _amt2(r.get('amount'))
+        if not d0:
+            continue
+        nxt = next((x for x in bad if x is not r and _k(x) == _k(r) and (x.get('fix') or {}).get('state') == 'fixed'
+                    and abs(_amt2(x.get('amount')) - a0) < 0.01 and _d(x) and 0 <= (_d(x) - d0).days <= 14), None)
+        if nxt:
+            r['fix'] = dict(nxt['fix'], note=(nxt['fix'].get('note') or 'ניסיון חוזר של אותו חיוב'))
     return rows
 
 
