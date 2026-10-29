@@ -4755,6 +4755,20 @@ def ensure_schema():
     except Exception as e:
         print('  event msgs fix error:', e)
 
+    # מאיר (29.10.2026): "תכניס ליומן להיום ב-12 וגם למשימות לעשות קבלה ליעקב צוקרמן שתרם 8,000 שקל" — משימה עם שעה
+    # (מופיעה ביומן בשעה 12:00 ובלשונית המשימות), על הכרטיס שלו אם נמצא כרטיס יחיד
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='zuckerman_receipt_task_v1'").fetchone():
+            _zk = con.execute("SELECT id FROM donors WHERE (last LIKE 'צוקרמן%' OR last LIKE 'צוקערמאן%' OR last LIKE 'צוקרמאן%') AND first LIKE 'יעקב%'").fetchall()
+            _zid = _zk[0]['id'] if len(_zk) == 1 else None
+            _note = 'לעשות קבלה ליעקב צוקרמן על תרומה של 8,000 ₪'
+            if not con.execute("SELECT 1 FROM tasks WHERE note=? AND COALESCE(done,0)=0", (_note,)).fetchone():
+                con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,at_time) VALUES(?,?,?,?,?)", (_zid, '2026-10-29', 'other', _note, '12:00'))
+            con.execute("INSERT INTO seed_flags(name) VALUES('zuckerman_receipt_task_v1')"); con.commit()
+            print('  צוקרמן יעקב: משימה לקבלה ב-29.10 12:00 (%s)' % ('בכרטיס #%s' % _zid if _zid else 'משימה כללית — לא נמצא כרטיס יחיד, %d' % len(_zk)))
+    except Exception as e:
+        print('  zuckerman task error:', e)
+
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
