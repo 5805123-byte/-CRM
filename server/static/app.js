@@ -1082,6 +1082,39 @@ async function doneWithNote(t,dref){
   await setTaskDone(t,1,dref||t.dref);
   return true;
 }
+/* מאיר: "אם גביתי לו אתמול 500 דולר על פרנס לילה של יט חשוון איך אני משייך
+   את ה-500 לפרנס לילה הזה בדיוק?" — כשמסמנים לילה כנגבה (או "שילם חלק"),
+   מוצגים התשלומים של התורם שעוד לא שויכו לשום לילה, ולוחצים על התשלום הנכון.
+   מחזיר: תרומה שנבחרה · 'skip' = בלי לשייך · null = בוטל */
+function pnPickDon(d,p,skipLbl){
+  const lim=new Date(Date.now()-150*864e5).toISOString().slice(0,10);
+  const L=(d.donations||[]).filter(x=>!x.parnes_id&&String(x.date||'')>=lim&&amtNum(x.amount)>0)
+    .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,10);
+  if(!L.length)return Promise.resolve('skip');
+  return new Promise(res=>{
+    const o=document.createElement('div');o.className='confirmov';
+    const cs=x=>String(x.cur||'').trim()==='₪'?'₪':(String(x.cur||'').trim()==='$'?'$':curSym(d));
+    o.innerHTML=`<div class="confirmbox"><div class="cm">🔗 איזה תשלום שייך ל${esc((DAYKIND[p.kind]||'🌙 פרנס')+(p.date_text?(' · '+p.date_text):''))}?</div>
+      <div class="cmsub">לחץ על התשלום הנכון — הוא יירשם על הלילה הזה</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin:10px 0;max-height:50vh;overflow:auto">${L.map(x=>`<button class="btn ghost pnd" data-id="${x.id}" style="text-align:right;justify-content:flex-start">
+        <b>${cs(x)}${Math.round(amtNum(x.amount)).toLocaleString('en-US')}</b> · ${esc(x.date?gregLabel(x.date):'')}${x.method?(' · '+esc(chLabel(x.method))):''}${x.category?(' · '+esc(x.category)):''}</button>`).join('')}</div>
+      <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn ghost cskip">${esc(skipLbl||'בלי לשייך')}</button></div></div>`;
+    document.body.appendChild(o);
+    const done=v=>{o.remove();res(v);};
+    o.querySelectorAll('.pnd').forEach(b=>b.onclick=()=>done(L.find(x=>String(x.id)===b.dataset.id)));
+    o.querySelector('.cno').onclick=()=>done(null);
+    o.querySelector('.cskip').onclick=()=>done('skip');
+    o.onclick=e=>{if(e.target===o)done(null);};
+  });
+}
+// משייך תרומה קיימת ללילה; הלילה נסגר כנגבה רק כשהכל שולם
+async function pnLinkDon(d,p,x){
+  const cat=Object.keys(WFDAY).find(k=>WFDAY[k]===(p.kind||'parnes'))||'פרנס לילה';
+  await api('PUT','/api/donation/'+x.id,{category:cat,parnes_id:p.id});
+  const ps=(d.donations||[]).filter(y=>String(y.parnes_id||'')===String(p.id)).reduce((s2,y)=>s2+amtNum(y.amount),0)+amtNum(x.amount),pa=amtNum(p.amount);
+  const full=!(pa>0.5&&ps+0.5<pa); await api('PUT','/api/parnes/'+p.id,{paid:full?1:0});
+  return {full,left:Math.max(0,pa-ps)};
+}
 // בורר חודש+שנה עברית — לשיוך תורם מזדמן לחודש/שנה מסוימים בקוויטל המזדמנים
 function uiPickMonth(msg,curM,curY){
   return new Promise(res=>{
@@ -6407,9 +6440,15 @@ function cardDetails(d,body){
     // לילה ששולם עליו רק חלק — לא מסמנים "נגבה" בטעות
     const ps=(d.donations||[]).filter(y=>String(y.parnes_id||'')===String(p.id)).reduce((s2,y)=>s2+amtNum(y.amount),0),pa=amtNum(p.amount);
     if(np===1&&ps>0.5&&ps+0.5<pa&&!await uiConfirm('שולם רק '+Math.round(ps)+' מתוך '+Math.round(pa)+' (נשאר '+Math.round(pa-ps)+').\nלסמן שהלילה נגבה כולו?','✓ כן, נגבה הכל','ביטול'))return;
+    if(np===1&&ps<0.5){const x=await pnPickDon(d,p,'סמן נגבה בלי לשייך');if(x===null)return;
+      if(x!=='skip'){const r=await pnLinkDon(d,p,x);await load();const nd=DB.find(y=>y.id==d.id);
+        toast(r.full?'✓ התשלום שויך — הלילה נגבה':'✓ שויך · נשאר '+Math.round(r.left));if(nd){Object.assign(d,nd);cardDetails(d,body);}if(tab==='donors')renderDonors();return;}}
     p.paid=np;await api('PUT','/api/parnes/'+p.id,{paid:np});toast(np?'סומן כנגבה ✓':'סומן כטרם נגבה');cardDetails(d,body);if(tab==='donors')renderDonors();});
   body.querySelectorAll('.partbtn').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;
     const pa=amtNum(b.dataset.amt),ps=amtNum(b.dataset.psum),c=b.dataset.cur||'$',left=Math.max(0,pa-ps);
+    const px=await pnPickDon(d,p,'➕ תשלום חדש');if(px===null)return;
+    if(px!=='skip'){const r=await pnLinkDon(d,p,px);await load();const nd=DB.find(y=>y.id==d.id);
+      toast(r.full?'✓ התשלום שויך — הלילה שולם כולו':'✓ שויך · נשאר '+c+Math.round(r.left));if(nd){Object.assign(d,nd);cardDetails(d,body);}if(tab==='donors')renderDonors();return;}
     const v=await uiPrompt('כמה שילם עכשיו על הלילה?'+(ps?'\nכבר שולם '+c+Math.round(ps)+' מתוך '+c+Math.round(pa)+'.':'')+' נשאר '+c+Math.round(left)+'.',String(Math.round(left)||''));
     if(v===null)return;const a=amtNum(v);if(!(a>0)){toast('סכום לא תקין');return;}
     const cat=Object.keys(WFDAY).find(k=>WFDAY[k]===(p.kind||'parnes'))||'פרנס לילה';
