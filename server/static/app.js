@@ -17151,6 +17151,7 @@ async function cmNdPaint(m,showAll,boxId){
         ${k.kind==='bank'?`<button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="תשלום בודד מהחשבון — נשלח לבנק בשידור הקרוב">🏦 גבייה בבנק</button>`
         :`<button class="btn sm bqgo" data-ndchg="${esc(k.id)}" title="חיוב מיידי בכרטיס השמור בהוראה">⚡ חיוב עכשיו</button>
         <button class="btn sm ghost" data-ndsendm="${esc(k.id)}" title="קישור מאובטח של נדרים פלוס לעדכון הכרטיס">📲 עדכון כרטיס</button>
+        ${KA.some(o=>o.id!==k.id&&o.kind!=='bank'&&(o.mosad||'')===(k.mosad||''))?`<button class="btn sm ghost" data-ndmerge="${esc(k.id)}" title="לחייב את הסכום הזה מהכרטיס של הוראה אחרת שלו — ההוראות מתאחדות לאחת">🔀 להעביר לכרטיס של הוראה אחרת</button>`:''}
         <button class="btn sm ghost" data-ndmail="${esc(k.id)}" title="מייל עם קישור לעדכון האשראי, ושינוי סכום / תאריך חיוב — בנוסח שלך">✉️ במייל</button>
         <button class="btn sm ghost" data-ndcall="${esc(k.id)}" title="שיחה קולית: הסכום והתאריך בנוסח שלך, והקשה 1 שולחת לו קישור לעדכון הכרטיס">📞 בשיחה</button>`}</span></div>`).join('')
     :(KO.length?'':'<div class="hintxt">אין הוראת קבע מקושרת. אם יש לו הוראה בנדרים פלוס — בלשונית 💳 תשלום בטלפון אפשר לשייך אותה אליו.</div>'))+oldHTML;
@@ -17209,6 +17210,21 @@ async function cmNdPaint(m,showAll,boxId){
   box.querySelectorAll('[data-cdndel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את רישום התרומה?','🗑️ כן','לא'))return;
     await api('POST','/api/members/donation/'+b.dataset.cdndel,{action:'delete'});cmNdPaint(m,showAll,boxId);});
   // מאיר: "תתחיל מהקפאה הפעלה" — ⏸ / ▶ / ✎ / ⏭ ישירות מול נדרים פלוס
+  // מאיר (סוכות): "תיקח את הפרטים באשראי של המאה ותעביר אותו להוק של ה-30" — הסכום עובר להוראה שעל הכרטיס החדש
+  box.querySelectorAll('[data-ndmerge]').forEach(b=>b.onclick=async()=>{const k=K.find(x=>x.id==b.dataset.ndmerge);if(!k)return;
+    const O=KA.filter(o=>o.id!==k.id&&o.kind!=='bank'&&(o.mosad||'')===(k.mosad||''));
+    const kd=o=>ndMoney(o.amount)+(o.groupe?' '+o.groupe:'')+' ****'+(o.last4||'');
+    let t=O[0];
+    if(O.length>1){const v=await uiPrompt('לאיזו הוראה לצרף? (מספר)\n'+O.map((o,i)=>(i+1)+'. '+kd(o)).join('\n'),'1');if(v===null)return;t=O[(+v||0)-1];if(!t){toast('לא נבחר');return;}}
+    const tot=amtNum(t.amount)+amtNum(k.amount);
+    if(!await uiConfirm('נדרים פלוס לא מוסרים את מספר הכרטיס, אז אי אפשר להעתיק אותו להוראה של '+ndMoney(k.amount)+'.\n\nבמקום זה:\n• ההוראה '+kd(t)+' תעלה ל-'+ndMoney(tot)+' לחודש (מאותו כרטיס)\n• ההוראה הישנה '+kd(k)+' תוקפא','🔀 כן, לאחד','ביטול'))return;
+    b.disabled=true;const r=await api('POST','/api/nd/keva/'+encodeURIComponent(k.id)+'/action',{action:'merge',into:t.id}).catch(()=>null);b.disabled=false;
+    if(!r||!r.ok){uiAlert((r&&(r.error||r.message))||'לא עודכן');return;}
+    toast('✓ אוחד — '+ndMoney(tot)+' לחודש מהכרטיס ****'+(t.last4||''));
+    if(hasDebt&&await uiConfirm('לחייב עכשיו מהכרטיס ****'+(t.last4||'')+' גם את ה-'+ndMoney(k.amount)+' שחזר?','⚡ כן, לחייב','לא עכשיו')){
+      const c=await api('POST','/api/nd/keva/'+encodeURIComponent(t.id)+'/charge',{amount:amtNum(k.amount),groupe:k.groupe||'',member_id:m.id}).catch(()=>null);
+      if(c&&c.ok)toast('⚡ חויב '+ndMoney(k.amount)+' ✓');else uiAlert((c&&(c.error||c.message))||'החיוב לא עבר');}
+    cmNdPaint(m,showAll,boxId);});
   box.querySelectorAll('[data-ndact]').forEach(b=>b.onclick=async()=>{const k=K.find(x=>x.id==b.dataset.id),a=b.dataset.ndact,bank=k&&k.kind==='bank';if(!k)return;
     const desc=ndMoney(k.amount)+(k.groupe?' '+k.groupe:'')+(bank?' (בנקאית)':' ****'+(k.last4||''));const body={action:a};
     if(a==='freeze'&&!await uiConfirm('להקפיא את הוראת הקבע '+desc+'?\nהגבייה תיעצר עד שתפעיל אותה שוב.','⏸ כן, להקפיא','ביטול'))return;

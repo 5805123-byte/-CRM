@@ -28004,6 +28004,26 @@ class H(BaseHTTPRequestHandler):
                                         "groupe=COALESCE(?,groupe) WHERE id=?", ('%g' % amt if amt else None, nd_, nd_, grp, kid))
                         what = '✎ עודכנה הוראת הקבע' + (' · סכום ₪%g' % amt if amt else '') + (' · חיוב הבא ' + nd_ if nd_ else '') + \
                                (' · יום ' + str(b.get('day')) if b.get('day') else '') + (' · עבור ' + grp if grp else '')
+                    elif act == 'merge' and not bank:
+                        # מאיר (סוכות): "תיקח את הפרטים באשראי של המאה ותעביר אותו להוק של ה-30" — נדרים פלוס לא
+                        # מוסרים מספר כרטיס, אז אי אפשר להעתיק כרטיס בין הוראות. במקום: הסכום של ההוראה הישנה
+                        # מתווסף להוראה שעל הכרטיס החדש (100 → 130), וההוראה הישנה מוקפאת
+                        t = con.execute("SELECT * FROM nd_keva WHERE id=?", (str(b.get('into') or ''),)).fetchone()
+                        if not t or t['id'] == kid or (t['kind'] or '') == 'bank' or not t['active'] or str(t['mosad'] or '') != str(k['mosad'] or ''):
+                            return self._send(200, {'ok': False, 'error': 'ההוראה שאליה מצרפים לא נמצאה'})
+                        tot = round(_amt2(t['amount']) + _amt2(k['amount']), 2)
+                        g1, g2 = (t['groupe'] or '').strip(), (k['groupe'] or '').strip()
+                        grp = (g1 + ' + ' + g2) if g1 and g2 and g2 not in g1 else (g1 or g2)
+                        ok, msg = _nd.update_keva(t['id'], amount=tot, groupe=grp)
+                        if ok:
+                            con.execute("UPDATE nd_keva SET amount=?, groupe=? WHERE id=?", ('%g' % tot, grp, t['id']))
+                            ok2, msg2 = _nd.disable_keva(rid)
+                            if ok2:
+                                con.execute("UPDATE nd_keva SET active=0, off=? WHERE id=?", ('צורפה להוראה ****%s' % (t['last4'] or ''), kid))
+                            else:
+                                msg = 'ההוראה החדשה עודכנה ל-₪%g, אבל ההוראה הישנה לא הוקפאה: %s — להקפיא אותה ידנית' % (tot, msg2)
+                        what = '🔀 ההוראה של ₪%s%s צורפה להוראה שעל הכרטיס ****%s — עכשיו ₪%g לחודש' % (
+                            k['amount'] or '', (' (' + g2 + ')') if g2 else '', t['last4'] or '', tot)
                     elif act == 'delete':
                         # מחיקה — רק בסיסמת המערכת (לא הגבאי), ורק אחרי אישור במסך
                         if getattr(self, 'role', 'admin') != 'admin':
