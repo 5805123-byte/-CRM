@@ -14570,7 +14570,8 @@ function calMsgOpen(){
       <textarea id="cm_t" rows="2" style="width:100%;font-size:1.05rem" placeholder="למשל: להתקשר לכהן מחר ב-10 · פגישה עם לוי ביום שלישי 14:30 · ט״ו חשון לשלוח קבלה"></textarea>
       <div style="display:flex;gap:6px;margin-top:6px"><button class="btn" id="cm_send" style="flex:1">📨 שלח ליומן</button>
         <label class="btn ghost" style="cursor:pointer;flex:0 0 auto" title="תמונה של הזמנה">🖼️<input type="file" id="cm_f" accept="image/*" style="display:none"></label></div>
-      <div class="hintxt" style="margin-top:4px">Enter = שליחה · Shift+Enter = שורה חדשה · כמה משימות בהודעה אחת — כל אחת בשורה</div></div></div>`;
+      <div class="hintxt" style="margin-top:4px">Enter = שליחה · Shift+Enter = שורה חדשה · כמה משימות בהודעה אחת — כל אחת בשורה</div>
+      ${ROLE==='admin'?'<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700">🤖 להקליט ב-Claude — וזה נכנס ליומן לבד</summary><div id="cm_mcp" class="hintxt">טוען…</div></details>':''}</div></div>`;
   document.body.appendChild(o);
   const g=id=>o.querySelector('#'+id), close=()=>o.remove();g('cmx').onclick=close;
   let L=cmsgLoad();
@@ -14610,6 +14611,18 @@ function calMsgOpen(){
     g('cm_t').focus();};
   g('cm_send').onclick=send;
   g('cm_t').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}};
+  // 🤖 מאיר: "אני רוצה כאן בקלוד, כי זה הרבה יותר נוח לי להקליט" — כתובת החיבור ל-Claude (מחבר מותאם אישית)
+  const mcpBox=g('cm_mcp');
+  const mcpLoad=async(nw)=>{const r=await api('GET','/api/mcp/url'+(nw?'?new=1':'')).catch(()=>null);if(!r||!r.ok){mcpBox.textContent=(r&&r.error)||'לא נטען';return;}
+    mcpBox.innerHTML=`<ol style="margin:4px 0;padding-inline-start:18px;line-height:1.7">
+      <li>באפליקציה של Claude (או claude.ai): <b>הגדרות ← מחברים (Connectors) ← הוספת מחבר מותאם אישית</b></li>
+      <li>שם: <b>יומן כולל חצות</b> · כתובת: הכתובת למטה (העתק) · בלי סיסמה</li>
+      <li>בשיחה עם Claude מקליטים: "תכניס ליומן — מחר ב-10 להתקשר לכהן" — וזה נכנס לכאן</li></ol>
+      <div style="display:flex;gap:6px;align-items:center"><input readonly value="${esc(r.url)}" style="flex:1;direction:ltr;font-size:.8rem" id="cm_mcpurl"><button class="btn sm" id="cm_mcpcp">📋 העתק</button></div>
+      <div style="margin-top:4px">🔒 הכתובת היא המפתח — לא לשלוח אותה לאף אחד. <button class="btn sm ghost" id="cm_mcpnew" style="width:auto">כתובת חדשה (הישנה תפסיק לעבוד)</button></div>`;
+    mcpBox.querySelector('#cm_mcpcp').onclick=()=>{const t=r.url;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('הועתק ✓'),()=>{const i=mcpBox.querySelector('#cm_mcpurl');i.select();toast('סמן והעתק');});};
+    mcpBox.querySelector('#cm_mcpnew').onclick=async()=>{if(!await uiConfirm('ליצור כתובת חדשה? החיבור הקיים ב-Claude יפסיק לעבוד, וצריך להכניס שם את החדשה.','כן, חדשה','ביטול'))return;mcpLoad(true);};};
+  if(mcpBox)mcpBox.closest('details').ontoggle=e=>{if(e.target.open&&mcpBox.textContent==='טוען…')mcpLoad(false);};
   paint();setTimeout(()=>g('cm_t').focus(),50);}
 async function cmsgAdd(x){
   const body={due_date:x.date,kind:x.kind||'event',note:(x.title||'').trim(),assignee:'',at_time:x.time||'',place:(x.place||'').trim()};

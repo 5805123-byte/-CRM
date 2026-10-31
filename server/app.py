@@ -15022,6 +15022,7 @@ AUTH_HOURS_ROLE = {'gabbai': 30 * 24, 'comm': 30 * 24, 'parnes': 30 * 24, 'admin
 def auth_hours(role):
     return AUTH_HOURS_ROLE.get(role, AUTH_HOURS)
 AUTH_PUBLIC = ('/api/yemot/ivr/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/',
+               '/mcp/',   # ✍️ חיבור ל-Claude (הודעות ליומן) — מוגן בטוקן הסודי שבכתובת (CAL_MCP_TOKEN)
                '/u/', '/api/u/',   # קישור אישי לתורם לעדכון כרטיס (חתום, 30 יום) — בלי כניסה
                '/o.png')   # פיקסל מעקב הפתיחות — נטען אצל מי שקיבל את המייל, בלי כניסה (חתום בטוקן)   # תחיליות; הכניסה עצמה מטופלת לפני
 # כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
@@ -18968,6 +18969,172 @@ def nd_mk_comm(kind, groupe):
     return (kind or '') == 'bank' and not MK_ONLY_RX.search(groupe or '')
 
 
+# ✍️ מאיר: "אני רוצה את זה כאן בקלוד, כי הרבה יותר נוח לי להקליט, וזה מקליד לי אוטומטי" —
+# שרת MCP קטן: מחברים אותו ב-Claude (הגדרות ← מחברים ← מחבר מותאם אישית) בכתובת
+#     https://<הכתובת של המערכת>/mcp/<CAL_MCP_TOKEN>
+# ומאותו רגע אומרים ל-Claude "תכניס ליומן…" — והמשימה נכנסת ליומן של המערכת. הטוקן — רק ב-Render.
+def mcp_token(make=False):
+    """הטוקן הסודי של החיבור ל-Claude: מ-Render (CAL_MCP_TOKEN), אחרת נוצר פעם אחת ונשמר במערכת."""
+    t = (os.environ.get('CAL_MCP_TOKEN') or '').strip()
+    if t:
+        return t
+    con = db()
+    try:
+        t = kv_get(con, 'cal_mcp_token', '')
+        if not t and make:
+            import secrets
+            t = secrets.token_urlsafe(24)
+            con.execute("INSERT INTO app_kv(k,v) VALUES('cal_mcp_token',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (t,))
+            con.commit()
+        return t
+    finally:
+        con.close()
+
+
+MCP_DOW = ['שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון']
+MCP_TOOLS = [
+    {'name': 'add_to_calendar',
+     'description': 'מכניס משימה / פגישה / אירוע ליומן של המערכת של כולל חצות. date בפורמט YYYY-MM-DD (שעון ישראל) — '
+                    'אם המשתמש אמר "מחר" / "יום שלישי" / תאריך עברי (ט"ו חשון) ואתה לא בטוח בתאריך, שלח אותו כמו שהוא ב-when '
+                    'והמערכת תחשב. כמה משימות — קריאה נפרדת לכל אחת.',
+     'inputSchema': {'type': 'object', 'properties': {
+         'title': {'type': 'string', 'description': 'מה לעשות — בעברית, קצר וברור (למשל: להתקשר לכהן)'},
+         'date': {'type': 'string', 'description': 'YYYY-MM-DD'},
+         'when': {'type': 'string', 'description': 'התאריך כמו שנאמר, כשאין date: מחר / יום שלישי / ט"ו חשון / 25.11'},
+         'time': {'type': 'string', 'description': 'HH:MM — רשות'},
+         'place': {'type': 'string', 'description': 'מקום — רשות'},
+         'kind': {'type': 'string', 'enum': ['event', 'followup', 'email', 'other'], 'description': 'event=אירוע/פגישה, followup=שיחה, email=מייל/הודעה, other'}},
+         'required': ['title']}},
+    {'name': 'list_calendar',
+     'description': 'המשימות הפתוחות ביומן של המערכת בין שני תאריכים (ברירת מחדל: היום ו-7 הימים הבאים).',
+     'inputSchema': {'type': 'object', 'properties': {'date_from': {'type': 'string'}, 'date_to': {'type': 'string'}}}},
+    {'name': 'remove_from_calendar',
+     'description': 'מוחק משימה מהיומן לפי המספר שלה (מ-add_to_calendar / list_calendar).',
+     'inputSchema': {'type': 'object', 'properties': {'id': {'type': 'integer'}}, 'required': ['id']}},
+    {'name': 'mark_done',
+     'description': 'מסמן משימה ביומן כבוצעה, עם הערה (רשות).',
+     'inputSchema': {'type': 'object', 'properties': {'id': {'type': 'integer'}, 'note': {'type': 'string'}}, 'required': ['id']}},
+    {'name': 'today',
+     'description': 'התאריך של היום בישראל — לועזי, עברי ויום בשבוע.',
+     'inputSchema': {'type': 'object', 'properties': {}}},
+]
+
+
+def _mcp_day(iso):
+    try:
+        d = datetime.date.fromisoformat(iso)
+    except ValueError:
+        return iso
+    try:
+        hb = greg_to_heb_full(iso)
+    except Exception:
+        hb = ''
+    return 'יום %s %s%s' % (MCP_DOW[d.weekday()], d.strftime('%d/%m/%Y'), (' · ' + hb) if hb else '')
+
+
+def mcp_tool(name, a):
+    con = db()
+    try:
+        if name == 'today':
+            t = il_now().date().isoformat()
+            return 'היום: ' + _mcp_day(t) + ' (' + t + ')'
+        if name == 'add_to_calendar':
+            title = str(a.get('title') or '').strip()
+            if not title:
+                return '⚠️ חסר מה לעשות'
+            date = str(a.get('date') or '').strip()[:10]
+            tm = str(a.get('time') or '').strip()[:5]
+            if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date):
+                import calparse as _cp
+                wh = str(a.get('when') or a.get('date') or '')
+                its = _cp.simple((wh + ' ' + title).strip())
+                it = next((x for x in its if x.get('date')), None)
+                wd = re.search(r'(?:יום\s+)?(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת)', wh)
+                if not it and wd:            # "יום שלישי" — המופע הקרוב (היום עצמו = שבוע הבא)
+                    td = il_now().date()
+                    k = MCP_DOW.index(wd.group(1))
+                    it = {'date': (td + datetime.timedelta(days=(k - td.weekday()) % 7 or 7)).isoformat(), 'time': ''}
+                if not it:
+                    return '⚠️ לא הבנתי את התאריך ("%s"). שלח date בפורמט YYYY-MM-DD.' % (a.get('when') or a.get('date') or '')
+                date = it['date']
+                tm = tm or it.get('time') or ''
+            if tm and not re.fullmatch(r'([01]?\d|2[0-3]):[0-5]\d', tm):
+                tm = ''
+            kind = a.get('kind') if a.get('kind') in ('event', 'followup', 'email', 'other') else 'event'
+            place = str(a.get('place') or '').strip()
+            ex = con.execute("SELECT id FROM tasks WHERE COALESCE(done,0)=0 AND donor_id IS NULL AND due_date=? AND note=?", (date, title)).fetchone()
+            if ex:
+                return '✓ כבר ביומן (מס׳ %d): %s — %s' % (ex['id'], _mcp_day(date), title)
+            cur = con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(NULL,?,?,?,'',?,?)", (date, kind, title, tm, place))
+            con.commit()
+            bump_data()
+            return '✓ נכנס ליומן (מס׳ %d): %s%s — %s%s' % (cur.lastrowid, _mcp_day(date), (' בשעה ' + tm) if tm else '', title, (' · 📍 ' + place) if place else '')
+        if name == 'list_calendar':
+            f = str(a.get('date_from') or '')[:10] or il_now().date().isoformat()
+            t = str(a.get('date_to') or '')[:10] or (datetime.date.fromisoformat(f) + datetime.timedelta(days=7)).isoformat()
+            rows = con.execute("SELECT t.id,t.due_date,t.at_time,t.note,t.place,d.last,d.first FROM tasks t LEFT JOIN donors d ON d.id=t.donor_id "
+                               "WHERE COALESCE(t.done,0)=0 AND t.due_date BETWEEN ? AND ? ORDER BY t.due_date, COALESCE(NULLIF(t.at_time,''),'99'), t.id LIMIT 200", (f, t)).fetchall()
+            if not rows:
+                return 'אין משימות פתוחות בין %s ל-%s.' % (f, t)
+            out, last = [], ''
+            for r in rows:
+                if r['due_date'] != last:
+                    last = r['due_date']; out.append('\n' + _mcp_day(last) + ':')
+                who = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+                out.append('  • [%d] %s%s%s%s' % (r['id'], (r['at_time'] + ' ') if r['at_time'] else '', r['note'] or '', (' (' + who + ')') if who else '', (' 📍' + r['place']) if r['place'] else ''))
+            return '\n'.join(out).strip()
+        if name in ('remove_from_calendar', 'mark_done'):
+            try:
+                tid = int(a.get('id'))
+            except (TypeError, ValueError):
+                return '⚠️ חסר מספר משימה'
+            r = con.execute("SELECT id,due_date,note FROM tasks WHERE id=?", (tid,)).fetchone()
+            if not r:
+                return '⚠️ משימה %d לא נמצאה' % tid
+            if name == 'remove_from_calendar':
+                con.execute("DELETE FROM tasks WHERE id=?", (tid,))
+                con.commit(); bump_data()
+                return '🗑 נמחק מהיומן: %s — %s' % (_mcp_day(r['due_date'] or ''), r['note'] or '')
+            cur = con.cursor()
+            cur.execute("UPDATE tasks SET done=1, done_note=? WHERE id=?", (str(a.get('note') or '').strip(), tid))
+            try:
+                task_done_log(cur, tid, done=True, by='Claude', note=str(a.get('note') or '').strip() or None)
+            except Exception as e:
+                print('  mcp done log error:', e)
+            con.commit(); bump_data()
+            return '✓ בוצע: %s' % (r['note'] or '')
+        return '⚠️ כלי לא מוכר: %s' % name
+    finally:
+        con.close()
+
+
+def mcp_handle(msg):
+    """הודעת JSON-RPC אחת. מחזיר תשובה, או None להודעה (notification)."""
+    if not isinstance(msg, dict):
+        return {'jsonrpc': '2.0', 'id': None, 'error': {'code': -32600, 'message': 'Invalid Request'}}
+    mid, meth, prm = msg.get('id'), msg.get('method') or '', msg.get('params') or {}
+    if mid is None:
+        return None
+    ok = lambda res: {'jsonrpc': '2.0', 'id': mid, 'result': res}
+    if meth == 'initialize':
+        return ok({'protocolVersion': prm.get('protocolVersion') or '2025-06-18',
+                   'capabilities': {'tools': {'listChanged': False}},
+                   'serverInfo': {'name': 'kollel-chatzos-calendar', 'version': '1.0'},
+                   'instructions': 'היומן של המערכת של כולל חצות. כשהמשתמש מבקש להכניס משהו ליומן / תזכורת / משימה עם תאריך — '
+                                   'קרא ל-add_to_calendar (לכל משימה בנפרד) וענה לו בקצרה בעברית מה נכנס ולאיזה יום.'})
+    if meth == 'ping':
+        return ok({})
+    if meth == 'tools/list':
+        return ok({'tools': MCP_TOOLS})
+    if meth == 'tools/call':
+        try:
+            txt = mcp_tool(prm.get('name') or '', prm.get('arguments') or {})
+            return ok({'content': [{'type': 'text', 'text': txt}], 'isError': txt.startswith('⚠️')})
+        except Exception as e:
+            return ok({'content': [{'type': 'text', 'text': '⚠️ שגיאה: %s' % str(e)[:200]}], 'isError': True})
+    return {'jsonrpc': '2.0', 'id': mid, 'error': {'code': -32601, 'message': 'Method not found: ' + meth}}
+
+
 def mk_mosad():
     """מוסד המקווה בנדרים פלוס (התשלומים של המקווה עוברים שם). ב-Render אפשר לשנות: MIKVEH_NEDARIM_MOSAD."""
     return (os.environ.get('MIKVEH_NEDARIM_MOSAD') or '7000571').strip()
@@ -19593,6 +19760,12 @@ class H(BaseHTTPRequestHandler):
         return False
 
     def do_GET(self):
+        if self.path.startswith('/mcp/'):
+            # בלי זרם SSE — רק POST (Streamable HTTP, תשובות JSON)
+            if not self._mcp_ok():
+                return self._send(404, {'error': 'not found'})
+            self.send_response(405); self.send_header('Allow', 'POST'); self.send_header('Content-Length', '0'); self.end_headers()
+            return
         if not self._gate():
             return
         if self.path.split('?')[0].rstrip('/') in ('/parnes', '/kehila'):
@@ -22203,6 +22376,15 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'rows': rows, 'channels': chans, 'wa_ready': wa_ready,
                                     'pw_same': sorted(k for k in ('CRM_PASS_COMM', 'CRM_PASS_PARNES', 'CRM_PASS_GABBAI')
                                                       if (os.environ.get(k) or '').strip() and (os.environ.get(k) or '').strip() == (os.environ.get('CRM_PASS') or '').strip())})
+        if self.path.split('?')[0] == '/api/mcp/url':
+            # ✍️ הכתובת לחיבור ב-Claude — רק בסיסמת המערכת
+            if getattr(self, 'role', 'admin') != 'admin':
+                return self._send(403, {'ok': False, 'error': 'רק בסיסמת המערכת'})
+            if 'new=1' in self.path and not (os.environ.get('CAL_MCP_TOKEN') or '').strip():
+                con = db(); con.execute("DELETE FROM app_kv WHERE k='cal_mcp_token'"); con.commit(); con.close()
+            proto = (self.headers.get('X-Forwarded-Proto') or 'https').split(',')[0].strip()
+            host = self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or ''
+            return self._send(200, {'ok': True, 'url': '%s://%s/mcp/%s' % (proto, host, mcp_token(make=True))})
         if self.path.split('?')[0] == '/api/nd/masav_find':
             # 🔎 מאיר: "אני לא רואה את נחמן קליגר בכלל בחיפוש בבנק" — חיפוש לפי שם ישר בנדרים פלוס
             # (כל ההוראות הבנקאיות, בכל הקופות חוץ מהמקווה), וכל מה שנמצא נכנס אצלנו
@@ -24247,7 +24429,28 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True})
         return self._send(404, {'error': 'not found'})
 
+    def _mcp_ok(self):
+        tok = mcp_token()
+        got = self.path.split('?')[0][len('/mcp/'):].strip('/')
+        return bool(tok) and len(tok) >= 16 and hmac.compare_digest(got.encode(), tok.encode())
+
     def do_POST(self):
+        if self.path.startswith('/mcp/'):
+            if not self._mcp_ok():
+                return self._send(404, {'error': 'not found'})
+            try:
+                n = int(self.headers.get('Content-Length', 0) or 0)
+                msg = json.loads(self.rfile.read(n) or b'null')
+            except Exception:
+                return self._send(400, {'jsonrpc': '2.0', 'id': None, 'error': {'code': -32700, 'message': 'Parse error'}})
+            if isinstance(msg, list):
+                out = [r for r in (mcp_handle(x) for x in msg) if r is not None]
+            else:
+                out = mcp_handle(msg)
+            if not out:
+                self.send_response(202); self.send_header('Content-Length', '0'); self.end_headers()
+                return
+            return self._send(200, out)
         if not self._gate():
             return
         # התעודה כתמונה, לפי הפריסה שנמדדה על המסך. נשלחת ב-POST ולא בכתובת,
