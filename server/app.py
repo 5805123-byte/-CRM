@@ -32132,6 +32132,38 @@ def nd_sync_masav(con, acct, manual, pick, nidx, now):
         # ברשימה של נדרים פלוס, ובעמודת "חיוב הבא" כתוב המצב ("מוקפא 22/02/24") במקום תאריך
         if re.search(r'[א-ת]', k['next'] or ''):
             con.execute("UPDATE nd_keva SET active=0, off=? WHERE id=?", (re.sub(r'\s+', ' ', k['next']).strip()[:120], kid))
+    # מאיר: "אני נכנס לנדרים פלוס ורואה שיש לו הוראת קבע בנקאית — איך זה יכול להיות שכאן לא רואים?"
+    # (נחמן קליגר) — יש הוראות שלא מגיעות ב-GetMasavKevaNew. משלימים מהייצוא המלא: כל הוראה שחסרה
+    # נמשכת לפי המספר שלה (פעילה = קוד מצב 1). לא פעילה נבדקת שוב רק אחרי שבוע
+    seen = {k['id'] for k in ks}
+    try:
+        allr = _nd.masav_csv_rows()
+    except Exception as e:
+        print('  masav csv error:', e)
+        allr = []
+    ck = 'nd_masav_chk' + ('' if not mos else ':' + mos)
+    try:
+        cache = json.loads(kv_get(con, ck, '') or '{}')
+    except ValueError:
+        cache = {}
+    wk = (il_now() - datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+    budget2 = 40
+    for mid_, nm_ in allr:
+        if mid_ in seen:
+            continue
+        c = cache.get(mid_)
+        if c and c[0] != '1' and c[1] >= wk:
+            continue
+        if budget2 <= 0:
+            break
+        budget2 -= 1
+        try:
+            r = nd_masav_add(con, mid_, mos)
+        except Exception as e:
+            print('  masav add error:', mid_, e)
+            continue
+        cache[mid_] = ['1' if r and r['active'] else '0', today_iso()]
+    con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (ck, json.dumps(cache)))
     return len(ks)
 
 

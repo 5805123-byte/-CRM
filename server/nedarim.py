@@ -299,12 +299,17 @@ def masav_kevas():
 
 
 def masav_csv_find(q):
-    """🔎 חיפוש הוראה בנקאית לפי שם בכל ההוראות של המוסד (GetMasavCSV — הייצוא המלא, גם הוראות
-    שלא מופיעות ב-GetMasavKevaNew). מחזיר [(מזהה, שם)]. מספרי חשבון / ת"ז לא נשמרים."""
+    """🔎 חיפוש הוראה בנקאית לפי שם בכל ההוראות של המוסד. מחזיר [(מזהה, שם)]."""
     nrm = lambda x: re.sub(r'[וי\'"״׳\s]', '', str(x or ''))
     qn = nrm(q)
     if len(qn) < 3:
         return []
+    return [(k, n) for k, n in masav_csv_rows() if qn in nrm(n)][:8]
+
+
+def masav_csv_rows():
+    """כל ההוראות הבנקאיות של המוסד (GetMasavCSV — הייצוא המלא, גם הוראות שלא מופיעות
+    ב-GetMasavKevaNew). מחזיר [(מזהה, שם)]. מספרי חשבון / ת"ז לא נשמרים."""
     ok, txt = call('GetMasavCSV', {'ToMail': 0}, masav=True, raw=True, timeout=90)
     if not ok:
         raise RuntimeError('נדרים פלוס (ייצוא הוראות בנקאיות): %s' % (LAST.get('error') or txt[:120]))
@@ -319,17 +324,16 @@ def masav_csv_find(q):
     head = [h.strip() for h in rd[0]]
     c_id = [i for i, h in enumerate(head) if re.search(r'מזהה|^ID$|מס.?\s*הוראה', h)]
     c_nm = [i for i, h in enumerate(head) if 'שם' in h and 'בנק' not in h]
-    out = []
+    out, seen = [], set()
     for r in rd[1:]:
         nm = ' '.join(r[i].strip() for i in c_nm if i < len(r) and r[i].strip()) if c_nm else ' '.join(r)
-        if qn not in nrm(nm):
-            continue
         kid = next((re.sub(r'\D', '', r[i]) for i in c_id if i < len(r) and re.sub(r'\D', '', r[i])), '')
         if not kid:                                 # בלי כותרת מזהה — המספר הראשון בשורה
             kid = next((x for x in (re.sub(r'\D', '', c) for c in r) if 3 <= len(x) <= 9), '')
-        if kid and kid not in [o[0] for o in out]:
+        if kid and kid not in seen:
+            seen.add(kid)
             out.append((kid, nm.strip()))
-    return out[:8]
+    return out
 
 
 def masav_detail(masav_id):
