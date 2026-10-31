@@ -15152,7 +15152,7 @@ async function renderCommGifts(){
     if(!KVA){const r=await api('GET','/api/nd/kevas?all=1').catch(()=>null);KVA=r&&r.ok?r:{rows:[]};if(tab!=='comm'||cmSub!=='cgifts')return;}
     const knm=k=>(k.member_id&&(k.ml||k.mf)?((k.ml||'')+' '+(k.mf||'')).trim():(k.name||'')).trim()||'—';
     // מאיר: "תראה לי תמיד רק פעילות בלבד"
-    let KM=(KVA.rows||[]).filter(k=>+k.active&&k.mosad!==KVA.mk_mosad&&qhit(knm(k)+' '+(k.name||'')+' '+(k.phone||'')));
+    let KM=(KVA.rows||[]).filter(k=>+k.active&&kvComm(k,KVA.mk_mosad)&&qhit(knm(k)+' '+(k.name||'')+' '+(k.phone||'')));
     // מאיר: "אני רוצה שיראו מיד בחיפוש לפי שם" — הוראה בנקאית שנגבתה ממנו (בהיסטוריה) ועוד לא אצלנו:
     // נמשכת מנדרים פלוס לפי המספר שלה, בלי להקליד מספר
     if(!KM.length){
@@ -15163,7 +15163,7 @@ async function renderCommGifts(){
         let got=0;
         for(const id of ids){const r=await api('GET','/api/nd/masav_fetch/'+id.slice(1)).catch(()=>null);if(r&&r.ok)got++;}
         if(got){const r=await api('GET','/api/nd/kevas?all=1').catch(()=>null);KVA=r&&r.ok?r:KVA;KVH=null;if(tab!=='comm'||cmSub!=='cgifts')return;
-          KM=(KVA.rows||[]).filter(k=>+k.active&&k.mosad!==KVA.mk_mosad&&qhit(knm(k)+' '+(k.name||'')+' '+(k.phone||'')));}
+          KM=(KVA.rows||[]).filter(k=>+k.active&&kvComm(k,KVA.mk_mosad)&&qhit(knm(k)+' '+(k.name||'')+' '+(k.phone||'')));}
       }
     }
     // עדיין אין — חיפוש לפי השם ישר בכל ההוראות הבנקאיות בנדרים פלוס (פעם אחת לכל חיפוש)
@@ -15175,7 +15175,7 @@ async function renderCommGifts(){
         KVFOUND.set(qn,r||{ok:false});
         if(r&&r.found&&r.found.length){const r2=await api('GET','/api/nd/kevas?all=1').catch(()=>null);KVA=r2&&r2.ok?r2:KVA;KVH=null;}
         if(tab!=='comm'||cmSub!=='cgifts')return;
-        KM=(KVA.rows||[]).filter(k=>+k.active&&k.mosad!==KVA.mk_mosad&&qhit(knm(k)+' '+(k.name||'')+' '+(k.phone||'')));
+        KM=(KVA.rows||[]).filter(k=>+k.active&&kvComm(k,KVA.mk_mosad)&&qhit(knm(k)+' '+(k.name||'')+' '+(k.phone||'')));
       }
       const fr=KVFOUND.get(qn)||{};
       if(!KM.length){
@@ -15281,6 +15281,8 @@ async function renderCommGifts(){
 // 🔁 מאיר: "איפה אני רואה במערכת שלנו את כל בעלי ההוראות קבע? שיהיה מסודר לפי אלף בית" — כל ההוראות הפעילות
 // (אשראי ובנק), לפי א-ב, עם הסכום לחודש, עבור מה, הקופה והחיוב הבא; חיפוש, סינון, סה"כ לחודש ואקסל
 let KVH=null, KVA=null, kvhF='', kvhK='';
+// חשבון המקווה בנדרים ("כולל חצות ארץ ישראל") — גם הוראות בנקאיות של הקהילה (דמי חבר); רק מה שכתוב עליו מקווה / מנוי / טבילה נשאר בחוץ
+const kvComm=(k,mk)=>k.mosad!==mk||(k.kind==='bank'&&!/מקו?וה|מנוי|טביל/.test(k.groupe||''));
 const KVFETCHED=new Set(), KVFOUND=new Map();   // הוראות בנקאיות שכבר נמשכו לפי מספר בחיפוש שם — פעם אחת
 async function kvHolders(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
@@ -15289,7 +15291,7 @@ async function kvHolders(){
     const r=await api('GET','/api/nd/kevas').catch(()=>null);KVH=r&&r.ok?r:{rows:[]};if(!MEMBERS)await cmLoad();}
   const nm=k=>(k.member_id&&(k.ml||k.mf)?((k.ml||'')+' '+(k.mf||'')).trim():(k.name||'')).trim()||'—';
   const am=k=>+String(k.amount||'').replace(/[^\d.]/g,'')||0;
-  const all=(KVH.rows||[]).filter(k=>k.mosad!==KVH.mk_mosad);   // המקווה — נפרד
+  const all=(KVH.rows||[]).filter(k=>kvComm(k,KVH.mk_mosad));   // המקווה — נפרד (חוץ מהוראות בנקאיות של הקהילה)
   const kupas=[...new Set(all.map(k=>k.kupa))];
   const qq=(document.getElementById('kvh_q')||{}).value||'';
   const L=all.filter(k=>(!kvhK||(kvhK==='bad'?!!k.error:kvhK==='bank'?k.kind==='bank':k.kind!=='bank'))&&(!kvhF||k.kupa===kvhF)&&(!qq.trim()||matchStr(nm(k)+' '+(k.name||'')+' '+(k.phone||'')+' '+(k.groupe||''),qq.trim())))
@@ -15298,7 +15300,7 @@ async function kvHolders(){
   rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔁 בעלי הוראות קבע</h2>
     <div class="hintxt"><b>${L.length}</b> הוראות פעילות · סה״כ <b>₪${Math.round(tot).toLocaleString('he-IL')}</b> לחודש · לפי א-ב</div>
     <input id="kvh_q" placeholder="🔍 חיפוש שם / טלפון / עבור מה" value="${esc(qq)}" autocomplete="off" style="width:100%;margin:6px 0">
-    ${(KVH.accounts||[]).length?`<div class="hintxt">🔗 חשבונות נדרים פלוס שמחוברים: ${KVH.accounts.map(a=>`<b>${esc(a.name)}</b> (מוסד ${esc(a.mosad)}${a.mk?'':' · '+a.bank+' בנקאיות'})`).join(' · ')}</div>`:''}
+    ${(KVH.accounts||[]).length?`<div class="hintxt">🔗 חשבונות נדרים פלוס שמחוברים: ${KVH.accounts.map(a=>`<b>${esc(a.name)}</b> (מוסד ${esc(a.mosad)} · ${a.bank} בנקאיות)`).join(' · ')}</div>`:''}
     <button class="btn sm" id="kvh_sync" style="margin-bottom:6px" title="משיכה מיידית של כל ההוראות (אשראי ובנק), החיובים והחזרות מנדרים פלוס">🔄 סנכרן עכשיו מנדרים פלוס</button>
     <button class="btn sm ghost" id="kvh_fetch" style="margin-bottom:6px" title="הוראה בנקאית שלא מופיעה כאן — לפי המספר שלה בנדרים פלוס (מספר הוראה בראש החלון שלה)">🔎 הוראה בנקאית לפי מספר</button>
     <div class="bqseg"><button class="${kvhK?'':'on'}" data-kk="">הכל</button><button class="${kvhK==='card'?'on':''}" data-kk="card">💳 אשראי</button><button class="${kvhK==='bank'?'on':''}" data-kk="bank">🏦 בנק</button><button class="${kvhK==='bad'?'on':''}" data-kk="bad">🔴 חזרו <small>${all.filter(k=>k.error).length}</small></button></div>

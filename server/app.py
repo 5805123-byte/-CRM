@@ -18958,6 +18958,16 @@ def mk_old_msgs(con, phones=None):
     return out
 
 
+# מאיר: "החשבון הזה (כולל חצות ארץ ישראל) חייב להיות אצלנו — אתה מושך ממנו את התשלומים של המקווה" —
+# בחשבון של המקווה יש גם הוראות בנקאיות של הקהילה (נחמן קליגר — דמי חבר). הוראה בנקאית שם שלא
+# כתוב עליה מקווה / מנוי / טבילה — של הקהילה
+MK_ONLY_RX = re.compile(r'מקו?וה|מנוי|טביל')
+
+
+def nd_mk_comm(kind, groupe):
+    return (kind or '') == 'bank' and not MK_ONLY_RX.search(groupe or '')
+
+
 def mk_mosad():
     """מוסד המקווה בנדרים פלוס (התשלומים של המקווה עוברים שם). ב-Render אפשר לשנות: MIKVEH_NEDARIM_MOSAD."""
     return (os.environ.get('MIKVEH_NEDARIM_MOSAD') or '7000571').strip()
@@ -22203,8 +22213,6 @@ class H(BaseHTTPRequestHandler):
             try:
                 for acct in _nd.accounts():
                     mos = '' if acct['main'] else acct['mosad']
-                    if mos and mos == mk_mosad():
-                        continue
                     try:
                         with _nd.use(acct):
                             for kid, nm in _nd.masav_csv_find(qv):
@@ -23466,14 +23474,16 @@ class H(BaseHTTPRequestHandler):
                 mw = " AND (COALESCE(t.mosad,'')=? OR COALESCE(t.mosad,'')='')"
                 for t in con.execute("SELECT t.id,t.iso,t.time,t.amount,t.keva,t.groupe,t.comments,t.conf,t.type,t.member_id,t.name,t.for_local,t.mosad,"
                                      "m.last ml,m.first mf FROM nd_tx t LEFT JOIN members m ON m.id=t.member_id "
-                                     "WHERE COALESCE(t.amount,0)>=10 AND t.donor_id IS NULL" + (mw if gf else " AND COALESCE(t.mosad,'')=''") + " ORDER BY t.iso DESC LIMIT 6000",   # מאיר: פחות מ-10 ₪ — לא ברשימה
-                                     ((nm or '-',) if gf else ())):
+                                     "WHERE COALESCE(t.amount,0)>=10 AND t.donor_id IS NULL" + (mw if gf else " AND (COALESCE(t.mosad,'')='' OR (t.mosad=? AND t.keva LIKE 'M%'))") + " ORDER BY t.iso DESC LIMIT 6000",   # מאיר: פחות מ-10 ₪ — לא ברשימה
+                                     ((nm or '-',) if gf else (mk_mosad(),))):
                     tx_ = ' '.join(str(t[k] or '') for k in ('groupe', 'comments', 'for_local'))
                     # מאיר: "אל תכניס לי את מה שכתוב עליו מקווה — זה לא של הקהילה, וזה רק מבלבל"
                     # וגם: "מזגנים, טעינת מחשב — שלא יהיו ברשימה בתרומות, זה מספיק בנדרים פלוס"
                     # מאיר: "כל מי שכתוב אצלו תרומות ערב שבת — שלא יהיה אצלנו כלל"
                     if re.search(r'מקו?וה|מזגנ|טעינ|ערב\s*שבת', tx_):
                         continue
+                    if (t['mosad'] or '') and not gf and MK_ONLY_RX.search(tx_):
+                        continue                  # חשבון המקווה — רק הוראות בנקאיות של הקהילה
                     if not (t['mosad'] or '') and bool(ND_NATAN_RX.search(tx_)) != bool(gf):
                         continue
                     kv = str(t['keva'] or '')
@@ -31322,8 +31332,10 @@ def cm_debts_from_keva(con):
     # קהילה (כנראה צריך לשייך אותו)". גם הוראה שלא מקושרת לחבר נפתחת כחוב בשם ובטלפון שבנדרים פלוס,
     # וגם הוראות של נתן תתן (לקופה שלה)
     nm_ = natan_mosad(con)
-    for k in con.execute("SELECT id,member_id,amount,groupe,error,last4,active,off,itra,next_date,name,phone,COALESCE(mosad,'') mosad FROM nd_keva "
-                         "WHERE COALESCE(mosad,'')='' OR (?<>'' AND mosad=?)", (nm_, nm_)).fetchall():
+    for k in con.execute("SELECT id,member_id,amount,groupe,error,last4,active,off,itra,next_date,name,phone,COALESCE(mosad,'') mosad,COALESCE(kind,'') kind FROM nd_keva "
+                         "WHERE COALESCE(mosad,'')='' OR (?<>'' AND mosad=?) OR (mosad=? AND kind='bank')", (nm_, nm_, mk_mosad())).fetchall():
+        if k['mosad'] and k['mosad'] == mk_mosad() and k['mosad'] != nm_ and not nd_mk_comm(k['kind'], k['groupe']):
+            continue
         fund_ = 'natan' if (nm_ and k['mosad'] == nm_) else ''
         d = con.execute("SELECT id FROM cm_debt WHERE kind='hok' AND ref=? AND status='open'", (k['id'],)).fetchone()
         dead = keva_dead(k)
