@@ -14451,10 +14451,12 @@ async function renderCalTab(){
   if(!calHeb)calHeb=hebTodayParts()||{m:pyMonth||'תשרי',y:HEBYEAR};
   const F=[['','הכל'],['task','📋 משימות'],['event','🎉 שמחות'],['parnes','🌙 פרנס יום']];
   chips.innerHTML=F.map(([k,l])=>`<button class="chip ${calFlt===k?'on':''}" data-k="${k}">${l}</button>`).join('')
+    +'<button class="chip" id="cal_msg" title="כותבים הודעה — נכנס ליומן מיד, עם התאריך והשעה" style="background:#1f7a4d;color:#fff">✍️ הודעות ליומן</button>'
     +'<button class="chip" id="cal_paste" title="להדביק טקסט או תמונה של הזמנה — והמערכת מכניסה לתאריך הנכון" style="background:#2d2a6e;color:#fff">📋 הדבקה ליומן</button>'
     +(ROLE==='admin'?'<button class="chip" id="cal_rc" title="שיחה לטלפון שלך: בבוקר עם כל המשימות של היום, ולפני כל אירוע עם שעה">📞 שיחות תזכורת</button><button class="chip" id="cal_push" title="כל תזכורת קופצת בטלפון במסך הראשי, גם כשהאפליקציה סגורה">📱 '+(PUSH_ON?'תזכורות בטלפון פועלות ✓':'תזכורות קופצות בטלפון')+'</button>':'');
   chips.querySelectorAll('.chip[data-k]').forEach(c=>c.onclick=()=>{calFlt=c.dataset.k;render();});
   document.getElementById('cal_paste').onclick=()=>calPasteOpen();
+  document.getElementById('cal_msg').onclick=()=>calMsgOpen();
   const rcb=document.getElementById('cal_rc'); if(rcb)rcb.onclick=calRemindOpen;
   const pcb=document.getElementById('cal_push'); if(pcb)pcb.onclick=async()=>{if(PUSH_ON){pushStatus();return;}if(await pushEnable())render();};
   view.innerHTML='<div class="cnt">טוען את החודש…</div>';
@@ -14553,6 +14555,71 @@ async function renderCalTab(){
 }
 // 📋 מאיר: "שאני יכול להדביק לבד ביומן — שיהיה לי שם מקום להדביק משימות ופגישות ואירועים, והמערכת תכניס
 // לתאריך שצריך". מדביקים טקסט (כמה שורות = כמה משימות) או תמונה של הזמנה → רשימה לבדיקה → ➕ להכניס ליומן
+/* ✍️ מאיר: "חלון מיוחד רק בשביל ההודעות למשימות ליומן — שזה יעביר ליומן אוטומטי".
+   כותבים הודעה (או תמונה של הזמנה) ושולחים — כל מה שיש לו תאריך נכנס מיד ליומן, בלי אישור.
+   ההיסטוריה נשמרת במכשיר; ↩ מבטל פריט שנכנס בטעות, ופריט בלי תאריך מחכה לתאריך */
+const CMSG_K='kc_calmsg';
+function cmsgLoad(){try{return JSON.parse(localStorage.getItem(CMSG_K)||'[]');}catch(e){return [];}}
+function cmsgSave(L){try{localStorage.setItem(CMSG_K,JSON.stringify(L.slice(-40)));}catch(e){}}
+function calMsgOpen(){
+  const o=document.createElement('div');o.className='mkov';let img='';
+  o.innerHTML=`<div class="mkdlg" role="dialog" style="max-width:640px;display:flex;flex-direction:column;max-height:92vh"><div class="mkdh"><div class="mkav">✍️</div><div><b>הודעות ליומן</b><div class="mksub">כותבים ושולחים — נכנס ליומן לבד, עם התאריך והשעה</div></div><button class="x2" id="cmx">✕</button></div>
+    <div class="mkdb" id="cm_log" style="flex:1;overflow:auto;background:#f6f3ea"></div>
+    <div style="padding:8px;border-top:1px solid #e3dccb">
+      <div id="cm_img" style="display:none;margin-bottom:6px"></div>
+      <textarea id="cm_t" rows="2" style="width:100%;font-size:1.05rem" placeholder="למשל: להתקשר לכהן מחר ב-10 · פגישה עם לוי ביום שלישי 14:30 · ט״ו חשון לשלוח קבלה"></textarea>
+      <div style="display:flex;gap:6px;margin-top:6px"><button class="btn" id="cm_send" style="flex:1">📨 שלח ליומן</button>
+        <label class="btn ghost" style="cursor:pointer;flex:0 0 auto" title="תמונה של הזמנה">🖼️<input type="file" id="cm_f" accept="image/*" style="display:none"></label></div>
+      <div class="hintxt" style="margin-top:4px">Enter = שליחה · Shift+Enter = שורה חדשה · כמה משימות בהודעה אחת — כל אחת בשורה</div></div></div>`;
+  document.body.appendChild(o);
+  const g=id=>o.querySelector('#'+id), close=()=>o.remove();g('cmx').onclick=close;
+  let L=cmsgLoad();
+  const DOW=['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','שבת'];
+  const when=x=>x.date?('יום '+DOW[new Date(x.date+'T12:00:00').getDay()]+' '+fmtGreg(x.date).slice(0,5)+(x.time?' · '+x.time:'')):'';
+  const paint=()=>{const lg=g('cm_log');
+    lg.innerHTML=L.length?L.map((m,mi)=>`<div style="display:flex;justify-content:flex-start;margin:6px 0"><div style="background:#dcf3d6;border-radius:12px;padding:8px 10px;max-width:85%;white-space:pre-wrap">${m.img?'🖼️ ':''}${esc(m.text||'')}<div style="font-size:.75rem;opacity:.6">${esc((m.at||'').slice(11,16))}</div></div></div>
+      ${(m.items||[]).map((x,xi)=>`<div style="display:flex;justify-content:flex-end;margin:4px 0"><div style="background:#fff;border:1px solid #e3dccb;border-radius:12px;padding:8px 10px;max-width:90%">
+        ${x.id&&!x.undone?`✅ <b>${esc(when(x))}</b> — ${esc(x.title)}${x.place?' · 📍'+esc(x.place):''}
+          <div style="margin-top:4px;display:flex;gap:6px"><button class="btn sm ghost" data-cmshow="${mi}:${xi}">📅 ביומן</button><button class="btn sm ghost" data-cmundo="${mi}:${xi}">↩ בטל</button></div>`
+        :x.undone?`<s style="opacity:.6">${esc(x.title)}</s> <small>בוטל</small>`
+        :`⚠️ <b>${esc(x.title)}</b> — לא מצאתי תאריך<div class="two" style="margin-top:4px"><input type="date" data-cmd="${mi}:${xi}"><input type="time" data-cmtm="${mi}:${xi}"></div><button class="btn sm" data-cmadd="${mi}:${xi}" style="margin-top:4px">➕ הכנס ליומן</button>`}</div></div>`).join('')}
+      ${m.err?`<div style="display:flex;justify-content:flex-end"><div class="hintxt" style="color:#c0392b">${esc(m.err)}</div></div>`:''}`).join('')
+      :'<div class="hintxt" style="text-align:center;padding:30px 10px">כתוב מה צריך לעשות ומתי — ושלח.<br>זה נכנס ליומן מיד.</div>';
+    lg.scrollTop=lg.scrollHeight;
+    const at=k=>{const [a,b]=k.split(':').map(Number);return L[a]&&L[a].items[b];};
+    lg.querySelectorAll('[data-cmundo]').forEach(b=>b.onclick=async()=>{const x=at(b.dataset.cmundo);if(!x)return;
+      await api('DELETE','/api/task/'+x.id).catch(()=>null);GTASKS=GTASKS.filter(t=>t.id!=x.id);x.undone=1;cmsgSave(L);paint();checkReminders();if(tab==='cal')render();toast('בוטל — ירד מהיומן');});
+    lg.querySelectorAll('[data-cmshow]').forEach(b=>b.onclick=async()=>{const x=at(b.dataset.cmshow);if(!x)return;close();await calGoto(x.date);});
+    lg.querySelectorAll('[data-cmadd]').forEach(b=>b.onclick=async()=>{const k=b.dataset.cmadd,x=at(k);if(!x)return;
+      const d=lg.querySelector(`[data-cmd="${k}"]`).value,t=lg.querySelector(`[data-cmtm="${k}"]`).value;if(!d){toast('בחר תאריך');return;}
+      x.date=d;x.time=t||x.time||'';await cmsgAdd(x);cmsgSave(L);paint();});};
+  const setImg=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{img=rd.result;g('cm_img').style.display='';
+    g('cm_img').innerHTML=`<img src="${img}" style="max-height:90px;border-radius:8px"> <button class="btn sm ghost" id="cm_imgx">✕</button>`;g('cm_imgx').onclick=()=>{img='';g('cm_img').style.display='none';};};rd.readAsDataURL(f);};
+  g('cm_f').onchange=e=>setImg(e.target.files[0]);
+  g('cm_t').addEventListener('paste',e=>{const it=[...((e.clipboardData||{}).items||[])].find(x=>x.type&&x.type.startsWith('image/'));if(it){e.preventDefault();setImg(it.getAsFile());}});
+  const send=async()=>{const t=g('cm_t').value.trim();if(!t&&!img)return;const b=g('cm_send');if(b.disabled)return;b.disabled=true;b.textContent='⏳ מכניס ליומן…';
+    const m={text:t,img:!!img,at:new Date().toISOString().replace('T',' ').slice(0,16),items:[]};
+    const tl=new Date(),pad=n=>String(n).padStart(2,'0');m.at=tl.getFullYear()+'-'+pad(tl.getMonth()+1)+'-'+pad(tl.getDate())+' '+pad(tl.getHours())+':'+pad(tl.getMinutes());
+    const r=await api('POST','/api/cal/parse',{text:t,image:img}).catch(()=>null);
+    if(!r||!r.ok)m.err='לא הצלחתי לקרוא: '+((r&&r.error)||'אין תשובה');
+    else{m.items=(r.items||[]).map(x=>({title:x.title||t,date:x.date||'',time:x.time||'',kind:x.kind||'',place:x.place||''}));
+      if(!m.items.length)m.items=[{title:t,date:'',time:'',kind:'',place:''}];
+      for(const x of m.items)if(x.date)await cmsgAdd(x);}
+    L.push(m);cmsgSave(L);g('cm_t').value='';img='';g('cm_img').style.display='none';b.disabled=false;b.textContent='📨 שלח ליומן';paint();
+    const n=m.items.filter(x=>x.id).length;if(n){toast('✓ '+n+' נכנסו ליומן');checkReminders();if(tab==='cal')render();}
+    g('cm_t').focus();};
+  g('cm_send').onclick=send;
+  g('cm_t').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}};
+  paint();setTimeout(()=>g('cm_t').focus(),50);}
+async function cmsgAdd(x){
+  const body={due_date:x.date,kind:x.kind||'event',note:(x.title||'').trim(),assignee:'',at_time:x.time||'',place:(x.place||'').trim()};
+  const r=await api('POST','/api/task',body).catch(()=>null);
+  if(r&&r.id){x.id=r.id;if(!r.existing)GTASKS.push({id:r.id,donor_id:null,done:0,...body});}}
+// מעבר ליום ביומן
+async function calGoto(d){if(!d)return;calSel=d;
+  const hp=await api('GET','/api/hebdate?d='+d).catch(()=>null),ws=String((hp&&hp.heb)||'').split(/\s+/).filter(Boolean);
+  if(ws.length>=3)calHeb={m:ws.slice(1,-1).join(' '),y:ws[ws.length-1]};
+  tab='cal';try{localStorage.setItem('kc_tab','cal');}catch(e){}document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='cal'));render();window.scrollTo(0,0);}
 function calPasteOpen(){
   const o=document.createElement('div');o.className='mkov';let img='';
   o.innerHTML=`<div class="mkdlg" role="dialog" style="max-width:680px"><div class="mkdh"><div class="mkav">📋</div><div><b>הדבקה ליומן</b><div class="mksub">משימות, פגישות, אירועים והזמנות — המערכת מוצאת את התאריך והשעה</div></div><button class="x2" id="cpx">✕</button></div>
@@ -14915,7 +14982,8 @@ function renderOcc(){
 }
 
 // כפתור ההכתבה הצף — זמין בכל מסך. אם הדפדפן לא תומך בהכתבה, מסתירים אותו
-(function(){const h=document.getElementById('healthbtn');if(h)h.onclick=()=>openHealth();})();
+(function(){const h=document.getElementById('healthbtn');if(h)h.onclick=()=>openHealth();
+  const c=document.getElementById('calmsgbtn');if(c)c.onclick=()=>calMsgOpen();})();
 // 🛠️ מאיר: "הגבאי שאין לו גישה למערכת כאן של קלוד קוד והוא יושב על המערכת — איך הוא יכול לשלוח לך לתקן דברים" —
 // כפתור בכותרת, לכל סיסמה: כותבים מה לתקן (אפשר לצרף צילום מסך), נשמר במערכת ונשלח במייל למאיר, שמעביר לקלוד
 (function(){const br=document.querySelector('.brand');if(!br||document.getElementById('fbbtn'))return;
