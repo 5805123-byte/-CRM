@@ -22193,6 +22193,30 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'rows': rows, 'channels': chans, 'wa_ready': wa_ready,
                                     'pw_same': sorted(k for k in ('CRM_PASS_COMM', 'CRM_PASS_PARNES', 'CRM_PASS_GABBAI')
                                                       if (os.environ.get(k) or '').strip() and (os.environ.get(k) or '').strip() == (os.environ.get('CRM_PASS') or '').strip())})
+        if self.path.split('?')[0] == '/api/nd/masav_find':
+            # 🔎 מאיר: "אני לא רואה את נחמן קליגר בכלל בחיפוש בבנק" — חיפוש לפי שם ישר בנדרים פלוס
+            # (כל ההוראות הבנקאיות, בכל הקופות חוץ מהמקווה), וכל מה שנמצא נכנס אצלנו
+            import nedarim as _nd
+            qv = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('q') or [''])[0].strip()
+            con = db()
+            found, errs = [], []
+            try:
+                for acct in _nd.accounts():
+                    mos = '' if acct['main'] else acct['mosad']
+                    if mos and mos == mk_mosad():
+                        continue
+                    try:
+                        with _nd.use(acct):
+                            for kid, nm in _nd.masav_csv_find(qv):
+                                r = nd_masav_add(con, kid, mos)
+                                if r:
+                                    found.append(r['id'])
+                    except Exception as e:
+                        errs.append(str(e)[:120])
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'found': found, 'errors': errs})
         m = re.match(r'/api/nd/masav_fetch/(\d+)$', self.path)
         if m:
             # 🔎 מאיר: הוראה בנקאית שלא מופיעה אצלנו — לפי המספר שלה בנדרים פלוס (למשל 17904)

@@ -15166,13 +15166,32 @@ async function renderCommGifts(){
           KM=(KVA.rows||[]).filter(k=>+k.active&&k.mosad!==KVA.mk_mosad&&qhit(knm(k)+' '+(k.name||'')+' '+(k.phone||'')));}
       }
     }
+    // עדיין אין — חיפוש לפי השם ישר בכל ההוראות הבנקאיות בנדרים פלוס (פעם אחת לכל חיפוש)
+    let ndFindMsg='';
+    if(!KM.length&&qn.length>=3){
+      if(!KVFOUND.has(qn)){
+        const lst=view.querySelector('.gflist');if(lst)lst.insertAdjacentHTML('beforebegin','<div class="hintxt" id="cg_ndsearch">🔎 מחפש בנדרים פלוס…</div>');
+        const r=await api('GET','/api/nd/masav_find?q='+encodeURIComponent(q.trim())).catch(()=>null);
+        KVFOUND.set(qn,r||{ok:false});
+        if(r&&r.found&&r.found.length){const r2=await api('GET','/api/nd/kevas?all=1').catch(()=>null);KVA=r2&&r2.ok?r2:KVA;KVH=null;}
+        if(tab!=='comm'||cmSub!=='cgifts')return;
+        KM=(KVA.rows||[]).filter(k=>+k.active&&k.mosad!==KVA.mk_mosad&&qhit(knm(k)+' '+(k.name||'')+' '+(k.phone||'')));
+      }
+      const fr=KVFOUND.get(qn)||{};
+      if(!KM.length){
+        const KI=(KVA.rows||[]).filter(k=>!+k.active&&k.kind==='bank'&&qhit(knm(k)+' '+(k.name||'')));
+        ndFindMsg=fr.errors&&fr.errors.length&&!(fr.found||[]).length?'⚠️ החיפוש בנדרים פלוס לא הצליח: '+fr.errors[0]
+          :KI.length?'בנדרים פלוס נמצאה הוראה בנקאית בשם הזה, אבל היא לא פעילה: '+KI.map(k=>(k.name||'')+' ₪'+(k.amount||'')+(k.off?' — '+k.off:'')).join(' · ')
+          :'גם בנדרים פלוס לא נמצאה הוראה בנקאית בשם הזה.';
+      }
+    }
     kvBox=KM.length?`<div class="gfmon"><div class="gfmh"><b>🔁 הוראות קבע (${KM.length})</b></div>${KM.map(k=>{
       const last=all.find(r=>r.keva&&r.keva===k.id), ret=last&&(/החזר/.test(last.btype||'')||+last.amount<0);
       return `<div class="gfrow"><button class="gfnm" data-cgm="${k.member_id||''}">${esc(knm(k))}${k.member_id?'':' <small class="bqno">לא מקושר</small>'}</button>
         <b class="gfa">${cdMoney(String(k.amount||'').replace(/[^\d.]/g,''))}</b>
         <span class="gfw">${k.kind==='bank'?'🏦 הוראה בנקאית'+(k.bank?' · '+esc(k.bank):''):'💳 אשראי'+(k.last4?' ****'+esc(k.last4):'')}${k.groupe?' · '+esc(k.groupe):''}${k.next_date?`<small>חיוב הבא ${esc(k.next_date)}</small>`:''}</span>
         <span class="gfm">${!+k.active?`<b style="color:#c0392b">⏸ לא פעילה${k.off?' — '+esc(k.off):''}</b>`:k.error?`<b style="color:#c0392b">🔴 ${esc(k.error)}</b>`:'<span class="ndok">✅ תקינה — לא חזרה</span>'}${last?`<small>חיוב אחרון ${esc(rcDate(last.date))} · ${cdMoney(last.amount)}${ret?' · החזר':''}</small>`:''}</span></div>`;}).join('')}</div>`
-      :`<div class="hintxt">לא נמצאה הוראת קבע פעילה בשם "${esc(q.trim())}". אם יש לו הוראה בנקאית בנדרים פלוס — ב"🔁 בעלי הוראות קבע" ← "🔎 הוראה בנקאית לפי מספר" (המספר שלה בנדרים).</div>`;
+      :`<div class="hintxt">לא נמצאה הוראת קבע פעילה בשם "${esc(q.trim())}". ${esc(ndFindMsg)}</div>`;
   }
   const sum=L=>cdMoney(L.reduce((t,r)=>t+(+r.amount||0),0));
   const n={};all.forEach(r=>n[r.src]=(n[r.src]||0)+1);
@@ -15262,7 +15281,7 @@ async function renderCommGifts(){
 // 🔁 מאיר: "איפה אני רואה במערכת שלנו את כל בעלי ההוראות קבע? שיהיה מסודר לפי אלף בית" — כל ההוראות הפעילות
 // (אשראי ובנק), לפי א-ב, עם הסכום לחודש, עבור מה, הקופה והחיוב הבא; חיפוש, סינון, סה"כ לחודש ואקסל
 let KVH=null, KVA=null, kvhF='', kvhK='';
-const KVFETCHED=new Set();   // הוראות בנקאיות שכבר נמשכו לפי מספר בחיפוש שם — פעם אחת
+const KVFETCHED=new Set(), KVFOUND=new Map();   // הוראות בנקאיות שכבר נמשכו לפי מספר בחיפוש שם — פעם אחת
 async function kvHolders(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   remov.classList.add('show');

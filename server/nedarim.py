@@ -298,6 +298,40 @@ def masav_kevas():
     return out
 
 
+def masav_csv_find(q):
+    """🔎 חיפוש הוראה בנקאית לפי שם בכל ההוראות של המוסד (GetMasavCSV — הייצוא המלא, גם הוראות
+    שלא מופיעות ב-GetMasavKevaNew). מחזיר [(מזהה, שם)]. מספרי חשבון / ת"ז לא נשמרים."""
+    nrm = lambda x: re.sub(r'[וי\'"״׳\s]', '', str(x or ''))
+    qn = nrm(q)
+    if len(qn) < 3:
+        return []
+    ok, txt = call('GetMasavCSV', {'ToMail': 0}, masav=True, raw=True, timeout=90)
+    if not ok:
+        raise RuntimeError('נדרים פלוס (ייצוא הוראות בנקאיות): %s' % (LAST.get('error') or txt[:120]))
+    t = txt.strip().replace('\r\n', '\n').replace('\r', '\n')
+    if not t or t.startswith('{'):
+        raise RuntimeError('נדרים פלוס (ייצוא הוראות בנקאיות): %s' % t[:160])
+    first = t.split('\n', 1)[0]
+    delim = max((',', ';', '\t'), key=first.count)
+    rd = list(csv.reader(io.StringIO(t, newline=''), delimiter=delim))
+    if len(rd) < 2:
+        return []
+    head = [h.strip() for h in rd[0]]
+    c_id = [i for i, h in enumerate(head) if re.search(r'מזהה|^ID$|מס.?\s*הוראה', h)]
+    c_nm = [i for i, h in enumerate(head) if 'שם' in h and 'בנק' not in h]
+    out = []
+    for r in rd[1:]:
+        nm = ' '.join(r[i].strip() for i in c_nm if i < len(r) and r[i].strip()) if c_nm else ' '.join(r)
+        if qn not in nrm(nm):
+            continue
+        kid = next((re.sub(r'\D', '', r[i]) for i in c_id if i < len(r) and re.sub(r'\D', '', r[i])), '')
+        if not kid:                                 # בלי כותרת מזהה — המספר הראשון בשורה
+            kid = next((x for x in (re.sub(r'\D', '', c) for c in r) if 3 <= len(x) <= 9), '')
+        if kid and kid not in [o[0] for o in out]:
+            out.append((kid, nm.strip()))
+    return out[:8]
+
+
 def masav_detail(masav_id):
     """פרטי הוראה בנקאית אחת (GetMasavId) — בשביל הטלפון והסטטוס. ת"ז ומספר חשבון לא נשמרים."""
     ok, res = call('GetMasavId', {'MasavId': str(masav_id)}, masav=True)
