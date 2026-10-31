@@ -15299,6 +15299,7 @@ async function kvHolders(){
     <div class="hintxt"><b>${L.length}</b> הוראות פעילות · סה״כ <b>₪${Math.round(tot).toLocaleString('he-IL')}</b> לחודש · לפי א-ב</div>
     <input id="kvh_q" placeholder="🔍 חיפוש שם / טלפון / עבור מה" value="${esc(qq)}" autocomplete="off" style="width:100%;margin:6px 0">
     ${(KVH.accounts||[]).length?`<div class="hintxt">🔗 חשבונות נדרים פלוס שמחוברים: ${KVH.accounts.map(a=>`<b>${esc(a.name)}</b> (מוסד ${esc(a.mosad)}${a.mk?'':' · '+a.bank+' בנקאיות'})`).join(' · ')}</div>`:''}
+    <button class="btn sm" id="kvh_sync" style="margin-bottom:6px" title="משיכה מיידית של כל ההוראות (אשראי ובנק), החיובים והחזרות מנדרים פלוס">🔄 סנכרן עכשיו מנדרים פלוס</button>
     <button class="btn sm ghost" id="kvh_fetch" style="margin-bottom:6px" title="הוראה בנקאית שלא מופיעה כאן — לפי המספר שלה בנדרים פלוס (מספר הוראה בראש החלון שלה)">🔎 הוראה בנקאית לפי מספר</button>
     <div class="bqseg"><button class="${kvhK?'':'on'}" data-kk="">הכל</button><button class="${kvhK==='card'?'on':''}" data-kk="card">💳 אשראי</button><button class="${kvhK==='bank'?'on':''}" data-kk="bank">🏦 בנק</button><button class="${kvhK==='bad'?'on':''}" data-kk="bad">🔴 חזרו <small>${all.filter(k=>k.error).length}</small></button></div>
     ${kupas.length>1?`<div class="bqseg"><button class="${kvhF?'':'on'}" data-kf="">כל הקופות</button>${kupas.map(x=>`<button class="${kvhF===x?'on':''}" data-kf="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}
@@ -15309,6 +15310,12 @@ async function kvHolders(){
     ${L.length?'<button class="btn sm" id="kvh_csv" style="margin-top:8px">⬇️ אקסל</button>':''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   const qi=document.getElementById('kvh_q');qi.oninput=()=>{clearTimeout(window._kvhT);window._kvhT=setTimeout(()=>{const pos=qi.selectionStart;kvHolders().then(()=>{const n=document.getElementById('kvh_q');if(n){n.focus();n.setSelectionRange(pos,pos);}});},250);};
+  // מאיר: "צריך שתעשה סינכרון כל הזמן לנדרים פלוס או כפתור סנכרן עכשיו"
+  const ks=document.getElementById('kvh_sync');if(ks)ks.onclick=async()=>{ks.disabled=true;ks.textContent='⏳ מסנכרן מנדרים פלוס… (עד דקה)';
+    const r=await api('POST','/api/nd/sync',{}).catch(()=>null);KVH=null;KVA=null;cdData=null;CGF=null;
+    if(!r||!r.ok){await uiAlert('הסנכרון לא הצליח:\n'+((r&&r.error)||'שגיאה'));kvHolders();return;}
+    const res=r.result||{};
+    await uiAlert('✓ סונכרן מנדרים פלוס\n'+Object.entries(res).map(([k,v])=>k+': '+v).join('\n'));kvHolders();};
   const kf=document.getElementById('kvh_fetch');if(kf)kf.onclick=async()=>{
     const v=await uiPrompt('מספר ההוראה הבנקאית בנדרים פלוס (כתוב בראש החלון "פרטי הוראת הקבע", למשל 17904):','');if(!v||!v.replace(/\D/g,''))return;
     kf.disabled=true;kf.textContent='⏳ מושך מנדרים פלוס…';
@@ -15925,7 +15932,7 @@ async function renderCommDebts(){
       <label class="btn sm ghost" style="cursor:pointer">📎 העלאת קובץ<input type="file" id="cd_file" accept=".xlsx,.xlsm,.csv,.txt,.pdf" hidden></label>
       <button class="btn sm ghost" id="cd_paste">📋 הדבקה</button>
       <button class="btn sm ghost" id="cd_paidbulk" title="הכנסת כמה אנשים ששילמו — נרשם בכרטיס, בהיסטוריה ובתרומות">✅ תשלומים במרוכז</button>
-      ${cdFund?'':`<button class="btn sm ghost" id="cd_nd" title="הוראות קבע שחזרו נכנסות לכאן לבד, כל 3 שעות">🔄 נדרים פלוס</button>`}
+      ${cdFund?'':`<button class="btn sm ghost" id="cd_nd" title="הוראות קבע שחזרו נכנסות לכאן לבד, כל חצי שעה">🔄 נדרים פלוס</button>`}
       <a class="btn sm ghost" href="/api/cm/debts.xlsx?status=${cdSt}${cdFund?'&fund='+cdFund:''}" download style="text-decoration:none">📊 אקסל</a>
       ${cdFund?'':'<button class="btn sm ghost" id="cd_cats" title="הוספה, שינוי ומחיקה של קטגוריות קבועות ושל הנוסח שלהן">🏷 קטגוריות</button>'}</div>
     ${cdCatsHTML()}

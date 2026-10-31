@@ -32739,7 +32739,8 @@ def _nd_loop():
             nd_run()
         except Exception as e:
             print('  nedarim sync error:', e)
-        time.sleep(max(1800, int(os.environ.get('NEDARIM_SECONDS') or 10800)))
+        # מאיר: "צריך שתעשה סינכרון כל הזמן לנדרים פלוס" — כל חצי שעה (היה כל 3 שעות)
+        time.sleep(max(1800, int(os.environ.get('NEDARIM_SECONDS') or 1800)))
 
 
 # 📞 מאיר: "צריך לעשות גם לשיחה בטלפון את האופציות של עדכון פרטי אשראי" — הנוסח הקולי (הקשה 1 = SMS עם הקישור)
