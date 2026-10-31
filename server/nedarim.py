@@ -303,7 +303,8 @@ def masav_detail(masav_id):
     ok, res = call('GetMasavId', {'MasavId': str(masav_id)}, masav=True)
     if not ok or not isinstance(res, dict):
         return {}
-    return {'phone': str(res.get('ClientPhone') or '').strip(), 'mail': str(res.get('ClientMail') or '').strip(),
+    return {'name': str(res.get('ClientName') or '').strip(), 'code': str(res.get('Status') or '').strip(),
+            'phone': str(res.get('ClientPhone') or '').strip(), 'mail': str(res.get('ClientMail') or '').strip(),
             'status': str(res.get('StatusText') or res.get('Status') or '').strip(),
             'deleted': str(res.get('Deleted') or '0').strip() == '1', 'next': str(res.get('FullNextDate') or '').strip(),
             'amount': _num(res.get('Amount')), 'groupe': str(res.get('Groupe') or '').strip()}

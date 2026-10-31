@@ -22193,16 +22193,33 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'rows': rows, 'channels': chans, 'wa_ready': wa_ready,
                                     'pw_same': sorted(k for k in ('CRM_PASS_COMM', 'CRM_PASS_PARNES', 'CRM_PASS_GABBAI')
                                                       if (os.environ.get(k) or '').strip() and (os.environ.get(k) or '').strip() == (os.environ.get('CRM_PASS') or '').strip())})
+        m = re.match(r'/api/nd/masav_fetch/(\d+)$', self.path)
+        if m:
+            # 🔎 מאיר: הוראה בנקאית שלא מופיעה אצלנו — לפי המספר שלה בנדרים פלוס (למשל 17904)
+            import nedarim as _nd
+            con = db()
+            try:
+                r = nd_masav_add(con, m.group(1))
+                if r:
+                    nd_masav_history(con); cm_debts_from_keva(con)
+                    r = dict(con.execute("SELECT k.*, m.last ml, m.first mf FROM nd_keva k LEFT JOIN members m ON m.id=k.member_id WHERE k.id=?", (r['id'],)).fetchone())
+                con.commit()
+            finally:
+                con.close()
+            if not r:
+                return self._send(200, {'ok': False, 'error': 'ההוראה %s לא נמצאה בנדרים פלוס (או שנמחקה)' % m.group(1)})
+            return self._send(200, {'ok': True, 'keva': r})
         if self.path.split('?')[0] == '/api/nd/kevas':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             bad = (qs.get('bad') or ['0'])[0] == '1'
+            alls = (qs.get('all') or ['0'])[0] == '1'      # גם מוקפאות / שהוחלפו — לחיפוש שם במסך התרומות
             con = db()
             try:
                 rows = [dict(r) for r in con.execute(
-                    "SELECT k.id,k.name,k.phone,k.amount,k.groupe,k.itra,k.next_date,k.last4,k.error,k.member_id,"
+                    "SELECT k.id,k.name,k.phone,k.amount,k.groupe,k.itra,k.next_date,k.last4,k.error,k.member_id,k.active,COALESCE(k.off,'') off,"
                     "COALESCE(k.kind,'') kind,COALESCE(k.bank,'') bank,COALESCE(k.mosad,'') mosad,"
                     "m.last ml,m.first mf,l.link,l.sent_at,l.sent_to FROM nd_keva k LEFT JOIN members m ON m.id=k.member_id "
-                    "LEFT JOIN nd_link l ON l.keva_id=k.id WHERE k.active=1" + (" AND COALESCE(k.error,'')<>''" if bad else '') +
+                    "LEFT JOIN nd_link l ON l.keva_id=k.id WHERE " + ('1=1' if alls else 'k.active=1') + (" AND COALESCE(k.error,'')<>''" if bad else '') +
                     " ORDER BY k.name")]
             finally:
                 con.close()
@@ -32087,7 +32104,31 @@ def nd_sync_masav(con, acct, manual, pick, nidx, now):
                'groupe': k['groupe'], 'itra': k['itra'], 'next': k['next'], 'last4': '', 'city': '', 'error': '', 'mosad': mos}
         _nd_sync_kevas(con, [row], None, manual, pick, nidx, now)
         con.execute("UPDATE nd_keva SET kind='bank', bank=? WHERE id=?", (k['bank'], kid))
+        # מאיר: "תראה לי תמיד רק פעילות בלבד" — הוראה בנקאית מוקפאת / שנדחתה ע"י הבנק / שבוטלה מופיעה
+        # ברשימה של נדרים פלוס, ובעמודת "חיוב הבא" כתוב המצב ("מוקפא 22/02/24") במקום תאריך
+        if re.search(r'[א-ת]', k['next'] or ''):
+            con.execute("UPDATE nd_keva SET active=0, off=? WHERE id=?", (re.sub(r'\s+', ' ', k['next']).strip()[:120], kid))
     return len(ks)
+
+
+def nd_masav_add(con, masav_id, mos=''):
+    """הוראה בנקאית אחת לפי המספר שלה בנדרים פלוס (GetMasavId) — נשמרת ומקושרת כמו בסנכרון.
+    פעילה רק כשקוד המצב 1. מחזיר את השורה, או None כשלא נמצאה / נמחקה."""
+    import nedarim as _nd
+    d = _nd.masav_detail(masav_id)
+    if not d or d.get('deleted') or not (d.get('name') or d.get('amount')):
+        return None
+    kid = ('M' + str(masav_id)) if not mos else ('M%s:%s' % (mos, masav_id))
+    midx, nidx = nd_member_index(con), nd_name_index(con)
+    manual = {r['keva_id']: r['member_id'] for r in con.execute("SELECT keva_id,member_id FROM nd_map")}
+    pick = lambda phs: next((list(midx[p])[0] for p in phs if p in midx and len(midx[p]) == 1), None)
+    row = {'id': kid, 'torem': '', 'name': d.get('name') or '', 'phone': d.get('phone') or '', 'mail': d.get('mail') or '',
+           'amount': d.get('amount') or '', 'groupe': d.get('groupe') or '', 'itra': '', 'next': d.get('next') or '',
+           'last4': '', 'city': '', 'error': '', 'mosad': mos}
+    _nd_sync_kevas(con, [row], None, manual, pick, nidx, now_iso())
+    act = (d.get('code') or '') == '1'
+    con.execute("UPDATE nd_keva SET kind='bank', active=?, off=? WHERE id=?", (1 if act else 0, '' if act else (d.get('status') or 'לא פעילה'), kid))
+    return dict(con.execute("SELECT * FROM nd_keva WHERE id=?", (kid,)).fetchone())
 
 
 def nd_masav_history(con):
@@ -32120,6 +32161,19 @@ def nd_masav_history(con):
                             (pre + 'H' + t['id'], t['date'], iso, (k['phone'] or '').split(';')[0] if k else '', t['name'], t['amount'], kid,
                              t['groupe'], 'הוראה בנקאית', '', '', t['type'], mid, mos))
             new += 1 if c.rowcount else 0
+        # מאיר: "למה אני לא רואה את נחמן קליגר — יש לו הוראת קבע כל חודש 150 ש"ח בנקאי" — הוראה שנגבתה
+        # ב-45 הימים האחרונים ולא הגיעה ברשימת ההוראות: נמשכת לפי המספר שלה (עד 15 בכל סנכרון)
+        miss, budget = [], 15
+        for t in rows:
+            kid = pre + t['keva'] if t['keva'] else ''
+            if kid and kid not in miss and not con.execute("SELECT 1 FROM nd_keva WHERE id=? AND (active=1 OR COALESCE(off,'')<>'')", (kid,)).fetchone():
+                miss.append(kid)
+        for kid in miss[:budget]:
+            try:
+                with _nd.use(acct):
+                    nd_masav_add(con, kid[len(pre):], mos)
+            except Exception as e:
+                print('  masav add error:', kid, e)
         # חזרה בנקאית: השורה האחרונה של ההוראה (45 יום) היא החזרה
         lastrow = {}
         for t in sorted(rows, key=lambda x: _nd_iso(x['date'])):
