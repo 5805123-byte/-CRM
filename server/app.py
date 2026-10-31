@@ -22223,15 +22223,29 @@ class H(BaseHTTPRequestHandler):
             import nedarim as _nd
             con = db()
             try:
-                r = nd_masav_add(con, m.group(1))
+                # מחפשים בכל החשבונות המחוברים — ההוראה יכולה להיות במוסד אחר
+                r, tried = None, []
+                for acct in _nd.accounts():
+                    mos = '' if acct['main'] else acct['mosad']
+                    tried.append('%s (מוסד %s)' % (acct['name'], acct['mosad']))
+                    try:
+                        with _nd.use(acct):
+                            r = nd_masav_add(con, m.group(1), mos)
+                    except Exception as e:
+                        print('  masav fetch error:', e)
+                    if r:
+                        r['kupa'] = acct['name']
+                        break
                 if r:
                     nd_masav_history(con); cm_debts_from_keva(con)
+                    kp = r.get('kupa')
                     r = dict(con.execute("SELECT k.*, m.last ml, m.first mf FROM nd_keva k LEFT JOIN members m ON m.id=k.member_id WHERE k.id=?", (r['id'],)).fetchone())
+                    r['kupa'] = kp
                 con.commit()
             finally:
                 con.close()
             if not r:
-                return self._send(200, {'ok': False, 'error': 'ההוראה %s לא נמצאה בנדרים פלוס (או שנמחקה)' % m.group(1)})
+                return self._send(200, {'ok': False, 'error': 'ההוראה %s לא נמצאה באף חשבון נדרים פלוס שמחובר למערכת.\nמחוברים: %s.\nאם היא בחשבון אחר — צריך להוסיף אותו ב-Render (NEDARIM_MOSAD4, NEDARIM_API_KEY4, NEDARIM_NAME4).' % (m.group(1), ' · '.join(tried) or 'אף חשבון')})
             return self._send(200, {'ok': True, 'keva': r})
         if self.path.split('?')[0] == '/api/nd/kevas':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -22252,7 +22266,10 @@ class H(BaseHTTPRequestHandler):
             acc = {('' if a['main'] else a['mosad']): a['name'] for a in _nd.accounts()}
             for r in rows:
                 r['kupa'] = acc.get(r['mosad']) or ('מוסד ' + r['mosad'] if r['mosad'] else 'כולל חצות')
-            return self._send(200, {'ok': True, 'rows': rows, 'mk_mosad': mk_mosad()})
+            accts = [{'name': a['name'], 'mosad': a['mosad'], 'mk': a['mosad'] == mk_mosad(),
+                      'bank': sum(1 for r in rows if r['kind'] == 'bank' and +r['active'] and r['mosad'] == ('' if a['main'] else a['mosad']))}
+                     for a in _nd.accounts()]
+            return self._send(200, {'ok': True, 'rows': rows, 'mk_mosad': mk_mosad(), 'accounts': accts})
         if self.path.split('?')[0] == '/api/nd/lookup':
             # 🔎 בדיקת מספר מתקשר — מה השלוחה מוצאת לו ולמה (בלי לחייב שום דבר)
             import yemot as _ym

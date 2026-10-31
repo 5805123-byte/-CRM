@@ -15298,6 +15298,7 @@ async function kvHolders(){
   rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔁 בעלי הוראות קבע</h2>
     <div class="hintxt"><b>${L.length}</b> הוראות פעילות · סה״כ <b>₪${Math.round(tot).toLocaleString('he-IL')}</b> לחודש · לפי א-ב</div>
     <input id="kvh_q" placeholder="🔍 חיפוש שם / טלפון / עבור מה" value="${esc(qq)}" autocomplete="off" style="width:100%;margin:6px 0">
+    ${(KVH.accounts||[]).length?`<div class="hintxt">🔗 חשבונות נדרים פלוס שמחוברים: ${KVH.accounts.map(a=>`<b>${esc(a.name)}</b> (מוסד ${esc(a.mosad)}${a.mk?'':' · '+a.bank+' בנקאיות'})`).join(' · ')}</div>`:''}
     <button class="btn sm ghost" id="kvh_fetch" style="margin-bottom:6px" title="הוראה בנקאית שלא מופיעה כאן — לפי המספר שלה בנדרים פלוס (מספר הוראה בראש החלון שלה)">🔎 הוראה בנקאית לפי מספר</button>
     <div class="bqseg"><button class="${kvhK?'':'on'}" data-kk="">הכל</button><button class="${kvhK==='card'?'on':''}" data-kk="card">💳 אשראי</button><button class="${kvhK==='bank'?'on':''}" data-kk="bank">🏦 בנק</button><button class="${kvhK==='bad'?'on':''}" data-kk="bad">🔴 חזרו <small>${all.filter(k=>k.error).length}</small></button></div>
     ${kupas.length>1?`<div class="bqseg"><button class="${kvhF?'':'on'}" data-kf="">כל הקופות</button>${kupas.map(x=>`<button class="${kvhF===x?'on':''}" data-kf="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}
@@ -15315,7 +15316,7 @@ async function kvHolders(){
     kf.disabled=false;kf.textContent='🔎 הוראה בנקאית לפי מספר';
     if(!r||!r.ok){uiAlert((r&&r.error)||'לא נמשך');return;}
     const k=r.keva||{};KVH=null;KVA=null;
-    await uiAlert('✓ נמשכה: '+(k.name||'')+' · ₪'+(k.amount||'')+(k.groupe?' · '+k.groupe:'')+'\n'+(+k.active?'🟢 פעילה':'⏸ לא פעילה'+(k.off?' — '+k.off:''))
+    await uiAlert('✓ נמשכה: '+(k.name||'')+' · ₪'+(k.amount||'')+(k.groupe?' · '+k.groupe:'')+(k.kupa?' · חשבון '+k.kupa:'')+'\n'+(+k.active?'🟢 פעילה':'⏸ לא פעילה'+(k.off?' — '+k.off:''))
       +(k.error?'\n🔴 '+k.error:'')+'\n'+(k.member_id?'מקושרת ל'+((k.ml||'')+' '+(k.mf||'')).trim():'לא מקושרת לחבר קהילה — אפשר לשייך בלשונית 💳 תשלום בטלפון'));
     kvHolders();};
   rs.querySelectorAll('[data-kk]').forEach(b=>b.onclick=()=>{kvhK=b.dataset.kk;kvHolders();});

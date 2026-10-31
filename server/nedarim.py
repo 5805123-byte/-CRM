@@ -45,12 +45,12 @@ _CUR = threading.local()
 
 
 def accounts():
-    """כל המוסדות שמוגדרים ב-Render: הראשי, ואחריו 2, 3. כל אחד עם המפתח שלו."""
+    """כל המוסדות שמוגדרים ב-Render: הראשי, ואחריו 2 עד 6. כל אחד עם המפתח שלו."""
     out = []
     if _env('NEDARIM_API_KEY'):
         out.append({'mosad': _env('NEDARIM_MOSAD') or MOSAD_DEFAULT, 'key': _env('NEDARIM_API_KEY'),
                     'name': _env('NEDARIM_NAME') or 'כולל חצות', 'main': True})
-    for i in ('2', '3'):
+    for i in ('2', '3', '4', '5', '6'):
         if _env('NEDARIM_MOSAD' + i) and _env('NEDARIM_API_KEY' + i):
             out.append({'mosad': _env('NEDARIM_MOSAD' + i), 'key': _env('NEDARIM_API_KEY' + i),
                         'name': _env('NEDARIM_NAME' + i) or ('מוסד ' + _env('NEDARIM_MOSAD' + i)), 'main': False})
