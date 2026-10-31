@@ -300,11 +300,12 @@ def masav_kevas():
 
 def masav_csv_find(q):
     """🔎 חיפוש הוראה בנקאית לפי שם בכל ההוראות של המוסד. מחזיר [(מזהה, שם)]."""
-    nrm = lambda x: re.sub(r'[וי\'"״׳\s]', '', str(x or ''))
-    qn = nrm(q)
-    if len(qn) < 3:
+    # "נחמן קליגר" / "קליגר נחמן" — כל מילה בנפרד, בלי קשר לסדר (ובלי י/ו — קלייגר)
+    nrm = lambda x: re.sub(r'[וי\'"״׳]', '', str(x or ''))
+    toks = [t for t in nrm(q).split() if len(t) >= 2]
+    if not toks or len(''.join(toks)) < 3:
         return []
-    return [(k, n) for k, n in masav_csv_rows() if qn in nrm(n)][:8]
+    return [(k, n) for k, n in masav_csv_rows() if all(t in nrm(n) for t in toks)][:8]
 
 
 def masav_csv_rows():
