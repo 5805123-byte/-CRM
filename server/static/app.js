@@ -15140,7 +15140,22 @@ async function renderCommGifts(){
   if(!CGF){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען תרומות…</div>';const r=await api('GET','/api/cm/gifts'+(cgFund?'?fund='+cgFund:''));CGF=(r&&r.rows)||[];CGN=(r&&r.natan)||null;if(tab!=='comm'||cmSub!=='cgifts')return;}
   const all=CGF;
   let rows=all.filter(r=>(!cgSrc||r.src===cgSrc)&&(!cgFrom||r.date>=cgFrom)&&(!cgTo||r.date<=cgTo));
-  if((q||'').trim())rows=rows.filter(r=>matchStr([r.name,r.amount,r.purpose,r.method,r.note,r.conf].join(' '),q.trim()));
+  if((q||'').trim())rows=rows.filter(r=>matchStr([r.name,r.nd_name,r.amount,r.purpose,r.method,r.note,r.conf].join(' '),q.trim()));
+  // מאיר: "למה אני לא רואה כאן מה ואיזה הוראת קבע יש לקליגר בנקאי… ואיך אני רואה אם לא חזרה לו" —
+  // בחיפוש שם: קודם ההוראות שלו (בנק / אשראי), מצב — תקינה או חזרה — והחיוב האחרון
+  let kvBox='';
+  if((q||'').trim()&&!cgFund){
+    if(!KVH){const r=await api('GET','/api/nd/kevas').catch(()=>null);KVH=r&&r.ok?r:{rows:[]};if(tab!=='comm'||cmSub!=='cgifts')return;}
+    const knm=k=>(k.member_id&&(k.ml||k.mf)?((k.ml||'')+' '+(k.mf||'')).trim():(k.name||'')).trim()||'—';
+    const KM=(KVH.rows||[]).filter(k=>k.mosad!==KVH.mk_mosad&&matchStr(knm(k)+' '+(k.name||'')+' '+(k.phone||''),q.trim()));
+    kvBox=KM.length?`<div class="gfmon"><div class="gfmh"><b>🔁 הוראות קבע (${KM.length})</b></div>${KM.map(k=>{
+      const last=all.find(r=>r.keva&&r.keva===k.id), ret=last&&(/החזר/.test(last.btype||'')||+last.amount<0);
+      return `<div class="gfrow"><button class="gfnm" data-cgm="${k.member_id||''}">${esc(knm(k))}${k.member_id?'':' <small class="bqno">לא מקושר</small>'}</button>
+        <b class="gfa">${cdMoney(String(k.amount||'').replace(/[^\d.]/g,''))}</b>
+        <span class="gfw">${k.kind==='bank'?'🏦 הוראה בנקאית'+(k.bank?' · '+esc(k.bank):''):'💳 אשראי'+(k.last4?' ****'+esc(k.last4):'')}${k.groupe?' · '+esc(k.groupe):''}${k.next_date?`<small>חיוב הבא ${esc(k.next_date)}</small>`:''}</span>
+        <span class="gfm">${k.error?`<b style="color:#c0392b">🔴 ${esc(k.error)}</b>`:'<span class="ndok">✅ תקינה — לא חזרה</span>'}${last?`<small>חיוב אחרון ${esc(rcDate(last.date))} · ${cdMoney(last.amount)}${ret?' · החזר':''}</small>`:''}</span></div>`;}).join('')}</div>`
+      :`<div class="hintxt">לא נמצאה הוראת קבע פעילה בשם "${esc(q.trim())}". אולי היא רשומה בנדרים פלוס בשם אחר (למשל של בעל החשבון) — אפשר לחפש לפי טלפון.</div>`;
+  }
   const sum=L=>cdMoney(L.reduce((t,r)=>t+(+r.amount||0),0));
   const n={};all.forEach(r=>n[r.src]=(n[r.src]||0)+1);
   const months={};rows.forEach(r=>(months[(r.date||'').slice(0,7)]=months[(r.date||'').slice(0,7)]||[]).push(r));
@@ -15174,6 +15189,7 @@ async function renderCommGifts(){
       <input id="cgn_note" placeholder="הערה (לא חובה)">
       <label class="gvall"><input type="checkbox" id="cgn_pay" checked> לסגור מזה חוב פתוח שלו (אם יש)</label>
       <div class="bqacts"><button class="btn sm" id="cgn_ok">💾 שמור</button><button class="btn sm ghost" id="cgn_x">ביטול</button></div></div>`:''}
+    ${kvBox}
     <div class="gfsum">${rows.length} תרומות${cgSrc||cgFrom||cgTo||(q||'').trim()?' (מסונן)':''} · סה״כ <b>${sum(rows)}</b></div>
     <div class="gflist">${body||'<div class="empty">אין תרומות שמתאימות לסינון.</div>'}</div>
     ${rows.length>cgLim?`<button class="btn sm ghost" id="cg_more" style="width:100%">📜 הצג עוד (${rows.length-cgLim})</button>`:''}
@@ -15238,13 +15254,13 @@ async function kvHolders(){
   const all=(KVH.rows||[]).filter(k=>k.mosad!==KVH.mk_mosad);   // המקווה — נפרד
   const kupas=[...new Set(all.map(k=>k.kupa))];
   const qq=(document.getElementById('kvh_q')||{}).value||'';
-  const L=all.filter(k=>(!kvhK||(kvhK==='bank'?k.kind==='bank':k.kind!=='bank'))&&(!kvhF||k.kupa===kvhF)&&(!qq.trim()||matchStr(nm(k)+' '+(k.phone||'')+' '+(k.groupe||''),qq.trim())))
+  const L=all.filter(k=>(!kvhK||(kvhK==='bad'?!!k.error:kvhK==='bank'?k.kind==='bank':k.kind!=='bank'))&&(!kvhF||k.kupa===kvhF)&&(!qq.trim()||matchStr(nm(k)+' '+(k.name||'')+' '+(k.phone||'')+' '+(k.groupe||''),qq.trim())))
     .sort((a,b)=>((nm(a)==='—')-(nm(b)==='—'))||nm(a).localeCompare(nm(b),'he'));
   const tot=L.reduce((t,k)=>t+am(k),0);
   rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔁 בעלי הוראות קבע</h2>
     <div class="hintxt"><b>${L.length}</b> הוראות פעילות · סה״כ <b>₪${Math.round(tot).toLocaleString('he-IL')}</b> לחודש · לפי א-ב</div>
     <input id="kvh_q" placeholder="🔍 חיפוש שם / טלפון / עבור מה" value="${esc(qq)}" autocomplete="off" style="width:100%;margin:6px 0">
-    <div class="bqseg"><button class="${kvhK?'':'on'}" data-kk="">הכל</button><button class="${kvhK==='card'?'on':''}" data-kk="card">💳 אשראי</button><button class="${kvhK==='bank'?'on':''}" data-kk="bank">🏦 בנק</button></div>
+    <div class="bqseg"><button class="${kvhK?'':'on'}" data-kk="">הכל</button><button class="${kvhK==='card'?'on':''}" data-kk="card">💳 אשראי</button><button class="${kvhK==='bank'?'on':''}" data-kk="bank">🏦 בנק</button><button class="${kvhK==='bad'?'on':''}" data-kk="bad">🔴 חזרו <small>${all.filter(k=>k.error).length}</small></button></div>
     ${kupas.length>1?`<div class="bqseg"><button class="${kvhF?'':'on'}" data-kf="">כל הקופות</button>${kupas.map(x=>`<button class="${kvhF===x?'on':''}" data-kf="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}
     <div class="mklist">${L.map(k=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:${k.member_id?'pointer':'default'}" ${k.member_id?`data-kvm="${k.member_id}"`:''}>
       <div class="mknm"><b>${esc(nm(k))}${k.member_id?' ↗':' <small class="bqno">לא מקושר</small>'}</b>

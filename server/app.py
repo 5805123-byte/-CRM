@@ -23424,7 +23424,8 @@ class H(BaseHTTPRequestHandler):
                                  'member_id': t['member_id'], 'name': ((t['ml'] or '') + ' ' + (t['mf'] or '')).strip() or (t['name'] or ''),
                                  'linked': bool(t['member_id']), 'purpose': (t['for_local'] or '').strip() or (t['groupe'] or '').strip(),
                                  'nd_purpose': t['groupe'] or '', 'note': t['comments'] or '', 'conf': t['conf'] or '',
-                                 'method': {'bank': 'הוראה בנקאית', 'hok': 'הו"ק אשראי', 'nd': 'נדרים פלוס'}[src]})
+                                 'method': {'bank': 'הוראה בנקאית', 'hok': 'הו"ק אשראי', 'nd': 'נדרים פלוס'}[src],
+                                 'nd_name': t['name'] or '', 'keva': kv, 'btype': t['type'] or ''})
                 for d in con.execute("SELECT d.*, m.last ml, m.first mf FROM cm_don d LEFT JOIN members m ON m.id=d.member_id WHERE COALESCE(d.amount,0)>=10 AND COALESCE(d.fund,'')=? ORDER BY d.date DESC, d.id DESC", (gf,)):
                     rows.append({'src': 'man', 'id': d['id'], 'date': (d['date'] or '')[:10], 'time': d['created'] or '', 'amount': d['amount'] or 0,
                                  'member_id': d['member_id'], 'name': ((d['ml'] or '') + ' ' + (d['mf'] or '')).strip() or (d['name'] or ''), 'linked': bool(d['member_id']),
