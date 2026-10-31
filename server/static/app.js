@@ -15152,7 +15152,20 @@ async function renderCommGifts(){
     if(!KVA){const r=await api('GET','/api/nd/kevas?all=1').catch(()=>null);KVA=r&&r.ok?r:{rows:[]};if(tab!=='comm'||cmSub!=='cgifts')return;}
     const knm=k=>(k.member_id&&(k.ml||k.mf)?((k.ml||'')+' '+(k.mf||'')).trim():(k.name||'')).trim()||'—';
     // מאיר: "תראה לי תמיד רק פעילות בלבד"
-    const KM=(KVA.rows||[]).filter(k=>+k.active&&k.mosad!==KVA.mk_mosad&&qhit(knm(k)+' '+(k.name||'')+' '+(k.phone||'')));
+    let KM=(KVA.rows||[]).filter(k=>+k.active&&k.mosad!==KVA.mk_mosad&&qhit(knm(k)+' '+(k.name||'')+' '+(k.phone||'')));
+    // מאיר: "אני רוצה שיראו מיד בחיפוש לפי שם" — הוראה בנקאית שנגבתה ממנו (בהיסטוריה) ועוד לא אצלנו:
+    // נמשכת מנדרים פלוס לפי המספר שלה, בלי להקליד מספר
+    if(!KM.length){
+      const ids=[...new Set(all.filter(r=>r.src==='bank'&&/^M\d+$/.test(r.keva||'')&&qhit((r.nd_name||'')+' '+(r.name||''))).map(r=>r.keva))]
+        .filter(id=>!KVFETCHED.has(id)&&!(KVA.rows||[]).some(k=>k.id===id&&+k.active)).slice(0,3);
+      if(ids.length){
+        ids.forEach(id=>KVFETCHED.add(id));
+        let got=0;
+        for(const id of ids){const r=await api('GET','/api/nd/masav_fetch/'+id.slice(1)).catch(()=>null);if(r&&r.ok)got++;}
+        if(got){const r=await api('GET','/api/nd/kevas?all=1').catch(()=>null);KVA=r&&r.ok?r:KVA;KVH=null;if(tab!=='comm'||cmSub!=='cgifts')return;
+          KM=(KVA.rows||[]).filter(k=>+k.active&&k.mosad!==KVA.mk_mosad&&qhit(knm(k)+' '+(k.name||'')+' '+(k.phone||'')));}
+      }
+    }
     kvBox=KM.length?`<div class="gfmon"><div class="gfmh"><b>🔁 הוראות קבע (${KM.length})</b></div>${KM.map(k=>{
       const last=all.find(r=>r.keva&&r.keva===k.id), ret=last&&(/החזר/.test(last.btype||'')||+last.amount<0);
       return `<div class="gfrow"><button class="gfnm" data-cgm="${k.member_id||''}">${esc(knm(k))}${k.member_id?'':' <small class="bqno">לא מקושר</small>'}</button>
@@ -15249,6 +15262,7 @@ async function renderCommGifts(){
 // 🔁 מאיר: "איפה אני רואה במערכת שלנו את כל בעלי ההוראות קבע? שיהיה מסודר לפי אלף בית" — כל ההוראות הפעילות
 // (אשראי ובנק), לפי א-ב, עם הסכום לחודש, עבור מה, הקופה והחיוב הבא; חיפוש, סינון, סה"כ לחודש ואקסל
 let KVH=null, KVA=null, kvhF='', kvhK='';
+const KVFETCHED=new Set();   // הוראות בנקאיות שכבר נמשכו לפי מספר בחיפוש שם — פעם אחת
 async function kvHolders(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   remov.classList.add('show');
