@@ -22274,6 +22274,21 @@ class H(BaseHTTPRequestHandler):
             acc = {('' if a['main'] else a['mosad']): a['name'] for a in _nd.accounts()}
             for r in rows:
                 r['kupa'] = acc.get(r['mosad']) or ('מוסד ' + r['mosad'] if r['mosad'] else 'כולל חצות')
+            # מאיר: "איך אני יכול לדעת פה שחזר לו הוראת קבע בבנק?" — 4 התנועות האחרונות בבנק + כמה החזרות ב-150 יום
+            con = db()
+            try:
+                hs = {}
+                for t in con.execute("SELECT keva,iso,amount,type FROM nd_tx WHERE keva LIKE 'M%' AND iso>=? ORDER BY iso DESC",
+                                     ((il_now() - datetime.timedelta(days=150)).strftime('%Y-%m-%d'),)):
+                    hs.setdefault(t['keva'], []).append({'iso': (t['iso'] or '')[:10], 'amount': t['amount'], 'type': t['type'] or '',
+                                                         'ret': nd_bank_ret(t['type'], t['amount'])})
+            finally:
+                con.close()
+            for r in rows:
+                if r['kind'] == 'bank':
+                    h = hs.get(r['id']) or []
+                    r['hist'] = h[:4]
+                    r['rets'] = sum(1 for x in h if x['ret'])
             accts = [{'name': a['name'], 'mosad': a['mosad'], 'mk': a['mosad'] == mk_mosad(),
                       'bank': sum(1 for r in rows if r['kind'] == 'bank' and +r['active'] and r['mosad'] == ('' if a['main'] else a['mosad']))}
                      for a in _nd.accounts()]
@@ -23471,6 +23486,7 @@ class H(BaseHTTPRequestHandler):
                 # הקהילה — רק החשבון של הכולל (החשבון של המקווה ושל נתן תתן נפרדים)
                 # נתן תתן — החשבון שלה, וגם תשלום בחשבון של הכולל שכתוב עליו "נתן תתן" (למשל "אשראי כולל
                 # חצות" במגבית) — הוא עובר לנתן תתן ולא נספר בקהילה
+                rets_ = []                # החזרות בנקאיות — מבטלות את החיוב שחזר (הרשימה מהחדש לישן)
                 mw = " AND (COALESCE(t.mosad,'')=? OR COALESCE(t.mosad,'')='')"
                 for t in con.execute("SELECT t.id,t.iso,t.time,t.amount,t.keva,t.groupe,t.comments,t.conf,t.type,t.member_id,t.name,t.for_local,t.mosad,"
                                      "m.last ml,m.first mf FROM nd_tx t LEFT JOIN members m ON m.id=t.member_id "
@@ -23488,6 +23504,17 @@ class H(BaseHTTPRequestHandler):
                         continue
                     kv = str(t['keva'] or '')
                     src = 'bank' if kv.startswith('M') else ('hok' if kv and not kv.startswith('-') else 'nd')
+                    if src == 'bank' and (nd_bank_ret(t['type'], t['amount']) or re.search(r'עמל', t['type'] or '')):
+                        rets_.append([kv, abs(t['amount'] or 0), (t['iso'] or '')[:10]])
+                        continue                  # החזרה / עמלה בבנק — זה לא תרומה
+                    if src == 'bank':
+                        # חיוב שחזר אחר כך (אותה הוראה, אותו סכום, עד 20 יום) — לא נכנס לבנק, לא תרומה
+                        d0 = (t['iso'] or '')[:10]
+                        hit = next((x for x in rets_ if x[0] == kv and abs(x[1] - abs(t['amount'] or 0)) < 0.01 and d0 <= x[2] <= (
+                            datetime.date.fromisoformat(d0) + datetime.timedelta(days=20)).isoformat()), None) if re.fullmatch(r'\d{4}-\d{2}-\d{2}', d0) else None
+                        if hit:
+                            rets_.remove(hit)
+                            continue
                     rows.append({'src': src, 'id': t['id'], 'date': (t['iso'] or '')[:10], 'time': t['time'] or '', 'amount': t['amount'] or 0,
                                  'member_id': t['member_id'], 'name': ((t['ml'] or '') + ' ' + (t['mf'] or '')).strip() or (t['name'] or ''),
                                  'linked': bool(t['member_id']), 'purpose': (t['for_local'] or '').strip() or (t['groupe'] or '').strip(),
@@ -32216,6 +32243,12 @@ def nd_masav_add(con, masav_id, mos=''):
     return dict(con.execute("SELECT * FROM nd_keva WHERE id=?", (kid,)).fetchone())
 
 
+def nd_bank_ret(typ, amount):
+    """תנועה בנקאית שהיא החזרה (לא שידור / עמלה)."""
+    typ = str(typ or '')
+    return not re.search(r'עמל', typ) and (bool(re.search(r'החזר|הוחזר|חוזר|נדח|סירוב|אין כיסוי|מבוטל|ביטול|לא נפרע|שגיא', typ)) or (amount or 0) < 0)
+
+
 def nd_masav_history(con):
     """חיובי ההוראות הבנקאיות לכל מוסד: בפעם הראשונה מ-2015, ואחר כך 45 יום אחורה (כדי לתפוס החזרות).
     החזרה אחרונה בלי חיוב מוצלח אחריה = "חזרה" על ההוראה (וממנה חוב הו"ק, כמו באשראי)."""
@@ -32260,15 +32293,21 @@ def nd_masav_history(con):
             except Exception as e:
                 print('  masav add error:', kid, e)
         # חזרה בנקאית: השורה האחרונה של ההוראה (45 יום) היא החזרה
-        lastrow = {}
-        for t in sorted(rows, key=lambda x: _nd_iso(x['date'])):
-            if t['keva']:
-                lastrow[pre + t['keva']] = t
+        # מאיר (קליגר): "כתוב שזה תקינה — וזה לא תקין, חזר לו פעמיים" — אחרי החזרה נדרים רושמים גם
+        # שורת עמלה, והיא הייתה "השורה האחרונה" ומחקה את סימון החזרה. שורות עמלה לא נחשבות
+        lastrow, nret, seen_ = {}, {}, set()
         cutoff = (il_now() - datetime.timedelta(days=45)).strftime('%Y-%m-%d')
+        for t in sorted(rows, key=lambda x: _nd_iso(x['date'])):
+            if t['keva'] and not re.search(r'עמל', t['type'] or ''):
+                lastrow[pre + t['keva']] = t
+                if nd_bank_ret(t['type'], t['amount']) and _nd_iso(t['date'])[:10] >= cutoff and t['id'] not in seen_:
+                    seen_.add(t['id'])
+                    nret[pre + t['keva']] = nret.get(pre + t['keva'], 0) + 1
         for kid, t in lastrow.items():
-            ret = 'החזר' in t['type'] or t['amount'] < 0
-            if ret and _nd_iso(t['date'])[:10] >= cutoff:
-                con.execute("UPDATE nd_keva SET error=? WHERE id=? AND kind='bank'", ('חזרה בנקאית %s: %s' % (t['date'][:10], t['type']), kid))
+            if nd_bank_ret(t['type'], t['amount']) and _nd_iso(t['date'])[:10] >= cutoff:
+                n_ = nret.get(kid, 1)
+                con.execute("UPDATE nd_keva SET error=? WHERE id=? AND kind='bank'",
+                            ('חזרה בנקאית%s %s: %s' % ((' (%d פעמים)' % n_) if n_ > 1 else '', t['date'][:10], t['type']), kid))
             else:
                 con.execute("UPDATE nd_keva SET error='' WHERE id=? AND kind='bank'", (kid,))
         con.execute("INSERT INTO app_kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (kk, end.isoformat()))

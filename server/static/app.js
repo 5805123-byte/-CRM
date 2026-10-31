@@ -15190,7 +15190,11 @@ async function renderCommGifts(){
       return `<div class="gfrow"><button class="gfnm" data-cgm="${k.member_id||''}">${esc(knm(k))}${k.member_id?'':' <small class="bqno">לא מקושר</small>'}</button>
         <b class="gfa">${cdMoney(String(k.amount||'').replace(/[^\d.]/g,''))}</b>
         <span class="gfw">${k.kind==='bank'?'🏦 הוראה בנקאית'+(k.bank?' · '+esc(k.bank):''):'💳 אשראי'+(k.last4?' ****'+esc(k.last4):'')}${k.groupe?' · '+esc(k.groupe):''}${k.next_date?`<small>חיוב הבא ${esc(k.next_date)}</small>`:''}</span>
-        <span class="gfm">${!+k.active?`<b style="color:#c0392b">⏸ לא פעילה${k.off?' — '+esc(k.off):''}</b>`:k.error?`<b style="color:#c0392b">🔴 ${esc(k.error)}</b>`:'<span class="ndok">✅ תקינה — לא חזרה</span>'}${last?`<small>חיוב אחרון ${esc(rcDate(last.date))} · ${cdMoney(last.amount)}${ret?' · החזר':''}</small>`:''}</span></div>`;}).join('')}</div>`
+        <span class="gfm">${!+k.active?`<b style="color:#c0392b">⏸ לא פעילה${k.off?' — '+esc(k.off):''}</b>`:k.error?`<b style="color:#c0392b">🔴 ${esc(k.error)}</b>`
+          :k.rets?`<b style="color:#c0392b">🔴 חזרה בבנק ${k.rets} ${k.rets>1?'פעמים':'פעם'} ב-5 החודשים האחרונים</b>`:k.kind==='bank'&&!(k.hist||[]).length?'<small>אין עדיין תנועות בבנק אצלנו — 🔄 סנכרן</small>':'<span class="ndok">✅ תקינה — לא חזרה</span>'}
+          ${k.kind==='bank'?(k.hist||[]).map(h=>`<small style="${h.ret?'color:#c0392b;font-weight:700':''}">${esc(rcDate(h.iso))} · ${cdMoney(h.amount)} · ${esc(h.type||'')}${h.ret?' 🔴':''}</small>`).join('')
+            :last?`<small>חיוב אחרון ${esc(rcDate(last.date))} · ${cdMoney(last.amount)}${ret?' · החזר':''}</small>`:''}</span></div>`;}).join('')}
+      <div style="padding:6px"><button class="btn sm ghost" id="cg_kvsync">🔄 סנכרן עכשיו מנדרים פלוס</button></div></div>`
       :`<div class="hintxt">לא נמצאה הוראת קבע פעילה בשם "${esc(q.trim())}". ${esc(ndFindMsg)}</div>`;
   }
   const sum=L=>cdMoney(L.reduce((t,r)=>t+(+r.amount||0),0));
@@ -15243,6 +15247,9 @@ async function renderCommGifts(){
   const ndb=g('cg_nd');if(ndb)ndb.onclick=()=>ndDonate();
   const kvb=g('cg_kv');if(kvb)kvb.onclick=()=>{KVH=null;kvHolders();};
   const f4b=g('cg_find4');if(f4b)f4b.onclick=()=>ndFind4();
+  const kvs=g('cg_kvsync');if(kvs)kvs.onclick=async()=>{kvs.disabled=true;kvs.textContent='⏳ מסנכרן מנדרים פלוס… (עד דקה)';
+    const r=await api('POST','/api/nd/sync',{}).catch(()=>null);KVH=null;KVA=null;CGF=null;cdData=null;
+    if(!r||!r.ok)await uiAlert('הסנכרון לא הצליח:\n'+((r&&r.error)||'שגיאה'));else toast('✓ סונכרן מנדרים פלוס');renderCommGifts();};
   const mo=g('cg_more');if(mo)mo.onclick=()=>{cgLim+=300;renderCommGifts();};
   view.querySelectorAll('[data-cgm]').forEach(b=>b.onclick=()=>{const m=(MEMBERS||[]).find(x=>x.id==b.dataset.cgm);if(m)openMember(m);});
   // מאיר: "בתרומות אני רוצה אפשרות לקשר ולמזג או לשייך או להקים חבר קהילה חדש"
@@ -15294,7 +15301,7 @@ async function kvHolders(){
   const all=(KVH.rows||[]).filter(k=>kvComm(k,KVH.mk_mosad));   // המקווה — נפרד (חוץ מהוראות בנקאיות של הקהילה)
   const kupas=[...new Set(all.map(k=>k.kupa))];
   const qq=(document.getElementById('kvh_q')||{}).value||'';
-  const L=all.filter(k=>(!kvhK||(kvhK==='bad'?!!k.error:kvhK==='bank'?k.kind==='bank':k.kind!=='bank'))&&(!kvhF||k.kupa===kvhF)&&(!qq.trim()||matchStr(nm(k)+' '+(k.name||'')+' '+(k.phone||'')+' '+(k.groupe||''),qq.trim())))
+  const L=all.filter(k=>(!kvhK||(kvhK==='bad'?!!(k.error||k.rets):kvhK==='bank'?k.kind==='bank':k.kind!=='bank'))&&(!kvhF||k.kupa===kvhF)&&(!qq.trim()||matchStr(nm(k)+' '+(k.name||'')+' '+(k.phone||'')+' '+(k.groupe||''),qq.trim())))
     .sort((a,b)=>((nm(a)==='—')-(nm(b)==='—'))||nm(a).localeCompare(nm(b),'he'));
   const tot=L.reduce((t,k)=>t+am(k),0);
   rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔁 בעלי הוראות קבע</h2>
@@ -15303,11 +15310,11 @@ async function kvHolders(){
     ${(KVH.accounts||[]).length?`<div class="hintxt">🔗 חשבונות נדרים פלוס שמחוברים: ${KVH.accounts.map(a=>`<b>${esc(a.name)}</b> (מוסד ${esc(a.mosad)} · ${a.bank} בנקאיות)`).join(' · ')}</div>`:''}
     <button class="btn sm" id="kvh_sync" style="margin-bottom:6px" title="משיכה מיידית של כל ההוראות (אשראי ובנק), החיובים והחזרות מנדרים פלוס">🔄 סנכרן עכשיו מנדרים פלוס</button>
     <button class="btn sm ghost" id="kvh_fetch" style="margin-bottom:6px" title="הוראה בנקאית שלא מופיעה כאן — לפי המספר שלה בנדרים פלוס (מספר הוראה בראש החלון שלה)">🔎 הוראה בנקאית לפי מספר</button>
-    <div class="bqseg"><button class="${kvhK?'':'on'}" data-kk="">הכל</button><button class="${kvhK==='card'?'on':''}" data-kk="card">💳 אשראי</button><button class="${kvhK==='bank'?'on':''}" data-kk="bank">🏦 בנק</button><button class="${kvhK==='bad'?'on':''}" data-kk="bad">🔴 חזרו <small>${all.filter(k=>k.error).length}</small></button></div>
+    <div class="bqseg"><button class="${kvhK?'':'on'}" data-kk="">הכל</button><button class="${kvhK==='card'?'on':''}" data-kk="card">💳 אשראי</button><button class="${kvhK==='bank'?'on':''}" data-kk="bank">🏦 בנק</button><button class="${kvhK==='bad'?'on':''}" data-kk="bad">🔴 חזרו <small>${all.filter(k=>k.error||k.rets).length}</small></button></div>
     ${kupas.length>1?`<div class="bqseg"><button class="${kvhF?'':'on'}" data-kf="">כל הקופות</button>${kupas.map(x=>`<button class="${kvhF===x?'on':''}" data-kf="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}
     <div class="mklist">${L.map(k=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:${k.member_id?'pointer':'default'}" ${k.member_id?`data-kvm="${k.member_id}"`:''}>
       <div class="mknm"><b>${esc(nm(k))}${k.member_id?' ↗':' <small class="bqno">לא מקושר</small>'}</b>
-        <div class="mksub">${k.groupe?esc(k.groupe)+' · ':''}${k.kind==='bank'?'🏦 '+esc(k.bank||'בנק'):'💳'+(k.last4?' '+esc(k.last4):'')}${k.next_date?' · חיוב הבא '+esc(k.next_date):''}${k.itra?' · נותרו '+esc(k.itra):''}${kupas.length>1?' · '+esc(k.kupa):''}${k.error?' · <b style="color:#c0392b">⚠️ '+esc(k.error)+'</b>':''}</div></div>
+        <div class="mksub">${k.groupe?esc(k.groupe)+' · ':''}${k.kind==='bank'?'🏦 '+esc(k.bank||'בנק'):'💳'+(k.last4?' '+esc(k.last4):'')}${k.next_date?' · חיוב הבא '+esc(k.next_date):''}${k.itra?' · נותרו '+esc(k.itra):''}${kupas.length>1?' · '+esc(k.kupa):''}${k.error?' · <b style="color:#c0392b">⚠️ '+esc(k.error)+'</b>':k.rets?' · <b style="color:#c0392b">🔴 חזרה בבנק '+k.rets+(k.rets>1?' פעמים':' פעם')+'</b>':''}</div></div>
       <b>₪${am(k).toLocaleString('he-IL')}</b></div>`).join('')||'<div class="hintxt">אין</div>'}</div>
     ${L.length?'<button class="btn sm" id="kvh_csv" style="margin-top:8px">⬇️ אקסל</button>':''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
