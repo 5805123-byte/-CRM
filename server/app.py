@@ -4817,6 +4817,38 @@ def ensure_schema():
                 print('  גדולד: נמצאו %d כרטיסים — המטבע לא עודכן' % len(_gd))
     except Exception as e:
         print('  gadold shekel seed error:', e)
+    # מאיר (1.11.2026): "עזרא מקס זה לא ברכה מקס — תמחק את ברכה מקס מהמערכת לגמרי". התשלומים שנרשמו אצלה
+    # הם של עזרא (Ezra Max) ועוברים אליו; כל השאר בכרטיס שלה נמחק, וגם הכרטיס עצמו
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='bracha_max_delete_v1'").fetchone():
+            _bm = con.execute("SELECT id FROM donors WHERE TRIM(last)='מקס' AND TRIM(first) LIKE 'ברכה%'").fetchall()
+            _em = con.execute("SELECT id FROM donors WHERE TRIM(last)='מקס' AND TRIM(first) LIKE 'עזרא%'").fetchall()
+            if len(_bm) == 1 and len(_em) == 1:
+                _b, _e = _bm[0]['id'], _em[0]['id']
+                _mv = 0
+                for t in ('donations', 'recon', 'transactions', 'bq_cust', 'bq_sched'):
+                    try: _mv += con.execute("UPDATE %s SET donor_id=? WHERE donor_id=?" % t, (_e, _b)).rowcount
+                    except Exception: pass
+                for t in ('pledges', 'parnes', 'prayers', 'contacts_log', 'tasks', 'partners', 'building',
+                          'donor_rules', 'avreich_log', 'sugg_reject', 'addr_reject'):
+                    try: con.execute("DELETE FROM %s WHERE donor_id=?" % t, (_b,))
+                    except Exception: pass
+                try: con.execute("UPDATE intake SET donor_id=NULL WHERE donor_id=?", (_b,))
+                except Exception: pass
+                con.execute("UPDATE donors SET english=COALESCE(NULLIF(TRIM(english),''),'Ezra Max') WHERE id=?", (_e,))
+                con.execute("DELETE FROM donors WHERE id=?", (_b,))
+                try:      # לא ייפתח לה כרטיס שוב (רק לפי השם — לא לפי Ezra Max, שזה עזרא)
+                    con.execute("INSERT OR REPLACE INTO deleted_donors(key,last,first,english,created) VALUES(?,?,?,?,?)",
+                                (_dkey('מקס', 'ברכה'), 'מקס', 'ברכה', '', today_iso()))
+                except Exception: pass
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (_e, today_iso(), 'מערכת', 'הכרטיס של ברכה מקס נמחק — %d תשלומים שנרשמו אצלה עברו לכאן' % _mv, '', now_iso()))
+                print('  ברכה מקס נמחקה — %d תשלומים עברו לעזרא מקס' % _mv)
+                con.execute("INSERT INTO seed_flags(name) VALUES('bracha_max_delete_v1')"); con.commit()
+            else:
+                print('  ברכה מקס: נמצאו %d / עזרא %d — לא נמחק' % (len(_bm), len(_em)))
+    except Exception as e:
+        print('  bracha max delete error:', e)
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
