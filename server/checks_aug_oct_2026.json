@@ -1,6 +1,6 @@
 {
  "label": "QuickBooks + Chase — צ׳קים, זל, דונרס, OJC, Fidelity, ACH, Wire · אוגוסט–אוקטובר 2026",
- "version": "2026-11-01a",
+ "version": "2026-11-01b",
  "people": {
   "Adlin": {
    "he": "אדלין יצחק",
@@ -114,8 +114,9 @@
    "did": 468
   },
   "Lamm, Steven": {
-   "he": "לאם אסתר",
-   "en": "steven Lamm"
+   "he": "לאם זאב",
+   "en": "Steven Lamm",
+   "did": 280
   },
   "Liviem, Ryan": {
    "en": "Ryan Liviem",

@@ -300,6 +300,10 @@ def qb_chase_import(con):
     for i, r in enumerate(rows):
         tid = 'qb26-%03d' % i
         if con.execute("SELECT 1 FROM donations WHERE tid=?", (tid,)).fetchone():
+            # מאיר: "זה לא אסתר לאם, זה זאב לאם" — תיקון כרטיס בדף השיוך: התשלום עובר לכרטיס הנכון
+            _h = people.get(r['who']) or {}
+            if _h.get('did') and con.execute("SELECT 1 FROM donors WHERE id=?", (_h['did'],)).fetchone():
+                con.execute("UPDATE donations SET donor_id=? WHERE tid=? AND COALESCE(donor_id,0)<>?", (_h['did'], tid, _h['did']))
             # כבר נרשם בריצה קודמת — "עבור מה" שמאיר בחר בדף נכנס, אם עוד לא סווג
             if r.get('cat'):
                 con.execute("UPDATE donations SET category=?, note=TRIM(REPLACE(COALESCE(note,''),' · לא סווג — לבדוק עבור מה','')) "
