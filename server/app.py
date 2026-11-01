@@ -1224,6 +1224,9 @@ def ensure_schema():
     # מאיר: "הירש ליאורה סיימה את התרומות שלה — איפה אני מעדכן באופן פשוט שהוא הפסיק?" — תאריך שבו הפסיק לתרום כל חודש
     try: con.execute("ALTER TABLE donors ADD COLUMN monthly_stop TEXT DEFAULT ''")
     except Exception: pass
+    # 1 = לעצור את החיוב האוטומטי בתאריך שהפסיק (כשמגיע) · 2 = נעצר
+    try: con.execute("ALTER TABLE donors ADD COLUMN monthly_stop_charge INTEGER DEFAULT 0")
+    except Exception: pass
     try: con.execute("ALTER TABLE pledges ADD COLUMN cur TEXT DEFAULT ''")      # מטבע ההתחייבות: '$' / '₪' (ריק = לפי אזור התורם)
     except Exception: pass
     try: con.execute("ALTER TABLE pledges ADD COLUMN via_note TEXT DEFAULT ''")
@@ -15599,12 +15602,14 @@ def missing_report(con, days_grace=5):
     prev = (today.replace(day=1) - datetime.timedelta(days=1))
     m1 = prev.strftime('%Y-%m')
     cutoff = (today - datetime.timedelta(days=75)).isoformat()
-    name, region, stopped = {}, {}, set()
+    name, region, stopped, stop_at = {}, {}, set(), {}
     for r in con.execute("SELECT id,last,first,english,region,COALESCE(monthly_stop,'') ms FROM donors"):
         name[r['id']] = ((r['last'] or '') + ' ' + (r['first'] or '')).strip() or (r['english'] or '')
         region[r['id']] = r['region'] or ''
         if r['ms']:
-            stopped.add(r['id'])
+            stop_at[r['id']] = r['ms']
+            if r['ms'] <= today.isoformat():
+                stopped.add(r['id'])
     # --- א. חיובים שנדחו ולא כוסו (בנק ווסט / אוטורייז) ---
     ok = {}
     for r in con.execute("SELECT donor_id,amount,date FROM recon WHERE donor_id IS NOT NULL AND COALESCE(status,'settled') IN ('settled','')"):
@@ -15617,7 +15622,7 @@ def missing_report(con, days_grace=5):
     for r in con.execute("SELECT donor_id,amount,date,source,note,COALESCE(no_debt,0) nd FROM recon WHERE donor_id IS NOT NULL "
                          "AND COALESCE(status,'settled') NOT IN ('settled','') ORDER BY date DESC"):
         iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
-        if not iso or iso < cutoff or r['nd'] or r['donor_id'] in stopped:
+        if not iso or iso < cutoff or r['nd'] or (r['donor_id'] in stop_at and iso >= stop_at[r['donor_id']]):
             continue
         a = _amt2(r['amount'])
         dd = _days(iso)
@@ -30188,35 +30193,29 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'id': cid, 'task_id': task_id})
         m = re.match(r'/api/donor/(\d+)/stop_monthly$', self.path)
         if m:
-            # ⛔ מאיר: "איך מגדירים במערכת באופן פשוט וקל שהוא הפסיק — ולהפסיק את החיוב וההתחייבות"
+            # ⛔ מאיר: "איך מגדירים במערכת באופן פשוט וקל שהוא הפסיק — ולהפסיק את החיוב שלו וההתחייבות"
+            # ו"שזה ישאל מאיזה תאריך בדיוק הפסיק, וכשאציין תאריך זה יסונכרן" — עד התאריך הכל כרגיל; ממנו:
+            # ההתחייבות מסתיימת, החיוב האוטומטי נעצר, וחיובים שנדחו מאז אינם חוב (תאריך עתידי — קורה לבד ביום הזה)
             did = int(m.group(1)); on = bool(int(b.get('on') or 0))
+            dt = str(b.get('date') or '').strip()[:10]
+            if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', dt):
+                dt = today_iso()
             con = db()
-            out = {'ok': True, 'pledges': 0, 'sched': [], 'sched_err': [], 'decl': 0}
             try:
                 if not con.execute("SELECT 1 FROM donors WHERE id=?", (did,)).fetchone():
                     return self._send(200, {'ok': False, 'error': 'התורם לא נמצא'})
-                con.execute("UPDATE donors SET monthly_stop=? WHERE id=?", (today_iso() if on else '', did))
                 if on:
-                    out['pledges'] = con.execute("UPDATE pledges SET status='הסתיים' WHERE donor_id=? AND COALESCE(monthly,0)=1 "
-                                                 "AND COALESCE(status,'')<>'הסתיים'", (did,)).rowcount
-                    # חיובים שנדחו — כבר לא חוב (הוא הפסיק)
-                    out['decl'] = con.execute("UPDATE recon SET no_debt=1 WHERE donor_id=? AND COALESCE(status,'settled') NOT IN ('settled','') "
-                                              "AND COALESCE(no_debt,0)=0", (did,)).rowcount
-                    if b.get('stop_charge'):
-                        import banquest as _bq
-                        for sc in con.execute("SELECT s.id,s.amount FROM bq_sched s WHERE COALESCE(s.active,0)=1 AND (s.donor_id=? OR s.customer_id IN "
-                                              "(SELECT id FROM bq_cust WHERE donor_id=?))", (did, did)).fetchall():
-                            try:
-                                code, res = _bq.update_schedule(sc['id'], active=False)
-                                if 200 <= int(code or 0) < 300:
-                                    con.execute("UPDATE bq_sched SET active=0, status='paused' WHERE id=?", (sc['id'],))
-                                    out['sched'].append('$%g' % (sc['amount'] or 0))
-                                else:
-                                    out['sched_err'].append('$%g: %s' % (sc['amount'] or 0, str(res)[:80]))
-                            except Exception as e:
-                                out['sched_err'].append('$%g: %s' % (sc['amount'] or 0, str(e)[:80]))
+                    con.execute("UPDATE donors SET monthly_stop=?, monthly_stop_charge=? WHERE id=?", (dt, 1 if b.get('stop_charge') else 0, did))
+                    out = mstop_apply(con, did)
+                else:
+                    con.execute("UPDATE donors SET monthly_stop='', monthly_stop_charge=0 WHERE id=?", (did,))
+                    out = {'ok': True}
+                out['date'] = dt
+                out['future'] = on and dt > today_iso()
                 con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
-                            (did, today_iso(), 'הערה', ('⛔ הפסיק לתרום כל חודש' + (' · החיוב האוטומטי הופסק (%s)' % ', '.join(out['sched']) if out['sched'] else ''))
+                            (did, today_iso(), 'הערה', ('⛔ הפסיק לתרום כל חודש — מ-%s' % '/'.join(reversed(dt.split('-'))) +
+                                                       (' · החיוב האוטומטי הופסק (%s)' % ', '.join(out['sched']) if out.get('sched') else
+                                                        (' · החיוב האוטומטי ייעצר בתאריך הזה' if out['future'] and b.get('stop_charge') else '')))
                              if on else '▶ חזר לתרום כל חודש'))
                 con.commit()
             finally:
@@ -31075,6 +31074,42 @@ def bq_run(full=False):
         BQSTAT['running'] = False
 
 
+def mstop_apply(con, did=None):
+    """⛔ תורם שהפסיק לתרום כל חודש — כשהגיע התאריך שהפסיק: ההתחייבות החודשית מסתיימת, חיובים שנדחו מאז
+    אינם חוב, והחיוב האוטומטי בבנק ווסט נעצר (אם ביקשו). נקרא בסימון, וכל שעה בשביל תאריכים עתידיים."""
+    out = {'ok': True, 'pledges': 0, 'sched': [], 'sched_err': [], 'decl': 0}
+    td = today_iso()
+    q = "SELECT id,monthly_stop ms,COALESCE(monthly_stop_charge,0) sc FROM donors WHERE COALESCE(monthly_stop,'')<>'' AND monthly_stop<=?"
+    for d in con.execute(q + (" AND id=?" if did else ""), (td, did) if did else (td,)).fetchall():
+        out['pledges'] += con.execute("UPDATE pledges SET status='הסתיים' WHERE donor_id=? AND COALESCE(monthly,0)=1 "
+                                      "AND COALESCE(status,'')<>'הסתיים'", (d['id'],)).rowcount
+        for r in con.execute("SELECT tid,date FROM recon WHERE donor_id=? AND COALESCE(status,'settled') NOT IN ('settled','') "
+                             "AND COALESCE(no_debt,0)=0", (d['id'],)).fetchall():
+            if (_recon_iso(r['date']) or (r['date'] or '')[:10]) >= d['ms']:
+                con.execute("UPDATE recon SET no_debt=1 WHERE tid=?", (r['tid'],)); out['decl'] += 1
+        if d['sc'] == 1:
+            import banquest as _bq
+            bad = False
+            for sc in con.execute("SELECT s.id,s.amount FROM bq_sched s WHERE COALESCE(s.active,0)=1 AND (s.donor_id=? OR s.customer_id IN "
+                                  "(SELECT id FROM bq_cust WHERE donor_id=?))", (d['id'], d['id'])).fetchall():
+                try:
+                    code, res = _bq.update_schedule(sc['id'], active=False)
+                    if 200 <= int(code or 0) < 300:
+                        con.execute("UPDATE bq_sched SET active=0, status='paused' WHERE id=?", (sc['id'],))
+                        out['sched'].append('$%g' % (sc['amount'] or 0))
+                    else:
+                        bad = True; out['sched_err'].append('$%g: %s' % (sc['amount'] or 0, str(res)[:80]))
+                except Exception as e:
+                    bad = True; out['sched_err'].append('$%g: %s' % (sc['amount'] or 0, str(e)[:80]))
+            if not bad:
+                con.execute("UPDATE donors SET monthly_stop_charge=2 WHERE id=?", (d['id'],))
+                if not did and out['sched']:
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                                (d['id'], td, 'מערכת', '⛔ החיוב האוטומטי בבנק ווסט נעצר (הפסיק לתרום מ-%s)' % '/'.join(reversed(d['ms'].split('-')))))
+    con.commit()
+    return out
+
+
 def _bq_loop():
     """כל שעה: מה שבנק ווסט חייב (הוראות קבע בלילה, חיובים ידניים) נכנס למערכת."""
     import time
@@ -31084,6 +31119,10 @@ def _bq_loop():
             bq_run()
         except Exception as e:
             print('  banquest sync error:', e)
+        try:
+            con = db(); mstop_apply(con); con.close()
+        except Exception as e:
+            print('  monthly stop error:', e)
         time.sleep(max(900, int(os.environ.get('BANQUEST_SECONDS') or 3600)))
 
 
