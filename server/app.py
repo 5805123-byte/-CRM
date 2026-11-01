@@ -1039,6 +1039,11 @@ def ensure_schema():
     for col in ('name', 'phone'):
         try: con.execute(f"ALTER TABLE cm_don ADD COLUMN {col} TEXT")
         except Exception: pass
+    # מאיר: "שתישאר עד שאשמע אותה, וגם אם שמעתי — שתישאר שבוע" — מתי נשמעה (הודעות שכבר נשמעו: מהיום)
+    try:
+        con.execute("ALTER TABLE ym_vm ADD COLUMN heard_at TEXT")
+        con.execute("UPDATE ym_vm SET heard_at=? WHERE COALESCE(heard,0)=1", (now_iso(),))
+    except Exception: pass
     try: con.execute("ALTER TABLE ym_vm ADD COLUMN transcript TEXT")
     except Exception: pass
     # "עבור מה" שהגבאי הוסיף לתשלום בנדרים פלוס (רשות) — לא נוגע במה שבנדרים
@@ -22331,11 +22336,12 @@ class H(BaseHTTPRequestHandler):
                 # 🎙️ הודעות שהשאירו בימות (90 יום) — לכל חבר / טלפון, להצגה בחלון החובות
                 import yemot as _ymv
                 vms = {}
-                # מאיר: "תמיד אחרי שבוע, ואם שמעתי את ההודעה — שזה יימחק מההודעות" — בחלון החובות רק הודעות
-                # שעוד לא נשמעו מהשבוע האחרון. ההודעה עצמה לא נמחקת: נשארת ביומן הקשר של הכרטיס ובמסך ההודעות
+                # מאיר: "שתישאר עד שאשמע אותה, וגם אם שמעתי — שתישאר שבוע" — בחלון החובות: הודעה שלא נשמעה
+                # נשארת; הודעה שנשמעה — עוד שבוע מהשמיעה. ההודעה עצמה לא נמחקת: נשארת ביומן הקשר ובמסך ההודעות
                 since = (il_now() - datetime.timedelta(days=7)).strftime('%Y-%m-%d %H:%M')
                 pidx = nd_member_index(con)
-                for v in con.execute("SELECT id,phone,at,heard,transcript,member_id FROM ym_vm WHERE done<2 AND COALESCE(heard,0)=0 AND at>=? ORDER BY at DESC", (since,)).fetchall():
+                for v in con.execute("SELECT id,phone,at,heard,transcript,member_id FROM ym_vm WHERE done<2 "
+                                     "AND (COALESCE(heard,0)=0 OR COALESCE(heard_at,'')>=?) ORDER BY at DESC", (since,)).fetchall():
                     ph = _ymv.norm_phone(v['phone'] or '')
                     mids = {v['member_id']} if v['member_id'] else (pidx.get(ph) or set())
                     # ההודעה נקשרת לכרטיס לתמיד — כדי שתישאר אצלו גם אחרי שהחוב שולם ויצא מהרשימה
@@ -25134,9 +25140,9 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 if act == 'heard':
-                    con.execute("UPDATE ym_vm SET heard=1 WHERE id=?", (vid,))
+                    con.execute("UPDATE ym_vm SET heard=1, heard_at=COALESCE(heard_at,?) WHERE id=?", (now_iso(), vid))
                 elif act in ('done', 'undone'):
-                    con.execute("UPDATE ym_vm SET done=?, heard=1 WHERE id=?", (1 if act == 'done' else 0, vid))
+                    con.execute("UPDATE ym_vm SET done=?, heard=1, heard_at=COALESCE(heard_at,?) WHERE id=?", (1 if act == 'done' else 0, now_iso(), vid))
                 elif act == 'delete':
                     con.execute("UPDATE ym_vm SET done=2, audio=NULL WHERE id=?", (vid,))
                 elif act == 'note':
