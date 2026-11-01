@@ -1294,6 +1294,13 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE tasks ADD COLUMN assignee TEXT")
     except Exception: pass
+    # מאיר (1.11.2026): "מה שאני לא מאשר שזה נעשה... תשאיר את זה ביומן ליום הבא, באותה שעה" —
+    # roll=1: משימה שלא סומנה ✓ עוברת כל יום ליום הבא (אותה שעה); orig_date = התאריך המקורי
+    try: con.execute("ALTER TABLE tasks ADD COLUMN roll INTEGER")
+    except Exception: pass
+    try: con.execute("ALTER TABLE tasks ADD COLUMN orig_date TEXT")
+    except Exception: pass
+    con.execute("UPDATE tasks SET roll=1 WHERE id IN (373,375,376) AND roll IS NULL")   # המשימות הראשונות שנכנסו מ-Claude
     # תדירות תרומה — קבוע אך לא בהכרח חודשי (רבעוני / שנתי / לחגים וכו')
     try: con.execute("ALTER TABLE donors ADD COLUMN frequency TEXT")
     except Exception: pass
@@ -18735,9 +18742,27 @@ def ym_redial_at_scan():
         con.close()
 
 
+def tasks_roll_scan():
+    """משימה עם roll=1 שלא סומנה ✓ ותאריכה עבר — עוברת להיום, באותה שעה (וכך כל יום, עד שמסמנים ✓ או מוחקים)."""
+    con = db()
+    try:
+        td = il_now().date().isoformat()
+        n = con.execute("UPDATE tasks SET orig_date=COALESCE(NULLIF(orig_date,''),due_date), due_date=? "
+                        "WHERE COALESCE(roll,0)=1 AND COALESCE(done,0)=0 AND due_date<>'' AND due_date<?", (td, td)).rowcount
+        if n:
+            con.commit(); bump_data()
+            print('  יומן: %d משימות שלא בוצעו הועברו להיום' % n)
+    finally:
+        con.close()
+
+
 def _ym_sched_loop():
     while True:
         time.sleep(30)
+        try:
+            tasks_roll_scan()
+        except Exception as e:
+            print('  tasks roll error:', e)
         try:
             ym_sched_scan()
         except Exception as e:
@@ -19070,7 +19095,7 @@ def mcp_tool(name, a):
             ex = con.execute("SELECT id FROM tasks WHERE COALESCE(done,0)=0 AND donor_id IS NULL AND due_date=? AND note=?", (date, title)).fetchone()
             if ex:
                 return '✓ כבר ביומן (מס׳ %d): %s — %s' % (ex['id'], _mcp_day(date), title)
-            cur = con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(NULL,?,?,?,'',?,?)", (date, kind, title, tm, place))
+            cur = con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place,roll) VALUES(NULL,?,?,?,'',?,?,1)", (date, kind, title, tm, place))
             con.commit()
             bump_data()
             return '✓ נכנס ליומן (מס׳ %d): %s%s — %s%s' % (cur.lastrowid, _mcp_day(date), (' בשעה ' + tm) if tm else '', title, (' · 📍 ' + place) if place else '')
