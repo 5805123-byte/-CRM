@@ -305,9 +305,12 @@ def qb_chase_import(con):
             if _h.get('did') and con.execute("SELECT 1 FROM donors WHERE id=?", (_h['did'],)).fetchone():
                 con.execute("UPDATE donations SET donor_id=? WHERE tid=? AND COALESCE(donor_id,0)<>?", (_h['did'], tid, _h['did']))
             # כבר נרשם בריצה קודמת — "עבור מה" שמאיר בחר בדף נכנס, אם עוד לא סווג
-            if r.get('cat'):
+            if r.get('cat'):          # מה שמאיר בחר בדף — גובר
                 con.execute("UPDATE donations SET category=?, note=TRIM(REPLACE(COALESCE(note,''),' · לא סווג — לבדוק עבור מה','')) "
-                            "WHERE tid=? AND COALESCE(note,'') LIKE '%לא סווג%'", (r['cat'], tid))
+                            "WHERE tid=? AND COALESCE(category,'')<>?", (r['cat'], tid, r['cat']))
+            continue
+        if (people.get(r['who']) or {}).get('skip'):
+            con.execute("DELETE FROM recon WHERE tid=?", (tid,))     # מאיר: "לא תרומה / להתעלם"
             continue
         did = found.get(r['who'])
         if not did:

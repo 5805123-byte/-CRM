@@ -1,6 +1,6 @@
 {
  "label": "QuickBooks + Chase — צ׳קים, זל, דונרס, OJC, Fidelity, ACH, Wire · אוגוסט–אוקטובר 2026",
- "version": "2026-11-01c",
+ "version": "2026-11-01d",
  "people": {
   "Adlin": {
    "he": "אדלין יצחק",
@@ -120,7 +120,8 @@
   },
   "Liviem, Ryan": {
    "en": "Ryan Liviem",
-   "guess": 1
+   "he": "ליויאם מרדכי יהושע",
+   "did": 304
   },
   "Lorbert, Adam": {
    "he": "לורברט אדם",
@@ -132,7 +133,8 @@
   },
   "MGM Electrical Corp (Lawrence NY)": {
    "en": "MGM Electrical Corp",
-   "guess": 1
+   "he": "מיטמן מאיר",
+   "did": 337
   },
   "Max, Ezra M.": {
    "he": "מקס עזרא מאיר",
@@ -145,7 +147,8 @@
   },
   "Perlow, Amy": {
    "en": "Amy Perlow",
-   "guess": 1
+   "he": "פרלוב אמי",
+   "did": 454
   },
   "Pinter, Samson": {
    "he": "פינטער שמשון",
@@ -153,7 +156,8 @@
   },
   "Rosenfeld Family Foundation (Monsey)": {
    "en": "Rosenfeld Family Foundation",
-   "guess": 1
+   "he": "רוזנפלד יצחק",
+   "did": 522
   },
   "Rosenfeld, Jerry - Tova": {
    "he": "רוזנפלד ישראל אבא",
@@ -164,12 +168,12 @@
    "en": "Barry Schacter"
   },
   "Schweitzer, Elya": {
-   "en": "Elya Schweitzer",
-   "guess": 1
+   "skip": 1
   },
   "Shymo Corp.": {
    "en": "Shymo Corp.",
-   "guess": 1
+   "he": "מוקאי יעקב",
+   "did": 333
   },
   "Siegal, Abraham": {
    "en": "Abraham Siegal",
@@ -177,11 +181,13 @@
   },
   "Silber, Meyer": {
    "en": "Meyer Silber",
-   "guess": 1
+   "he": "זילבר מאיר",
+   "did": 230
   },
   "Sims, Rachel": {
    "en": "Rachel Sims",
-   "guess": 1
+   "he": "סימס רחל",
+   "did": 380
   },
   "Taubenfeld, Gabe & Miriam": {
    "he": "טאובנפלד מרים",
@@ -193,7 +199,8 @@
   },
   "Thriveway Fundin": {
    "en": "Thriveway Fundin",
-   "guess": 1
+   "he": "אדלין יצחק",
+   "did": 8
   },
   "Vago, Michael": {
    "he": "ואגו מיכאל",
@@ -201,17 +208,25 @@
   },
   "Viders, Elaine M": {
    "en": "Elaine M Viders",
-   "guess": 1
+   "he": "וידערס אילנה",
+   "did": 218
   },
   "Wald, Baila": {
    "en": "Baila Wald",
-   "guess": 1
+   "he": "וולד ביילא",
+   "did": 210
   },
   "YSW Group LLC": {
    "en": "YSW Group LLC",
-   "guess": 1
+   "he": "וורצברגר יידל",
+   "did": 217
   },
-  "Unknown": {}
+  "Unknown": {},
+  "Thriveway Fundin (Dahan)": {
+   "he": "דהאן אלירן",
+   "en": "Eliran Dahan",
+   "did": 149
+  }
  },
  "rows": [
   {
@@ -220,7 +235,8 @@
    "amount": 100.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "Adlin",
@@ -228,7 +244,8 @@
    "amount": 100.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "Adlin",
@@ -236,7 +253,8 @@
    "amount": 100.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "B & C Lead Consultants LLC",
@@ -289,7 +307,8 @@
    "amount": 1000.0,
    "method": "דונרס",
    "src": "Both",
-   "note": "Chase 8/26"
+   "note": "Chase 8/26",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Brody, Yisroel",
@@ -297,7 +316,8 @@
    "amount": 1000.0,
    "method": "דונרס",
    "src": "Both",
-   "note": "Chase 9/23 (with Kohn)"
+   "note": "Chase 9/23 (with Kohn)",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Cohen, Shmuel",
@@ -314,7 +334,8 @@
    "amount": 1000.0,
    "method": "דונרס",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Core Compliance - Statfeld",
@@ -322,7 +343,8 @@
    "amount": 1000.0,
    "method": "דונרס",
    "src": "Both",
-   "note": "Chase 9/3"
+   "note": "Chase 9/3",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Core Compliance - Statfeld",
@@ -330,7 +352,8 @@
    "amount": 1000.0,
    "method": "דונרס",
    "src": "Both",
-   "note": "Chase pending (with Dworkin)"
+   "note": "Chase pending (with Dworkin)",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "David J. Pack Foundation",
@@ -338,7 +361,8 @@
    "amount": 1000.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "David J. Pack Foundation",
@@ -346,7 +370,8 @@
    "amount": 1000.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "David J. Pack Foundation",
@@ -354,7 +379,8 @@
    "amount": 1000.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Deutsch, Moishe (VentureDBVE LLC)",
@@ -409,7 +435,8 @@
    "amount": 1000.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Frankel",
@@ -417,7 +444,8 @@
    "amount": 1000.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Frankel",
@@ -425,7 +453,8 @@
    "amount": 1200.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Frankel",
@@ -433,7 +462,8 @@
    "amount": 1000.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Friedlander, David",
@@ -522,7 +552,8 @@
    "amount": 100.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "Halberstam, Mark",
@@ -530,7 +561,8 @@
    "amount": 100.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "Hochman, Chaim",
@@ -538,7 +570,8 @@
    "amount": 180.0,
    "method": "Zelle",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "Hochman, Chaim",
@@ -546,7 +579,8 @@
    "amount": 180.0,
    "method": "Zelle",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "קבוע"
   },
   {
    "who": "Hochman, Chaim",
@@ -554,7 +588,8 @@
    "amount": 260.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "הבניין הקדוש — חלון גד"
   },
   {
    "who": "Hochman, Chaim",
@@ -562,7 +597,8 @@
    "amount": 180.0,
    "method": "Zelle",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "קבוע"
   },
   {
    "who": "Hochman, Chaim",
@@ -570,7 +606,8 @@
    "amount": 260.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "הבניין הקדוש — חלון גד"
   },
   {
    "who": "Hoffman, Todd",
@@ -612,7 +649,8 @@
    "amount": 1300.0,
    "method": "דונרס",
    "src": "Both",
-   "note": "Chase 9/15"
+   "note": "Chase 9/15",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Liviem, Ryan",
@@ -620,7 +658,8 @@
    "amount": 360.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Lorbert, Adam",
@@ -628,7 +667,8 @@
    "amount": 218.0,
    "method": "Fidelity",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "קבוע"
   },
   {
    "who": "Lorbert, Adam",
@@ -636,7 +676,8 @@
    "amount": 218.0,
    "method": "Fidelity",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "קבוע"
   },
   {
    "who": "Loveman, Michael",
@@ -652,7 +693,8 @@
    "amount": 1800.0,
    "method": "OJC",
    "src": "Both",
-   "note": "Chase 9/9"
+   "note": "Chase 9/9",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Max, Ezra M.",
@@ -660,7 +702,8 @@
    "amount": 1000.0,
    "method": "OJC",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Mendelsohn, Alfred",
@@ -668,7 +711,8 @@
    "amount": 360.0,
    "method": "Fidelity",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "קבוע"
   },
   {
    "who": "Mendelsohn, Alfred",
@@ -676,7 +720,8 @@
    "amount": 360.0,
    "method": "Fidelity",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "קבוע"
   },
   {
    "who": "Mendelsohn, Alfred",
@@ -684,7 +729,8 @@
    "amount": 360.0,
    "method": "Fidelity",
    "src": "Both",
-   "note": "Chase pending (with Schachter)"
+   "note": "Chase pending (with Schachter)",
+   "cat": "קבוע"
   },
   {
    "who": "MGM Electrical Corp (Lawrence NY)",
@@ -692,7 +738,8 @@
    "amount": 19000.0,
    "method": "Wire",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Perlow, Amy",
@@ -700,7 +747,8 @@
    "amount": 72.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "Perlow, Amy",
@@ -708,7 +756,8 @@
    "amount": 36.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "Perlow, Amy",
@@ -716,7 +765,8 @@
    "amount": 36.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "Perlow, Amy",
@@ -724,7 +774,8 @@
    "amount": 180.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "פרנס לילה"
   },
   {
    "who": "Pinter, Samson",
@@ -732,7 +783,8 @@
    "amount": 5896.0,
    "method": "Fidelity",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "ספר תורה"
   },
   {
    "who": "Pinter, Samson",
@@ -740,7 +792,8 @@
    "amount": 5803.0,
    "method": "Fidelity",
    "src": "Both",
-   "note": "Chase 9/23"
+   "note": "Chase 9/23",
+   "cat": "ספר תורה"
   },
   {
    "who": "Pinter, Samson",
@@ -748,7 +801,8 @@
    "amount": 16000.0,
    "method": "Fidelity",
    "src": "Both",
-   "note": "Chase 9/23"
+   "note": "Chase 9/23",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Rosenfeld Family Foundation (Monsey)",
@@ -756,7 +810,8 @@
    "amount": 10000.0,
    "method": "Wire",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "כולל יום לפני הצהריים"
   },
   {
    "who": "Rosenfeld, Jerry - Tova",
@@ -764,7 +819,8 @@
    "amount": 1000.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Rosenfeld, Jerry - Tova",
@@ -772,7 +828,8 @@
    "amount": 1000.0,
    "method": "צ'ק",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Schachter, Barry",
@@ -780,7 +837,8 @@
    "amount": 360.0,
    "method": "Fidelity",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "קבוע"
   },
   {
    "who": "Schachter, Barry",
@@ -788,7 +846,8 @@
    "amount": 360.0,
    "method": "Fidelity",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "קבוע"
   },
   {
    "who": "Schachter, Barry",
@@ -796,7 +855,8 @@
    "amount": 1300.0,
    "method": "Fidelity",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Schachter, Barry",
@@ -804,7 +864,8 @@
    "amount": 360.0,
    "method": "Fidelity",
    "src": "Both",
-   "note": "Chase pending (with Mendelsohn)"
+   "note": "Chase pending (with Mendelsohn)",
+   "cat": "קבוע"
   },
   {
    "who": "Schweitzer, Elya",
@@ -820,7 +881,8 @@
    "amount": 2100.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Siegal, Abraham",
@@ -836,7 +898,8 @@
    "amount": 26.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "Silber, Meyer",
@@ -844,7 +907,8 @@
    "amount": 26.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "Silber, Meyer",
@@ -852,7 +916,8 @@
    "amount": 26.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "Sims, Rachel",
@@ -860,7 +925,8 @@
    "amount": 1200.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Sims, Rachel",
@@ -868,7 +934,8 @@
    "amount": 480.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "פרנס לילה"
   },
   {
    "who": "Taubenfeld, Gabe & Miriam",
@@ -876,7 +943,8 @@
    "amount": 2300.0,
    "method": "Fidelity",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Taubenfeld, Gabe & Miriam",
@@ -884,7 +952,8 @@
    "amount": 2300.0,
    "method": "Fidelity",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Taubenfeld, Gabe & Miriam",
@@ -892,7 +961,8 @@
    "amount": 2680.0,
    "method": "Fidelity",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Taubenfeld, Gabe & Miriam",
@@ -900,7 +970,8 @@
    "amount": 2600.0,
    "method": "Fidelity",
    "src": "Both",
-   "note": "Chase 9/23"
+   "note": "Chase 9/23",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Taubenfeld, Gabe & Miriam",
@@ -908,7 +979,8 @@
    "amount": 2300.0,
    "method": "Fidelity",
    "src": "Both",
-   "note": "Chase pending $2,600 - see note"
+   "note": "Chase pending $2,600 - see note",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Tepfer, Jerry",
@@ -916,7 +988,8 @@
    "amount": 180.0,
    "method": "Zelle",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "קבוע"
   },
   {
    "who": "Tepfer, Jerry",
@@ -924,15 +997,18 @@
    "amount": 1200.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Thriveway Fundin",
    "date": "2026-09-25",
-   "amount": 2000.0,
+   "amount": 1000.0,
    "method": "ACH",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון",
+   "anote": "מתוך $2000 — $1000 של אלירן דהאן השותף"
   },
   {
    "who": "Vago, Michael",
@@ -940,7 +1016,8 @@
    "amount": 900.0,
    "method": "OJC",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Vago, Michael",
@@ -948,7 +1025,8 @@
    "amount": 900.0,
    "method": "OJC",
    "src": "Both",
-   "note": "Chase 9/3"
+   "note": "Chase 9/3",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Vago, Michael",
@@ -956,7 +1034,8 @@
    "amount": 900.0,
    "method": "OJC",
    "src": "Both",
-   "note": "Chase 10/7"
+   "note": "Chase 10/7",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Viders, Elaine M",
@@ -964,7 +1043,8 @@
    "amount": 1000.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "Wald, Baila",
@@ -972,7 +1052,8 @@
    "amount": 300.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "תרומה"
   },
   {
    "who": "YSW Group LLC",
@@ -980,7 +1061,8 @@
    "amount": 101.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Unknown",
@@ -997,6 +1079,16 @@
    "method": "Fidelity",
    "src": "Chase",
    "note": "pending $2,600 transfer: $2,300 is Taubenfeld, $300 unassigned"
+  },
+  {
+   "who": "Thriveway Fundin (Dahan)",
+   "date": "2026-09-25",
+   "amount": 1000.0,
+   "method": "ACH",
+   "src": "Chase",
+   "note": "",
+   "cat": "יששכר־זבולון",
+   "anote": "מתוך $2000 של Thriveway — החלק של אלירן דהאן"
   }
  ]
 }
