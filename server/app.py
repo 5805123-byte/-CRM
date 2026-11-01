@@ -22331,9 +22331,11 @@ class H(BaseHTTPRequestHandler):
                 # 🎙️ הודעות שהשאירו בימות (90 יום) — לכל חבר / טלפון, להצגה בחלון החובות
                 import yemot as _ymv
                 vms = {}
-                since = (il_now() - datetime.timedelta(days=90)).strftime('%Y-%m-%d')
+                # מאיר: "תמיד אחרי שבוע, ואם שמעתי את ההודעה — שזה יימחק מההודעות" — בחלון החובות רק הודעות
+                # שעוד לא נשמעו מהשבוע האחרון. ההודעה עצמה לא נמחקת: נשארת ביומן הקשר של הכרטיס ובמסך ההודעות
+                since = (il_now() - datetime.timedelta(days=7)).strftime('%Y-%m-%d %H:%M')
                 pidx = nd_member_index(con)
-                for v in con.execute("SELECT id,phone,at,heard,transcript,member_id FROM ym_vm WHERE done<2 AND at>=? ORDER BY at DESC", (since,)).fetchall():
+                for v in con.execute("SELECT id,phone,at,heard,transcript,member_id FROM ym_vm WHERE done<2 AND COALESCE(heard,0)=0 AND at>=? ORDER BY at DESC", (since,)).fetchall():
                     ph = _ymv.norm_phone(v['phone'] or '')
                     mids = {v['member_id']} if v['member_id'] else (pidx.get(ph) or set())
                     # ההודעה נקשרת לכרטיס לתמיד — כדי שתישאר אצלו גם אחרי שהחוב שולם ויצא מהרשימה
