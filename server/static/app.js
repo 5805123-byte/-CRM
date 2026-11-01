@@ -17942,6 +17942,7 @@ function ymQuickOpen(){
       <div class="lgf"><label class="fld"><span>📱 טלפון</span><input id="q_ph" dir="ltr" inputmode="tel" placeholder="05X-XXXXXXX"></label><label class="fld"><span>👤 שם (לא חובה)</span><input id="q_nm" placeholder="למשל: נתן בינדר"></label></div>
       <div class="mkseg" id="q_ch" style="margin:6px 0"><button type="button" data-c="voice" class="on">📞 הודעה קולית</button><button type="button" data-c="sms">💬 SMS</button></div>
       <label class="fld"><span>🗣 מה לומר</span><textarea id="q_tx" rows="5" style="width:100%;font-size:1rem" placeholder="שלום {שם}, …"></textarea></label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0"><button type="button" class="btn sm ghost" id="q_nk">✨ נקד את כל הטקסט</button><button type="button" class="btn sm ghost" id="q_nks" title="מסמנים בעכבר מילה או משפט">✨ נקד רק מה שסימנתי</button><button type="button" class="btn sm ghost" id="q_nkx">✕ הסר ניקוד</button></div>
       <div class="hintxt">{שם} — יוחלף בשם שכתבת למעלה.</div>
       <div style="font-weight:800;margin:10px 0 6px">⏰ מתי?</div>
       <div class="mkseg" id="q_w"><button type="button" data-w="now" class="on">עכשיו</button><button type="button" data-w="later">בתאריך ושעה</button></div>
@@ -17959,6 +17960,14 @@ function ymQuickOpen(){
   const seg=(id,attr,set)=>o.querySelectorAll('#'+id+' [data-'+attr+']').forEach(b=>b.onclick=()=>{o.querySelectorAll('#'+id+' button').forEach(x=>x.classList.toggle('on',x===b));set(b.dataset[attr]);lbl();});
   seg('q_ch','c',v=>ch=v);seg('q_w','w',v=>{when=v;g('q_at').style.display=v==='later'?'':'none';});seg('q_r','r',v=>rep=v);lbl();
   const fill=()=>g('q_tx').value.replace(/\{שם\}/g,g('q_nm').value.trim());
+  // ✨ מאיר: "אני צריך ניקוד" — כמו בחלון השליחה הרגיל: הכל, רק מה שסומן, או הסרה
+  const nk=async(b,part)=>{if(!part.trim()){toast('אין מה לנקד');return null;}const t0=b.textContent;b.disabled=true;b.textContent='⏳ מנקד…';
+    const r=await api('POST','/api/nikud',{text:part}).catch(()=>null);b.disabled=false;b.textContent=t0;
+    if(!r||!r.ok){uiAlert('הניקוד לא הצליח: '+((r&&r.error)||'שגיאה'));return null;}return r.text;};
+  g('q_nk').onclick=async()=>{const ta=g('q_tx'),v=await nk(g('q_nk'),ta.value);if(v!=null)ta.value=v;};
+  g('q_nks').onclick=async()=>{const ta=g('q_tx'),a=ta.selectionStart,e=ta.selectionEnd;if(a===e){toast('קודם לסמן בעכבר מילה או משפט');return;}
+    const v=await nk(g('q_nks'),ta.value.slice(a,e));if(v!=null)ta.value=ta.value.slice(0,a)+v+ta.value.slice(e);};
+  g('q_nkx').onclick=()=>{const ta=g('q_tx');ta.value=ta.value.replace(/[\u0591-\u05C7]/g,'');};
   g('q_hear').onclick=()=>{if(!g('q_tx').value.trim()){toast('כתוב מה לומר');return;}if(!ymStatus)ymLoadStatus();ymCallConfirm('🔊 כך זה יישמע',{text:fill(),name:g('q_nm').value.trim()},{hear:1});};
   g('q_go').onclick=async()=>{const ph=g('q_ph').value.replace(/[^\d+]/g,''),tx=g('q_tx').value.trim();
     if(ph.replace(/\D/g,'').length<9){toast('מספר טלפון לא תקין');g('q_ph').focus();return;}
