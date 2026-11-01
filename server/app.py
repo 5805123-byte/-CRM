@@ -4784,6 +4784,25 @@ def ensure_schema():
     except Exception as e:
         print('  zuckerman task error:', e)
 
+    # מאיר (1.11.2026): "גדולד זה 1000 שקל לחודש — תשנה את המטבע של גדולד" — ההתחייבות החודשית שלו בשקלים,
+    # 1000 לחודש. אם אין לו התחייבות חודשית — התרומות שלו של 1000 נרשמות בשקלים (הדו"ח לוקח מהן את המטבע)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='gadold_shekel_v1'").fetchone():
+            _gd = con.execute("SELECT id FROM donors WHERE last LIKE 'גדולד%' AND first LIKE '%מרדכי%'").fetchall()
+            if len(_gd) == 1:
+                _gid = _gd[0]['id']
+                _np = con.execute("UPDATE pledges SET cur='₪', permo='1000' WHERE donor_id=? AND COALESCE(monthly,0)=1 "
+                                  "AND COALESCE(status,'')<>'הסתיים'", (_gid,)).rowcount
+                _nd = con.execute("UPDATE donations SET cur='₪' WHERE donor_id=? AND CAST(REPLACE(amount,',','') AS REAL)=1000 "
+                                  "AND COALESCE(cur,'') IN ('','$')", (_gid,)).rowcount
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (_gid, today_iso(), 'מערכת', '₪ המטבע עודכן לשקלים — 1000 ₪ לחודש (התחייבויות: %d · תרומות: %d)' % (_np, _nd), '', now_iso()))
+                print('  גדולד: המטבע עודכן לשקלים (התחייבויות %d, תרומות %d)' % (_np, _nd))
+                con.execute("INSERT INTO seed_flags(name) VALUES('gadold_shekel_v1')"); con.commit()
+            else:
+                print('  גדולד: נמצאו %d כרטיסים — המטבע לא עודכן' % len(_gd))
+    except Exception as e:
+        print('  gadold shekel seed error:', e)
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
