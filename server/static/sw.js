@@ -1,6 +1,6 @@
 // Service worker — installable app, always-fresh UI, and עבודה בלי אינטרנט.
 // Network-first with HTTP-cache bypass so updates show immediately; cache is only an offline fallback.
-const CACHE = 'kc-crm-v1145';
+const CACHE = 'kc-crm-v1146';
 const SHARE_CACHE = 'kc-shared';   // קבצים שהגיעו דרך "שיתוף" (וואטסאפ/גלריה) — לא נמחק בעדכון גרסה
 const DATA_CACHE = 'kc-data';      // העותק האחרון של הנתונים, לשימוש בלי רשת
 const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/logo.png', '/kc-logo.png', '/icon-192.png', '/icon-512.png'];
@@ -120,7 +120,7 @@ self.addEventListener('push', e => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (err) { d = { title: 'כולל חצות', body: e.data ? e.data.text() : '' }; }
   e.waitUntil(self.registration.showNotification(d.title || '🔔 תזכורת — כולל חצות', {
-    body: d.body || '', icon: '/icon-192.png', badge: '/icon-192.png', tag: d.tag || 'kc-rem', renotify: true,
+    body: d.body || '', icon: '/icon-192.png', badge: '/icon-192.png', tag: d.tag || 'kc-rem', renotify: true, requireInteraction: true,   // מאיר: "שהמשימה תקפוץ לי עד שאני יוצא ממנה"
     dir: 'rtl', lang: 'he', vibrate: [200, 100, 200], data: { url: d.url || '/?tab=cal' }
   }));
 });

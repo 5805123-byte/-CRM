@@ -15912,15 +15912,18 @@ def push_scan():
                 continue
             due = datetime.datetime(y, m, d)
             hm = re.match(r'^(\d{1,2}):(\d{2})', t['at_time'] or '')
-            stages = [('d2', due - datetime.timedelta(days=2) + datetime.timedelta(hours=9), 'בעוד יומיים'),
-                      ('d1', due - datetime.timedelta(days=1) + datetime.timedelta(hours=9), 'מחר')]
+            # מאיר (1.11.2026): "תזכורת בטאבלט שעה לפני המשימה, וגם בשמונה בבוקר, וגם חמש דקות לפני, וגם בשעה
+            # שהמשימה — עד שאני מאשר" — ההתראה נשארת על המסך עד שסוגרים אותה (requireInteraction ב-sw.js)
+            stages = []
             if hm:
                 at = due + datetime.timedelta(hours=int(hm.group(1)), minutes=int(hm.group(2)))
-                stages += [('h3', at - datetime.timedelta(hours=3), 'בעוד 3 שעות'), ('h1', at - datetime.timedelta(hours=1), 'בעוד שעה!'),
-                           ('now', at, 'עכשיו')]
+                stages = [('h1', at - datetime.timedelta(hours=1), 'בעוד שעה!'),
+                          ('m5', at - datetime.timedelta(minutes=5), 'בעוד 5 דקות!'), ('now', at, 'עכשיו')]
             # משימה בלי שעה — נכנסת להודעת הבוקר של 8:00 (למעלה), בלי תזכורת נפרדת
-            for key, when, label in stages:
+            for si, (key, when, label) in enumerate(stages):
                 if not (when <= now < when + WIN):
+                    continue
+                if si + 1 < len(stages) and stages[si + 1][1] <= now:   # השרת התעורר מאוחר — רק השלב האחרון שהגיע
                     continue
                 k = '%s:%s' % (t['id'], key)
                 if t['roll'] and t['orig_date']:          # משימה שעברה ליום הבא — מתריעים שוב גם ביום החדש
@@ -30159,8 +30162,8 @@ class H(BaseHTTPRequestHandler):
             if ex:
                 con.close()
                 return self._send(200, {'ok': True, 'id': ex['id'], 'existing': True})
-            cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place) VALUES(?,?,?,?,?,?,?)",
-                        (did, due, kind, note, who, (b.get('at_time') or '').strip()[:5], (b.get('place') or '').strip()))
+            cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee,at_time,place,roll) VALUES(?,?,?,?,?,?,?,?)",
+                        (did, due, kind, note, who, (b.get('at_time') or '').strip()[:5], (b.get('place') or '').strip(), 1 if b.get('roll') else None))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
         if self.path == '/api/partner':

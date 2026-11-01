@@ -1781,7 +1781,8 @@ function render(){
   }
   if(tab==='bldghq') return renderBldgHQ();
   if(tab==='tasks') return renderTasksTab();
-  if(tab==='cal') return renderCalTab();
+  if(tab==='cal'){if(calPrevTab!=='cal'){calMode='day';calDay='';}calPrevTab='cal';return renderCalTab();}
+  calPrevTab=tab;
   if(tab==='comm') return renderComm();
   if(tab==='rcpt') return renderReceipts();
   if(tab==='kvittel') return renderKvittel();
@@ -14446,6 +14447,84 @@ async function calRemindOpen(){
   o.querySelector('#rc_test').onclick=async()=>{if(!await save())return;const x=await api('POST','/api/remind_call/test',{});
     if(x&&x.ok)toast('📞 מתקשר אליך עכשיו…');else uiAlert('לא יצאה שיחה:\n'+((x&&x.error)||'שגיאה'));};
 }
+/* 📅 מאיר (1.11.2026): "אם אני נכנס ליומן במערכת, שיהיה לי פתוח את אותו יום… ואם אני רוצה לעבור לשאר
+   הימים — למטה: שבועי, חודשי, כמו ביומן גוגל… ושאפשר לערוך אותו בקלות ולכתוב בקלות".
+   כניסה ליומן = היום של היום; למטה פס קבוע: יום · שבוע · חודש. */
+let calMode='day', calDay='', calPrevTab='', calDayEdit=null;
+const CAL_DOW=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+function calAddDays(iso,n){const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+n);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+const CAL_HEBD={};
+async function calHebOf(iso){if(CAL_HEBD[iso]==null){const r=await api('GET','/api/hebdate?d='+iso).catch(()=>null);CAL_HEBD[iso]=(r&&r.heb)||'';}return CAL_HEBD[iso];}
+function calModeBar(){return `<nav class="calmodes" role="tablist">${[['day','יום'],['week','שבוע'],['month','חודש']].map(([k,l])=>`<button class="${calMode===k?'on':''}" data-cm="${k}">${l}</button>`).join('')}</nav>`;}
+function calWireModes(){view.querySelectorAll('.calmodes [data-cm]').forEach(b=>b.onclick=()=>{calMode=b.dataset.cm;if(calMode==='month'){calSel='';const tp=hebTodayParts();if(tp)calHeb=tp;}render();window.scrollTo(0,0);});}
+function calFindT(id){for(const d of DB){const t=(d.tasks||[]).find(x=>x.id==id);if(t)return {t,d};}const t=GTASKS.find(x=>x.id==id);return t?{t,d:null}:null;}
+async function renderCalDay(today){
+  const day=calDay||today;
+  const E=calEntries().filter(e=>e.date===day&&(!calFlt||e.kind===calFlt));
+  const heb=await calHebOf(day);
+  if(calMode!=='day'||(calDay||today)!==day)return;
+  const row=e=>{const t=e.t;
+    if(t&&calDayEdit===t.id)return `<div class="cdrow ed" data-id="${t.id}"><input class="cd_note" value="${esc(t.note||'')}" placeholder="מה?">
+      <div class="cdtwo"><input type="time" class="cd_time" value="${esc(t.at_time||'')}"><input type="date" class="cd_date" value="${esc(t.due_date||day)}"><input class="cd_place" value="${esc(t.place||'')}" placeholder="📍 מקום"></div>
+      <div class="cdbtns"><button class="btn cd_save">💾 שמור</button><button class="btn ghost cd_cancel">ביטול</button><button class="btn ghost cd_del">🗑 מחק</button></div></div>`;
+    const late=t&&t.orig_date&&t.orig_date<day;
+    return `<div class="cdrow" data-ix="${E.indexOf(e)}">${t||e.p?`<button class="cdchk" ${t?`data-id="${t.id}"`:`data-pid="${e.p.id}" data-did="${e.d?e.d.id:''}"`} aria-label="בוצע" title="בוצע ✓"></button>`:''}
+      <div class="cdtxt">${e.time?`<b class="cdtime">${esc(e.time)}</b>`:''}<span>${e.icon} <b>${esc(e.title)}</b>${e.text?(' — '+esc(e.text)):''}</span>${e.place?`<small>📍 ${esc(e.place)}</small>`:''}${late?`<small class="cdlate">↪ הועבר מ-${fmtGreg(t.orig_date)}</small>`:''}</div>
+      ${t?`<button class="btn ghost cdedit" data-id="${t.id}" aria-label="תקן">✎</button>`:''}</div>`;};
+  view.innerHTML=`<div class="calday">
+    <div class="cdhead"><button class="btn ghost cdnav" data-n="1" aria-label="יום הבא">›</button>
+      <div class="cdttl"><b>${esc(heb||fmtGreg(day))}</b><small>יום ${CAL_DOW[new Date(day+'T12:00:00').getDay()]} · ${fmtGreg(day)}${day===today?' · <em>היום</em>':''}</small></div>
+      <button class="btn ghost cdnav" data-n="-1" aria-label="יום קודם">‹</button></div>
+    ${day!==today?'<button class="btn sm ghost cdtoday">חזרה להיום</button>':''}
+    <div class="cdadd"><input id="cd_new" placeholder="✍️ לכתוב משימה ליום הזה… (Enter)" autocomplete="off"><input type="time" id="cd_newt" aria-label="שעה"><button class="btn" id="cd_addb">➕</button></div>
+    <div class="cdlist">${E.length?E.map(row).join(''):'<div class="empty">אין כלום ביום הזה 🙂</div>'}</div>
+  </div>${calModeBar()}`;
+  calWireModes();
+  view.querySelectorAll('.cdnav').forEach(b=>b.onclick=()=>{calDay=calAddDays(day,+b.dataset.n);calDayEdit=null;render();});
+  const tb=view.querySelector('.cdtoday');if(tb)tb.onclick=()=>{calDay='';calDayEdit=null;render();};
+  view.querySelectorAll('.cdrow[data-ix] .cdtxt').forEach(x=>x.onclick=()=>{const e=E[+x.parentNode.dataset.ix];if(e)calShowEntry(e);});
+  view.querySelectorAll('.cdchk[data-id]').forEach(b=>b.onclick=async()=>{const f=calFindT(b.dataset.id);if(!f)return;b.classList.add('on');
+    if(!await doneWithNote({...f.t,donor:f.d?(f.d.last+' '+f.d.first).trim():'',dref:f.d},f.d)){b.classList.remove('on');return;}checkReminders();render();toast('בוצע ✓');});
+  view.querySelectorAll('.cdchk[data-pid]').forEach(b=>b.onclick=async()=>{await parnesCalDone(b.dataset.pid,b.dataset.did);});
+  view.querySelectorAll('.cdedit').forEach(b=>b.onclick=()=>{calDayEdit=+b.dataset.id;render();setTimeout(()=>{const i=view.querySelector('.cd_note');if(i)i.focus();},50);});
+  const ed=view.querySelector('.cdrow.ed');
+  if(ed){const f=calFindT(ed.dataset.id);
+    ed.querySelector('.cd_cancel').onclick=()=>{calDayEdit=null;render();};
+    ed.querySelector('.cd_save').onclick=async()=>{if(!f)return;const note=ed.querySelector('.cd_note').value.trim(),at=ed.querySelector('.cd_time').value||'',pl=ed.querySelector('.cd_place').value.trim(),dd=ed.querySelector('.cd_date').value||f.t.due_date;
+      if(!note){toast('כתוב מה');return;}
+      const r=await api('PUT','/api/task/'+f.t.id,{note,at_time:at,place:pl,due_date:dd});if(!r||!r.ok){toast('לא נשמר');return;}
+      Object.assign(f.t,{note,at_time:at,place:pl,due_date:dd});calDayEdit=null;checkReminders();render();toast(dd!==day?'הועבר ל-'+fmtGreg(dd)+' ✓':'תוקן ✓');};
+    ed.querySelector('.cd_del').onclick=async()=>{if(!f)return;if(!await uiConfirm('למחוק את המשימה?'))return;await api('DELETE','/api/task/'+f.t.id);
+      if(f.d)f.d.tasks=(f.d.tasks||[]).filter(x=>x.id!==f.t.id);else GTASKS=GTASKS.filter(x=>x.id!==f.t.id);calDayEdit=null;checkReminders();render();toast('נמחק');};
+    ed.querySelector('.cd_note').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();ed.querySelector('.cd_save').click();}});}
+  const add=async()=>{const i=view.querySelector('#cd_new'),note=i.value.trim();if(!note){i.focus();return;}
+    const body={due_date:day,kind:'other',note,assignee:'',at_time:view.querySelector('#cd_newt').value||'',place:'',roll:1};
+    const r=await api('POST','/api/task',body);if(!r||!r.id){toast('לא נשמר');return;}
+    GTASKS.push({id:r.id,donor_id:null,due_date:day,kind:'other',note,assignee:'',done:0,at_time:body.at_time,place:'',roll:1});checkReminders();render();toast('נוסף ✓');
+    setTimeout(()=>{const n=view.querySelector('#cd_new');if(n)n.focus();},50);};
+  view.querySelector('#cd_addb').onclick=add;
+  view.querySelector('#cd_new').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();add();}});
+}
+async function renderCalWeek(today){
+  const base=calDay||today, sun=calAddDays(base,-new Date(base+'T12:00:00').getDay());
+  const days=[0,1,2,3,4,5,6].map(i=>calAddDays(sun,i));
+  const all=calEntries().filter(e=>!calFlt||e.kind===calFlt);
+  const hebs=await Promise.all(days.map(calHebOf));
+  if(calMode!=='week')return;
+  view.innerHTML=`<div class="calday">
+    <div class="cdhead"><button class="btn ghost cdnav" data-n="7" aria-label="שבוע הבא">›</button>
+      <div class="cdttl"><b>שבוע ${esc((hebs[0]||'').split(' ').slice(0,2).join(' '))} – ${esc((hebs[6]||'').split(' ').slice(0,2).join(' '))}</b><small>${fmtGreg(days[0])} – ${fmtGreg(days[6])}</small></div>
+      <button class="btn ghost cdnav" data-n="-7" aria-label="שבוע קודם">‹</button></div>
+    ${days.includes(today)?'':'<button class="btn sm ghost cdtoday">חזרה לשבוע הזה</button>'}
+    ${days.map((d,i)=>{const L=all.filter(e=>e.date===d);return `<button class="cwday ${d===today?'today':''} ${i===6?'shab':''}" data-d="${d}">
+      <span class="cwh"><b>${CAL_DOW[i]}</b> ${esc((hebs[i]||'').split(' ').slice(0,2).join(' '))} <small>${gregShort(d)}</small>${d===today?' <em>היום</em>':''}</span>
+      <span class="cwl">${L.length?L.map(e=>`<span class="cwi">${e.time?`<b>${esc(e.time)}</b> `:''}${e.icon} ${esc(e.title)}${e.text?(' — '+esc(e.text)):''}</span>`).join(''):'<span class="cwi none">—</span>'}</span></button>`;}).join('')}
+  </div>${calModeBar()}`;
+  calWireModes();
+  view.querySelectorAll('.cdnav').forEach(b=>b.onclick=()=>{calDay=calAddDays(base,+b.dataset.n);render();});
+  const tb=view.querySelector('.cdtoday');if(tb)tb.onclick=()=>{calDay='';render();};
+  view.querySelectorAll('.cwday').forEach(b=>b.onclick=()=>{calDay=b.dataset.d;calMode='day';render();window.scrollTo(0,0);});
+}
 async function renderCalTab(){
   const today=todayStr();
   if(!calHeb)calHeb=hebTodayParts()||{m:pyMonth||'תשרי',y:HEBYEAR};
@@ -14459,6 +14538,8 @@ async function renderCalTab(){
   document.getElementById('cal_msg').onclick=()=>calMsgOpen();
   const rcb=document.getElementById('cal_rc'); if(rcb)rcb.onclick=calRemindOpen;
   const pcb=document.getElementById('cal_push'); if(pcb)pcb.onclick=async()=>{if(PUSH_ON){pushStatus();return;}if(await pushEnable())render();};
+  if(calMode==='day')return renderCalDay(today);
+  if(calMode==='week')return renderCalWeek(today);
   view.innerHTML='<div class="cnt">טוען את החודש…</div>';
   const HM=await hebMonth(calHeb.m,calHeb.y);
   if(!HM){view.innerHTML='<div class="empty">לא הצלחתי לטעון את החודש העברי</div>';return;}
@@ -14500,7 +14581,8 @@ async function renderCalTab(){
       <span class="calbtns">${tp?`<button class="btn sm calhg" data-m="${esc(tp.m)}" data-y="${esc(tp.y)}">היום</button>`:''}</span></div>
     <div class="bcgrid">${DOW.map(x=>`<div class="bch">${x}</div>`).join('')}${cells.join('')}</div>
     <div class="hintxt">לחיצה על יום פותחת אותו במקומו — עם ✎ לתיקון, ✓ לביצוע ושורת הוספה. שעה ומקום הם רשות. ירוק = שמחה · סגול = משימה · זהב = פרנס יום · אדום = עבר הזמן.</div>
-    ${dayPanel}</div>`;
+    ${dayPanel}</div>${calModeBar()}`;
+  calWireModes();
   view.querySelectorAll('.calhg').forEach(b=>b.onclick=()=>{calHeb={m:b.dataset.m,y:b.dataset.y};calSel='';render();});
   view.querySelectorAll('.bcc[data-d]').forEach(c=>c.onclick=e=>{
     if(e.target.closest('.bcin,.bced,.bcea,.dpres'))return;      // עבודה בתוך הריבוע — לא סוגרת אותו
