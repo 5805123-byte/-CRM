@@ -26548,8 +26548,16 @@ class H(BaseHTTPRequestHandler):
                     recs[0]['amount'] = ym_amt(b.get('test_amount')) or gamt
                 for r in recs:
                     r['amount'] = r.get('amount') or gamt
-            con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path) VALUES(?,?,?,?,?,'queued',?,?,?)",
-                        (now_iso(), ch, text, amount, len(recs), 1 if b.get('test') else 0, (b.get('label') or '').strip()[:80], bill_path))
+            # ⏰ מאיר: "איפה אני מגדיר שעה מתי זה יתקשר אליו?" — משלוח מתוזמן (לא בשבת / חג / לילה — נדחה לשעה מתאימה)
+            sat, want_ = '', None
+            if not b.get('test') and re.fullmatch(r'\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}', str(b.get('send_at') or '').strip()[:16]):
+                want_ = datetime.datetime.strptime(str(b['send_at']).strip()[:16].replace('T', ' '), '%Y-%m-%d %H:%M')
+                okd = ym_next_ok(want_)
+                if okd > il_now().replace(tzinfo=None) + datetime.timedelta(minutes=1):
+                    sat = okd.strftime('%Y-%m-%d %H:%M')
+            con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path,send_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (now_iso(), ch, text, amount, len(recs), 'scheduled' if sat else 'queued', 1 if b.get('test') else 0,
+                         (b.get('label') or '').strip()[:80], bill_path, sat))
             jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
             # 🚌 אירוע עם הרשמה (נסיעה למירון): הקשה 1 בשיחה פותחת תפריט הרשמה — הו"ק / כרטיס אחר / מזומן / הודעה
             event = re.sub(r'\s+', ' ', str(b.get('event') or '')).strip()[:60] if ch == 'voice' else ''
@@ -26571,10 +26579,25 @@ class H(BaseHTTPRequestHandler):
                 cm_debts_link_msgs(con, jid, dids_)
                 # תזכורת על חוב קיים אינה בקשת תשלום נוספת — החוב עצמו הוא הבקשה (אחרת הסכום נספר פעמיים)
                 con.execute("UPDATE ym_msg SET req_off='debt' WHERE job=?", (jid,))
+            # 🔁 "כל יום עד שישלם" / "כל חודש" — מתחיל אחרי המשלוח הראשון, באותה שעה; רק למי שעדיין חייב
+            rep_next = ''
+            if not b.get('test') and b.get('repeat') in ('daily', 'month'):
+                first = datetime.datetime.strptime(sat, '%Y-%m-%d %H:%M') if sat else il_now().replace(tzinfo=None)
+                at_ = first.strftime('%H:%M')
+                if b['repeat'] == 'daily':
+                    rep_next = ym_repeat_next2({'freq': 'daily', 'at': at_, 'done_until': ''}, first + datetime.timedelta(minutes=5))
+                    cal_, day_ = 'h', 1
+                else:
+                    cal_, day_ = 'g', min(28, first.day)
+                    rep_next = ym_repeat_next(cal_, day_, at_, first + datetime.timedelta(minutes=5))
+                con.execute("INSERT INTO ym_repeat(job,cal,day,at,only_open,active,created,next_run,freq) VALUES(?,?,?,?,1,1,?,?,?)",
+                            (jid, cal_, day_, at_, now_iso(), rep_next, b['repeat']))
             con.commit(); con.close()
-            import threading as _thr
-            _thr.Thread(target=ym_worker, args=(jid,), daemon=True).start()
-            return self._send(200, {'ok': True, 'job': jid, 'total': len(recs), 'no_phone': sum(1 for r in recs if not r['phone'])})
+            if not sat:
+                import threading as _thr
+                _thr.Thread(target=ym_worker, args=(jid,), daemon=True).start()
+            return self._send(200, {'ok': True, 'job': jid, 'total': len(recs), 'no_phone': sum(1 for r in recs if not r['phone']),
+                                    'send_at': sat, 'moved': bool(sat and want_ and sat != want_.strftime('%Y-%m-%d %H:%M')), 'repeat_next': rep_next})
         m = re.match(r'/api/yemot/job/(\d+)/check$', self.path)
         if m:
             con = db()

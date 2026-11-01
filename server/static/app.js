@@ -17818,6 +17818,8 @@ let ymLog=null, ymLogJob=0, ymLogOpen=false;
 let ymBill=false, ymVoiceOpen=false;
 try{ymBill=localStorage.getItem('kc_ymbill')==='1';}catch(e){}
 let ymStatus=null, ymRecs=new Map(), ymCh='voice', ymText='', ymAmt='', ymFor='', ymQ='', ymDQ='', ymFlt='', ymJob=null, ymJobView=null, ymPoll=null;
+// ⏰🔁 מאיר: "איפה אני מגדיר שעה מתי זה יתקשר אליו? תפשיט — שיהיה קל לערוך, לשלוח, לתזמן"
+let ymWhen='now', ymAtV='', ymRep='';
 try{ymCh=localStorage.getItem('kc_ymch')==='sms'?'sms':'voice';}catch(e){}
 // [מפתח, תווית, נוסח להודעה קולית (עם "הקישו 1" לסליקה), נוסח ל-SMS (עם {קישור} לנדרים פלוס)]
 // מאיר: "ובהודעה המוכנה תכניס שם כבר אפשרות למעבר לתשלום בכרטיס אשראי — הקישו 1"
@@ -17917,16 +17919,60 @@ function ymHead(st){
   const T=[['send','📤 שליחה'],['vm','📥 הודעות שהשאירו'+(CMVM&&CMVM.new?' ('+CMVM.new+')':'')],['jobs','📊 משלוחים ותוצאות'],['calls','📞 יומן שיחות'],['pay','💳 תשלום בטלפון'],['log','📜 לוג טכני']];
   return `<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ym_back">← חזרה לרשימת הקהילה</button></div>
     <div class="rbtitle">📞 ימות המשיח — הודעה קולית / SMS</div><div id="ym_conn">${conn}</div>
+    <button class="btn" id="ym_quick" style="width:100%;margin:4px 0 8px;background:#1f7a4d;color:#fff">✍️ הודעה לכל מספר — מהירה (גם מי שלא בקהילה) · עם תזמון וחזרה</button>
     <div class="ymtabs">${T.map(([k,l])=>`<button class="ymtab${ymView===k?' on':''}" data-v="${k}">${l}</button>`).join('')}</div>`;
 }
 function ymWireHead(){
   const b=document.getElementById('ym_back'); if(b)b.onclick=()=>{cmSub='list';render();};
+  const qb=document.getElementById('ym_quick'); if(qb)qb.onclick=()=>ymQuickOpen();
   view.querySelectorAll('.ymtab').forEach(t=>t.onclick=async()=>{ymView=t.dataset.v;try{localStorage.setItem('kc_ymview',ymView);}catch(e){}
     if(ymView==='log')await ymLoadLog();
     if(ymView==='calls'&&ymCalls===null)ymLoadCalls();
     if(ymView==='jobs')await ymLoadStatus();
     renderCommYm();});
 }
+// ✍️ מאיר: "זה אמור להיות יותר פשוט — לשלוח הודעה לסתם בן אדם שלא מהקהילה, ולעשות לו תזמון והודעה חוזרת"
+// חלון אחד: טלפון, שם, נוסח, מתי, לחזור? — ושליחה
+function ymQuickOpen(){
+  const o=document.createElement('div');o.className='mkov';
+  const p2=n=>String(n).padStart(2,'0'),t=new Date(Date.now()+864e5),def=t.getFullYear()+'-'+p2(t.getMonth()+1)+'-'+p2(t.getDate())+'T10:00';
+  let ch='voice',when='now',rep='';
+  o.innerHTML=`<div class="mkdlg" role="dialog" style="max-width:560px"><div class="mkdh"><div class="mkav">✍️</div><div><b>הודעה לכל מספר</b><div class="mksub">כותבים, בוחרים מתי — ושולחים</div></div><button class="x2" id="qx">✕</button></div>
+    <div class="mkdb">
+      <div class="lgf"><label class="fld"><span>📱 טלפון</span><input id="q_ph" dir="ltr" inputmode="tel" placeholder="05X-XXXXXXX"></label><label class="fld"><span>👤 שם (לא חובה)</span><input id="q_nm" placeholder="למשל: נתן בינדר"></label></div>
+      <div class="mkseg" id="q_ch" style="margin:6px 0"><button type="button" data-c="voice" class="on">📞 הודעה קולית</button><button type="button" data-c="sms">💬 SMS</button></div>
+      <label class="fld"><span>🗣 מה לומר</span><textarea id="q_tx" rows="5" style="width:100%;font-size:1rem" placeholder="שלום {שם}, …"></textarea></label>
+      <div class="hintxt">{שם} — יוחלף בשם שכתבת למעלה.</div>
+      <div style="font-weight:800;margin:10px 0 6px">⏰ מתי?</div>
+      <div class="mkseg" id="q_w"><button type="button" data-w="now" class="on">עכשיו</button><button type="button" data-w="later">בתאריך ושעה</button></div>
+      <input type="datetime-local" id="q_at" value="${def}" style="display:none;margin-top:6px;width:100%;font-size:1rem">
+      <div style="font-weight:800;margin:10px 0 6px">🔁 לחזור?</div>
+      <div class="mkseg" id="q_r"><button type="button" data-r="" class="on">פעם אחת</button><button type="button" data-r="daily">כל יום</button><button type="button" data-r="month">כל חודש</button></div>
+      <div class="hintxt" id="q_rh"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn ghost" id="q_hear" style="flex:0 0 auto">🔊 לשמוע איך זה יישמע</button><button class="btn" id="q_go" style="flex:1">📞 שלח עכשיו</button></div>
+    </div></div>`;
+  document.body.appendChild(o);
+  const g=id=>o.querySelector('#'+id),close=()=>o.remove();g('qx').onclick=close;
+  const lbl=()=>{g('q_go').textContent=(when==='later'?'⏰ לתזמן':(ch==='sms'?'💬 שלח':'📞 שלח'))+(when==='later'?'':' עכשיו')+(rep==='daily'?' · ואז כל יום':rep==='month'?' · ואז כל חודש':'');
+    g('q_rh').textContent=rep==='daily'?'ייצא כל יום באותה שעה (לא בשבת וביום טוב), עד שתלחץ "🛑 להפסיק" ב"📊 משלוחים ותוצאות" ← "🔁 הודעות חודשיות" — שם אפשר גם לשנות את הנוסח.':rep==='month'?'ייצא כל חודש באותו יום ובאותה שעה, עד שתפסיק.':'';
+    g('q_hear').style.display=ch==='voice'?'':'none';};
+  const seg=(id,attr,set)=>o.querySelectorAll('#'+id+' [data-'+attr+']').forEach(b=>b.onclick=()=>{o.querySelectorAll('#'+id+' button').forEach(x=>x.classList.toggle('on',x===b));set(b.dataset[attr]);lbl();});
+  seg('q_ch','c',v=>ch=v);seg('q_w','w',v=>{when=v;g('q_at').style.display=v==='later'?'':'none';});seg('q_r','r',v=>rep=v);lbl();
+  const fill=()=>g('q_tx').value.replace(/\{שם\}/g,g('q_nm').value.trim());
+  g('q_hear').onclick=()=>{if(!g('q_tx').value.trim()){toast('כתוב מה לומר');return;}if(!ymStatus)ymLoadStatus();ymCallConfirm('🔊 כך זה יישמע',{text:fill(),name:g('q_nm').value.trim()},{hear:1});};
+  g('q_go').onclick=async()=>{const ph=g('q_ph').value.replace(/[^\d+]/g,''),tx=g('q_tx').value.trim();
+    if(ph.replace(/\D/g,'').length<9){toast('מספר טלפון לא תקין');g('q_ph').focus();return;}
+    if(!tx){toast('כתוב מה לומר');g('q_tx').focus();return;}
+    if(when==='later'&&!g('q_at').value){toast('בחר תאריך ושעה');return;}
+    const b=g('q_go');b.disabled=true;
+    const r=await api('POST','/api/yemot/send',{channel:ch,text:tx,amount:'',billing:0,recipients:[{k:'x',phone:ph,name:g('q_nm').value.trim(),amount:''}],
+      send_at:when==='later'?g('q_at').value:'',repeat:rep}).catch(()=>null);
+    b.disabled=false;
+    if(!r||!r.ok){uiAlert('לא נשלח:\n'+((r&&r.error)||'שגיאה'));return;}
+    close();const rp=r.repeat_next?' · 🔁 הבאה: '+ymRepDt(r.repeat_next):'';
+    toast(r.send_at?('⏰ מתוזמן ל-'+ymRepDt(r.send_at)+(r.moved?' (נדחה לשעה מתאימה)':'')+rp):('✓ נשלח'+rp));
+    if(r.repeat_next)await ymRepLoad();if(tab==='comm'&&cmSub==='ym')renderCommYm();};
+  setTimeout(()=>g('q_ph').focus(),50);}
 function renderCommYm(){
   chips.innerHTML='';
   if(ymStatus===null){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">מתחבר לימות המשיח…</div>';
@@ -18159,7 +18205,15 @@ function ymViewSend(){
       <div class="rbtitle" style="text-align:right">4️⃣ שליחה</div>
       <div class="ymrow2"><label class="fld"><span>📱 בדיקה קודם אליי — מספר</span><input id="ym_tp" dir="ltr" inputmode="tel" value="${esc((()=>{try{return localStorage.getItem('kc_ymtp')||'';}catch(e){return '';}})())}" placeholder="05X-XXXXXXX"></label>
         <button class="btn sm ghost" id="ym_test">${ymCh==='sms'?'💬':'🔊'} שלח בדיקה אליי</button></div>
-      <button class="btn" id="ym_go" style="width:100%" ${!st.configured||!selOk.length||!ymText.trim()?'disabled':''}>${ymCh==='sms'?'💬 שלח SMS':'📞 שלח הודעה קולית'} ל-${selOk.length} נמענים</button>
+      <div class="ymwhen" style="border:1px solid #e3dccb;border-radius:12px;padding:10px;margin:8px 0;background:#fffdf8">
+        <div style="font-weight:800;margin-bottom:6px">⏰ מתי לשלוח?</div>
+        <div class="mkseg" id="ymw"><button type="button" data-w="now" class="${ymWhen==='now'?'on':''}">עכשיו</button><button type="button" data-w="later" class="${ymWhen==='later'?'on':''}">בתאריך ושעה שאבחר</button></div>
+        ${ymWhen==='later'?`<input type="datetime-local" id="ym_at" value="${esc(ymAtV)}" style="margin-top:6px;width:100%;font-size:1rem">`:''}
+        <div style="font-weight:800;margin:10px 0 6px">🔁 לחזור על ההודעה?</div>
+        <div class="mkseg" id="ymr"><button type="button" data-r="" class="${!ymRep?'on':''}">פעם אחת</button><button type="button" data-r="daily" class="${ymRep==='daily'?'on':''}">כל יום עד שישלם</button><button type="button" data-r="month" class="${ymRep==='month'?'on':''}">כל חודש</button></div>
+        ${ymRep?`<div class="hintxt" style="margin-top:4px">${ymRep==='daily'?'יתקשר כל יום באותה שעה (לא בשבת וביום טוב), ומפסיק לבד כשאין לו יותר חוב פתוח — או כשתסמן "✓ סודר".':'ייצא שוב כל חודש באותו יום ובאותה שעה, רק למי שעדיין חייב.'} אפשר לשנות נוסח / להפסיק ב"📊 משלוחים ותוצאות" ← "🔁 הודעות חודשיות".</div>`:''}
+      </div>
+      <button class="btn" id="ym_go" style="width:100%" ${!st.configured||!selOk.length||!ymText.trim()?'disabled':''}>${ymWhen==='later'?'⏰ לתזמן ':''}${ymCh==='sms'?'💬 SMS':'📞 הודעה קולית'} ל-${selOk.length} נמענים${ymRep==='daily'?' · כל יום':ymRep==='month'?' · כל חודש':''}</button>
       ${sel.length>selOk.length?`<div class="hintxt">${sel.length-selOk.length} מהנבחרים לא יקבלו: ${ymCh==='sms'?'אין להם נייד תקין':'אין להם טלפון תקין'}.</div>`:''}
       <div id="ym_prog">${ymJob?ymProgHTML(ymJob):''}</div>
     </div>`;
@@ -18219,18 +18273,30 @@ function ymViewSend(){
       billing:billOn?1:0,test_amount:(first&&first.amt)||ymAmt,test_for:(first&&first.fr)||ymFor,test_link:linkOn?nedLink(first?Object.assign({},first,{phone:ymPhone(tp)}):{name:'בדיקה',phone:ymPhone(tp)}):''});
     if(!r||!r.ok){await uiAlert('הבדיקה לא נשלחה:\n'+((r&&r.error)||'שגיאה'));return;}
     toast('הבדיקה נשלחה — בעוד רגע '+(ymCh==='sms'?'תגיע הודעה':'הטלפון יצלצל'));ymTrack(r.job);};
+  // מאיר: "זה לא המספר שלי, הבן שלי הכניס את המספר שלו" — מספר הבדיקה נשמר ברגע שמשנים אותו
+  {const tpi=g('ym_tp');if(tpi)tpi.onchange=()=>{try{localStorage.setItem('kc_ymtp',tpi.value.trim());}catch(e){}toast('📱 מספר הבדיקה נשמר');};}
+  view.querySelectorAll('#ymw [data-w]').forEach(b=>b.onclick=()=>{ymWhen=b.dataset.w;
+    if(ymWhen==='later'&&!ymAtV){const d=new Date(Date.now()+864e5),p=n=>String(n).padStart(2,'0');ymAtV=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T10:00';}
+    renderCommYm();});
+  view.querySelectorAll('#ymr [data-r]').forEach(b=>b.onclick=()=>{ymRep=b.dataset.r;renderCommYm();});
+  {const at=g('ym_at');if(at)at.onchange=()=>{ymAtV=at.value;};}
   g('ym_go').onclick=async()=>{
     if(linkOn&&!prevLink){toast('בחר מוסד לקישור התשלום');return;}
+    const at=g('ym_at');if(at)ymAtV=at.value;
+    if(ymWhen==='later'&&!ymAtV){toast('בחר תאריך ושעה');return;}
     // מאיר: "גם מי שאין לו סכום — אם יקיש 1 יועבר לתרומה בכרטיס אשראי"
     const free=billOn?selOk.filter(x=>!amtNum(x.amt)&&!amtNum(ymAmt)).length:0;
     if(!await uiConfirm((ymCh==='sms'?'לשלוח SMS':'לשלוח הודעה קולית')+' ל-'+selOk.length+' נמענים?'+(billOn?'\n💳 הסכום של כל נמען נשמר בשרת — שלוחת התשלום תיקח אותו משם':'')+(free?'\n🪙 '+free+' בלי סכום — בהקשה 1 יקלידו סכום בעצמם':'')+'\n\n'+prev,'כן, לשלוח','ביטול'))return;
     const dids=cdRem&&cdRem.ch===ymCh&&ymTplKey!=='keva'?cdRem.ids:[];
     const r=await api('POST','/api/yemot/send',{channel:ymCh,text:ymText,amount:ymAmt,billing:billOn?1:0,debt_ids:dids,
+      send_at:ymWhen==='later'?ymAtV:'',repeat:ymRep||'',
       recipients:selOk.map(x=>{if(ymTplKey==='keva'){const kd=cdKevaDef();x=x.kvown?Object.assign({},x,{keva:1,avour:x.fr||''}):Object.assign({},x,{amt:String(kd.amount||x.amt||'').replace(/[^\d.]/g,''),fr:kd.for||x.fr,keva:1,avour:kd.for||''});}
         const L=linkOn?nedLink(x):'';return x.k==='x'?{k:'x',phone:x.phone,name:x.name,amount:x.amt||'',link:L,for:x.fr||ymFor}:{k:x.k,id:x.id,amount:x.amt||'',link:L,for:x.fr||ymFor};})});
     if(!r||!r.ok){await uiAlert('המשלוח לא התחיל:\n'+((r&&r.error)||'שגיאה'));return;}
     if(dids.length){cdRem=null;cdData=null;}
-    toast('המשלוח התחיל ✓'+(dids.length?' · נרשם בכרטיסים':''));ymTrack(r.job);};
+    const rep=r.repeat_next?' · 🔁 הבאה: '+ymRepDt(r.repeat_next):'';
+    if(r.send_at){toast('⏰ מתוזמן ל-'+ymRepDt(r.send_at)+(r.moved?' (נדחה לשעה מתאימה)':'')+rep);ymWhen='now';ymAtV='';ymRep='';await ymRepLoad();renderCommYm();return;}
+    toast('המשלוח התחיל ✓'+(dids.length?' · נרשם בכרטיסים':'')+rep);ymWhen='now';ymAtV='';ymRep='';if(rep)ymRepLoad();ymTrack(r.job);};
   ymWireLink(prevLink);
   ymWireVoice(first,sel);
   ymWireNikud();
