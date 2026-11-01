@@ -267,6 +267,9 @@ def qb_chase_import(con):
                 byen.setdefault(t, []).append(r['id'])
 
     def whois(hint):
+        # מאיר שייך בדף "שיוך תשלומים" — הכרטיס המדויק (did), בלי לנחש לפי שם
+        if hint.get('did') and con.execute("SELECT 1 FROM donors WHERE id=?", (hint['did'],)).fetchone():
+            return hint['did']
         he = (hint.get('he') or '').strip()
         if len(byhe.get(he, [])) == 1:
             return byhe[he][0]
@@ -297,7 +300,11 @@ def qb_chase_import(con):
     for i, r in enumerate(rows):
         tid = 'qb26-%03d' % i
         if con.execute("SELECT 1 FROM donations WHERE tid=?", (tid,)).fetchone():
-            continue                                   # כבר נרשם בריצה קודמת
+            # כבר נרשם בריצה קודמת — "עבור מה" שמאיר בחר בדף נכנס, אם עוד לא סווג
+            if r.get('cat'):
+                con.execute("UPDATE donations SET category=?, note=TRIM(REPLACE(COALESCE(note,''),' · לא סווג — לבדוק עבור מה','')) "
+                            "WHERE tid=? AND COALESCE(note,'') LIKE '%לא סווג%'", (r['cat'], tid))
+            continue
         did = found.get(r['who'])
         if not did:
             # מאיר שייך שורה של המשלם הזה ידנית בדף החיובים — אותו כרטיס לכל השורות שלו
@@ -334,8 +341,8 @@ def qb_chase_import(con):
             old = con.execute("SELECT id,category FROM donations WHERE donor_id=? AND date=? AND length(COALESCE(date,''))=7 "
                               "AND COALESCE(note,'') LIKE 'ייבוא 2026%' AND ROUND(CAST(amount AS REAL),2)=?",
                               (did, r['date'][:7], a)).fetchone()
-            cat = rules.get((did, a)) or (old['category'] if old else '') or ''
-            note = 'ייבוא ' + SRCNAME.get(meth, meth) + ' · ' + srcnote
+            cat = r.get('cat') or rules.get((did, a)) or (old['category'] if old else '') or ''
+            note = 'ייבוא ' + SRCNAME.get(meth, meth) + ' · ' + srcnote + ((' · ' + r['anote']) if r.get('anote') else '')
             if old:
                 con.execute("DELETE FROM donations WHERE id=?", (old['id'],))
                 repl += 1

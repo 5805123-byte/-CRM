@@ -1,6 +1,6 @@
 {
  "label": "QuickBooks + Chase — צ׳קים, זל, דונרס, OJC, Fidelity, ACH, Wire · אוגוסט–אוקטובר 2026",
- "version": "2026-10-22a",
+ "version": "2026-11-01a",
  "people": {
   "Adlin": {
    "he": "אדלין יצחק",
@@ -8,19 +8,23 @@
   },
   "B & C Lead Consultants LLC": {
    "en": "B & C Lead Consultants LLC",
-   "guess": 1
+   "he": "בערגער יצחק (איצי)",
+   "did": 65
   },
   "Babakhanov, Arkady": {
    "en": "Arkady Babakhanov",
-   "guess": 1
+   "he": "באבקנוב ארקדי אבא חייא",
+   "did": 41
   },
   "Bendel, Bryna": {
    "en": "Bryna Bendel",
-   "guess": 1
+   "he": "דיסקינד בריינא",
+   "did": 635
   },
   "Berkowitz, Jacob": {
    "en": "Jacob Berkowitz",
-   "guess": 1
+   "he": "ברקוביץ יעקב",
+   "did": 83
   },
   "Brody, Yisroel": {
    "he": "ברודי ישראל",
@@ -28,7 +32,8 @@
   },
   "Cohen, Shmuel": {
    "en": "Shmuel Cohen",
-   "guess": 1
+   "he": "כהן שמואל",
+   "did": 276
   },
   "Core Compliance - Statfeld": {
    "he": "בנימין שטטפלד",
@@ -40,19 +45,23 @@
   },
   "Deutsch, Moishe (VentureDBVE LLC)": {
    "en": "Moishe Deutsch",
-   "guess": 1
+   "he": "דויטש משה",
+   "did": 155
   },
   "Disabled Veteran Org (DVS)": {
    "en": "Disabled Veteran Org",
-   "guess": 1
+   "he": "דויטש משה",
+   "did": 155
   },
   "Dworkin, Meir": {
    "en": "Meir Dworkin",
-   "guess": 1
+   "he": "דבורקין מאיר",
+   "did": 629
   },
   "Fine, Andrew": {
    "en": "Andrew Fine",
-   "guess": 1
+   "he": "פיין אברהם",
+   "did": 413
   },
   "Frankel": {
    "he": "פרנקל יהושע",
@@ -60,19 +69,23 @@
   },
   "Friedlander, David": {
    "en": "David Friedlander",
-   "guess": 1
+   "he": "פרידלנדר משה דוד",
+   "did": 441
   },
   "Gevertzman, Phyllis": {
    "en": "Phyllis Gevertzman",
-   "guess": 1
+   "he": "געווערצמאן פרץ",
+   "did": 129
   },
   "Goldstein, Avraham Menachem": {
    "en": "Avraham Menachem Goldstein",
-   "guess": 1
+   "he": "גולדשטיין אברהם מנחם",
+   "did": 112
   },
   "Goldstein, Jakob T": {
    "en": "Jakob T Goldstein",
-   "guess": 1
+   "he": "גולדשטיין יעקב",
+   "did": 114
   },
   "Halberstam, Mark": {
    "he": "הלברשטם מארק",
@@ -84,7 +97,8 @@
   },
   "Hoffman, Todd": {
    "en": "Todd Hoffman",
-   "guess": 1
+   "he": "הופמן טוביה",
+   "did": 172
   },
   "Klein, Felicia": {
    "en": "Felicia Klein",
@@ -96,7 +110,8 @@
   },
   "Kohn, Zevi": {
    "en": "Zevi Kohn",
-   "guess": 1
+   "he": "כהן  זאב",
+   "did": 468
   },
   "Lamm, Steven": {
    "he": "לאם אסתר",
@@ -227,7 +242,8 @@
    "amount": 360.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "מתנות לאביונים תשפ\"ו"
   },
   {
    "who": "B & C Lead Consultants LLC",
@@ -235,7 +251,8 @@
    "amount": 501.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Babakhanov, Arkady",
@@ -243,7 +260,8 @@
    "amount": 180.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Bendel, Bryna",
@@ -251,7 +269,8 @@
    "amount": 150.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Berkowitz, Jacob",
@@ -259,7 +278,8 @@
    "amount": 2000.0,
    "method": "דונרס",
    "src": "QuickBooks",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Brody, Yisroel",
@@ -283,7 +303,8 @@
    "amount": 5.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "מזדמן"
   },
   {
    "who": "Core Compliance - Statfeld",
@@ -339,7 +360,8 @@
    "amount": 100.0,
    "method": "ACH",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Disabled Veteran Org (DVS)",
@@ -347,7 +369,9 @@
    "amount": 1800.0,
    "method": "ACH",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון",
+   "anote": "משה דויטש משלם על 2 יששכר־זבולון בכל חודש (נענה בצ'אט, שויך במערכת)"
   },
   {
    "who": "Disabled Veteran Org (DVS)",
@@ -355,7 +379,9 @@
    "amount": 1800.0,
    "method": "ACH",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון",
+   "anote": "משה דויטש משלם על 2 יששכר־זבולון בכל חודש (נענה בצ'אט, שויך במערכת)"
   },
   {
    "who": "Dworkin, Meir",
@@ -363,7 +389,8 @@
    "amount": 3600.0,
    "method": "דונרס",
    "src": "Both",
-   "note": "Chase pending (with Core)"
+   "note": "Chase pending (with Core)",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Fine, Andrew",
@@ -371,7 +398,8 @@
    "amount": 1300.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Frankel",
@@ -411,7 +439,8 @@
    "amount": 100.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Gevertzman, Phyllis",
@@ -419,7 +448,8 @@
    "amount": 800.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Gevertzman, Phyllis",
@@ -427,7 +457,8 @@
    "amount": 1100.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Gevertzman, Phyllis",
@@ -435,7 +466,8 @@
    "amount": 2500.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "בניין — ארונות ספרים בהיכל התורה"
   },
   {
    "who": "Gevertzman, Phyllis",
@@ -443,7 +475,8 @@
    "amount": 800.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "יששכר־זבולון"
   },
   {
    "who": "Gevertzman, Phyllis",
@@ -451,7 +484,8 @@
    "amount": 2500.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "בניין — ארונות ספרים בהיכל התורה"
   },
   {
    "who": "Goldstein, Avraham Menachem",
@@ -459,7 +493,8 @@
    "amount": 100.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "קבוע"
   },
   {
    "who": "Goldstein, Avraham Menachem",
@@ -467,7 +502,8 @@
    "amount": 100.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "קבוע"
   },
   {
    "who": "Goldstein, Jakob T",
@@ -475,7 +511,8 @@
    "amount": 101.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Halberstam, Mark",
@@ -539,7 +576,8 @@
    "amount": 360.0,
    "method": "Zelle",
    "src": "Chase",
-   "note": ""
+   "note": "",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Klein, Felicia",
@@ -563,7 +601,8 @@
    "amount": 18000.0,
    "method": "דונרס",
    "src": "Both",
-   "note": "Chase 9/23 (with Brody)"
+   "note": "Chase 9/23 (with Brody)",
+   "cat": "סוכות תשפ\"ז"
   },
   {
    "who": "Lamm, Steven",
