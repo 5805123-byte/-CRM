@@ -15923,6 +15923,8 @@ def push_scan():
                 if not (when <= now < when + WIN):
                     continue
                 k = '%s:%s' % (t['id'], key)
+                if t['roll'] and t['orig_date']:          # משימה שעברה ליום הבא — מתריעים שוב גם ביום החדש
+                    k += ':' + (t['due_date'] or '')
                 if con.execute("SELECT 1 FROM push_sent WHERE k=?", (k,)).fetchone():
                     continue
                 if now > when + datetime.timedelta(minutes=30):
