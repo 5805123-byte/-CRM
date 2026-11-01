@@ -1857,7 +1857,7 @@ def ensure_schema():
     try:
         con.execute("CREATE TABLE IF NOT EXISTS seed_flags(name TEXT PRIMARY KEY)")
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='campaigns_seed_v1'").fetchone():
-            for nm in ['מתנות לאביונים תשפ"ו', 'קמחא דפסחא תשפ"ו', 'סוכות תשפ"ו']:
+            for nm in ['מתנות לאביונים תשפ"ו', 'קמחא דפסחא תשפ"ו', 'סוכות תשפ"ז']:
                 con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (nm, today_iso()))
             con.execute("INSERT INTO seed_flags(name) VALUES('campaigns_seed_v1')")
     except Exception as e:
@@ -4849,6 +4849,30 @@ def ensure_schema():
                 print('  ברכה מקס: נמצאו %d / עזרא %d — לא נמחק' % (len(_bm), len(_em)))
     except Exception as e:
         print('  bracha max delete error:', e)
+    # מאיר (1.11.2026): "כל מה שהכנסתי סוכות זה על תשפ"ז, לא על תשפ"ו — תתקן הכל אם התאריכים בערך ספטמבר 2026".
+    # סוכות תשפ"ו היה באוקטובר 2025 — מה שנרשם כך מאוגוסט 2026 ואילך הוא סוכות תשפ"ז. כללים קבועים (בלי תאריך)
+    # שנוצרו בעונה הזו מתוקנים גם. והאפשרות "סוכות תשפ"ו" יורדת מהרשימה אם לא נשאר עליה כלום
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='sukkot_5787_fix_v1'").fetchone():
+            _o, _n = 'סוכות תשפ"ו', 'סוכות תשפ"ז'
+            _nd = con.execute("UPDATE donations SET category=? WHERE category=? AND date>='2026-08'", (_n, _o)).rowcount
+            _np = 0
+            for _t, _c in (('donor_rules', 'category'), ('bq_sched', 'for_cat')):
+                try: _np += con.execute("UPDATE %s SET %s=? WHERE %s=?" % (_t, _c, _c), (_n, _o)).rowcount
+                except Exception: pass
+            try: _np += con.execute("UPDATE pledges SET category=? WHERE category=? AND COALESCE(date,'')>='2026-08'", (_n, _o)).rowcount
+            except Exception: pass
+            try: _np += con.execute("UPDATE nd_tx SET for_local=? WHERE for_local=? AND iso>='2026-08'", (_n, _o)).rowcount
+            except Exception: pass
+            try: _np += con.execute("UPDATE cm_don SET purpose=? WHERE purpose=? AND date>='2026-08'", (_n, _o)).rowcount
+            except Exception: pass
+            con.execute("INSERT OR IGNORE INTO campaigns(name,created) VALUES(?,?)", (_n, today_iso()))
+            if not con.execute("SELECT 1 FROM donations WHERE category=?", (_o,)).fetchone():
+                con.execute("DELETE FROM campaigns WHERE name=?", (_o,))
+            print('  סוכות תשפ"ו → תשפ"ז: %d תרומות, %d נוספים' % (_nd, _np))
+            con.execute("INSERT INTO seed_flags(name) VALUES('sukkot_5787_fix_v1')"); con.commit()
+    except Exception as e:
+        print('  sukkot fix error:', e)
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
