@@ -970,7 +970,8 @@ def ensure_schema():
                 "label TEXT, runs INTEGER DEFAULT 0, last_job INTEGER)")
     # מאיר: "גם אפשרות שזה יתקשר אליו כל יום, עד שאכתוב שזה סודר החודש" — freq 'daily': כל יום מהיום שנקבע בחודש,
     # עד "✓ סודר החודש" (done_until — מושהה עד תחילת החודש הבא)
-    for col, typ in (('freq', 'TEXT'), ('done_until', 'TEXT')):
+    # מאיר: "איך אני משנה את הטקסט של ההודעה שאני רוצה לשלוח לגרניצקי כל יום עד שהוא ישלם" — text: נוסח חדש
+    for col, typ in (('freq', 'TEXT'), ('done_until', 'TEXT'), ('text', 'TEXT')):
         try: con.execute("ALTER TABLE ym_repeat ADD COLUMN %s %s" % (col, typ))
         except Exception: pass
     try: con.execute("ALTER TABLE ym_msg ADD COLUMN ym_file TEXT")
@@ -18556,14 +18557,15 @@ def ym_repeat_run(con, rp):
     now = il_now().replace(tzinfo=None)
     ok_at = ym_next_ok(now)
     sched = ok_at > now + datetime.timedelta(minutes=2)
+    ntext = ((rp['text'] if 'text' in rp.keys() else '') or '').strip()     # נוסח שמאיר שינה בחלון ההודעה החוזרת
     con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path,send_at) VALUES(?,?,?,?,?,?,0,?,?,?)",
-                (now_iso(), j0['channel'], j0['text'], j0['amount'] or '', len(lst), 'scheduled' if sched else 'queued',
+                (now_iso(), j0['channel'], ntext or j0['text'], j0['amount'] or '', len(lst), 'scheduled' if sched else 'queued',
                  '🔁 הודעה חודשית', j0['bill_path'] or '', ok_at.strftime('%Y-%m-%d %H:%M') if sched else ''))
     nj = con.execute("SELECT last_insert_rowid()").fetchone()[0]
     for r in lst:
         con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,fund) VALUES(?,?,?,?,?,?,'queued',?,?,?)",
-                    (nj, r['kind'], r['ref_id'], r['name'], r['phone'], r['text'], r['amount'] or '', r['req_off'],
-                     r['fund'] if 'fund' in r.keys() else ''))
+                    (nj, r['kind'], r['ref_id'], r['name'], r['phone'], ntext.replace('{שם}', r['name'] or '') if ntext else r['text'],
+                     r['amount'] or '', r['req_off'], r['fund'] if 'fund' in r.keys() else ''))
     con.commit()
     if not sched:
         threading.Thread(target=ym_worker, args=(nj,), daemon=True).start()
@@ -22865,6 +22867,8 @@ class H(BaseHTTPRequestHandler):
                     d = dict(r)
                     j = con.execute("SELECT channel,text FROM ym_job WHERE id=?", (r['job'],)).fetchone()
                     d['channel'] = j['channel'] if j else ''
+                    _o = con.execute("SELECT text FROM ym_msg WHERE job=? AND COALESCE(retry_of,0)=0 ORDER BY id LIMIT 1", (r['job'],)).fetchone()
+                    d['orig'] = (_o['text'] if _o else '') or (j['text'] if j else '')
                     d['who'] = [x['name'] or x['phone'] for x in con.execute(
                         "SELECT name,phone FROM ym_msg WHERE job=? AND COALESCE(retry_of,0)=0 ORDER BY id LIMIT 5", (r['job'],))]
                     d['n'] = con.execute("SELECT COUNT(*) FROM ym_msg WHERE job=? AND COALESCE(retry_of,0)=0", (r['job'],)).fetchone()[0]
@@ -25847,8 +25851,12 @@ class H(BaseHTTPRequestHandler):
                 else:
                     nxt = ym_repeat_next(cal, day, at)
                 con.execute("UPDATE ym_repeat SET active=0 WHERE job=? AND active=1", (jid,))
-                con.execute("INSERT INTO ym_repeat(job,cal,day,at,only_open,active,created,next_run,freq) VALUES(?,?,?,?,?,1,?,?,?)",
-                            (jid, cal, day, at, 1 if b.get('only_open', 1) else 0, now_iso(), nxt, freq))
+                o0 = con.execute("SELECT text FROM ym_msg WHERE job=? AND COALESCE(retry_of,0)=0 ORDER BY id LIMIT 1", (jid,)).fetchone()
+                tx = str(b.get('text') or '').strip()
+                if o0 and tx == (o0['text'] or '').strip():
+                    tx = ''                       # לא שונה — נשאר הנוסח המקורי (עם השם של כל נמען)
+                con.execute("INSERT INTO ym_repeat(job,cal,day,at,only_open,active,created,next_run,freq,text) VALUES(?,?,?,?,?,1,?,?,?,?)",
+                            (jid, cal, day, at, 1 if b.get('only_open', 1) else 0, now_iso(), nxt, freq, tx[:2000]))
                 con.commit()
             finally:
                 con.close()
