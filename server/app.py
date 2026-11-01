@@ -1221,6 +1221,9 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE pledges ADD COLUMN via_total TEXT DEFAULT ''")
     except Exception: pass
+    # מאיר: "הירש ליאורה סיימה את התרומות שלה — איפה אני מעדכן באופן פשוט שהוא הפסיק?" — תאריך שבו הפסיק לתרום כל חודש
+    try: con.execute("ALTER TABLE donors ADD COLUMN monthly_stop TEXT DEFAULT ''")
+    except Exception: pass
     try: con.execute("ALTER TABLE pledges ADD COLUMN cur TEXT DEFAULT ''")      # מטבע ההתחייבות: '$' / '₪' (ריק = לפי אזור התורם)
     except Exception: pass
     try: con.execute("ALTER TABLE pledges ADD COLUMN via_note TEXT DEFAULT ''")
@@ -15577,7 +15580,12 @@ def missing_report(con, days_grace=5):
     prev = (today.replace(day=1) - datetime.timedelta(days=1))
     m1 = prev.strftime('%Y-%m')
     cutoff = (today - datetime.timedelta(days=75)).isoformat()
-    name = {r['id']: (((r['last'] or '') + ' ' + (r['first'] or '')).strip() or (r['english'] or '')) for r in con.execute("SELECT id,last,first,english FROM donors")}
+    name, region, stopped = {}, {}, set()
+    for r in con.execute("SELECT id,last,first,english,region,COALESCE(monthly_stop,'') ms FROM donors"):
+        name[r['id']] = ((r['last'] or '') + ' ' + (r['first'] or '')).strip() or (r['english'] or '')
+        region[r['id']] = r['region'] or ''
+        if r['ms']:
+            stopped.add(r['id'])
     # --- א. חיובים שנדחו ולא כוסו (בנק ווסט / אוטורייז) ---
     ok = {}
     for r in con.execute("SELECT donor_id,amount,date FROM recon WHERE donor_id IS NOT NULL AND COALESCE(status,'settled') IN ('settled','')"):
@@ -15590,7 +15598,7 @@ def missing_report(con, days_grace=5):
     for r in con.execute("SELECT donor_id,amount,date,source,note,COALESCE(no_debt,0) nd FROM recon WHERE donor_id IS NOT NULL "
                          "AND COALESCE(status,'settled') NOT IN ('settled','') ORDER BY date DESC"):
         iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
-        if not iso or iso < cutoff or r['nd']:
+        if not iso or iso < cutoff or r['nd'] or r['donor_id'] in stopped:
             continue
         a = _amt2(r['amount'])
         dd = _days(iso)
@@ -15607,32 +15615,51 @@ def missing_report(con, days_grace=5):
                                               (' · %d ניסיונות' % v['n']) if v['n'] > 1 else '', (' · ' + v['why'][:60]) if v['why'] else '')
                  for v in sorted(dec.values(), key=lambda x: x['iso'], reverse=True)]
     # --- ב. קבועים שהחודש (או החודש הקודם) לא נכנס להם כלום ---
-    expect = {}
-    for p in con.execute("SELECT donor_id,amount,permo,cur,monthly,confirmed,status FROM pledges WHERE COALESCE(monthly,0)=1"):
-        if (p['confirmed'] is not None and int(p['confirmed'] or 0) <= 0) or (p['status'] or '') == 'הסתיים':
-            continue
-        a = _amt2(p['permo']) if _amt2(p['permo']) > 0 else _amt2(p['amount'])
-        if a > 0:
-            expect[p['donor_id']] = expect.get(p['donor_id'], 0) + a
-    paid = {}
-    for r in con.execute("SELECT donor_id,date,amount FROM donations WHERE donor_id IS NOT NULL AND date>=? AND CAST(amount AS REAL)>0",
+    # מאיר: "לרר אלחנן זה שקלים 4000, לא דולרים — למה אתה חוזר לדולרים כל הזמן" — המטבע: של ההתחייבות,
+    # אחרת של התרומות שלו, אחרת לפי אזור התורם (ישראל = ₪)
+    paid, dcur = {}, {}
+    for r in con.execute("SELECT donor_id,date,amount,COALESCE(cur,'') cur FROM donations WHERE donor_id IS NOT NULL AND date>=? AND CAST(amount AS REAL)>0",
                          ((today - datetime.timedelta(days=130)).isoformat(),)):
         paid.setdefault(r['donor_id'], []).append(((r['date'] or '')[:10], _amt2(r['amount'])))
+        if r['cur'].strip() in ('$', '₪'):
+            dcur.setdefault(r['donor_id'], {}).setdefault(r['cur'].strip(), 0)
+            dcur[r['donor_id']][r['cur'].strip()] += 1
+    cur_of = {}
     # קבוע לפי היסטוריה: שלושה חודשים רצופים לפני החודש הנוכחי, סכום דומה
     ms = [(today.replace(day=1) - datetime.timedelta(days=1)).replace(day=1)]
     for _ in range(2):
         ms.append((ms[-1] - datetime.timedelta(days=1)).replace(day=1))
     ms_keys = [x.strftime('%Y-%m') for x in ms]
+    hist = {}
     for did, L in paid.items():
-        if did in expect:
-            continue
         by = {}
         for iso, a in L:
             by.setdefault(iso[:7], []).append(a)
         if all(k in by for k in ms_keys):
             amts = [max(by[k]) for k in ms_keys]
             if max(amts) - min(amts) <= 0.25 * max(amts):
-                expect[did] = min(amts)
+                hist[did] = min(amts)
+    expect = {}
+    for p in con.execute("SELECT donor_id,amount,permo,cur,monthly,confirmed,status FROM pledges WHERE COALESCE(monthly,0)=1"):
+        if (p['confirmed'] is not None and int(p['confirmed'] or 0) <= 0) or (p['status'] or '') == 'הסתיים' or p['donor_id'] in stopped:
+            continue
+        # מאיר: "טעפפער — 500 דולר כל חודש ולא 5000" — בלי סכום לחודש, הסכום הכולל של ההתחייבות הוא לא סכום
+        # חודשי: לוקחים את מה שהוא נותן כל חודש בפועל
+        a = _amt2(p['permo']) if _amt2(p['permo']) > 0 else (hist.get(p['donor_id']) or 0)
+        if a > 0:
+            expect[p['donor_id']] = expect.get(p['donor_id'], 0) + a
+            if (p['cur'] or '').strip() in ('$', '₪'):
+                cur_of[p['donor_id']] = p['cur'].strip()
+    for did, a in hist.items():
+        if did not in expect and did not in stopped:
+            expect[did] = a
+    def cs(did):
+        if did in cur_of:
+            return cur_of[did]
+        c = dcur.get(did) or {}
+        if c:
+            return max(c, key=c.get)
+        return '₪' if region.get(did) == 'il' else '$'
     lines_miss = []
     for did, a in sorted(expect.items(), key=lambda x: -x[1]):
         L = paid.get(did, [])
@@ -15641,12 +15668,13 @@ def missing_report(con, days_grace=5):
         got0 = sum(x for i, x in L if i[:7] == m0)
         got1 = sum(x for i, x in L if i[:7] == m1)
         miss = []
+        c = cs(did)
         if got1 < 0.9 * a:
-            miss.append('%s (נכנס $%g מתוך $%g)' % (m1, got1, a) if got1 > 0 else m1)
+            miss.append('%s (נכנס %s%g מתוך %s%g)' % (m1, c, got1, c, a) if got1 > 0 else m1)
         if today.day > usual + days_grace and got0 < 0.9 * a:
-            miss.append('%s (נכנס $%g מתוך $%g)' % (m0, got0, a) if got0 > 0 else m0)
+            miss.append('%s (נכנס %s%g מתוך %s%g)' % (m0, c, got0, c, a) if got0 > 0 else m0)
         if miss:
-            lines_miss.append('⚠️ %s — קבוע $%g בערך ב-%d לחודש · חסר: %s' % (name.get(did, '#%s' % did), a, usual, ', '.join(miss)))
+            lines_miss.append('⚠️ %s — קבוע %s%g בערך ב-%d לחודש · חסר: %s' % (name.get(did, '#%s' % did), c, a, usual, ', '.join(miss)))
     return lines_dec, lines_miss
 
 
@@ -15659,7 +15687,8 @@ def missing_report_send(con, force=False):
     body += (dec or ['— אין —'])
     body += ['', '⚠️ תורמים קבועים שלא נכנס להם החודש / בחודש הקודם (%d):' % len(miss)]
     body += (miss or ['— אין —'])
-    body += ['', 'הרשימה המלאה: לשונית 🔴 לא עבר, וכרטיס כל תורם.']
+    body += ['', 'הרשימה המלאה: לשונית 🔴 לא עבר, וכרטיס כל תורם.',
+             'מי שהפסיק לתרום כל חודש: בכרטיס התורם ← "⛔ הפסיק לתרום כל חודש" — והוא יורד מהדו"ח.']
     txt = '\n'.join(body)
     to = (os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or '').strip()
     try:
@@ -30138,6 +30167,43 @@ class H(BaseHTTPRequestHandler):
                 task_id = cur.lastrowid
             con.commit(); con.close()
             return self._send(200, {'ok': True, 'id': cid, 'task_id': task_id})
+        m = re.match(r'/api/donor/(\d+)/stop_monthly$', self.path)
+        if m:
+            # ⛔ מאיר: "איך מגדירים במערכת באופן פשוט וקל שהוא הפסיק — ולהפסיק את החיוב וההתחייבות"
+            did = int(m.group(1)); on = bool(int(b.get('on') or 0))
+            con = db()
+            out = {'ok': True, 'pledges': 0, 'sched': [], 'sched_err': [], 'decl': 0}
+            try:
+                if not con.execute("SELECT 1 FROM donors WHERE id=?", (did,)).fetchone():
+                    return self._send(200, {'ok': False, 'error': 'התורם לא נמצא'})
+                con.execute("UPDATE donors SET monthly_stop=? WHERE id=?", (today_iso() if on else '', did))
+                if on:
+                    out['pledges'] = con.execute("UPDATE pledges SET status='הסתיים' WHERE donor_id=? AND COALESCE(monthly,0)=1 "
+                                                 "AND COALESCE(status,'')<>'הסתיים'", (did,)).rowcount
+                    # חיובים שנדחו — כבר לא חוב (הוא הפסיק)
+                    out['decl'] = con.execute("UPDATE recon SET no_debt=1 WHERE donor_id=? AND COALESCE(status,'settled') NOT IN ('settled','') "
+                                              "AND COALESCE(no_debt,0)=0", (did,)).rowcount
+                    if b.get('stop_charge'):
+                        import banquest as _bq
+                        for sc in con.execute("SELECT s.id,s.amount FROM bq_sched s WHERE COALESCE(s.active,0)=1 AND (s.donor_id=? OR s.customer_id IN "
+                                              "(SELECT id FROM bq_cust WHERE donor_id=?))", (did, did)).fetchall():
+                            try:
+                                code, res = _bq.update_schedule(sc['id'], active=False)
+                                if 200 <= int(code or 0) < 300:
+                                    con.execute("UPDATE bq_sched SET active=0, status='paused' WHERE id=?", (sc['id'],))
+                                    out['sched'].append('$%g' % (sc['amount'] or 0))
+                                else:
+                                    out['sched_err'].append('$%g: %s' % (sc['amount'] or 0, str(res)[:80]))
+                            except Exception as e:
+                                out['sched_err'].append('$%g: %s' % (sc['amount'] or 0, str(e)[:80]))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (did, today_iso(), 'הערה', ('⛔ הפסיק לתרום כל חודש' + (' · החיוב האוטומטי הופסק (%s)' % ', '.join(out['sched']) if out['sched'] else ''))
+                             if on else '▶ חזר לתרום כל חודש'))
+                con.commit()
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, out)
         if self.path == '/api/cal/parse':
             # 📋 הדבקה ליומן — טקסט / תמונה של הזמנה → פריטים לאישור (לא נשמר כלום עד שמאיר מאשר)
             import calparse as _cp

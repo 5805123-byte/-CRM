@@ -6367,6 +6367,8 @@ function cardDetails(d,body){
         <button class="btn sm" id="pa_add" style="width:100%">➕ הוסף אברך</button>
       </div></details>`:''}
     ${(d.transactions||[]).length?`<details class="dsec"><summary>💳 חיובים ותשלומים (${(d.transactions||[]).length})</summary><div id="transactions"></div></details>`:''}
+    ${d.monthly_stop?`<div class="hintxt" style="background:#fdecea;border-radius:8px;padding:6px 10px;margin:6px 0">⛔ <b>הפסיק לתרום כל חודש</b> (מ-${esc(fmtGreg(d.monthly_stop))}) — לא מופיע בדו"ח "חסר" וב"לא עבר" <button class="btn sm ghost" id="mstop" data-on="0" style="width:auto">▶ חזר לתרום</button></div>`
+      :`<div style="display:flex;justify-content:flex-end;margin:4px 0"><button class="btn sm ghost" id="mstop" data-on="1" style="width:auto" title="התחייבות חודשית נגמרה / הפסיק — יורד מהדו״ח השבועי, וגם החיוב האוטומטי נעצר">⛔ הפסיק לתרום כל חודש</button></div>`}
     ${(dt.all||dt.year||dt.pending||dt.foreign)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${totMix(curd,dt.all,dt.foreign)}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${totMix(curd,dt.year,dt.foreign)}</b></div>${(dt.pending>0||dt.pendingOther)?`<div class="tot pend"><span>🔴 טרם נגבה</span><b>${dt.pending>0?(curd+dt.pending):''}${dt.pendingOther?((dt.pending>0?' + ':'')+dt.pendingOther):''}</b></div>`:''}</div>`:''}
     ${commitHTML(d)}
     ${(d.unclassified||[]).length?(()=>{const uo=RCATS.map(c=>`<option value="${esc(c)}">${esc(c)||'— בחר עבור מה —'}</option>`).join('')
@@ -6436,6 +6438,21 @@ function cardDetails(d,body){
     toast('נמחק'); cardDetails(d,body);});
   wireSplit(d, body, ()=>{const x=DB.find(y=>y.id===d.id)||d; cardDetails(x, body);});
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='details';renderCard(d);};
+  // ⛔ מאיר: "איך מגדירים במערכת באופן פשוט וקל שהוא הפסיק — ולהפסיק את החיוב שלו וההתחייבות"
+  const ms=document.getElementById('mstop'); if(ms)ms.onclick=async()=>{const on=ms.dataset.on==='1',nm=((d.last||'')+' '+(d.first||'')).trim();
+    let stopCharge=false;
+    if(on){const o=document.createElement('div');o.className='confirmov';
+      o.innerHTML=`<div class="confirmbox"><div class="cm">⛔ ${esc(nm)} הפסיק לתרום כל חודש?<br><small>• ההתחייבות החודשית תסומן "הסתיים"<br>• יורד מהדו"ח השבועי ("חסר" ו"לא עבר")</small></div>
+        <label class="gvall"><input type="checkbox" id="ms_chg" checked> לעצור גם את החיוב האוטומטי שלו בבנק ווסט</label>
+        <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">⛔ כן, הפסיק</button></div></div>`;
+      document.body.appendChild(o);
+      const ok=await new Promise(res=>{o.querySelector('.cno').onclick=()=>res(false);o.querySelector('.cyes').onclick=()=>res(true);});
+      stopCharge=o.querySelector('#ms_chg').checked;o.remove();if(!ok)return;}
+    ms.disabled=true;const r=await api('POST','/api/donor/'+d.id+'/stop_monthly',{on:on?1:0,stop_charge:stopCharge?1:0}).catch(()=>null);ms.disabled=false;
+    if(!r||!r.ok){uiAlert((r&&r.error)||'לא נשמר');return;}
+    if(on&&(r.sched_err||[]).length)await uiAlert('סומן שהפסיק ✓\nאבל החיוב האוטומטי לא נעצר: '+r.sched_err.join(' · ')+'\nצריך לעצור אותו ידנית בלשונית 💳 חיובים.');
+    else toast(on?('⛔ סומן שהפסיק'+((r.sched||[]).length?' · החיוב האוטומטי נעצר':'')):'▶ חזר לתרום');
+    await load();const nd=DB.find(x=>x.id==d.id);if(nd){Object.assign(d,nd);cardDetails(d,body);}if(tab==='donors')renderDonors();};
   body.querySelectorAll('.cosp2[data-did]').forEach(x=>x.onclick=()=>{const dd=DB.find(y=>y.id==x.dataset.did);if(dd)openDonor(dd);});
   body.querySelectorAll('.collectbtn:not(.setlbtn):not(.partbtn)').forEach(b=>b.onclick=async()=>{const p=(d.parnes||[]).find(x=>x.id==b.dataset.pid);if(!p)return;const np=+p.paid===1?0:1;
     // לילה ששולם עליו רק חלק — לא מסמנים "נגבה" בטעות
