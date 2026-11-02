@@ -2122,7 +2122,8 @@ function renderMikveh(){
           <button class="mkibtn" id="mkrqb" title="בקשות להחלפת קבוצה שנשלחו מהטלפון — לאשר ולהעביר, או לדחות">📨 בקשות החלפה<b id="mksgn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button>
       <button class="mkibtn" id="mkvmb" title="הודעות שהשאירו בשלוחת המקווה בטלפון — להאזין, לקרוא את התמלול, לסמן שטופל">📥 הודעות מוקלטות<b id="mkvmn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button></div></div>
         <div class="mkhg"><span>📊 דוחות ובדיקות</span><div><button class="mkibtn" id="mkentday" title="כמה נכנסו למקווה ביום מסוים — לפי קבוצה (ערך צבור, מזדמן וכו')">📊 כניסות ליום</button>
-          <button class="mkibtn" id="mkexpchk" title="מי שהמנוי או הרישיון שלו הסתיים, ולמה (חידוש אוטומטי כבוי / אין אמצעי תשלום / חיוב נכשל)">🔍 בדיקת פג תוקף</button></div></div>
+          <button class="mkibtn" id="mkdebtsb" title="כל החובות הפתוחים במקווה — מי חייב, כמה ועל מה">🧾 חובות פתוחים</button>
+      <button class="mkibtn" id="mkexpchk" title="מי שהמנוי או הרישיון שלו הסתיים, ולמה (חידוש אוטומטי כבוי / אין אמצעי תשלום / חיוב נכשל)">🔍 בדיקת פג תוקף</button></div></div>
         <div class="mkhg"><span>💬 פניות והודעות</span><div><button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📨 פניות מנדרים${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
           <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
           <button class="mkibtn hidden" id="mksched">⏰ מתוזמנות</button></div></div></div></div>
@@ -2154,6 +2155,7 @@ function renderMikveh(){
   document.getElementById('mkselfg').onclick=()=>mkSelfGroupOpen();
   document.getElementById('mkvmb').onclick=()=>mkVmOpen();
   document.getElementById('mkrqb').onclick=()=>mkReqOpen();
+  document.getElementById('mkdebtsb').onclick=()=>mkDebtsAll();
   mkVmCount();
   mkReqCount();
   mkDashLoad();
@@ -2926,6 +2928,24 @@ async function mkVmOpen(sync){
   document.getElementById('vmbadd').onclick=async()=>{const v=document.getElementById('vmbnum').value.trim();if(!v)return;
     const x=await api('POST','/api/mikveh/vm_cfg',{block:v}).catch(()=>null);if(x&&x.ok){toast('🚫 נחסם');mkVmOpen();}else uiAlert('⚠️ '+((x&&x.error)||'לא נשמר'));};
   mkVmWire(rs,r.rows||[],()=>mkVmOpen());mkVmCount();}
+// 🧾 כל החובות במקווה (Report/GetDebts): פתוחים, ואפשר גם ששולמו / נמחקו
+async function mkDebtsAll(all){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  rs.innerHTML='<button class="x" id="rx">✕</button><div class="mksub" id="dbwait"></div>';remov.classList.add('show');
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');mkWaitTick(document.getElementById('dbwait'),'טוען את החובות מהמקווה');
+  const r=await api('GET','/api/mikveh/debts_all'+(all?'?all=1':'')).catch(()=>null);
+  if(!r||!r.ok){rs.innerHTML='<button class="x" id="rx">✕</button><div class="mksub">⚠️ '+esc((r&&r.error)||'לא נטען')+'</div>';document.getElementById('rx').onclick=()=>remov.classList.remove('show');return;}
+  const d=s=>s?esc(s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(2,4)):'';
+  const rows=r.rows||[], open=rows.filter(x=>x.status===-1||x.status===0);
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#c0392b">🧾</div><div><h2>חובות ${all?'— הכל':'פתוחים'}</h2>
+      <div class="mksub"><b>${open.length}</b> חובות פתוחים · סה״כ <b style="color:#c0392b">${esc(mkNis(r.sum))}</b></div></div></div>
+    <div class="mkseg" style="margin:8px 0"><button data-da="0" class="${all?'':'on'}">פתוחים</button><button data-da="1" class="${all?'on':''}">הכל (כולל ששולמו / נמחקו)</button></div>
+    <div class="mklist">${rows.map(x=>`<div class="mkrow" style="grid-template-columns:1fr auto;${x.status===-1||x.status===0?'':'opacity:.65'}" data-dc="${esc(x.cid)}"><div class="mknm"><b>${esc(x.name||'לקוח לא ברשימה')}${x.code?' <small style="color:#777">#'+esc(x.code)+'</small>':''}</b>
+        <div class="mksub">${d(x.date)}${x.reason?' · '+esc(x.reason):''} · ${x.status===2?'✓ שולם'+(x.paid?' '+d(x.paid):''):esc(x.label)}</div></div>
+      <b style="${x.status===-1||x.status===0?'color:#c0392b':''}">${esc(mkNis(x.amount))}</b></div>`).join('')||'<div class="mksub">אין חובות 👍</div>'}</div>`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('[data-da]').forEach(b=>b.onclick=()=>mkDebtsAll(b.dataset.da==='1'));
+  rs.querySelectorAll('[data-dc]').forEach(el=>el.onclick=()=>{const c=MK&&MK.clients.find(z=>z.id===el.dataset.dc);if(c)mkOpen(c);else toast('הלקוח לא ברשימה (אולי מוסתר / נמחק)');});}
 // 📨 מאיר: "לא רואים נורמלי את הבקשות… והמנהל יוכל לאשר בקשות רגיל וכן לשליחת הודעה שזה הוחלף, כמו בהחלפה רגילה"
 async function mkReqOpen(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
@@ -3103,7 +3123,7 @@ function mkDebtHTML(cid){const D=MKDEBT[cid];if(!D)return '<div class="mksub">�
   const rows=D.rows||[];
   return (rows.length?`<div class="mksub" style="margin:4px 2px 8px">${D.open?'חוב פתוח: <b style="color:#c0392b">'+esc(mkNis(D.open))+'</b>':'אין חוב פתוח'}</div>
     <div class="mklist">${rows.map(x=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto auto;cursor:default"><div class="mknm"><b>${d(x.date)} · ${esc(x.reason||'חוב')}</b>
-      <div class="mksub">${x.open?'פתוח':x.paid?'שולם '+d(x.paid):'סגור'}</div></div>
+      <div class="mksub">${x.open?'פתוח':x.status===2?'✓ שולם'+(x.paid?' '+d(x.paid):''):x.status===0?'פתוח (ישן)':esc(x.label||'סגור')}</div></div>
       <b style="${x.open?'color:#c0392b':''}">${esc(mkNis(x.amount))}</b>
       ${x.open?`<button class="btn sm ghost" data-dd="${esc(x.id)}" title="למחוק את החוב במקווה">🗑️</button>`:'<span></span>'}</div>`).join('')}</div>`
     :'<div class="mksub">אין לו חובות במקווה.</div>')+'<button class="btn sm" id="mkdebtadd" style="margin-top:6px">➕ הוספת חוב</button>';}

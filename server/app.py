@@ -23666,6 +23666,20 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             return self._send(200, {'ok': True, 'texts': [{'key': k, 'ext': w, 'label': l, 'def': d, 'val': cur.get(k, '')}
                                                           for k, w, l, d in MK_TEXTS]})
+        if self.path.split('?')[0] == '/api/mikveh/debts_all':
+            # 🧾 כל החובות הפתוחים במקווה (Report/GetDebts), עם שם הלקוח
+            import mikveh as _mk
+            try:
+                rows = _mk.all_debts(only_open=(urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('all') or [''])[0] != '1')
+                byid = {str(c.get('id')): c for c in _mk.clients()}
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            for r in rows:
+                c = byid.get(str(r['cid'])) or {}
+                r['name'] = ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip()
+                r['code'] = c.get('clientCode')
+                r['phone'] = (c.get('phone') or '').strip()
+            return self._send(200, {'ok': True, 'rows': rows, 'sum': round(sum(r['amount'] or 0 for r in rows if r['status'] in (-1, 0)), 2)})
         if self.path.split('?')[0] == '/api/mikveh/debts':
             # 🧾 החובות של הלקוח במקווה (פתוחים ושולמו; בלי מחוקים)
             import mikveh as _mk

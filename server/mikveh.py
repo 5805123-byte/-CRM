@@ -576,13 +576,14 @@ def _dt_of(v):
 #   GET Debts/GetByClientId/{id} · POST Debts · PATCH Debts/Delete/{id}
 # הקודים (אושרו מול לוח הבקרה של המקווה): אמצעי תשלום 0 = מזומן, 1 = אשראי.
 # סוג פריט: 1 = טעינת מנוי, 2 = טעינת פעימות, 4 = כניסה. יתרה רגילה = פעימות, יתרה זמנית = זיכוי.
-# חוב: ‎-1 = פתוח, 3 = נמחק.
+# חוב (Report/GetDebts, הקלטה 2.11.2026): ‎-1 = פתוח, 2 = שולם (יש payDate), 3 = נמחק, 0 = ישן מהייבוא (לא ידוע — מוצג כפתוח).
 ACT_PATH = 'Report/GetActivityLog'
 HIST_PATH = 'Report/GetEnteraceAndPayments'
 ATT_PATH = ACT_PATH                      # השם הישן — app.py מציג אותו כמקור הנתונים
 PAY_METHOD = {0: 'מזומן', 1: 'אשראי'}
 ITEM_TYPE = {1: 'טעינת מנוי', 2: 'טעינת פעימות', 4: 'כניסה'}
-DEBT_OPEN, DEBT_DELETED = -1, 3
+DEBT_OPEN, DEBT_PAID, DEBT_DELETED = -1, 2, 3
+DEBT_LABEL = {-1: 'פתוח', 0: 'פתוח (ישן)', 2: 'שולם', 3: 'נמחק'}
 _ATT = {'tries': [], 'fail_at': 0}       # app.py מאפס את fail_at ב"לבדוק שוב"
 _ENTR = {'tried': []}
 try:
@@ -885,7 +886,27 @@ def debts(cid, include_deleted=False):
         at = _local(d.get('createdAt') or d.get('date'))
         out.append({'id': d.get('id'), 'amount': _nis(d.get('amount') or 0), 'reason': str(d.get('reason') or ''),
                     'date': at.strftime('%Y-%m-%d') if at else '', 'paid': str(d.get('payDate') or '')[:10],
-                    'open': st == DEBT_OPEN, 'status': st})
+                    'open': st == DEBT_OPEN, 'paid_ok': st == DEBT_PAID, 'status': st, 'label': DEBT_LABEL.get(st, str(st))})
+    out.sort(key=lambda x: x['date'], reverse=True)
+    return out
+
+
+def all_debts(only_open=True):
+    """כל החובות במקווה (Report/GetDebts — כמו מסך החובות שלהם). only_open — רק פתוחים (‎-1, וגם 0 הישנים)"""
+    t = datetime.datetime.now(_IL).date().isoformat()
+    body = {'terminals': terminals(), 'fromDate': _utc(t), 'toDate': _utc(t, end=True)}
+    code, res = call('POST', 'Report/GetDebts', body=body, timeout=60)
+    if code != 200 or not isinstance(res, list):
+        raise RuntimeError('רשימת החובות במקווה לא נטענה: %s' % (LAST.get('error') or code))
+    out = []
+    for d in res:
+        st = d.get('status')
+        if only_open and st not in (DEBT_OPEN, 0):
+            continue
+        at = _local(d.get('createdAt'))
+        out.append({'id': d.get('id'), 'cid': d.get('clientId'), 'amount': _nis(d.get('amount') or 0), 'reason': str(d.get('reason') or ''),
+                    'date': at.strftime('%Y-%m-%d') if at else '', 'paid': str(d.get('payDate') or '')[:10],
+                    'status': st, 'label': DEBT_LABEL.get(st, str(st))})
     out.sort(key=lambda x: x['date'], reverse=True)
     return out
 
