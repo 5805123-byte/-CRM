@@ -22450,7 +22450,7 @@ class H(BaseHTTPRequestHandler):
                 ans = mkvm_ivr(P)
             except Exception as e:
                 print('  mk vm ivr error:', e)
-                ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&go_to_folder=hangup'
+                ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&'
             mkg_ivr_log(P, ans)
             return self._send(200, ans.encode('utf-8'), 'text/plain; charset=utf-8')
         m = re.match(r'/api/yemot/mkgroup/([A-Za-z0-9]+)$', self.path.split('?')[0])
@@ -22462,7 +22462,7 @@ class H(BaseHTTPRequestHandler):
                 ans = mkg_ivr(P)
             except Exception as e:
                 print('  mkg ivr error:', e)
-                ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&go_to_folder=hangup'
+                ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&'
             mkg_ivr_log(P, ans)
             return self._send(200, ans.encode('utf-8'), 'text/plain; charset=utf-8')
         m = re.match(r'/api/yemot/ivr(?:/([A-Za-z0-9]+))?(/rec|/zmanim)?$', self.path.split('?')[0])
@@ -34466,7 +34466,7 @@ def mkg_ivr(P):
     """השיחה: זיהוי לפי הטלפון → (אם יש כמה לקוחות על אותו מספר — בחירה) → הקבוצה הנוכחית ותפריט הקבוצות
     המותרות → אישור (עם הקנס, אם יש) → העברה במקווה + חוב הקנס. ימות שולחים בכל פנייה את כל מה שהוקש עד עכשיו."""
     import mikveh as _mk, yemot as _ym
-    END = '&go_to_folder=hangup'
+    END = '&'   # מאיר: "לא לנתק את השיחה אף פעם" — בלי go_to_folder
     msg = lambda t: 'id_list_message=t-' + _ivr_t(t) + END
     con = db()
     try:
@@ -34611,7 +34611,7 @@ def mkvm_blocked(con):
 
 def mkvm_ivr(P):
     import yemot as _ym
-    END = '&go_to_folder=hangup'
+    END = '&'   # מאיר: "לא לנתק את השיחה אף פעם" — בלי go_to_folder
     con = db()
     try:
         if (P.get('k') or '') != mkg_key(con):
