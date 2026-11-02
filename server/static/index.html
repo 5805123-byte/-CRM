@@ -1600,7 +1600,8 @@ details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;ma
   .ov.show{display:flex}
   .sheet{background:var(--card);width:100%;max-width:600px;max-height:90vh;overflow:auto;border-radius:20px 20px 0 0;padding:20px 20px 32px}
   @media(min-width:640px){.ov{align-items:center}.sheet{border-radius:20px}}
-  .sheet .x{float:inline-start;background:var(--line);border:none;color:var(--ink);width:34px;height:34px;border-radius:50%;font-size:1.1rem;cursor:pointer}
+  .sheet .x{float:inline-start;background:var(--line);border:none;color:var(--ink);width:34px;height:34px;border-radius:50%;font-size:1.1rem;cursor:pointer;
+    position:sticky;top:0;z-index:20;box-shadow:0 2px 8px rgba(0,0,0,.18)}   /* מאיר: "ה-X נשאר למעלה כשמגללים ואי אפשר להגיע אליו" — נשאר גלוי */
   .sheet h2{margin:.1em 0 10px}
   label.fld{display:block;margin:10px 0}
   label.fld span{font-size:.8rem;color:var(--muted);display:block;margin-bottom:3px}

@@ -769,12 +769,13 @@ def _h_desc(x):
     return ITEM_TYPE.get(x.get('itemType')) or ('כניסה' if src == 'Entrances' else src or 'פעולה')
 
 
-def payments(cid):
+def payments(cid, days=365):
     """התשלומים של הלקוח במקווה (מזומן / אשראי), שנה אחורה. מחזיר (רשימה, מקור, []) — כמו קודם.
     שורה: {'iso', 'time', 'amount' (₪), 'desc', 'how', 'failed'}"""
     PAYDIAG[str(cid)] = {}
     out = []
-    for x in history(cid):
+    t = datetime.datetime.now(_IL).date()
+    for x in history(cid, (t - datetime.timedelta(days=days)).isoformat(), t.isoformat()):
         if x.get('source') == 'Debts':
             continue
         paid = _h_paid(x)

@@ -1881,6 +1881,9 @@ async function mkReqOpen(sync=true){
     paint(s2&&s2.ok===false?'⚠️ '+esc(s2.error==='not_configured'?'המייל לא מחובר — צריך ב-Render את GMAIL_USER (או MIKVEH_MAIL_USER) וסיסמת האפליקציה':s2.error)
       :(s2&&s2.new?'✓ נוספו '+s2.new+' פניות חדשות':s2&&!s2.busy?'נבדקו '+(s2.scanned||0)+' מיילים מ-90 הימים האחרונים'+(s2.mailbox?' ('+esc(s2.mailbox)+')':'')+' — לא נמצאו פניות חדשות'+((s2.errors||[]).length?' · ⚠️ '+esc(s2.errors[0]):''):''));}}
 // 📊 מאיר: "כמה מנוי ערך צבור נכנסו ביום שישי וכמה מזדמנים — אני שואל על מקווה, לא על מגבות"
+// ⏳ מאיר: "לוקח לו הרבה זמן לבדוק" — בזמן ההמתנה למקווה רואים שזה עובד, וכמה שניות עברו
+function mkWaitTick(el,txt){const t0=Date.now();const f=()=>{if(!document.body.contains(el)){clearInterval(i);return;}
+  const n=Math.round((Date.now()-t0)/1000);el.innerHTML='<span class="mkspin"></span> '+esc(txt)+(n>=2?' · '+n+' שניות':'');};const i=setInterval(f,1000);f();return ()=>clearInterval(i);}
 async function mkEntDay(day,frm){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   const lastFri=()=>{const t=new Date();const d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-((t.getDay()+2)%7));return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
@@ -1888,7 +1891,7 @@ async function mkEntDay(day,frm){
   day=day||today(); frm=frm||'00:00';
   const head=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📊</div><div><h2>כניסות למקווה ליום</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><input type="date" id="edd" value="${esc(day)}" style="width:160px"> משעה <input type="time" id="edf" value="${esc(frm)}" style="width:110px"><button class="btn sm" id="edgo">🔄 לחשב</button></div></div></div>`;
-  rs.innerHTML=head+'<div class="mksub">⏳ בודק במקווה…</div>';remov.classList.add('show');
+  rs.innerHTML=head+'<div class="mksub" id="edwait"></div>';remov.classList.add('show');mkWaitTick(document.getElementById('edwait'),'בודק במקווה את כל הכניסות של היום');
   const wire=()=>{document.getElementById('rx').onclick=()=>remov.classList.remove('show');
     document.getElementById('edgo').onclick=()=>mkEntDay(document.getElementById('edd').value,document.getElementById('edf').value);};
   wire();
@@ -1924,8 +1927,8 @@ async function mkTowelDay(day,frm){
   day=day||lastFri(); frm=frm||'06:00';
   const head=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#9C7A2E">🧺</div><div><h2>מגבות ליום</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><input type="date" id="twd" value="${esc(day)}" style="width:160px"> משעה <input type="time" id="twf" value="${esc(frm)}" style="width:110px"><button class="btn sm" id="twgo">🔄 לחשב</button></div></div></div>`;
-  rs.innerHTML=head+'<div class="mksub">⏳ בודק במקווה…</div>';
-  remov.classList.add('show');
+  rs.innerHTML=head+'<div class="mksub" id="twwait"></div>';
+  remov.classList.add('show');mkWaitTick(document.getElementById('twwait'),'בודק במקווה את כל הכניסות של היום');
   const wire=()=>{document.getElementById('rx').onclick=()=>remov.classList.remove('show');
     document.getElementById('twgo').onclick=()=>mkTowelDay(document.getElementById('twd').value,document.getElementById('twf').value);};
   wire();
@@ -2115,10 +2118,11 @@ function renderMikveh(){
       <button class="mkstat" id="mkzklist" style="cursor:pointer;border:0;font:inherit" title="לקוחות עם זיכוי (יתרה זמנית) — לחיצה פותחת את הרשימה"><b>${MK.clients.filter(c=>(c.temp_balance||0)>0).length}</b><span>💳 זיכויים</span></button>
       <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button></div>
       <div class="mkhgroups">
-        <div class="mkhg"><span>📞 שלוחות בטלפון</span><div><button class="mkibtn" id="mkselfg" title="שלוחה בטלפון שבה כל מנוי מחליף לעצמו קבוצה — הגדרות, קנס ויומן">🔄 החלפת קבוצה<b id="mksgn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button>
-          <button class="mkibtn" id="mkvmb" title="הודעות שהשאירו בשלוחת המקווה בטלפון — להאזין, לקרוא את התמלול, לסמן שטופל">📥 הודעות מוקלטות<b id="mkvmn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button></div></div>
+        <div class="mkhg"><span>📞 שלוחות בטלפון</span><div><button class="mkibtn" id="mkselfg" title="שלוחה בטלפון שבה כל מנוי מחליף לעצמו קבוצה — הגדרות, קנס ויומן">🔄 שלוחת החלפת קבוצה</button>
+          <button class="mkibtn" id="mkrqb" title="בקשות להחלפת קבוצה שנשלחו מהטלפון — לאשר ולהעביר, או לדחות">📨 בקשות החלפה<b id="mksgn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button>
+      <button class="mkibtn" id="mkvmb" title="הודעות שהשאירו בשלוחת המקווה בטלפון — להאזין, לקרוא את התמלול, לסמן שטופל">📥 הודעות מוקלטות<b id="mkvmn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button></div></div>
         <div class="mkhg"><span>📊 דוחות ובדיקות</span><div><button class="mkibtn" id="mkentday" title="כמה נכנסו למקווה ביום מסוים — לפי קבוצה (ערך צבור, מזדמן וכו')">📊 כניסות ליום</button>
-          <button class="mkibtn" id="mkexpchk" title="מי שהמנוי / הרישיון שלו הסתיים — מול התשלומים בנדרים פלוס והחידוש האוטומטי במקווה">🔍 בדיקת פג תוקף</button></div></div>
+          <button class="mkibtn" id="mkexpchk" title="מי שהמנוי או הרישיון שלו הסתיים, ולמה (חידוש אוטומטי כבוי / אין אמצעי תשלום / חיוב נכשל)">🔍 בדיקת פג תוקף</button></div></div>
         <div class="mkhg"><span>💬 פניות והודעות</span><div><button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📨 פניות מנדרים${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
           <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
           <button class="mkibtn hidden" id="mksched">⏰ מתוזמנות</button></div></div></div></div>
@@ -2149,8 +2153,9 @@ function renderMikveh(){
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mkselfg').onclick=()=>mkSelfGroupOpen();
   document.getElementById('mkvmb').onclick=()=>mkVmOpen();
+  document.getElementById('mkrqb').onclick=()=>mkReqOpen();
   mkVmCount();
-  api('GET','/api/mikveh/selfgroup').then(r=>{const b=document.getElementById('mksgn');if(b&&r&&r.ok&&r.new_reqs){b.textContent=r.new_reqs;b.style.display='';}}).catch(()=>{});
+  mkReqCount();
   mkDashLoad();
   document.getElementById('mkentday').onclick=()=>mkEntDay();
   document.getElementById('mkreqb').onclick=()=>mkReqOpen();
@@ -2838,8 +2843,8 @@ async function mkRenewOpen(c){
 // כל מי שהסתיים לו מנוי / רישיון: החידוש האוטומטי, אמצעי התשלום והתשלומים — רק ממערכת המקווה, ולמה זה קרה
 async function mkExpCheck(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
-  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#c0392b">🔍</div><div><h2>בדיקת פג תוקף</h2><div class="mksub">⏳ בודק במקווה…</div></div></div>`;
-  remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#c0392b">🔍</div><div><h2>בדיקת פג תוקף</h2><div class="mksub" id="xpwait"></div><div class="mksub">מי שהמנוי או הרישיון שלו הסתיים, ולמה: האם החידוש האוטומטי כבוי במקווה, האם אין לו אמצעי תשלום, או שחיוב נכשל. בודק לעומק כל מי שפג לו ב-60 הימים האחרונים, ולכן לוקח קצת זמן.</div></div></div>`;
+  remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');mkWaitTick(document.getElementById('xpwait'),'בודק במקווה');
   const r=await api('GET','/api/mikveh/expired_check');
   if(!r||!r.ok){rs.querySelector('.mksub').textContent='⚠️ '+((r&&r.error)||'לא נטען');return;}
   const d=s=>s?s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4):'—';
@@ -2921,6 +2926,52 @@ async function mkVmOpen(sync){
   document.getElementById('vmbadd').onclick=async()=>{const v=document.getElementById('vmbnum').value.trim();if(!v)return;
     const x=await api('POST','/api/mikveh/vm_cfg',{block:v}).catch(()=>null);if(x&&x.ok){toast('🚫 נחסם');mkVmOpen();}else uiAlert('⚠️ '+((x&&x.error)||'לא נשמר'));};
   mkVmWire(rs,r.rows||[],()=>mkVmOpen());mkVmCount();}
+// 📨 מאיר: "לא רואים נורמלי את הבקשות… והמנהל יוכל לאשר בקשות רגיל וכן לשליחת הודעה שזה הוחלף, כמו בהחלפה רגילה"
+async function mkReqOpen(){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  if(!remov.classList.contains('show')){rs.innerHTML='<button class="x" id="rx">✕</button><div class="mksub">⏳ טוען…</div>';remov.classList.add('show');
+    document.getElementById('rx').onclick=()=>remov.classList.remove('show');}
+  const r=await api('GET','/api/mikveh/selfgroup').catch(()=>null);
+  if(!r||!r.ok){rs.innerHTML='<button class="x" id="rx">✕</button><div class="mksub">⚠️ '+esc((r&&r.error)||'לא נטען')+'</div>';document.getElementById('rx').onclick=()=>remov.classList.remove('show');return;}
+  const G={};(r.groups||[]).forEach(g=>G[g.id]=g);
+  const dt=s=>String(s||'').slice(8,10)+'/'+String(s||'').slice(5,7)+' '+String(s||'').slice(11,16);
+  const newR=(r.reqs||[]).filter(x=>x.status==='new'), oldR=(r.reqs||[]).filter(x=>x.status!=='new');
+  const card=x=>{const c=MK&&MK.clients.find(z=>z.id===x.cid);
+    return `<div class="mkrow" style="grid-template-columns:auto 1fr;cursor:default;align-items:center;gap:12px;${x.status==='new'?'':'opacity:.75'}">
+      <div class="mkav" style="background:${esc(mkColor(G[x.to_gid]))}">${esc(c?mkInit(c):'?')}</div>
+      <div><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b style="font-size:1.05rem"><a href="#" data-rqc="${esc(x.cid)}">${esc(x.name||'')}</a>${x.code?' <small style="color:#777">#'+esc(x.code)+'</small>':''}</b><small style="color:#777">${esc(dt(x.at))}</small></div>
+        <div style="margin:6px 0;font-weight:700"><span class="mktag">${esc(x.from_name||'')}</span> ← <span class="mktag ok">${esc(x.to_name||'')}</span></div>
+        <div class="mksub">${esc(x.reason||'')}${x.phone?' · <span dir="ltr">'+esc(x.phone)+'</span>':''}${x.note?' · 🗒️ '+esc(x.note):''}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${x.status==='new'
+          ?`<button class="mkbtn" data-rqok="${x.id}">✓ לאשר ולהעביר</button><button class="mkbtn gh" data-rqno="${x.id}">✗ לדחות</button>`
+          :`<b style="color:${x.status==='done'?'#2e7d32':'#c0392b'}">${x.status==='done'?'✓ אושרה והועבר':'✗ נדחתה'}${x.handled_at?' · '+esc(dt(x.handled_at)):''}</b>
+            ${x.status==='done'&&c&&(c.phone||mkHasMail(c))?`<button class="btn sm" data-rqmsg="${x.id}">💬 לשלוח לו הודעה</button>`:''}
+            <button class="btn sm ghost" data-rqdel="${x.id}" title="למחוק מהרשימה">🗑️</button>`}</div></div></div>`;};
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📨</div><div><h2>בקשות להחלפת קבוצה</h2>
+      <div class="mksub">בקשות שנשלחו מהטלפון (מי שכבר הגיע למספר ההחלפות המרבי). ${newR.length?'<b>'+newR.length+' מחכות לטיפול</b>':'אין בקשות שמחכות'}</div></div></div>
+    <div class="mklist">${newR.map(card).join('')||'<div class="mksub">אין בקשות שמחכות 👍</div>'}</div>
+    ${oldR.length?`<div class="mksec" style="margin-top:16px">בקשות שטופלו (${oldR.length})</div><div class="mklist">${oldR.map(card).join('')}</div>`:''}`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  const byId=id=>(r.reqs||[]).find(x=>x.id==id);
+  const notify=x=>{const c=MK&&MK.clients.find(z=>z.id===x.cid);if(c)mkNotify(c,'group',{group:x.to_gid});};
+  rs.querySelectorAll('[data-rqc]').forEach(a=>a.onclick=e=>{e.preventDefault();const c=MK&&MK.clients.find(z=>z.id===a.dataset.rqc);if(c)mkOpen(c);});
+  rs.querySelectorAll('[data-rqmsg]').forEach(b=>b.onclick=()=>notify(byId(b.dataset.rqmsg)));
+  rs.querySelectorAll('[data-rqdel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את הבקשה מהרשימה?'))return;
+    await api('POST','/api/mikveh/selfgroup_req_del',{id:+b.dataset.rqdel});toast('🗑️ נמחק');mkReqOpen();mkReqCount();});
+  rs.querySelectorAll('[data-rqno]').forEach(b=>b.onclick=async()=>{const n=await uiPrompt('לדחות את הבקשה. הערה (לא חובה):','');if(n==null)return;
+    const x=await api('POST','/api/mikveh/selfgroup_req/'+b.dataset.rqno,{action:'reject',note:n}).catch(()=>null);
+    if(x&&x.ok){toast('✗ הבקשה נדחתה');mkReqOpen();mkReqCount();}else uiAlert('⚠️ '+((x&&x.error)||'לא נשמר'));});
+  rs.querySelectorAll('[data-rqok]').forEach(b=>b.onclick=async()=>{const q=byId(b.dataset.rqok);
+    if(!await uiConfirm('להעביר את '+(q.name||'')+' לקבוצה "'+(q.to_name||'')+'" במקווה?'))return;
+    b.disabled=true;b.innerHTML='<span class="mkspin"></span> מעביר במקווה…';
+    const x=await api('POST','/api/mikveh/selfgroup_req/'+q.id,{action:'approve'}).catch(()=>null);
+    if(!x||!x.ok){b.disabled=false;b.textContent='✓ לאשר ולהעביר';uiAlert('⚠️ '+((x&&x.error)||'לא בוצע'));return;}
+    const c=MK&&MK.clients.find(z=>z.id===q.cid);if(c)c.group=q.to_gid;
+    toast('✓ הועבר ל"'+q.to_name+'" במקווה');mkReqCount();
+    // כמו בהחלפה רגילה — מיד חלון ההודעה ללקוח שהקבוצה הוחלפה
+    if(c&&(c.phone||mkHasMail(c)))setTimeout(()=>notify(q),400);else mkReqOpen();});}
+async function mkReqCount(){const r=await api('GET','/api/mikveh/selfgroup').catch(()=>null);const b=document.getElementById('mksgn');
+  if(b&&r&&r.ok){b.textContent=r.new_reqs||'';b.style.display=r.new_reqs?'':'none';}}
 // 🗣️ עורך הטקסטים של שלוחות המקווה (ext: grp / vm). ריק = ברירת המחדל. {name} {group} וכו' — המערכת ממלאת
 async function mkTextsHTML(ext){const r=await api('GET','/api/mikveh/ivr_texts').catch(()=>null);if(!r||!r.ok)return '<div class="mksub">⚠️ לא נטען</div>';
   const T=r.texts.filter(x=>x.ext===ext);
@@ -2946,16 +2997,12 @@ async function mkSelfGroupOpen(){
   const ini=`type=api\napi_link=${r.link}\napi_hangup_send=no`;
   const dt=s=>String(s||'').slice(8,10)+'/'+String(s||'').slice(5,7)+' '+String(s||'').slice(11,16);
   const newR=(r.reqs||[]).filter(x=>x.status==='new'), oldR=(r.reqs||[]).filter(x=>x.status!=='new');
-  const reqRow=x=>`<div class="mkrow ${x.status==='new'?'schrow':''}" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(dt(x.at))} · <a href="#" data-sgc="${esc(x.cid)}">${esc(x.name||'')}</a>${x.code?' #'+esc(x.code):''}</b>
-      <div class="mksub">רוצה לעבור: ${esc(x.from_name||'')} ← <b>${esc(x.to_name||'')}</b> · ${esc(x.reason||'')}${x.note?' · 🗒️ '+esc(x.note):''}</div></div>
-      ${x.status==='new'?`<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-rqok="${x.id}">✓ לאשר ולהעביר</button><button class="btn sm ghost" data-rqno="${x.id}">✗ לדחות</button></div>`
-        :`<div style="display:flex;gap:6px;align-items:center"><b style="color:${x.status==='done'?'#2e7d32':'#c0392b'}">${x.status==='done'?'✓ אושרה':'✗ נדחתה'}</b><button class="btn sm ghost" data-rqdel="${x.id}" title="למחוק את הבקשה מהרשימה">🗑️</button></div>`}</div>`;
-  const TABS=[['set','⚙️ הגדרות'],['req','📨 בקשות'+(newR.length?' ('+newR.length+')':'')],['lock','🔒 לקוחות נעולים'],['txt','🗣️ טקסטים'],['log','📜 יומן']];
+  const TABS=[['set','⚙️ הגדרות'],['lock','🔒 לקוחות נעולים'],['txt','🗣️ טקסטים'],['log','📜 יומן']];
+  if(!TABS.some(t=>t[0]===MKSG_TAB))MKSG_TAB='set';
   rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📞</div><div><h2>שלוחת החלפת קבוצה</h2>
       <div class="mksub">כל מנוי מתקשר, מזוהה לפי הטלפון שרשום לו במקווה, ובוחר קבוצה חדשה. ההחלפה נעשית במקווה מיד.</div></div></div>
     <div class="mktiles"><div class="mktile ${C.enabled?'ok':'bad'}"><span>מצב</span><b>${C.enabled?'פתוחה':'סגורה'}</b></div>
       <div class="mktile"><span>החלפות החודש</span><b>${r.month.n}</b></div>
-      <div class="mktile"><span>קנסות החודש</span><b>${esc(mkNis(r.month.fees))}</b></div>
       <div class="mktile ${newR.length?'bad':''}"><span>בקשות שמחכות</span><b>${newR.length}</b></div></div>
     <div class="mkseg" id="sgtabs" style="margin:10px 0;flex-wrap:wrap">${TABS.map(([k,l])=>`<button data-t="${k}" class="${MKSG_TAB===k?'on':''}">${l}</button>`).join('')}</div>
     <div data-tp="set">
@@ -2967,52 +3014,36 @@ async function mkSelfGroupOpen(){
             <input data-say="${esc(g.id)}" value="${esc(g.say)}" title="איך השם יוקרא בטלפון" placeholder="השם בטלפון" style="margin-top:6px"></div>
           <label style="display:flex;gap:6px;align-items:center;white-space:nowrap"><input type="checkbox" data-sg="${esc(g.id)}" style="width:20px;height:20px" ${sel.has(g.id)?'checked':''}> אפשר לעבור אליה</label>
           <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;color:#c0392b"><input type="checkbox" data-lg="${esc(g.id)}" style="width:20px;height:20px" ${lockG.has(g.id)?'checked':''}> 🔒 נעולה</label></div>`).join('')}</div>
-      <div class="mksec" style="margin-top:14px">⚖️ כמה פעמים ומתי יש קנס <small>הספירה לפי חודש לועזי</small></div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
-        <label class="fld"><span>החלפות בחינם בחודש</span><input type="number" id="sgfree" min="0" value="${esc(C.free)}"></label>
-        <label class="fld"><span>קנס על כל החלפה נוספת (₪)</span><input type="number" id="sgfee" min="0" value="${esc(C.fee)}"></label>
-        <label class="fld"><span>מקסימום החלפות בחודש (0 = בלי הגבלה)</span><input type="number" id="sgmax" min="0" value="${esc(C.max)}"></label>
-        <label class="fld"><span>מינימום ימים בין החלפות (0 = בלי)</span><input type="number" id="sggap" min="0" value="${esc(C.gap_days)}"></label></div>
-      <div style="display:flex;gap:10px;align-items:center;margin:12px 0"><input type="checkbox" id="sgreq" style="width:22px;height:22px;flex:none" ${C.req_on?'checked':''}><label for="sgreq" style="cursor:pointer"><b>מי שעבר את המקסימום — יוכל לשלוח בקשה למשרד</b> (בוחר קבוצה בטלפון, בלי להקליט; הבקשה מופיעה בלשונית "📨 בקשות")</label></div>
-      <div class="hintxt" id="sgsum"></div>
+      <div class="mksec" style="margin-top:14px">⚖️ כמה פעמים אפשר להחליף</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-weight:700;margin:6px 0">אפשר להחליף
+        <input type="number" id="sgmax" min="0" value="${esc(C.max)}" style="width:80px"> פעמים בתוך
+        <input type="number" id="sgdays" min="1" value="${esc(C.days)}" style="width:80px"> ימים</div>
+      <div class="mksub">0 פעמים = בלי הגבלה. הספירה מתגלגלת: החלפה יוצאת מהחשבון אחרי שעברו הימים.</div>
+      <div style="display:flex;gap:10px;align-items:center;margin:12px 0"><input type="checkbox" id="sgreq" style="width:22px;height:22px;flex:none" ${C.req_on?'checked':''}><label for="sgreq" style="cursor:pointer"><b>מי שעבר את המקסימום — יוכל לשלוח בקשה למשרד</b> (בוחר קבוצה בטלפון, בלי להקליט; הבקשה מופיעה במסך המקווה בכפתור "📨 בקשות החלפה")</label></div>
       <button class="mkbtn" id="sgsave" style="margin-top:8px">💾 לשמור</button>
       <div class="mksec" style="margin-top:18px">⚙️ הגדרה בימות המשיח <small>שלוחה חדשה (ext.ini)</small></div>
       <pre dir="ltr" style="background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-all;user-select:all">${esc(ini)}</pre>
       <button class="btn sm ghost" id="sgcopy">📋 להעתיק</button></div>
-    <div data-tp="req">${newR.length?`<div class="mklist">${newR.map(reqRow).join('')}</div>`:'<div class="mksub">אין בקשות שמחכות.</div>'}
-      ${oldR.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">בקשות שטופלו (${oldR.length})</summary><div class="mklist">${oldR.map(reqRow).join('')}</div></details>`:''}</div>
     <div data-tp="lock"><div class="mksub" style="margin:4px 2px 8px">לקוחות שלא יכולים להחליף קבוצה בטלפון אף פעם. נועלים מתוך הכרטיס של הלקוח (🔒).</div>
       ${(r.locked||[]).length?`<div class="mklist">${r.locked.map(x=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><b><a href="#" data-sgc="${esc(x.id)}">${esc(x.name||x.id)}</a>${x.code?' #'+esc(x.code):''}</b><button class="btn sm ghost" data-unl="${esc(x.id)}">🔓 לבטל נעילה</button></div>`).join('')}</div>`:'<div class="mksub">אין לקוחות נעולים.</div>'}</div>
     <div data-tp="txt" id="sgtxt"><div class="mksub">⏳ טוען…</div></div>
     <div data-tp="log">${(r.log||[]).length?`<div class="mklist">${r.log.map(x=>`<div class="mkrow schrow ${x.ok?'':'bad'}" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(dt(x.at))} · <a href="#" data-sgc="${esc(x.cid)}">${esc(x.name||'')}</a>${x.code?' #'+esc(x.code):''}</b>
         <div class="mksub">${esc(x.from_name||'')} ← ${esc(x.to_name||'')}${String(x.call_id||'').startsWith('req:')?' · באישור המשרד':''}${x.ok?'':' · ✗ לא בוצע'}${x.error?' · '+esc(x.error):''}</div></div>
-        <div style="display:flex;gap:6px;align-items:center"><b style="${x.fee?'color:#c0392b':''}">${x.fee?'קנס '+esc(mkNis(x.fee)):'חינם'}</b><button class="btn sm ghost" data-lgdel="${x.id}" title="למחוק מהיומן (נספר שוב כאילו לא החליף; במקווה לא משתנה כלום)">🗑️</button></div></div>`).join('')}</div>`:'<div class="mksub">עוד לא היו החלפות.</div>'}</div>`;
+        <div style="display:flex;gap:6px;align-items:center"><button class="btn sm ghost" data-lgdel="${x.id}" title="למחוק מהיומן (לא נספרת יותר בכמות ההחלפות; במקווה לא משתנה כלום)">🗑️</button></div></div>`).join('')}</div>`:'<div class="mksub">עוד לא היו החלפות.</div>'}</div>`;
   const showTab=()=>{rs.querySelectorAll('[data-tp]').forEach(d=>d.style.display=d.dataset.tp===MKSG_TAB?'':'none');
     rs.querySelectorAll('#sgtabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===MKSG_TAB));
     if(MKSG_TAB==='txt'&&!rs.querySelector('#sgtxt [data-tx]'))mkTextsHTML('grp').then(h=>{const el=document.getElementById('sgtxt');if(el){el.innerHTML=h;mkTextsWire(el,'grp',()=>{MKSG_TAB='txt';mkSelfGroupOpen();});}});};
   document.getElementById('sgtabs').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;MKSG_TAB=b.dataset.t;showTab();};showTab();
-  const sum=()=>{const f=+document.getElementById('sgfree').value||0, fee=+document.getElementById('sgfee').value||0, mx=+document.getElementById('sgmax').value||0, gap=+document.getElementById('sggap').value||0;
-    document.getElementById('sgsum').innerHTML='בכל חודש: '+(f?'<b>'+f+'</b> החלפות בחינם':'אין החלפות בחינם')+(fee?', כל החלפה נוספת — קנס <b>₪'+fee+'</b> שנרשם כחוב אצלו במקווה':', בלי קנס')
-      +(mx?', ולא יותר מ-<b>'+mx+'</b> החלפות':'')+(gap?'. בין החלפה להחלפה לפחות <b>'+gap+'</b> ימים':'')+'. לפני ההחלפה המתקשר שומע את הקנס ומאשר.';};
-  ['sgfree','sgfee','sgmax','sggap'].forEach(id=>document.getElementById(id).oninput=sum);sum();
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   document.getElementById('sgcopy').onclick=()=>{try{navigator.clipboard.writeText(ini);toast('הועתק');}catch(e){uiAlert(ini);}};
   rs.querySelectorAll('[data-sgc]').forEach(el=>el.onclick=e=>{e.preventDefault();const c=MK&&MK.clients.find(z=>z.id===el.dataset.sgc);if(c)mkOpen(c);});
-  rs.querySelectorAll('[data-lgdel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את השורה מיומן ההחלפות?\nהיא לא תיספר יותר בכמות ההחלפות החודש. במקווה עצמו לא משתנה כלום.'))return;
+  rs.querySelectorAll('[data-lgdel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את השורה מיומן ההחלפות?\nהיא לא תיספר יותר בכמות ההחלפות. במקווה עצמו לא משתנה כלום.'))return;
     await api('POST','/api/mikveh/selfgroup_log_del',{id:+b.dataset.lgdel});toast('🗑️ נמחק');mkSelfGroupOpen();});
-  rs.querySelectorAll('[data-rqdel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את הבקשה מהרשימה?'))return;
-    await api('POST','/api/mikveh/selfgroup_req_del',{id:+b.dataset.rqdel});toast('🗑️ נמחק');mkSelfGroupOpen();});
   rs.querySelectorAll('[data-unl]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/selfgroup_lock',{id:b.dataset.unl,locked:false});toast('🔓 הנעילה בוטלה');mkSelfGroupOpen();});
-  rs.querySelectorAll('[data-rqno]').forEach(b=>b.onclick=async()=>{const n=await uiPrompt('לדחות את הבקשה. הערה (לא חובה):','');if(n==null)return;
-    const x=await api('POST','/api/mikveh/selfgroup_req/'+b.dataset.rqno,{action:'reject',note:n}).catch(()=>null);if(x&&x.ok){toast('✗ הבקשה נדחתה');mkSelfGroupOpen();}else uiAlert('⚠️ '+((x&&x.error)||'לא נשמר'));});
-  rs.querySelectorAll('[data-rqok]').forEach(b=>b.onclick=async()=>{const f=await uiPrompt('לאשר ולהעביר את הקבוצה במקווה.\nקנס לרשום כחוב (₪, 0 = בלי קנס):',String(C.fee||0));if(f==null)return;
-    b.disabled=true;b.innerHTML='<span class="mkspin"></span> מעביר…';
-    const x=await api('POST','/api/mikveh/selfgroup_req/'+b.dataset.rqok,{action:'approve',fee:f}).catch(()=>null);
-    if(x&&x.ok){toast('✓ הועבר במקווה');if(x.error)uiAlert(x.error);mkSelfGroupOpen();}else{b.disabled=false;b.textContent='✓ לאשר ולהעביר';uiAlert('⚠️ '+((x&&x.error)||'לא בוצע'));}});
   document.getElementById('sgsave').onclick=async()=>{const say={};rs.querySelectorAll('[data-say]').forEach(i=>{if(i.value.trim())say[i.dataset.say]=i.value.trim();});
     const body={enabled:document.getElementById('sgon').checked,groups:[...rs.querySelectorAll('[data-sg]')].filter(x=>x.checked).map(x=>x.dataset.sg),
       locked_groups:[...rs.querySelectorAll('[data-lg]')].filter(x=>x.checked).map(x=>x.dataset.lg),say,req_on:document.getElementById('sgreq').checked,
-      free:document.getElementById('sgfree').value,fee:document.getElementById('sgfee').value,max:document.getElementById('sgmax').value,gap_days:document.getElementById('sggap').value};
+      max:document.getElementById('sgmax').value,days:document.getElementById('sgdays').value};
     if(body.groups.length>9){uiAlert('אפשר עד 9 קבוצות (מקש אחד לכל קבוצה)');return;}
     const r2=await api('POST','/api/mikveh/selfgroup',body).catch(()=>null);
     if(!r2||!r2.ok){uiAlert('⚠️ '+((r2&&r2.error)||'לא נשמר'));return;}
