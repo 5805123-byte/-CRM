@@ -945,6 +945,12 @@ def ensure_schema():
         con.execute("CREATE TABLE IF NOT EXISTS mk_log(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, at TEXT, kind TEXT, summary TEXT, msg_id INTEGER)")
         con.execute("CREATE INDEX IF NOT EXISTS ix_mklog_cid ON mk_log(cid)")
     except Exception: pass
+    # 📞 שלוחת החלפת קבוצה במקווה — כל ניסיון החלפה (הצליח / נכשל), כדי לספור החלפות בחודש ולחייב קנס
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS mkg_log(id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, cid TEXT, name TEXT, code TEXT, "
+                    "phone TEXT, from_gid TEXT, from_name TEXT, to_gid TEXT, to_name TEXT, fee REAL, call_id TEXT, ok INTEGER, error TEXT)")
+        con.execute("CREATE INDEX IF NOT EXISTS ix_mkglog_cid ON mkg_log(cid, at)")
+    except Exception: pass
     # 🎧 מאיר: "אני רוצה את ההקלטה שאני שולח למישהו, שאוכל להוריד, כי אני רוצה לשלוח לו גם בוואטסאפ" —
     # הקובץ שנשמע בשיחה נשמר 30 יום (ym_file — שם הקובץ בימות, לגיבוי)
     con.execute("CREATE TABLE IF NOT EXISTS ym_audio(msg_id INTEGER PRIMARY KEY, at TEXT, wav BLOB)")
@@ -15185,7 +15191,7 @@ AUTH_HOURS_ROLE = {'gabbai': 30 * 24, 'comm': 30 * 24, 'parnes': 30 * 24, 'admin
 
 def auth_hours(role):
     return AUTH_HOURS_ROLE.get(role, AUTH_HOURS)
-AUTH_PUBLIC = ('/api/yemot/ivr/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/',
+AUTH_PUBLIC = ('/api/yemot/ivr/', '/api/yemot/mkgroup/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/',
                '/mcp/',   # ✍️ חיבור ל-Claude (הודעות ליומן) — מוגן בטוקן הסודי שבכתובת (CAL_MCP_TOKEN)
                '/u/', '/api/u/',   # קישור אישי לתורם לעדכון כרטיס (חתום, 30 יום) — בלי כניסה
                '/o.png')   # פיקסל מעקב הפתיחות — נטען אצל מי שקיבל את המייל, בלי כניסה (חתום בטוקן)   # תחיליות; הכניסה עצמה מטופלת לפני
@@ -22429,6 +22435,18 @@ class H(BaseHTTPRequestHandler):
             out.sort(key=lambda x: (x['date'][6:10] + x['date'][3:5] + x['date'][0:2], x['start']), reverse=True)
             return self._send(200, {'ok': True, 'month': ym, 'calls': out})
         # בנק ווסט חי — הסטטוס, הוראות הקבע והעסקאות לדף החיובים ולכרטיס התורם
+        m = re.match(r'/api/yemot/mkgroup/([A-Za-z0-9]+)$', self.path.split('?')[0])
+        if m:
+            # 📞 שלוחת החלפת קבוצה במקווה (type=api) — נפרדת משלוחת התשלום, עם קוד סודי משלה
+            P = {k: v[-1] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query, keep_blank_values=True).items()}
+            P['k'] = m.group(1)
+            try:
+                ans = mkg_ivr(P)
+            except Exception as e:
+                print('  mkg ivr error:', e)
+                ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&go_to_folder=hangup'
+            mkg_ivr_log(P, ans)
+            return self._send(200, ans.encode('utf-8'), 'text/plain; charset=utf-8')
         m = re.match(r'/api/yemot/ivr(?:/([A-Za-z0-9]+))?(/rec|/zmanim)?$', self.path.split('?')[0])
         if m:
             # שלוחת התשלום בטלפון (type=api) — ימות המשיח פונים לכאן בכל שלב בשיחה.
@@ -23490,6 +23508,8 @@ class H(BaseHTTPRequestHandler):
                     gname = gr.get(gid, '') or e['gname'] or ''
                     first = ((c or {}).get('firstName') or e['name'] or '').strip()
                     nm = (first + ' ' + ((c or {}).get('lastName') or '').strip()).strip() if c else (e['name'] or 'מזדמן')
+                    if nm.startswith('[') or e['casual']:
+                        nm = 'מזדמן'
                     rows.append({'id': (c or {}).get('id') or '', 'name': nm, 'code': (c or {}).get('clientCode'), 'group': gname,
                                  'time': at.strftime('%H:%M'), 'cat': cat_of(c, gid, gname, first, e['casual']),
                                  'note': ((c or {}).get('remark') or '')[:120]})
@@ -23512,6 +23532,26 @@ class H(BaseHTTPRequestHandler):
                                     'log_path': (lg or {}).get('path', ''),
                                     'towels': cnt['casual'] + cnt['erech'] + cnt['towel'],
                                     'heb': greg_to_heb_full(day) or ''})
+        if self.path.split('?')[0] == '/api/mikveh/selfgroup':
+            # 📞 ההגדרות של שלוחת החלפת הקבוצה, הקישור לימות, ויומן ההחלפות
+            import mikveh as _mk
+            con = db()
+            try:
+                cfg = mkg_cfg(con)
+                host = (self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or '').strip()
+                link = 'https://%s/api/yemot/mkgroup/%s' % (host, mkg_key(con))
+                log = [dict(r) for r in con.execute("SELECT * FROM mkg_log ORDER BY id DESC LIMIT 200")]
+                month = con.execute("SELECT COUNT(*) n, COALESCE(SUM(fee),0) f FROM mkg_log WHERE ok=1 AND at>=?", (mkg_month_start(),)).fetchone()
+            finally:
+                con.close()
+            try:
+                groups = _mk.groups()
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            for g in groups:
+                g['say'] = mkg_say(cfg, g['id'], g['name'])
+            return self._send(200, {'ok': True, 'cfg': cfg, 'groups': groups, 'link': link, 'log': log,
+                                    'month': {'n': month['n'], 'fees': month['f']}})
         if self.path.split('?')[0] == '/api/mikveh/debts':
             # 🧾 החובות של הלקוח במקווה (פתוחים ושולמו; בלי מחוקים)
             import mikveh as _mk
@@ -26406,6 +26446,33 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'sub_end': res['sub_end'], 'sub_start': res['sub_start']})
+        if self.path == '/api/mikveh/selfgroup':
+            # 📞 שמירת ההגדרות של שלוחת החלפת הקבוצה
+            import mikveh as _mk
+            try:
+                known = {g['id'] for g in _mk.groups()}
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            def num(k, lo, hi, d):
+                try:
+                    v = float(b.get(k))
+                except (TypeError, ValueError):
+                    return d
+                return max(lo, min(hi, v))
+            gs = [str(x) for x in (b.get('groups') or []) if str(x) in known][:9]
+            say = {str(k): str(v).strip()[:60] for k, v in (b.get('say') or {}).items() if str(k) in known and str(v).strip()}
+            cfg = {'enabled': bool(b.get('enabled')), 'groups': gs, 'free': int(num('free', 0, 99, 1)),
+                   'max': int(num('max', 0, 99, 3)), 'fee': round(num('fee', 0, 10000, 20), 2),
+                   'gap_days': int(num('gap_days', 0, 365, 0)), 'say': say}
+            if cfg['enabled'] and len(gs) < 2:
+                return self._send(200, {'ok': False, 'error': 'צריך לבחור לפחות 2 קבוצות שאפשר לעבור ביניהן'})
+            con = db()
+            try:
+                kv_set(con, 'mkg_cfg', json.dumps(cfg, ensure_ascii=False))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'cfg': cfg})
         if self.path in ('/api/mikveh/debt', '/api/mikveh/debt_del'):
             # 🧾 הוספת / מחיקת חוב במקווה עצמו
             import mikveh as _mk
@@ -34231,6 +34298,196 @@ def ivr_log(P, ans):
         safe = {k: v for k, v in P.items() if k != 'k'}
         con.execute("INSERT INTO ym_api(at,job,msg,phone,method,params,ok,response,ms) VALUES(?,?,?,?,?,?,?,?,?)",
                     (now_iso(), 0, 0, str(P.get('ApiPhone') or '')[:20], 'IVR ← שלוחת תשלום',
+                     json.dumps(safe, ensure_ascii=False)[:4000], 1, ans[:2000], 0))
+        con.commit(); con.close()
+    except Exception:
+        pass
+
+
+# ---------- 📞 שלוחת החלפת קבוצה במקווה ----------
+# מאיר: "שלוחת API שכל משתמש יוכל לעדכן את הקבוצה שלו, רק לקבוצות שהשארתי… כמה פעמים וכו' שיחייב בקנס.
+# שלוחת API נפרדת ממה שיש כבר". קוד סודי משלה (לא של שלוחת התשלום), הגדרות ב-app_kv (mkg_cfg), יומן ב-mkg_log.
+# הזיהוי — לפי הטלפון שממנו מתקשרים (כמו שרשום ללקוח במקווה). הקנס נרשם כחוב אצל הלקוח במקווה עצמו.
+MKG_DEFAULT = {'enabled': False, 'groups': [], 'free': 1, 'max': 3, 'fee': 20, 'gap_days': 0, 'say': {}}
+
+
+def mkg_cfg(con):
+    try:
+        c = json.loads(kv_get(con, 'mkg_cfg', '') or '{}')
+    except Exception:
+        c = {}
+    out = dict(MKG_DEFAULT)
+    out.update({k: v for k, v in (c or {}).items() if k in MKG_DEFAULT})
+    return out
+
+
+def mkg_key(con):
+    k = kv_get(con, 'mkg_key', '')
+    if not k:
+        import secrets
+        k = secrets.token_urlsafe(12).replace('-', 'x').replace('_', 'y')
+        con.execute("INSERT INTO app_kv(k,v) VALUES('mkg_key',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k,))
+        con.commit()
+    return k
+
+
+def mkg_say(cfg, gid, name):
+    """שם הקבוצה להקראה: מה שנכתב בהגדרות, ואם לא — השם בלי המספור שבתחילתו ("2. מנוי רגיל" → "מנוי רגיל")"""
+    s = str((cfg.get('say') or {}).get(gid) or '').strip()
+    return s or re.sub(r'^\s*\d+\s*[.\-)]\s*', '', str(name or '')).strip() or 'קבוצה'
+
+
+def mkg_month_start():
+    return il_now().strftime('%Y-%m-01')
+
+
+def mkg_used(con, cid):
+    """כמה החלפות מוצלחות היו ללקוח החודש (חודש לועזי), ומתי האחרונה"""
+    r = con.execute("SELECT COUNT(*) n, MAX(at) last FROM mkg_log WHERE cid=? AND ok=1 AND at>=?", (cid, mkg_month_start())).fetchone()
+    last = con.execute("SELECT MAX(at) last FROM mkg_log WHERE cid=? AND ok=1", (cid,)).fetchone()['last']
+    return r['n'] or 0, last or ''
+
+
+def _mkg_phones(c):
+    import yemot as _ym
+    out = set()
+    for p in re.split(r'[;,/|\s]+', str(c.get('phone') or '')):
+        n = _ym.norm_phone(p)
+        if n:
+            out.add(n)
+    return out
+
+
+def mkg_ivr(P):
+    """השיחה: זיהוי לפי הטלפון → (אם יש כמה לקוחות על אותו מספר — בחירה) → הקבוצה הנוכחית ותפריט הקבוצות
+    המותרות → אישור (עם הקנס, אם יש) → העברה במקווה + חוב הקנס. ימות שולחים בכל פנייה את כל מה שהוקש עד עכשיו."""
+    import mikveh as _mk, yemot as _ym
+    END = '&go_to_folder=hangup'
+    msg = lambda t: 'id_list_message=t-' + _ivr_t(t) + END
+    con = db()
+    try:
+        if (P.get('k') or '') != mkg_key(con):
+            return msg('שגיאה בהגדרות השלוחה')
+        if P.get('hangup') == 'yes':
+            return 'noop=hangup'
+        cfg = mkg_cfg(con)
+        call_id = str(P.get('ApiCallId') or '')[:60]
+        if call_id:
+            done = con.execute("SELECT to_gid, to_name FROM mkg_log WHERE call_id=? AND ok=1", (call_id,)).fetchone()
+            if done:
+                return msg('הועברתם לקבוצה ' + mkg_say(cfg, done['to_gid'], done['to_name']) + ', תודה רבה')
+        if not cfg['enabled']:
+            return msg('השלוחה סגורה כרגע, אנא פנו למשרד המקווה')
+        phone = _ym.norm_phone(P.get('ApiPhone') or '')
+        if not phone:
+            return msg('לא זיהינו את מספר הטלפון שלכם, אנא התקשרו מהמספר שרשום במקווה')
+        try:
+            gr = {g['id']: g for g in _mk.groups()}
+            mine = [c for c in _mk.clients() if _mk.visible(c) and phone in _mkg_phones(c)]
+        except Exception as e:
+            print('  mkg ivr mikveh error:', e)
+            return msg('אין כרגע חיבור למערכת המקווה, אנא נסו שוב מאוחר יותר')
+        allowed = [g for g in (cfg.get('groups') or []) if g in gr]
+        if not allowed:
+            return msg('השלוחה סגורה כרגע, אנא פנו למשרד המקווה')
+        if not mine:
+            return msg('מספר הטלפון שלכם לא רשום במקווה, אנא פנו למשרד המקווה')
+        mine.sort(key=lambda c: ((c.get('firstName') or '').strip(), str(c.get('id'))))
+        mine = mine[:9]
+        if len(mine) > 1:
+            if 'Who' not in P:
+                parts = ['שלום, על המספר הזה רשומים כמה מנויים']
+                for i, c in enumerate(mine, 1):
+                    parts.append('ל' + ((c.get('firstName') or '') + ' ' + (c.get('lastName') or '')).strip() + ' הקישו ' + str(i))
+                return ('read=t-' + _ivr_t(', '.join(parts)) + '=Who,no,1,1,10,NO,yes,yes,,' +
+                        ''.join(str(i) for i in range(1, len(mine) + 1)) + ',2,,,,no')
+            try:
+                c = mine[int(P['Who']) - 1]
+            except (ValueError, IndexError):
+                return msg('הבחירה לא תקינה, תודה')
+        else:
+            c = mine[0]
+        cid = str(c.get('id'))
+        first = (c.get('firstName') or '').strip()
+        if c.get('isBlocked'):
+            return msg('החשבון שלכם במקווה חסום, אנא פנו למשרד המקווה')
+        cur = c.get('groupId')
+        if cur not in allowed:
+            return msg('את הקבוצה שלכם אי אפשר להחליף בטלפון, אנא פנו למשרד המקווה')
+        used, last = mkg_used(con, cid)
+        if cfg['max'] and used >= int(cfg['max']):
+            return msg('כבר החלפתם קבוצה ' + str(used) + ' פעמים החודש, וזה המספר המרבי. אפשר להחליף שוב בחודש הבא')
+        gap = int(cfg.get('gap_days') or 0)
+        if gap and last:
+            try:
+                nxt = datetime.datetime.fromisoformat(last[:19]) + datetime.timedelta(days=gap)
+            except ValueError:
+                nxt = None
+            if nxt and il_now().replace(tzinfo=None) < nxt:
+                return msg('אפשר להחליף קבוצה פעם ב ' + str(gap) + ' ימים. ההחלפה הבאה תתאפשר בעוד ' +
+                           str(max(1, (nxt.date() - il_now().date()).days)) + ' ימים')
+        opts = [g for g in allowed if g != cur][:9]
+        if not opts:
+            return msg('אין קבוצה אחרת שאפשר לעבור אליה, תודה')
+        fee = float(cfg.get('fee') or 0) if used >= int(cfg.get('free') or 0) else 0.0
+        if 'Grp' not in P:
+            parts = ['שלום ' + first, 'אתם כעת בקבוצה ' + mkg_say(cfg, cur, gr[cur]['name'])]
+            if fee:
+                parts.append('שימו לב, החלפה נוספת החודש כרוכה בקנס של ' + ('%g' % fee) + ' שקלים')
+            for i, g in enumerate(opts, 1):
+                parts.append('למעבר לקבוצה ' + mkg_say(cfg, g, gr[g]['name']) + ' הקישו ' + str(i))
+            parts.append('לסיום הקישו 0')
+            return ('read=t-' + _ivr_t(', '.join(parts)) + '=Grp,no,1,1,10,NO,yes,no,,0' +
+                    ''.join(str(i) for i in range(1, len(opts) + 1)) + ',2,,,,no')
+        try:
+            v = int(P.get('Grp') or 0)
+        except ValueError:
+            v = 0
+        if not (1 <= v <= len(opts)):
+            return msg('תודה, הקבוצה לא שונתה')
+        tgt = opts[v - 1]
+        tname = mkg_say(cfg, tgt, gr[tgt]['name'])
+        if 'Ok' not in P:
+            t = 'לאישור מעבר לקבוצה ' + tname
+            if fee:
+                t += ', בקנס של ' + ('%g' % fee) + ' שקלים שיירשם כחוב במקווה'
+            return 'read=t-' + _ivr_t(t + ', הקישו 1. לביטול הקישו 2') + '=Ok,no,1,1,10,NO,yes,yes,,12,2,,,,no'
+        if P.get('Ok') != '1':
+            return msg('ההחלפה בוטלה, הקבוצה לא שונתה')
+        name = (first + ' ' + (c.get('lastName') or '').strip()).strip()
+        row = [now_iso(), cid, name, c.get('clientCode'), phone, cur, gr[cur]['name'], tgt, gr[tgt]['name'], fee, call_id]
+        try:
+            _mk.set_group(cid, tgt)
+            if str(_mk.client(cid).get('groupId')) != str(tgt):
+                raise RuntimeError('המקווה לא עדכן את הקבוצה')
+        except Exception as e:
+            con.execute("INSERT INTO mkg_log(at,cid,name,code,phone,from_gid,from_name,to_gid,to_name,fee,call_id,ok,error) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?)", row + [str(e)[:300]])
+            con.commit()
+            return msg('אירעה תקלה, הקבוצה לא שונתה. אנא נסו שוב מאוחר יותר או פנו למשרד המקווה')
+        err = ''
+        if fee:
+            try:
+                _mk.add_debt(cid, int(round(fee * 100)), 'קנס החלפת קבוצה בטלפון')
+            except Exception as e:
+                err = 'הקבוצה הוחלפה, אבל הקנס לא נרשם במקווה: ' + str(e)[:200]
+        con.execute("INSERT INTO mkg_log(at,cid,name,code,phone,from_gid,from_name,to_gid,to_name,fee,call_id,ok,error) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,1,?)", row + [err])
+        con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                    (cid, now_iso(), 'group', '📞 החליף קבוצה בטלפון: %s → %s%s' % (gr[cur]['name'], gr[tgt]['name'],
+                                                                              (' · קנס ₪%g (חוב במקווה)' % fee) if fee else '')))
+        con.commit()
+        return msg('הועברתם לקבוצה ' + tname + ('. הקנס של ' + ('%g' % fee) + ' שקלים נרשם כחוב במקווה' if fee else '') + '. תודה רבה')
+    finally:
+        con.close()
+
+
+def mkg_ivr_log(P, ans):
+    try:
+        con = db()
+        safe = {k: v for k, v in P.items() if k != 'k'}
+        con.execute("INSERT INTO ym_api(at,job,msg,phone,method,params,ok,response,ms) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (now_iso(), 0, 0, str(P.get('ApiPhone') or '')[:20], 'IVR ← שלוחת החלפת קבוצה במקווה',
                      json.dumps(safe, ensure_ascii=False)[:4000], 1, ans[:2000], 0))
         con.commit(); con.close()
     except Exception:
