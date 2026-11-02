@@ -951,6 +951,12 @@ def ensure_schema():
                     "phone TEXT, from_gid TEXT, from_name TEXT, to_gid TEXT, to_name TEXT, fee REAL, call_id TEXT, ok INTEGER, error TEXT)")
         con.execute("CREATE INDEX IF NOT EXISTS ix_mkglog_cid ON mkg_log(cid, at)")
     except Exception: pass
+    # 📥 הודעות שהשאירו בשלוחת המקווה (נפרד מההודעות של הכולל — ym_vm)
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS mk_vm(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, phone TEXT, at TEXT, "
+                    "cid TEXT, cname TEXT, size INTEGER, found TEXT, audio BLOB, transcript TEXT, heard INTEGER DEFAULT 0, "
+                    "done INTEGER DEFAULT 0, note TEXT)")
+    except Exception: pass
     # 🎧 מאיר: "אני רוצה את ההקלטה שאני שולח למישהו, שאוכל להוריד, כי אני רוצה לשלוח לו גם בוואטסאפ" —
     # הקובץ שנשמע בשיחה נשמר 30 יום (ym_file — שם הקובץ בימות, לגיבוי)
     con.execute("CREATE TABLE IF NOT EXISTS ym_audio(msg_id INTEGER PRIMARY KEY, at TEXT, wav BLOB)")
@@ -15191,7 +15197,7 @@ AUTH_HOURS_ROLE = {'gabbai': 30 * 24, 'comm': 30 * 24, 'parnes': 30 * 24, 'admin
 
 def auth_hours(role):
     return AUTH_HOURS_ROLE.get(role, AUTH_HOURS)
-AUTH_PUBLIC = ('/api/yemot/ivr/', '/api/yemot/mkgroup/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/',
+AUTH_PUBLIC = ('/api/yemot/ivr/', '/api/yemot/mkgroup/', '/api/yemot/mkrec/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/',
                '/mcp/',   # ✍️ חיבור ל-Claude (הודעות ליומן) — מוגן בטוקן הסודי שבכתובת (CAL_MCP_TOKEN)
                '/u/', '/api/u/',   # קישור אישי לתורם לעדכון כרטיס (חתום, 30 יום) — בלי כניסה
                '/o.png')   # פיקסל מעקב הפתיחות — נטען אצל מי שקיבל את המייל, בלי כניסה (חתום בטוקן)   # תחיליות; הכניסה עצמה מטופלת לפני
@@ -22435,6 +22441,18 @@ class H(BaseHTTPRequestHandler):
             out.sort(key=lambda x: (x['date'][6:10] + x['date'][3:5] + x['date'][0:2], x['start']), reverse=True)
             return self._send(200, {'ok': True, 'month': ym, 'calls': out})
         # בנק ווסט חי — הסטטוס, הוראות הקבע והעסקאות לדף החיובים ולכרטיס התורם
+        m = re.match(r'/api/yemot/mkrec/([A-Za-z0-9]+)$', self.path.split('?')[0])
+        if m:
+            # 📥 שלוחת "השאירו הודעה" של המקווה (type=api) — נפרדת מזו של הכולל
+            P = {k: v[-1] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query, keep_blank_values=True).items()}
+            P['k'] = m.group(1)
+            try:
+                ans = mkvm_ivr(P)
+            except Exception as e:
+                print('  mk vm ivr error:', e)
+                ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&go_to_folder=hangup'
+            mkg_ivr_log(P, ans)
+            return self._send(200, ans.encode('utf-8'), 'text/plain; charset=utf-8')
         m = re.match(r'/api/yemot/mkgroup/([A-Za-z0-9]+)$', self.path.split('?')[0])
         if m:
             # 📞 שלוחת החלפת קבוצה במקווה (type=api) — נפרדת משלוחת התשלום, עם קוד סודי משלה
@@ -23536,6 +23554,51 @@ class H(BaseHTTPRequestHandler):
                                     'log_path': (lg or {}).get('path', ''),
                                     'towels': cnt['casual'] + cnt['erech'] + cnt['towel'],
                                     'heb': greg_to_heb_full(day) or ''})
+        if self.path.split('?')[0] == '/api/mikveh/vm':
+            # 📥 ההודעות שהשאירו בשלוחת המקווה. ?sync=1 — לבדוק עכשיו בימות; ?cid= — רק של לקוח אחד
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            cid = (qs.get('cid') or [''])[0]
+            con = db()
+            try:
+                if (qs.get('sync') or [''])[0] == '1':
+                    try: mkvm_sync(con)
+                    except Exception as e: print('  mk vm sync error:', e)
+                # לקוח שלא זוהה בזמן ההקלטה (למשל המקווה לא ענה) — מנסים שוב
+                for r in con.execute("SELECT id, phone FROM mk_vm WHERE COALESCE(cid,'')='' AND COALESCE(phone,'')<>'' AND done=0 LIMIT 30").fetchall():
+                    c2, n2 = mkvm_match(r['phone'])
+                    if c2:
+                        con.execute("UPDATE mk_vm SET cid=?, cname=? WHERE id=?", (c2, n2, r['id']))
+                con.commit()
+                q = "SELECT id,name,phone,at,cid,cname,size,heard,done,note,transcript FROM mk_vm"
+                rows = [dict(r) for r in (con.execute(q + " WHERE cid=? ORDER BY at DESC, id DESC LIMIT 100", (cid,)) if cid else
+                                          con.execute(q + " ORDER BY done, at DESC, id DESC LIMIT 300"))]
+                host = (self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or '').strip()
+                link = 'https://%s/api/yemot/mkrec/%s' % (host, mkg_key(con))
+                on = kv_get(con, 'mk_vm_on', '') == '1'
+                greet = (kv_get(con, 'mk_vm_greet', '') or '').strip() or MK_VM_GREET
+                blk = sorted(mkvm_blocked(con))
+                new = con.execute("SELECT COUNT(*) n FROM mk_vm WHERE heard=0 AND done=0").fetchone()['n']
+            finally:
+                con.close()
+            if any(r['transcript'] is None for r in rows):
+                threading.Thread(target=mkvm_transcribe_new, daemon=True).start()
+            return self._send(200, {'ok': True, 'rows': rows, 'new': new, 'link': link, 'on': on, 'greet': greet,
+                                    'dir': MK_VM_DIR, 'blocked': blk})
+        m = re.match(r'/api/mikveh/vm/(\d+)\.wav$', self.path.split('?')[0])
+        if m:
+            con = db()
+            try:
+                name, data, err = mkvm_audio(con, int(m.group(1)))
+            finally:
+                con.close()
+            if not data:
+                return self._send(404 if not name else 502, {'ok': False, 'error': err})
+            self.send_response(200)
+            self.send_header('Content-Type', 'audio/mpeg' if name.lower().endswith('.mp3') else 'audio/wav')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'private, max-age=86400')
+            self.end_headers(); self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/api/mikveh/selfgroup':
             # 📞 ההגדרות של שלוחת החלפת הקבוצה, הקישור לימות, ויומן ההחלפות
             import mikveh as _mk
@@ -26450,6 +26513,41 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'sub_end': res['sub_end'], 'sub_start': res['sub_start']})
+        m = re.match(r'/api/mikveh/vm/(\d+)$', self.path)
+        if m:
+            # 📥 הודעה: נשמעה / טופלה / הערה
+            con = db()
+            try:
+                sets, vals = [], []
+                for k in ('heard', 'done'):
+                    if k in b:
+                        sets.append(k + '=?'); vals.append(1 if b.get(k) else 0)
+                if 'note' in b:
+                    sets.append('note=?'); vals.append(str(b.get('note') or '').strip()[:500])
+                if sets:
+                    con.execute("UPDATE mk_vm SET " + ','.join(sets) + " WHERE id=?", vals + [int(m.group(1))])
+                    con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/vm_cfg':
+            # 📥 נוסח הפתיחה של השלוחה, וחסימת מספרים
+            import yemot as _ym
+            con = db()
+            try:
+                if 'greet' in b:
+                    kv_set(con, 'mk_vm_greet', str(b.get('greet') or '').strip()[:400])
+                if 'block' in b or 'unblock' in b:
+                    blk = mkvm_blocked(con)
+                    p_ = _ym.norm_phone(b.get('block') or b.get('unblock') or '')
+                    if not p_:
+                        return self._send(200, {'ok': False, 'error': 'מספר לא תקין'})
+                    (blk.add if 'block' in b else blk.discard)(p_)
+                    kv_set(con, 'mk_vm_block', ','.join(sorted(blk)))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/mikveh/selfgroup':
             # 📞 שמירת ההגדרות של שלוחת החלפת הקבוצה
             import mikveh as _mk
@@ -34291,6 +34389,8 @@ def _vm_loop():
             con = db()
             if kv_get(con, 'ym_vm_on', '') == '1':
                 vm_sync(con)
+            if kv_get(con, 'mk_vm_on', '') == '1':
+                mkvm_sync(con)
             con.close()
         except Exception as e:
             print('  vm loop error:', e)
@@ -34496,6 +34596,135 @@ def mkg_ivr_log(P, ans):
         con.commit(); con.close()
     except Exception:
         pass
+
+
+# ---------- 📥 שלוחת "השאירו הודעה" של המקווה ----------
+# מאיר: "אני רוצה שיוכלו להקליט הודעה במערכת, תעשה לי גם שלוחה כזאת" — נפרדת מההודעות של הכולל (KCmsg):
+# ההקלטות נשמרות בימות בתיקייה MKmsg, נמשכות לטבלה mk_vm, מזוהות מול לקוחות המקווה לפי הטלפון ומתומללות.
+MK_VM_DIR = '/MKmsg'
+MK_VM_GREET = 'שלום, הגעתם למקווה. אנא השאירו את הודעתכם אחרי הצליל ובסיום הקישו סולמית'
+
+
+def mkvm_blocked(con):
+    return {p for p in (kv_get(con, 'mk_vm_block', '') or '').split(',') if p}
+
+
+def mkvm_ivr(P):
+    import yemot as _ym
+    END = '&go_to_folder=hangup'
+    con = db()
+    try:
+        if (P.get('k') or '') != mkg_key(con):
+            return 'id_list_message=t-' + _ivr_t('שגיאה בהגדרות השלוחה') + END
+        kv_set(con, 'mk_vm_on', '1')
+        con.commit()
+        phone = _ym.norm_phone(P.get('ApiPhone') or '') or re.sub(r'\D', '', str(P.get('ApiPhone') or ''))[:12] or 'x'
+        if phone in mkvm_blocked(con):
+            return 'id_list_message=t-' + _ivr_t('לא ניתן להשאיר הודעה ממספר זה') + END
+        if 'VmRec' in P or P.get('hangup') == 'yes':
+            threading.Thread(target=mkvm_sync_bg, daemon=True).start()
+            return 'id_list_message=t-' + _ivr_t('ההודעה נשמרה, תודה רבה') + END if 'VmRec' in P else 'noop=hangup'
+        fname = '%s_%s' % (phone, il_now().strftime('%Y%m%d%H%M%S'))
+        greet = (kv_get(con, 'mk_vm_greet', '') or '').strip() or MK_VM_GREET
+        # כמו שלוחת ההודעות של הכולל: הקלטה לתיקייה, בלי תפריט אישור, נשמרת גם בניתוק, עד 3 דקות
+        return 'read=t-' + _ivr_t(greet) + '=VmRec,no,record,%s,%s,no,yes,no,1,180' % (MK_VM_DIR, fname)
+    finally:
+        con.close()
+
+
+def mkvm_match(phone):
+    """הלקוח במקווה שהטלפון שלו — (מזהה, שם), או ('', '') אם אין / יש כמה"""
+    import mikveh as _mk, yemot as _ym
+    n = _ym.norm_phone(phone)
+    if not n:
+        return '', ''
+    try:
+        hits = [c for c in _mk.clients() if _mk.visible(c) and n in _mkg_phones(c)]
+    except Exception:
+        return '', ''
+    if len(hits) != 1:
+        return '', ''
+    c = hits[0]
+    return str(c.get('id')), ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip()
+
+
+def mkvm_sync(con):
+    """ההקלטות החדשות בתיקייה MKmsg בימות → mk_vm (השמע נמשך כשמקשיבים / מתמללים)"""
+    import yemot as _ym
+    if not _ym.configured():
+        return 0
+    ok, res = _ym.call('GetIVR2Dir', {'path': MK_VM_DIR})
+    if not ok:
+        return 0
+    n = 0
+    for f in (res.get('files') or []):
+        nm = str(f.get('name') or '')
+        if not re.search(r'\.(wav|mp3|ogg)$', nm, re.I) or con.execute("SELECT 1 FROM mk_vm WHERE name=?", (nm,)).fetchone():
+            continue
+        mm = re.match(r'^(\d+)_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})', nm)
+        phone = mm.group(1) if mm else ''
+        at = ('%s-%s-%s %s:%s:%s' % mm.groups()[1:]) if mm else (str(f.get('mtime') or f.get('date') or '') or now_iso())
+        cid, cname = mkvm_match(phone)
+        con.execute("INSERT INTO mk_vm(name,phone,at,cid,cname,size,found) VALUES(?,?,?,?,?,?,?)",
+                    (nm, phone, at, cid, cname, int(f.get('size') or 0), now_iso()))
+        if cid:
+            con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)", (cid, now_iso(), 'vm', '📥 השאיר הודעה בשלוחת המקווה'))
+        n += 1
+    con.commit()
+    if n:
+        threading.Thread(target=mkvm_transcribe_new, daemon=True).start()
+    return n
+
+
+MKVM_TR_LOCK = threading.Lock()
+
+
+def mkvm_audio(con, vid):
+    """השמע של הודעה (נמשך מימות בפעם הראשונה ונשמר). (שם, בתים) או (שם, None) + שגיאה"""
+    import yemot as _ym
+    r = con.execute("SELECT name,audio FROM mk_vm WHERE id=?", (vid,)).fetchone()
+    if not r:
+        return None, None, 'לא נמצא'
+    if r['audio']:
+        return r['name'], bytes(r['audio']), ''
+    ok, data = _ym.download_bin('ivr2:%s/%s' % (MK_VM_DIR, r['name']))
+    if not ok:
+        return r['name'], None, data
+    con.execute("UPDATE mk_vm SET audio=? WHERE id=?", (sqlite3.Binary(data), vid))
+    con.commit()
+    return r['name'], bytes(data), ''
+
+
+def mkvm_transcribe_new():
+    import yemot as _ym, gemini_tts as _gt
+    if not _gt.configured() or not MKVM_TR_LOCK.acquire(blocking=False):
+        return
+    try:
+        con = db()
+        try:
+            for r in con.execute("SELECT id FROM mk_vm WHERE transcript IS NULL ORDER BY id DESC LIMIT 20").fetchall():
+                name, data, err = mkvm_audio(con, r['id'])
+                if not data:
+                    continue
+                _ym.begin_trace()
+                ok, txt = _gt.transcribe(data, 'audio/mpeg' if name.lower().endswith('.mp3') else 'audio/wav', trace=_ym._trace)
+                ym_save_trace(con, _ym.end_trace())
+                con.execute("UPDATE mk_vm SET transcript=? WHERE id=?", (txt if ok else '', r['id']))
+                con.commit()
+        finally:
+            con.close()
+    except Exception as e:
+        print('  mk vm transcribe error:', e)
+    finally:
+        MKVM_TR_LOCK.release()
+
+
+def mkvm_sync_bg():
+    try:
+        time.sleep(4)          # ימות מסיימים לשמור את הקובץ
+        con = db(); mkvm_sync(con); con.close()
+    except Exception as e:
+        print('  mk vm sync error:', e)
 
 
 _ARB_LAST = [0.0]

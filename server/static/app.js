@@ -2112,6 +2112,7 @@ function renderMikveh(){
       <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button>
       <button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📥 פניות${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
       <button class="mkibtn" id="mkentday" title="כמה נכנסו למקווה ביום מסוים — לפי קבוצה (ערך צבור, מזדמן וכו')">📊 כניסות ליום</button>
+      <button class="mkibtn" id="mkvmb" title="הודעות שהשאירו בשלוחת המקווה בטלפון — להאזין, לקרוא את התמלול, לסמן שטופל">📥 הודעות<b id="mkvmn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button>
       <button class="mkibtn" id="mkselfg" title="שלוחה בטלפון שבה כל מנוי מחליף לעצמו קבוצה — הגדרות, קנס ויומן">📞 שלוחת החלפת קבוצה</button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי / הרישיון שלו הסתיים — מול התשלומים בנדרים פלוס והחידוש האוטומטי במקווה">🔍 בדיקת פג תוקף</button>
       <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
@@ -2142,6 +2143,8 @@ function renderMikveh(){
   const _mc=document.getElementById('mkcredit'); if(_mc)_mc.onclick=mkCreditOpen;
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mkselfg').onclick=()=>mkSelfGroupOpen();
+  document.getElementById('mkvmb').onclick=()=>mkVmOpen();
+  mkVmCount();
   mkDashLoad();
   document.getElementById('mkentday').onclick=()=>mkEntDay();
   document.getElementById('mkreqb').onclick=()=>mkReqOpen();
@@ -2340,13 +2343,14 @@ function mkOpen(c){
         <span id="mksent" data-id="${esc(c.id)}" style="font-weight:700;color:var(--muted)">${mkSentTxt(c)}</span></div>
       <div class="mksec" style="margin-top:18px">📜 היסטוריה <small>הודעות ששלחנו לו והתוצאות, והעברות קבוצה — רק של המקווה</small></div>
       <div id="mkhist" data-id="${esc(c.id)}">${mkHistHTML(c.id)}</div>
+      <div id="mkcvm" data-id="${esc(c.id)}"></div>
       <div class="mksec" style="margin-top:18px">🧾 חובות <small>החובות שרשומים לו במקווה</small></div>
       <div id="mkdebt" data-id="${esc(c.id)}">${mkDebtHTML(c.id)}</div>
       <div class="mksec" style="margin-top:18px">💳 תשלומים <small>מה ששילם במקווה — במכשיר ובמערכת המקווה</small></div>
       <div id="mkpay" data-id="${esc(c.id)}">${mkPayHTML(c.id)}</div>
       <div class="mksec" style="margin-top:18px">🗓️ פעילות במקווה <small>כניסות, תשלומים וכישלונות — כמו "פעילויות" באתר המקווה, שנה אחורה</small></div>
       <div id="mkact" data-id="${esc(c.id)}">${MKACT[c.id]?mkActHTML(c.id):`<button class="btn sm" id="mkactload">📂 להציג את כל הפעילות שלו</button>`}</div>`;
-    mkHistLoad(c.id); mkPayLoad(c.id); mkDebtLoad(c.id);
+    mkHistLoad(c.id); mkPayLoad(c.id); mkDebtLoad(c.id); mkVmCard(c.id);
     document.getElementById('mkzikui').onclick=()=>mkZikui(c);
     document.getElementById('mkblock').onclick=()=>mkBlock(c,draw);
     const _al=document.getElementById('mkactload'); if(_al)_al.onclick=()=>mkActLoad(c.id);
@@ -2830,6 +2834,60 @@ async function mkExpCheck(){
     ${rest.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">שאר מי שפג תוקף (${rest.length}) — לפני יותר מ-60 יום</summary><div class="mklist">${rest.map(row).join('')}</div></details>`:''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   rs.querySelectorAll('[data-xc]').forEach(el=>el.onclick=()=>{const c=MK&&MK.clients.find(z=>z.id===el.dataset.xc);if(c){remov.classList.remove('show');mkOpen(c);}});}
+// 📥 מאיר: "אני רוצה שיוכלו להקליט הודעה במערכת, תעשה לי גם שלוחה כזאת" — שלוחת הודעות של המקווה
+async function mkVmCount(){const r=await api('GET','/api/mikveh/vm').catch(()=>null);const b=document.getElementById('mkvmn');
+  if(b&&r&&r.ok){b.textContent=r.new||'';b.style.display=r.new?'':'none';}}
+const mkVmDT=s=>String(s||'').slice(8,10)+'/'+String(s||'').slice(5,7)+' '+String(s||'').slice(11,16);
+function mkVmRow(x,withName){
+  return `<div class="mkrow ${x.done?'':'schrow'}" style="grid-template-columns:1fr;cursor:default;${x.done?'opacity:.6':''}" data-vm="${x.id}">
+    <div class="mknm"><b>${x.heard||x.done?'':'🔴 '}${esc(mkVmDT(x.at))}${withName?' · '+(x.cid?`<a href="#" data-vmc="${esc(x.cid)}">${esc(x.cname||'')}</a>`:'<span style="color:#777">לא מזוהה</span>'):''} · <span dir="ltr">${esc(x.phone||'')}</span></b>
+      <audio controls preload="none" src="/api/mikveh/vm/${x.id}.wav" style="width:100%;margin:6px 0" data-vmp="${x.id}"></audio>
+      <div class="mksub">${x.transcript?'📝 '+esc(x.transcript):x.transcript===''?'(לא תומלל)':'⏳ מתמלל…'}</div>
+      ${x.note?`<div class="mksub">🗒️ ${esc(x.note)}</div>`:''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+        <button class="btn sm ${x.done?'ghost':''}" data-vmd="${x.id}" data-v="${x.done?0:1}">${x.done?'↩️ להחזיר לטיפול':'✓ טופל'}</button>
+        <button class="btn sm ghost" data-vmn="${x.id}">🗒️ הערה</button>
+        ${withName&&x.phone?`<button class="btn sm ghost" data-vmb="${esc(x.phone)}">🚫 לחסום את המספר</button>`:''}</div></div></div>`;}
+function mkVmWire(root,rows,reload){
+  root.querySelectorAll('[data-vmp]').forEach(a=>a.onplay=()=>{const x=rows.find(z=>z.id==a.dataset.vmp);if(x&&!x.heard){x.heard=1;api('POST','/api/mikveh/vm/'+x.id,{heard:1});mkVmCount();}});
+  root.querySelectorAll('[data-vmd]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/vm/'+b.dataset.vmd,{done:b.dataset.v==='1',heard:1});mkVmCount();reload();});
+  root.querySelectorAll('[data-vmn]').forEach(b=>b.onclick=async()=>{const x=rows.find(z=>z.id==b.dataset.vmn);const v=await uiPrompt('הערה להודעה',x&&x.note||'');if(v==null)return;
+    await api('POST','/api/mikveh/vm/'+b.dataset.vmn,{note:v});reload();});
+  root.querySelectorAll('[data-vmb]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('לחסום את '+b.dataset.vmb+'? ממספר זה לא יוכלו להשאיר הודעה בשלוחת המקווה.'))return;
+    const r=await api('POST','/api/mikveh/vm_cfg',{block:b.dataset.vmb});if(r&&r.ok){toast('🚫 נחסם');reload();}else uiAlert('⚠️ '+((r&&r.error)||'לא נשמר'));});
+  root.querySelectorAll('[data-vmc]').forEach(a=>a.onclick=e=>{e.preventDefault();const c=MK&&MK.clients.find(z=>z.id===a.dataset.vmc);if(c)mkOpen(c);});}
+async function mkVmCard(cid){const r=await api('GET','/api/mikveh/vm?cid='+encodeURIComponent(cid)).catch(()=>null);
+  const el=document.getElementById('mkcvm');if(!el||el.dataset.id!==cid||!r||!r.ok||!(r.rows||[]).length){if(el&&el.dataset.id===cid)el.innerHTML='';return;}
+  el.innerHTML=`<div class="mksec" style="margin-top:18px">📥 הודעות שהשאיר <small>בשלוחת המקווה</small></div><div class="mklist">${r.rows.map(x=>mkVmRow(x,false)).join('')}</div>`;
+  mkVmWire(el,r.rows,()=>mkVmCard(cid));}
+async function mkVmOpen(sync){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  if(!remov.classList.contains('show')){rs.innerHTML='<button class="x" id="rx">✕</button><div class="mksub">⏳ טוען…</div>';remov.classList.add('show');
+    document.getElementById('rx').onclick=()=>remov.classList.remove('show');}
+  const r=await api('GET','/api/mikveh/vm'+(sync?'?sync=1':'')).catch(()=>null);
+  if(!r||!r.ok){rs.innerHTML='<button class="x" id="rx">✕</button><div class="mksub">⚠️ '+esc((r&&r.error)||'לא נטען')+'</div>';document.getElementById('rx').onclick=()=>remov.classList.remove('show');return;}
+  const ini=`type=api\napi_link=${r.link}\napi_hangup_send=yes`;
+  const open=(r.rows||[]).filter(x=>!x.done), done=(r.rows||[]).filter(x=>x.done);
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#16a085">📥</div><div><h2>הודעות בשלוחת המקווה</h2>
+      <div class="mksub">${r.on?'השלוחה פעילה':'עוד לא התקשרו לשלוחה'} · ${open.length} לטיפול${r.new?' · <b>'+r.new+' חדשות</b>':''}</div></div></div>
+    <button class="btn sm" id="vmsync">🔄 לבדוק עכשיו אם יש הודעות חדשות</button>
+    <div class="mklist" style="margin-top:10px">${open.length?open.map(x=>mkVmRow(x,true)).join(''):'<div class="mksub">אין הודעות שמחכות לטיפול.</div>'}</div>
+    ${done.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">✓ טופלו (${done.length})</summary><div class="mklist">${done.map(x=>mkVmRow(x,true)).join('')}</div></details>`:''}
+    <details style="margin-top:18px"><summary class="mksec" style="cursor:pointer">⚙️ הגדרות השלוחה</summary>
+      <label class="fld" style="display:block;margin:8px 0"><span>מה המתקשר שומע לפני הצליל</span><textarea id="vmgreet" rows="2">${esc(r.greet)}</textarea></label>
+      <button class="btn sm" id="vmgsave">💾 לשמור</button>
+      <div class="mksec" style="margin-top:12px">הגדרה בימות המשיח <small>שלוחה חדשה (ext.ini) — נפרדת מההודעות של הכולל</small></div>
+      <pre dir="ltr" style="background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-all;user-select:all">${esc(ini)}</pre>
+      <button class="btn sm ghost" id="vmcopy">📋 להעתיק</button>
+      <div class="mksub" style="margin-top:6px">ההקלטות נשמרות בימות בתיקייה <span dir="ltr">${esc(r.dir)}</span> ומגיעות לכאן תוך שניות (ובכל מקרה כל 10 דקות).</div>
+      ${(r.blocked||[]).length?`<div class="mksec" style="margin-top:12px">🚫 מספרים חסומים</div>${r.blocked.map(p=>`<div style="display:flex;gap:8px;align-items:center;margin:4px 0"><span dir="ltr">${esc(p)}</span><button class="btn sm ghost" data-vmub="${esc(p)}">לבטל חסימה</button></div>`).join('')}`:''}
+    </details>`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  document.getElementById('vmsync').onclick=()=>mkVmOpen(true);
+  document.getElementById('vmcopy').onclick=()=>{try{navigator.clipboard.writeText(ini);toast('הועתק');}catch(e){uiAlert(ini);}};
+  document.getElementById('vmgsave').onclick=async()=>{const x=await api('POST','/api/mikveh/vm_cfg',{greet:document.getElementById('vmgreet').value});toast(x&&x.ok?'✓ נשמר':'לא נשמר');};
+  rs.querySelectorAll('[data-vmub]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/vm_cfg',{unblock:b.dataset.vmub});mkVmOpen();});
+  mkVmWire(rs,r.rows||[],()=>mkVmOpen());mkVmCount();}
 // 📞 מאיר: "שלוחת API שכל משתמש יוכל לעדכן את הקבוצה שלו, רק לקבוצות שהשארתי… כמה פעמים… שיחייב בקנס"
 async function mkSelfGroupOpen(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
