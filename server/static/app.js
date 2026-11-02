@@ -2569,6 +2569,15 @@ function mkWebPattern(u,c){u=String(u||'').trim();if(!/^https:\/\//.test(u))retu
   const g=u.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);if(g)return u.replace(g[0],'{id}');
   if(c&&c.code&&new RegExp('(^|[^0-9])'+c.code+'([^0-9]|$)').test(u))return u.replace(new RegExp('(^|[^0-9])'+c.code+'(?=[^0-9]|$)'),'$1{code}');
   const n=u.match(/([/=])(\d{1,8})(?=[/?&#]|$)/);if(n)return u.replace(n[0],n[1]+'{code}');return '';}
+// 🪟 מאיר: "שהחלונות לא יסגרו רק ע"י X" — לחיצה מחוץ לחלון או מקש Esc סוגרים אותו (כמו לחיצה על ה-X,
+// כולל מה שה-X עושה; בזמן שמשהו נשמר במקווה — עם ספינר — לא סוגרים)
+function ovClose(t){const x=t.querySelector('.x');if(x)x.click();else t.classList.remove('show');}
+(()=>{let downOn=null;
+  document.addEventListener('pointerdown',e=>{downOn=e.target;},true);
+  document.addEventListener('click',e=>{const t=e.target;
+    if(t&&t.classList&&t.classList.contains('ov')&&t.classList.contains('show')&&downOn===t&&!t.querySelector('.mkspin'))ovClose(t);});
+  document.addEventListener('keydown',e=>{if(e.key!=='Escape'||document.querySelector('.confirmov'))return;
+    const a=[...document.querySelectorAll('.ov.show')],t=a[a.length-1];if(t&&!t.querySelector('.mkspin')){e.preventDefault();ovClose(t);}});})();
 async function mkOpenWeb(c,setup){
   if(MKWEB===null){const r=await api('GET','/api/mikveh/link');MKWEB=(r&&r.url)||'';}
   if(MKWEB&&!setup){window.open(MKWEB.replace('{id}',encodeURIComponent(c.id)).replace('{code}',encodeURIComponent(c.code||'')),'_blank','noopener');return;}

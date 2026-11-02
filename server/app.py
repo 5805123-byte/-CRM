@@ -22918,6 +22918,10 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'groups': gr, 'clients': rows})
         if self.path.split('?')[0] == '/api/mikveh/link':
             con = db(); v = kv_get(con, 'mk_client_url', ''); con.close()
+            if not v:
+                # הכתובת של כרטיס לקוח באתר המקווה (מהקלטה של מסך הניהול שלהם) — בלי שצריך להדביק אותה
+                import mikveh as _mk
+                v = _mk.base() + 'adminUi/#/management/app-client-details/{id}'
             return self._send(200, {'ok': True, 'url': v})
         if self.path.split('?')[0] == '/api/parnes_imp':
             con = db()
