@@ -18471,10 +18471,10 @@ def mk_unpaid_run(days=30):
         MK_UNPAID['total'] = len(cand)
         # הכי טוב: יומן הפעילויות של כל התקופה בבקשה אחת — כניסות ותשלומים של כולם
         try:
-            raw = _mk.attendance(since, (now + datetime.timedelta(days=1)).strftime('%Y-%m-%d'))
+            raw = _mk.attendance(since, (now + datetime.timedelta(days=1)).strftime('%Y-%m-%d'), pay_only=True)
         except Exception:
             raw = None
-        if raw is not None and any(_mk.att_norm(r)['cid'] for r in raw[:50]):
+        if raw is not None:
             norm = [_mk.att_norm(r) for r in raw]
             paid = {}
             for n in norm:
@@ -23512,16 +23512,30 @@ class H(BaseHTTPRequestHandler):
                                     'log_path': (lg or {}).get('path', ''),
                                     'towels': cnt['casual'] + cnt['erech'] + cnt['towel'],
                                     'heb': greg_to_heb_full(day) or ''})
-        if self.path.split('?')[0] == '/api/mikveh/paypaths':
-            # 🔎 איפה המקווה שומר את התשלומים — הנתיבים מהאתר שלו, ומה כל אחד החזיר ללקוח הזה (רק קריאה)
+        if self.path.split('?')[0] == '/api/mikveh/debts':
+            # 🧾 החובות של הלקוח במקווה (פתוחים ושולמו; בלי מחוקים)
             import mikveh as _mk
             cid = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('id') or [''])[0]
             if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
                 return self._send(400, {'ok': False})
-            _mk.discover_paths(force=True)
-            res = _mk.probe_payments(cid)
-            _mk._PAY['bad'].clear()
-            return self._send(200, dict(res, ok=True))
+            try:
+                rows = _mk.debts(cid)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            return self._send(200, {'ok': True, 'rows': rows, 'open': round(sum(r['amount'] or 0 for r in rows if r['open']), 2)})
+        if self.path.split('?')[0] == '/api/mikveh/dashboard':
+            # 📊 לוח הבקרה של המקווה — ברירת מחדל: מתחילת החודש עד היום
+            import mikveh as _mk
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            today = il_now().strftime('%Y-%m-%d')
+            d0 = (qs.get('from') or [today[:8] + '01'])[0][:10]
+            d1 = (qs.get('to') or [today])[0][:10]
+            if not (re.fullmatch(r'\d{4}-\d{2}-\d{2}', d0) and re.fullmatch(r'\d{4}-\d{2}-\d{2}', d1)):
+                return self._send(400, {'ok': False})
+            try:
+                return self._send(200, dict(_mk.dashboard(d0, d1), ok=True))
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
         if self.path.split('?')[0] == '/api/mikveh/renew_info':
             # 🔁 חידוש מנוי אוטומטי במקווה + הוראות הקבע שלו בקופת המקווה בנדרים פלוס
             import mikveh as _mk
@@ -26392,6 +26406,89 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'sub_end': res['sub_end'], 'sub_start': res['sub_start']})
+        if self.path in ('/api/mikveh/debt', '/api/mikveh/debt_del'):
+            # 🧾 הוספת / מחיקת חוב במקווה עצמו
+            import mikveh as _mk
+            cid = str(b.get('id') or '').strip()
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                return self._send(200, {'ok': False, 'error': 'לקוח לא תקין'})
+            try:
+                if self.path == '/api/mikveh/debt':
+                    amt = round(float(str(b.get('amount') or '0').replace(',', '').replace('₪', '').strip()), 2)
+                    reason = str(b.get('reason') or '').strip()[:200]
+                    if not (0 < amt <= 100000):
+                        return self._send(200, {'ok': False, 'error': 'סכום לא תקין'})
+                    _mk.add_debt(cid, int(round(amt * 100)), reason)
+                    summ = '🧾 חוב במקווה: ₪%g%s' % (amt, (' · ' + reason) if reason else '')
+                else:
+                    did = str(b.get('debt') or '').strip()
+                    if not re.fullmatch(r'[0-9a-fA-F-]{36}', did):
+                        return self._send(200, {'ok': False, 'error': 'חוב לא תקין'})
+                    old = next((d for d in _mk.debts(cid) if str(d['id']) == did), None)
+                    if not old:
+                        return self._send(200, {'ok': False, 'error': 'החוב לא נמצא אצל הלקוח'})
+                    _mk.delete_debt(did)
+                    summ = '🗑️ נמחק חוב במקווה: ₪%g%s' % (old['amount'] or 0, (' · ' + old['reason']) if old['reason'] else '')
+                rows = _mk.debts(cid)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            con = db()
+            try:
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)", (cid, now_iso(), 'debt', summ))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows, 'open': round(sum(r['amount'] or 0 for r in rows if r['open']), 2)})
+        if self.path == '/api/mikveh/block':
+            # ⛔ חסימה / שחרור של לקוח במקווה
+            import mikveh as _mk
+            cid = str(b.get('id') or '').strip()
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                return self._send(200, {'ok': False, 'error': 'לקוח לא תקין'})
+            blocked = bool(b.get('blocked'))
+            reason = str(b.get('reason') or '').strip()[:200]
+            try:
+                _mk.set_blocked(cid, blocked, reason)
+                c2 = _mk.client(cid)
+                if bool(c2.get('isBlocked')) != blocked:
+                    return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל הלקוח לא השתנה. תבדוק באתר המקווה'})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            con = db()
+            try:
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'block', ('⛔ נחסם במקווה' + ((' · ' + reason) if reason else '')) if blocked else '✅ החסימה במקווה בוטלה'))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'blocked': blocked, 'reason': (c2.get('blockReason') or '') if blocked else ''})
+        if self.path == '/api/mikveh/zikui':
+            # 💳 יתרה זמנית (זיכוי) במקווה — add = סכום להוסיף (שלילי = להוריד)
+            import mikveh as _mk
+            cid = str(b.get('id') or '').strip()
+            try:
+                add = round(float(str(b.get('add') or '0').replace(',', '').replace('₪', '').strip()), 2)
+            except ValueError:
+                return self._send(200, {'ok': False, 'error': 'סכום לא תקין'})
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid) or not add or abs(add) > 100000:
+                return self._send(200, {'ok': False, 'error': 'סכום לא תקין'})
+            note = str(b.get('note') or '').strip()[:200]
+            try:
+                old = _mk.temp_balance(cid)
+                _mk.add_credit(cid, int(round(add * 100)), temp=True)
+                got = _mk.temp_balance(cid)
+                if got != old + int(round(add * 100)):
+                    return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל הזיכוי יצא אחר: ₪%g. תבדוק באתר המקווה' % (got / 100.0)})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            con = db()
+            try:
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'balance', '💳 זיכוי במקווה: ₪%g → ₪%g%s' % (old / 100.0, got / 100.0, (' · ' + note) if note else '')))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'zikui': got})
         if self.path == '/api/mikveh/balance':
             # 💰 מאיר: "איפה אני מעדכן לו יתרה בחשבון? כי הוא נתן חלק מזומן" — היתרה (balance) במקווה עצמו, באגורות
             import mikveh as _mk
@@ -26416,7 +26513,7 @@ class H(BaseHTTPRequestHandler):
                 delta = cents - old
                 if delta == 0:
                     return self._send(200, {'ok': True, 'balance': old, 'same': True})
-                # addCredit מקבל אגורות (נבדק אצל מאיר: 15 → ₪0.15). שולחים את ההפרש ובודקים אצל הלקוח שזה נקלט
+                # שולחים את ההפרש באגורות (Client/AdminPurchase, כמו המסך של המקווה) ובודקים אצל הלקוח שזה נקלט
                 _mk.add_credit(cid, delta)
                 got = _mk.balance(cid)
                 if got != cents:

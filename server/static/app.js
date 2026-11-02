@@ -2106,6 +2106,7 @@ function renderMikveh(){
       <div class="mkstat"><b>${MK.clients.length}</b><span>לקוחות</span></div>
       <div class="mkstat"><b>${used.length}</b><span>קבוצות</span></div>
       ${expired?`<div class="mkstat"><b>${expired}</b><span>מנוי הסתיים</span></div>`:''}
+      <div class="mkstat" id="mkdash" title="מלוח הבקרה של המקווה — מתחילת החודש">${mkDashTxt()}</div>
       <button class="mkstat" id="mkcredit" style="cursor:pointer;border:0;font:inherit" title="לקוחות עם יתרה צבורה / זיכוי — לחיצה פותחת את הרשימה"><b>${MK.clients.filter(c=>((c.balance!=null?c.balance:c.last_balance)||0)>0).length}</b><span>💳 יתרות / זיכויים</span></button>
       <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button>
       <button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📥 פניות${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
@@ -2138,6 +2139,7 @@ function renderMikveh(){
   document.getElementById('mktowel').onclick=()=>{if(mkTowelOnly){mkTowelOnly=false;renderMikveh();}else mkTowelOpen();};
   const _mc=document.getElementById('mkcredit'); if(_mc)_mc.onclick=mkCreditOpen;
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
+  mkDashLoad();
   document.getElementById('mkentday').onclick=()=>mkEntDay();
   document.getElementById('mkreqb').onclick=()=>mkReqOpen();
   if(!MKREQ){MKREQ={rows:[],new:0};api('GET','/api/mikveh/requests').then(r=>{if(r&&r.ok){MKREQ=r;if(tab==='mikveh')renderMikveh();}}).catch(()=>{});}
@@ -2330,14 +2332,20 @@ function mkOpen(c){
         <button class="mkbtn gh" id="mkmsg1"${c.phone||mkHasMail(c)?'':' disabled'}>💬 שליחת הודעה / ✉️ מייל</button>
         <button class="mkbtn" id="mksub2" title="לקבוע ידנית את תאריך ההתחלה ותאריך הסיום של המנוי — כמו באתר המקווה">📅 תאריכי מנוי ידני (התחלה / סוף)</button>
         <button class="mkbtn gh" id="mkrenew" title="חידוש רישיון / חידוש תוקף מנוי / הוספת יתרת פעימות — כמו באתר המקווה">🔁 חידוש אוטומטי</button>
+        <button class="mkbtn gh" id="mkzikui" title="יתרה זמנית (זיכוי) במקווה — להוסיף או להוריד">💳 זיכוי</button>
+        <button class="mkbtn gh" id="mkblock" title="${c.blocked?'לבטל את החסימה במקווה':'לחסום את הלקוח במקווה (לא ייכנס)'}">${c.blocked?'✅ ביטול חסימה':'⛔ חסימה'}</button>
         <span id="mksent" data-id="${esc(c.id)}" style="font-weight:700;color:var(--muted)">${mkSentTxt(c)}</span></div>
       <div class="mksec" style="margin-top:18px">📜 היסטוריה <small>הודעות ששלחנו לו והתוצאות, והעברות קבוצה — רק של המקווה</small></div>
       <div id="mkhist" data-id="${esc(c.id)}">${mkHistHTML(c.id)}</div>
+      <div class="mksec" style="margin-top:18px">🧾 חובות <small>החובות שרשומים לו במקווה</small></div>
+      <div id="mkdebt" data-id="${esc(c.id)}">${mkDebtHTML(c.id)}</div>
       <div class="mksec" style="margin-top:18px">💳 תשלומים <small>מה ששילם במקווה — במכשיר ובמערכת המקווה</small></div>
       <div id="mkpay" data-id="${esc(c.id)}">${mkPayHTML(c.id)}</div>
       <div class="mksec" style="margin-top:18px">🗓️ פעילות במקווה <small>כניסות, תשלומים וכישלונות — כמו "פעילויות" באתר המקווה, שנה אחורה</small></div>
       <div id="mkact" data-id="${esc(c.id)}">${MKACT[c.id]?mkActHTML(c.id):`<button class="btn sm" id="mkactload">📂 להציג את כל הפעילות שלו</button>`}</div>`;
-    mkHistLoad(c.id); mkPayLoad(c.id);
+    mkHistLoad(c.id); mkPayLoad(c.id); mkDebtLoad(c.id);
+    document.getElementById('mkzikui').onclick=()=>mkZikui(c);
+    document.getElementById('mkblock').onclick=()=>mkBlock(c,draw);
     const _al=document.getElementById('mkactload'); if(_al)_al.onclick=()=>mkActLoad(c.id);
     if(c.ident){const idb=document.getElementById('mkident');if(idb)idb.onclick=e=>{e.preventDefault();idb.textContent='🪪 ת.ז. '+c.ident;};}
     document.getElementById('rx').onclick=()=>{if(!busy)remov.classList.remove('show');};
@@ -2810,16 +2818,53 @@ async function mkExpCheck(){
     ${rest.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">שאר מי שפג תוקף (${rest.length}) — לפני יותר מ-60 יום</summary><div class="mklist">${rest.map(row).join('')}</div></details>`:''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   rs.querySelectorAll('[data-xc]').forEach(el=>el.onclick=()=>{const c=MK&&MK.clients.find(z=>z.id===el.dataset.xc);if(c){remov.classList.remove('show');mkOpen(c);}});}
-// 🔎 מאיר: "למה אין לך עדכון תשלום מהמקווה" — השרת מוצא באתר המקווה את הנתיבים של התשלומים ומנסה אותם (רק קריאה)
-async function mkPayProbe(cid,btn){btn.disabled=true;btn.innerHTML='<span class="mkspin"></span> מחפש באתר המקווה…';
-  const r=await api('GET','/api/mikveh/paypaths?id='+encodeURIComponent(cid)).catch(()=>null);
-  btn.disabled=false;btn.textContent='🔎 לחפש שוב';
-  const el=document.getElementById('mkprobe');if(!el)return;
-  if(!r||!r.ok){el.innerHTML='<div class="mksub">⚠️ '+esc((r&&r.error)||'אין תשובה')+'</div>';return;}
-  const hit=(r.tries||[]).find(t=>t.pay);
-  if(hit){delete MKPAY[cid];toast('✓ נמצא — טוען את התשלומים');await mkPayLoad(cid);return;}
-  el.innerHTML=`<div class="mksub" style="margin-top:6px">${r.error?'⚠️ '+esc(r.error)+'<br>':''}נמצאו ${(r.paths||[]).length} נתיבים באתר המקווה, ואף אחד לא החזיר תשלומים. שלח לי צילום של המסך הזה:</div>
-    <small dir="ltr" style="display:block;word-break:break-all;line-height:1.5">${(r.tries||[]).map(t=>esc(t.path)+' → '+t.code+(t.rows!=null?' ('+t.rows+')':'')).join('<br>')||esc((r.paths||[]).join(', '))||'—'}</small>`;}
+// 📊 לוח הבקרה של המקווה (מתחילת החודש) — כניסות והכנסות, לפי מזומן / אשראי
+let MKDASH=null;
+function mkDashTxt(){const D=MKDASH;if(!D)return '<b>⏳</b><span>החודש</span>';if(!D.ok)return '<b>—</b><span>החודש</span>';
+  const bm=(D.by_method||[]).map(x=>esc(x.method)+' '+esc(mkNis(x.sum))).join(' · ');
+  return `<b>${esc(mkNis(D.income||0))}</b><span>החודש · ${D.entrances||0} כניסות${bm?'<br><small>'+bm+'</small>':''}</span>`;}
+async function mkDashLoad(){if(MKDASH&&Date.now()-MKDASH._at<300000){const e=document.getElementById('mkdash');if(e)e.innerHTML=mkDashTxt();return;}
+  const r=await api('GET','/api/mikveh/dashboard').catch(()=>null);MKDASH=r&&r.ok?r:{ok:false};MKDASH._at=Date.now();
+  const e=document.getElementById('mkdash');if(e)e.innerHTML=mkDashTxt();}
+// 🧾 חובות של הלקוח במקווה — רואים, מוסיפים, מוחקים
+const MKDEBT={};
+async function mkDebtLoad(cid){const r=await api('GET','/api/mikveh/debts?id='+encodeURIComponent(cid)).catch(()=>null);
+  MKDEBT[cid]=r&&r.ok?r:{ok:false,error:(r&&r.error)||'לא נטען'};mkDebtPaint(cid);}
+function mkDebtPaint(cid){const el=document.getElementById('mkdebt');if(!el||el.dataset.id!==cid)return;el.innerHTML=mkDebtHTML(cid);
+  const ad=document.getElementById('mkdebtadd');if(ad)ad.onclick=()=>mkDebtAdd(cid);
+  el.querySelectorAll('[data-dd]').forEach(b=>b.onclick=()=>mkDebtDel(cid,b.dataset.dd,b));}
+function mkDebtHTML(cid){const D=MKDEBT[cid];if(!D)return '<div class="mksub">⏳ טוען…</div>';
+  if(!D.ok)return '<div class="mksub">⚠️ '+esc(D.error||'')+'</div>';
+  const d=s=>s?esc(s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(2,4)):'';
+  const rows=D.rows||[];
+  return (rows.length?`<div class="mksub" style="margin:4px 2px 8px">${D.open?'חוב פתוח: <b style="color:#c0392b">'+esc(mkNis(D.open))+'</b>':'אין חוב פתוח'}</div>
+    <div class="mklist">${rows.map(x=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto auto;cursor:default"><div class="mknm"><b>${d(x.date)} · ${esc(x.reason||'חוב')}</b>
+      <div class="mksub">${x.open?'פתוח':x.paid?'שולם '+d(x.paid):'סגור'}</div></div>
+      <b style="${x.open?'color:#c0392b':''}">${esc(mkNis(x.amount))}</b>
+      ${x.open?`<button class="btn sm ghost" data-dd="${esc(x.id)}" title="למחוק את החוב במקווה">🗑️</button>`:'<span></span>'}</div>`).join('')}</div>`
+    :'<div class="mksub">אין לו חובות במקווה.</div>')+'<button class="btn sm" id="mkdebtadd" style="margin-top:6px">➕ הוספת חוב</button>';}
+async function mkDebtAdd(cid){const a=await uiPrompt('סכום החוב (₪)','');if(a==null||!String(a).trim())return;
+  const reason=await uiPrompt('סיבה (למשל: חוב מגבת)','');if(reason==null)return;
+  const r=await api('POST','/api/mikveh/debt',{id:cid,amount:a,reason}).catch(()=>null);
+  if(!r||!r.ok){uiAlert('⚠️ '+((r&&r.error)||'לא נשמר'));return;}
+  MKDEBT[cid]=r;mkDebtPaint(cid);toast('✓ החוב נוסף במקווה');}
+async function mkDebtDel(cid,did,btn){if(!await uiConfirm('למחוק את החוב במקווה?'))return;btn.disabled=true;
+  const r=await api('POST','/api/mikveh/debt_del',{id:cid,debt:did}).catch(()=>null);
+  if(!r||!r.ok){btn.disabled=false;uiAlert('⚠️ '+((r&&r.error)||'לא נמחק'));return;}
+  MKDEBT[cid]=r;mkDebtPaint(cid);toast('✓ החוב נמחק במקווה');}
+// 💳 זיכוי (יתרה זמנית) במקווה
+async function mkZikui(c){const a=await uiPrompt('כמה ₪ להוסיף לזיכוי? (מינוס = להוריד, למשל ‎-20)','');if(a==null||!String(a).trim())return;
+  const note=await uiPrompt('הערה (לא חובה)','');
+  const r=await api('POST','/api/mikveh/zikui',{id:c.id,add:a,note:note||''}).catch(()=>null);
+  if(!r||!r.ok){uiAlert('⚠️ '+((r&&r.error)||'לא עודכן'));return;}
+  toast('✓ הזיכוי במקווה עכשיו '+mkNis(r.zikui/100));mkHistLoad(c.id);}
+// ⛔ חסימה / ביטול חסימה במקווה
+async function mkBlock(c,redraw){let reason='';
+  if(!c.blocked){reason=await uiPrompt('לחסום את '+mkName(c)+' במקווה. סיבה (לא חובה):','');if(reason==null)return;}
+  else if(!await uiConfirm('לבטל את החסימה של '+mkName(c)+' במקווה?'))return;
+  const r=await api('POST','/api/mikveh/block',{id:c.id,blocked:!c.blocked,reason}).catch(()=>null);
+  if(!r||!r.ok){uiAlert('⚠️ '+((r&&r.error)||'לא עודכן'));return;}
+  c.blocked=r.blocked;c.block_reason=r.reason||'';toast(r.blocked?'⛔ נחסם במקווה':'✅ החסימה בוטלה');redraw();mkHistLoad(c.id);}
 function mkPayHTML(cid){const P=MKPAY[cid];if(!P)return '<div class="mksub">⏳ טוען…</div>';
   if(!P.ok)return '<div class="mksub">⚠️ '+esc(P.error||'')+'</div>';
   const d=t=>esc(String(t.iso||'').slice(8,10)+'/'+String(t.iso||'').slice(5,7)+'/'+String(t.iso||'').slice(0,4));
@@ -2832,8 +2877,7 @@ function mkPayHTML(cid){const P=MKPAY[cid];if(!P)return '<div class="mksub">⏳ 
       ${G.by==='name'&&(G.names||[]).length?`<small style="display:block;color:#777">שמות שיש ביומן: ${esc(G.names.join(' · '))}</small>`:''}`
     :'';
   if(!P.src)return `<div class="mksub">לא מצאתי במערכת המקווה את רשימת התשלומים של הלקוח.</div>${why}
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn sm" onclick="mkPayLoad('${esc(cid)}',true)">🔄 לבדוק שוב במקווה</button>
-    <button class="btn sm ghost" onclick="mkPayProbe('${esc(cid)}',this)">🔎 לחפש איפה המקווה שומר תשלומים</button></div><div id="mkprobe"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn sm" onclick="mkPayLoad('${esc(cid)}',true)">🔄 לבדוק שוב במקווה</button></div>
     ${(P.keys||[]).length?`<details style="margin-top:6px"><summary class="mksub">שמות השדות של הלקוח במקווה</summary><small dir="ltr" style="word-break:break-all">${esc(P.keys.join(', '))}</small></details>`:''}`;
   return (P.tx||[]).length?`<div class="mksub" style="margin:4px 2px 8px">שילם <b>${P.count}</b> פעמים · סה״כ <b>${esc(mkNis(P.sum))}</b>${P.since?' · מאז '+d({iso:P.since}):''}</div>
     <div class="mklist">${P.tx.map(t=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${d(t)}${t.time?' '+esc(t.time):''}${t.failed?' · ✗ נכשל':''}</b>
