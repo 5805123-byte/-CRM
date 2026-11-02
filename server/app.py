@@ -4880,6 +4880,53 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('sukkot_5787_fix_v1')"); con.commit()
     except Exception as e:
         print('  sukkot fix error:', e)
+    # מאיר (2.11.2026): "לרשום הכל אצל אירני. את בליסקו תעזוב — אל תתייחס לתשלומים שלו, רק אירני, וזה החוב של אירני נטו".
+    # מבטל את החלוקה 540/720 לבליסקו, מחזיר לאירני כל מה שהועבר מהחיובים שלו לבליסקו, היששכר־זבולון של בליסקו עובר
+    # לאירני מספטמבר 2026 (ה-1,000$ של אירני מכסים ספטמבר + אוקטובר), ובליסקו מסומן שהפסיק — בלי חוב ובלי חיובים חוזרים
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='irni_all_v1'").fetchone():
+            _ir = con.execute("SELECT id FROM donors WHERE last LIKE 'אירנ%' OR lower(COALESCE(english,'')) LIKE '%irani%' OR lower(COALESCE(english,'')) LIKE '%irni%'").fetchall()
+            _bl = con.execute("SELECT id FROM donors WHERE last LIKE 'בליסק%' OR lower(COALESCE(english,'')) LIKE '%blisko%'").fetchall()
+            if len(_ir) == 1 and len(_bl) == 1:
+                ir, bl = _ir[0]['id'], _bl[0]['id']
+                con.execute("DELETE FROM pay_split WHERE payer_id=? AND donor_id=?", (ir, bl))
+                try: con.execute("DELETE FROM donor_rules WHERE donor_id=? AND ROUND(amount,2)=540", (bl,))
+                except Exception: pass
+                for _f in ('irani_blisko_split_v1', 'irani_blisko_1000_v1', 'irni_for_blisko_v1'):
+                    con.execute("INSERT OR IGNORE INTO seed_flags(name) VALUES(?)", (_f,))
+                # מה שהגיע מהכרטיס של אירני ונרשם אצל בליסקו — חוזר לאירני
+                _mv = 0
+                for _t in con.execute("SELECT tid FROM recon WHERE donor_id=? AND (tid LIKE '%#b' OR COALESCE(note,'') LIKE '%חלק מחיוב משותף%')", (bl,)).fetchall():
+                    con.execute("UPDATE recon SET donor_id=? WHERE tid=?", (ir, _t['tid']))
+                    _mv += con.execute("UPDATE donations SET donor_id=? WHERE tid=? AND donor_id=?", (ir, _t['tid'], bl)).rowcount
+                _mv += con.execute("UPDATE donations SET donor_id=? WHERE donor_id=? AND (COALESCE(note,'') LIKE '%נגבה מהכרטיס של אירני%' "
+                                   "OR COALESCE(note,'') LIKE '%חלק מחיוב משותף%' OR (SUBSTR(date,1,10)='2026-10-27' AND CAST(REPLACE(amount,',','') AS REAL)=1000))",
+                                   (ir, bl)).rowcount
+                con.execute("UPDATE recon SET donor_id=? WHERE donor_id=? AND tid IN (SELECT tid FROM donations WHERE donor_id=? AND tid IS NOT NULL)", (ir, bl, ir))
+                con.execute("UPDATE bq_tx SET donor_id=? WHERE donor_id=? AND SUBSTR(created,1,10)>='2026-10-26' AND status NOT IN (%s)"
+                            % ','.join("'%s'" % x for x in ('declined', 'error', 'failed', 'blocked')), (ir, bl))
+                # היששכר־זבולון של בליסקו → אירני, מספטמבר 2026
+                _np = 0
+                for _p in con.execute("SELECT id FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0", (bl,)).fetchall():
+                    try: _hd = greg_to_heb_full('2026-09-01')
+                    except Exception: _hd = ''
+                    con.execute("UPDATE partners SET donor_id=?, start_greg='2026-09-01', start_date=COALESCE(NULLIF(?,''),start_date), "
+                                "paid_thru='', note=TRIM(COALESCE(note,'')||' · הועבר מבליסקו יצחק — אירני משלם מספטמבר 2026',' ·') WHERE id=?", (ir, _hd, _p['id']))
+                    _np += 1
+                # בליסקו — הפסיק (בלי חוב, בלי חיובים חוזרים, לא בדו"ח)
+                con.execute("UPDATE donors SET monthly_stop='2026-09-01', monthly_stop_charge=1, monthly_stop_note='אירני משלם הכל במקומו' WHERE id=?", (bl,))
+                try: mstop_apply(con, bl)
+                except Exception as e: print('  blisko stop error:', e)
+                for _d, _txt in ((ir, '🤝 הכל נרשם כאן: התשלומים מהכרטיס (גם החלק שנחשב לבליסקו) והיששכר־זבולון שהיה של בליסקו — מספטמבר 2026 (מאיר)'),
+                                 (bl, '⛔ הפסיק — אירני משלם הכל במקומו. היששכר־זבולון עבר לכרטיס של אירני מספטמבר 2026 (מאיר)')):
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (_d, today_iso(), 'מערכת', _txt, '', now_iso()))
+                print('  הכל אצל אירני: %d תשלומים חזרו, %d שותפויות יש"ז עברו' % (_mv, _np))
+                con.execute("INSERT INTO seed_flags(name) VALUES('irni_all_v1')"); con.commit()
+            else:
+                print('  הכל אצל אירני: נמצאו %d / %d — לא בוצע' % (len(_ir), len(_bl)))
+    except Exception as e:
+        print('  irni all error:', e)
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
@@ -19066,12 +19113,25 @@ def ym_worker(job_id, wait=True):
                 for dly in (60, 150, 300, 600):
                     threading.Timer(dly, ym_check_job, args=(job_id,)).start()
         except Exception as e:
-            try:
-                con.execute("UPDATE ym_job SET status='error', label=? WHERE id=?", (str(e)[:200], job_id)); con.commit()
-            except Exception:
-                pass
+            # מאיר: "מה כתוב כאן? database is locked" — בסיס הנתונים היה תפוס (למשל בזמן עדכון): לא נכשלים —
+            # המשלוח חוזר לתור ומנסה שוב לבד אחרי חצי דקה (עד 6 פעמים)
+            if 'locked' in str(e).lower() and YM_LOCKED_TRIES.get(job_id, 0) < 6:
+                YM_LOCKED_TRIES[job_id] = YM_LOCKED_TRIES.get(job_id, 0) + 1
+                try:
+                    con.execute("UPDATE ym_job SET status='queued' WHERE id=?", (job_id,)); con.commit()
+                except Exception:
+                    pass
+                threading.Timer(30, ym_worker, args=(job_id, wait)).start()
+            else:
+                try:
+                    con.execute("UPDATE ym_job SET status='error', label=? WHERE id=?", (str(e)[:200], job_id)); con.commit()
+                except Exception:
+                    pass
         finally:
             con.close()
+
+
+YM_LOCKED_TRIES = {}
 
 
 def log_member_mail(member_id, to, subject, body, msg_id='', qid=None):
