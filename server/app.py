@@ -1242,6 +1242,9 @@ def ensure_schema():
     # 1 = לעצור את החיוב האוטומטי בתאריך שהפסיק (כשמגיע) · 2 = נעצר
     try: con.execute("ALTER TABLE donors ADD COLUMN monthly_stop_charge INTEGER DEFAULT 0")
     except Exception: pass
+    # מאיר: "שתקפוץ קוביה לכתוב הערה או סיבה ותאריך הפסקה" — הסיבה
+    try: con.execute("ALTER TABLE donors ADD COLUMN monthly_stop_note TEXT DEFAULT ''")
+    except Exception: pass
     try: con.execute("ALTER TABLE pledges ADD COLUMN cur TEXT DEFAULT ''")      # מטבע ההתחייבות: '$' / '₪' (ריק = לפי אזור התורם)
     except Exception: pass
     try: con.execute("ALTER TABLE pledges ADD COLUMN via_note TEXT DEFAULT ''")
@@ -29263,6 +29266,49 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             bump_data()
             return self._send(200, {'ok': True, 'next_run': res.get('next_run_date') or until, 'forever': forever})
+        m = re.match(r'/api/bq/tx/(\d+)/stopped$', self.path)
+        if m:
+            # ⛔ מאיר: "במקום המזומן — כפתור קטנצ'יק 'הפסיק את החיוב החודשי': שזה יפסיק, ולא יהיה ברשימת החיובים
+            # שחזרו, אלא רק בכרטיס שלו". מסמן שהתורם הפסיק (מהתאריך), עוצר את הוראת הקבע בבנק ווסט, וכל מה שחזר לו יוצא מהרשימה
+            dt = str(b.get('date') or '').strip()[:10]
+            if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', dt):
+                dt = today_iso()
+            con = db()
+            try:
+                t = con.execute("SELECT id,donor_id,customer_id,schedule_id,amount FROM bq_tx WHERE id=?", (int(m.group(1)),)).fetchone()
+                if not t:
+                    return self._send(200, {'ok': False, 'error': 'החיוב לא נמצא'})
+                did = t['donor_id'] or (con.execute("SELECT donor_id FROM bq_cust WHERE id=?", (t['customer_id'],)).fetchone() or {'donor_id': None})['donor_id']
+                why = re.sub(r'\s+', ' ', str(b.get('reason') or '')).strip()[:200]
+                note = 'הפסיק את החיוב החודשי מ-' + '/'.join(reversed(dt.split('-'))) + ((' · ' + why) if why else '')
+                out = {'ok': True, 'sched': [], 'sched_err': []}
+                if did:
+                    con.execute("UPDATE donors SET monthly_stop=?, monthly_stop_charge=1, monthly_stop_note=? WHERE id=?", (dt, why, did))
+                    out.update(mstop_apply(con, did))     # תאריך עתידי — נעצר לבד ביום הזה
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                                (did, today_iso(), 'הערה', '⛔ ' + note + ' (חיוב של $%g חזר)' % (t['amount'] or 0) +
+                                 (' · החיוב האוטומטי בבנק ווסט נעצר' if out.get('sched') else '')))
+                else:
+                    import banquest as _bq
+                    if t['schedule_id']:
+                        try:
+                            code, res = _bq.update_schedule(t['schedule_id'], active=False)
+                            if 200 <= int(code or 0) < 300:
+                                con.execute("UPDATE bq_sched SET active=0, status='paused' WHERE id=?", (t['schedule_id'],))
+                                out['sched'].append('$%g' % (t['amount'] or 0))
+                            else:
+                                out['sched_err'].append(str(res)[:80])
+                        except Exception as e:
+                            out['sched_err'].append(str(e)[:80])
+                    con.execute("UPDATE bq_tx SET fix_state='stopped', fix_note=? WHERE customer_id=? AND COALESCE(fix_state,'') IN ('','no','partial') "
+                                "AND status IN (%s)" % ','.join('?' * len(_bq.BAD_ST)), [note, t['customer_id']] + list(_bq.BAD_ST))
+                con.execute("UPDATE bq_tx SET fix_state='stopped', fix_note=? WHERE id=?", (note, t['id']))
+                bq_close_fixed_tasks(con)
+                con.commit()
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, out)
         m = re.match(r'/api/bq/tx/(\d+)/fix$', self.path)
         if m:
             # ✎ מצב "סודר" ידני לחיוב שנדחה: auto (לפי הסכום) / no / yes / partial
@@ -30305,16 +30351,17 @@ class H(BaseHTTPRequestHandler):
             try:
                 if not con.execute("SELECT 1 FROM donors WHERE id=?", (did,)).fetchone():
                     return self._send(200, {'ok': False, 'error': 'התורם לא נמצא'})
+                why = re.sub(r'\s+', ' ', str(b.get('reason') or '')).strip()[:200]
                 if on:
-                    con.execute("UPDATE donors SET monthly_stop=?, monthly_stop_charge=? WHERE id=?", (dt, 1 if b.get('stop_charge') else 0, did))
+                    con.execute("UPDATE donors SET monthly_stop=?, monthly_stop_charge=?, monthly_stop_note=? WHERE id=?", (dt, 1 if b.get('stop_charge') else 0, why, did))
                     out = mstop_apply(con, did)
                 else:
-                    con.execute("UPDATE donors SET monthly_stop='', monthly_stop_charge=0 WHERE id=?", (did,))
+                    con.execute("UPDATE donors SET monthly_stop='', monthly_stop_charge=0, monthly_stop_note='' WHERE id=?", (did,))
                     out = {'ok': True}
                 out['date'] = dt
                 out['future'] = on and dt > today_iso()
                 con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
-                            (did, today_iso(), 'הערה', ('⛔ הפסיק לתרום כל חודש — מ-%s' % '/'.join(reversed(dt.split('-'))) +
+                            (did, today_iso(), 'הערה', ('⛔ הפסיק לתרום כל חודש — מ-%s' % '/'.join(reversed(dt.split('-'))) + ((' · ' + why) if why else '') +
                                                        (' · החיוב האוטומטי הופסק (%s)' % ', '.join(out['sched']) if out.get('sched') else
                                                         (' · החיוב האוטומטי ייעצר בתאריך הזה' if out['future'] and b.get('stop_charge') else '')))
                              if on else '▶ חזר לתרום כל חודש'))
@@ -31180,7 +31227,7 @@ def mstop_apply(con, did=None):
     אינם חוב, והחיוב האוטומטי בבנק ווסט נעצר (אם ביקשו). נקרא בסימון, וכל שעה בשביל תאריכים עתידיים."""
     out = {'ok': True, 'pledges': 0, 'sched': [], 'sched_err': [], 'decl': 0}
     td = today_iso()
-    q = "SELECT id,monthly_stop ms,COALESCE(monthly_stop_charge,0) sc FROM donors WHERE COALESCE(monthly_stop,'')<>'' AND monthly_stop<=?"
+    q = "SELECT id,monthly_stop ms,COALESCE(monthly_stop_charge,0) sc,COALESCE(monthly_stop_note,'') mn FROM donors WHERE COALESCE(monthly_stop,'')<>'' AND monthly_stop<=?"
     for d in con.execute(q + (" AND id=?" if did else ""), (td, did) if did else (td,)).fetchall():
         out['pledges'] += con.execute("UPDATE pledges SET status='הסתיים' WHERE donor_id=? AND COALESCE(monthly,0)=1 "
                                       "AND COALESCE(status,'')<>'הסתיים'", (d['id'],)).rowcount
@@ -31188,6 +31235,20 @@ def mstop_apply(con, did=None):
                              "AND COALESCE(no_debt,0)=0", (d['id'],)).fetchall():
             if (_recon_iso(r['date']) or (r['date'] or '')[:10]) >= d['ms']:
                 con.execute("UPDATE recon SET no_debt=1 WHERE tid=?", (r['tid'],)); out['decl'] += 1
+        # מאיר: "מי שאנחנו מפסיקים אותו מאיזו סיבה שהיא — שלא יהיה ברשימת החוזרים, רק בכרטיס שלו: חזר והפסיק בתאריך"
+        try:
+            import banquest as _bq0
+            _st = list(_bq0.BAD_ST)
+            _rows = [dict(r) for r in con.execute("SELECT id,created,amount,status,customer_id,donor_id,email,fix_state,fix_amt,fix_note FROM bq_tx "
+                                                  "WHERE (donor_id=? OR customer_id IN (SELECT id FROM bq_cust WHERE donor_id=?)) AND status IN (%s)"
+                                                  % ','.join('?' * len(_st)), [d['id'], d['id']] + _st)]
+            _note = 'הפסיק את החיוב החודשי מ-' + '/'.join(reversed(d['ms'].split('-'))) + ((' · ' + d['mn']) if d['mn'] else '')
+            for r in bq_fix_annotate(con, _rows):
+                if (r.get('fix') or {}).get('state') in ('open', 'partial'):
+                    con.execute("UPDATE bq_tx SET fix_state='stopped', fix_note=? WHERE id=?", (_note, r['id']))
+            bq_close_fixed_tasks(con)
+        except Exception as e:
+            print('  mstop bq mark error:', e)
         if d['sc'] == 1:
             import banquest as _bq
             bad = False
@@ -31437,7 +31498,9 @@ def bq_fix_annotate(con, rows):
     auto = bq_fixed_map(con, [r for r in bad if not (r.get('fix_state') or '')])
     for r in bad:
         st = (r.get('fix_state') or '').strip()
-        if st == 'no':
+        if st == 'stopped':      # ⛔ הפסיק את החיוב החודשי — לא ברשימת "חזרו", רק בכרטיס שלו
+            r['fix'] = {'state': 'stopped', 'manual': 1, 'note': r.get('fix_note') or ''}
+        elif st == 'no':
             r['fix'] = {'state': 'open', 'manual': 1, 'note': r.get('fix_note') or ''}
         elif st == 'yes':
             r['fix'] = {'state': 'fixed', 'manual': 1, 'note': r.get('fix_note') or ''}
@@ -31494,7 +31557,7 @@ def bq_close_fixed_tasks(con):
         ids = sorted({t['bq_tx'] for t in ts})
         rows = [dict(r) for r in con.execute("SELECT id,created,amount,status,customer_id,donor_id,email,fix_state,fix_amt,fix_note "
                                              "FROM bq_tx WHERE id IN (%s)" % ','.join('?' * len(ids)), ids)]
-        fixed = {r['id'] for r in bq_fix_annotate(con, rows) if (r.get('fix') or {}).get('state') == 'fixed'}
+        fixed = {r['id'] for r in bq_fix_annotate(con, rows) if (r.get('fix') or {}).get('state') in ('fixed', 'stopped')}
         n = 0
         cur = con.cursor()
         for t in ts:

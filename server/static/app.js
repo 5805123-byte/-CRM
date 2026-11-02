@@ -6367,7 +6367,7 @@ function cardDetails(d,body){
         <button class="btn sm" id="pa_add" style="width:100%">➕ הוסף אברך</button>
       </div></details>`:''}
     ${(d.transactions||[]).length?`<details class="dsec"><summary>💳 חיובים ותשלומים (${(d.transactions||[]).length})</summary><div id="transactions"></div></details>`:''}
-    ${d.monthly_stop?`<div class="hintxt" style="background:#fdecea;border-radius:8px;padding:6px 10px;margin:6px 0">⛔ <b>${d.monthly_stop>todayStr()?'מפסיק':'הפסיק'} לתרום כל חודש</b> (מ-${esc(fmtGreg(d.monthly_stop))}) — מהתאריך הזה לא מופיע בדו"ח "חסר" וב"לא עבר" <button class="btn sm ghost" id="mstop" data-on="0" style="width:auto">▶ חזר לתרום</button></div>`
+    ${d.monthly_stop?`<div class="hintxt" style="background:#fdecea;border-radius:8px;padding:6px 10px;margin:6px 0">⛔ <b>${d.monthly_stop>todayStr()?'מפסיק':'הפסיק'} לתרום כל חודש</b> (מ-${esc(fmtGreg(d.monthly_stop))})${d.monthly_stop_note?' · '+esc(d.monthly_stop_note):''} — מהתאריך הזה לא מופיע בדו"ח "חסר" וב"לא עבר" <button class="btn sm ghost" id="mstop" data-on="0" style="width:auto">▶ חזר לתרום</button></div>`
       :`<div style="display:flex;justify-content:flex-end;margin:0"><button id="mstop" data-on="1" style="width:auto;background:none;border:none;padding:0 2px;font-size:.72rem;color:#9a9284;cursor:pointer;text-decoration:underline" title="התחייבות חודשית נגמרה / הפסיק — יורד מהדו״ח השבועי, וגם החיוב האוטומטי נעצר">הפסיק לתרום כל חודש</button></div>`}
     ${(dt.all||dt.year||dt.pending||dt.foreign)?`<div class="totals" style="cursor:pointer" id="gototot"><div class="tot"><span>נגבה בפועל</span><b>${totMix(curd,dt.all,dt.foreign)}</b></div><div class="tot year"><span>השנה (${GREGYEAR})</span><b>${totMix(curd,dt.year,dt.foreign)}</b></div>${(dt.pending>0||dt.pendingOther)?`<div class="tot pend"><span>🔴 טרם נגבה</span><b>${dt.pending>0?(curd+dt.pending):''}${dt.pendingOther?((dt.pending>0?' + ':'')+dt.pendingOther):''}</b></div>`:''}</div>`:''}
     ${commitHTML(d)}
@@ -6440,16 +6440,17 @@ function cardDetails(d,body){
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='details';renderCard(d);};
   // ⛔ מאיר: "איך מגדירים במערכת באופן פשוט וקל שהוא הפסיק — ולהפסיק את החיוב שלו וההתחייבות"
   const ms=document.getElementById('mstop'); if(ms)ms.onclick=async()=>{const on=ms.dataset.on==='1',nm=((d.last||'')+' '+(d.first||'')).trim();
-    let stopCharge=false,stopDate='';
+    let stopCharge=false,stopDate='',stopWhy='';
     if(on){const o=document.createElement('div');o.className='confirmov';
       o.innerHTML=`<div class="confirmbox"><div class="cm">⛔ ${esc(nm)} הפסיק לתרום כל חודש?<br><small>• ההתחייבות החודשית תסומן "הסתיים"<br>• יורד מהדו"ח השבועי ("חסר" ו"לא עבר")</small></div>
         <label class="fld" style="margin:8px 0"><span>📅 מאיזה תאריך בדיוק הפסיק?</span><input type="date" id="ms_date" value="${todayStr()}"></label>
+        <label class="fld" style="margin:8px 0"><span>📝 סיבה / הערה (לא חובה)</span><input id="ms_why" placeholder="למשל: סיים את ההתחייבות, עבר לתת דרך קרן"></label>
         <label class="gvall"><input type="checkbox" id="ms_chg" checked> לעצור גם את החיוב האוטומטי שלו בבנק ווסט</label>
         <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">⛔ כן, הפסיק</button></div></div>`;
       document.body.appendChild(o);
       const ok=await new Promise(res=>{o.querySelector('.cno').onclick=()=>res(false);o.querySelector('.cyes').onclick=()=>res(true);});
-      stopCharge=o.querySelector('#ms_chg').checked;stopDate=o.querySelector('#ms_date').value||todayStr();o.remove();if(!ok)return;}
-    ms.disabled=true;const r=await api('POST','/api/donor/'+d.id+'/stop_monthly',{on:on?1:0,stop_charge:stopCharge?1:0,date:stopDate}).catch(()=>null);ms.disabled=false;
+      stopCharge=o.querySelector('#ms_chg').checked;stopDate=o.querySelector('#ms_date').value||todayStr();stopWhy=o.querySelector('#ms_why').value.trim();o.remove();if(!ok)return;}
+    ms.disabled=true;const r=await api('POST','/api/donor/'+d.id+'/stop_monthly',{on:on?1:0,stop_charge:stopCharge?1:0,date:stopDate,reason:stopWhy}).catch(()=>null);ms.disabled=false;
     if(!r||!r.ok){uiAlert((r&&r.error)||'לא נשמר');return;}
     if(on&&(r.sched_err||[]).length)await uiAlert('סומן שהפסיק ✓\nאבל החיוב האוטומטי לא נעצר: '+r.sched_err.join(' · ')+'\nצריך לעצור אותו ידנית בלשונית 💳 חיובים.');
     else toast(on?(r.future?('⛔ נרשם — מ-'+fmtGreg(r.date)+' זה ייעצר לבד'):('⛔ סומן שהפסיק מ-'+fmtGreg(r.date)+((r.sched||[]).length?' · החיוב האוטומטי נעצר':''))):'▶ חזר לתרום');
@@ -8345,6 +8346,7 @@ const bqLocalDate=s=>String(s||'').slice(0,10);
 // מאיר: "שזה יופיע גם בכרטיס תורם שסודר… ואם כתוב סודר והאמת שלא סודר כי זה תשלום אחר —
 // שיהיה לי עיפרון לתקן שזה עדיין לא סודר, לגמרי או חלקית"
 function bqFixLine(r){const f=r.fix||{};
+  if(f.state==='stopped')return `<span class="bqfixed no">⛔ ${esc(f.note||'הפסיק את החיוב החודשי')}</span>`;
   if(f.state==='fixed')return `<span class="bqfixed">✅ ${f.manual?'סומן ידנית כמסודר':((f.via?'בסוף שולם ב-':'בסוף חויב בהצלחה ב-')+esc(bqDate(bqLocalDate(f.at)))+' · '+bqMoney(f.amount)+(f.via?' · '+esc((chCfg(f.via)||{}).l||f.via):''))}${f.note?' · '+esc(f.note):''} — מסודר</span>`;
   if(f.state==='partial')return `<span class="bqfixed part">🟠 סודר חלקית: נגבו ${bqMoney(f.got)} מתוך ${bqMoney(r.amount)} · חסר ${bqMoney(Math.max(0,(+r.amount||0)-(+f.got||0)))}${f.note?' · '+esc(f.note):''}</span>`;
   if(f.manual)return `<span class="bqfixed no">✎ סומן ידנית: עדיין לא סודר${f.note?' · '+esc(f.note):''}</span>`;
@@ -8396,6 +8398,8 @@ async function bqFixFlow(id,amt,who){
 // קצרה אחת לכל חיוב, בקבוצה מקופלת למטה
 function bqBadHTML(rows){
   const key=r=>String(r.donor_id||('n:'+(r.donor_name||r.name||'')));
+  // ⛔ מי שהפסיק את החיוב החודשי — לא כאן בכלל (רק בכרטיס שלו)
+  rows=rows.filter(r=>(r.fix||{}).state!=='stopped');
   const fixed=rows.filter(r=>(r.fix||{}).state==='fixed'), open=rows.filter(r=>(r.fix||{}).state!=='fixed');
   // ניסיונות חוזרים → שורה אחת (האחרונה), עם תאריכי הניסיונות
   const groups=[];
@@ -8432,7 +8436,7 @@ function bqTxRow(r){const op=bqOpen==='t'+r.id, s=BQ_ST[r.status]||[r.status||'?
         <label class="fld"><span>🎯 עבור מה</span><select id="bqt_cat">${bqForOpts('')}</select></label></div>
         <div class="bqacts"><button class="btn sm" data-bqa="post" data-id="${r.id}">➕ רשום בכרטיס</button></div>
         <div class="hintxt">רישום ידני ומכוון. לפני הרישום המערכת בודקת שאין כבר תרומה כזו בכרטיס.</div>`:''}
-      <div class="bqacts">${r.donor_id?`<button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס התורם</button>`:''}${bqRefBtn(r,who)}${bad&&!fixed?`<button class="btn sm bqgo bqretry" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" data-card="${esc(r.card||'')}" title="לנסות לחייב שוב את אותו כרטיס שמור בבנק ווסט, על הסכום שלא עבר">🔁 לנסות לחייב שוב</button>`:''}${bad&&!fixed&&(r.schedule_id||r.donor_id)?`<button class="btn sm ghost bqnewcard" data-sid="${r.schedule_id||''}" data-did="${r.donor_id||''}" data-amt="${esc(r.amount)}" title="התורם שלח כרטיס חדש — להכניס אותו בטופס המאובטח של בנק ווסט, לחייב את הסכום שחזר ולשמור לחיוב החודשי">💳 עדכון כרטיס</button>`:''}${bad&&!fixed&&r.schedule_id?`<button class="btn sm ghost bqpause" data-tx="${r.id}" data-who="${esc(who)}" title="להשהות את החיוב האוטומטי שלו — עד תאריך מסוים או לתמיד">⏸ השהה</button>`:''}${bad?`<button class="btn sm ghost bqfixb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" title="לתקן אם זה סודר או לא">✎ סודר / לא סודר</button>`:''}${bad?`<button class="btn sm ghost bqnoteb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" data-did="${r.donor_id||''}" title="שלחתי וואטסאפ / מייל, שוחחתי בטלפון, אמר לגבות בחודש הבא — נרשם גם בקשר בכרטיס התורם">📝 הערה</button>`:''}</div>
+      <div class="bqacts">${r.donor_id?`<button class="btn sm ghost" data-bqa="card" data-did="${r.donor_id}">👤 כרטיס התורם</button>`:''}${bqRefBtn(r,who)}${bad&&!fixed?`<button class="btn sm bqgo bqretry" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" data-card="${esc(r.card||'')}" title="לנסות לחייב שוב את אותו כרטיס שמור בבנק ווסט, על הסכום שלא עבר">🔁 לנסות לחייב שוב</button>`:''}${bad&&!fixed&&(r.schedule_id||r.donor_id)?`<button class="btn sm ghost bqnewcard" data-sid="${r.schedule_id||''}" data-did="${r.donor_id||''}" data-amt="${esc(r.amount)}" title="התורם שלח כרטיס חדש — להכניס אותו בטופס המאובטח של בנק ווסט, לחייב את הסכום שחזר ולשמור לחיוב החודשי">💳 עדכון כרטיס</button>`:''}${bad&&!fixed&&r.schedule_id?`<button class="btn sm ghost bqpause" data-tx="${r.id}" data-who="${esc(who)}" title="להשהות את החיוב האוטומטי שלו — עד תאריך מסוים או לתמיד">⏸ השהה</button>`:''}${bad?`<button class="btn sm ghost bqfixb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" title="לתקן אם זה סודר או לא">✎ סודר / לא סודר</button>`:''}${bad?`<button class="btn sm ghost bqnoteb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(who)}" data-did="${r.donor_id||''}" title="שלחתי וואטסאפ / מייל, שוחחתי בטלפון, אמר לגבות בחודש הבא — נרשם גם בקשר בכרטיס התורם">📝 הערה</button>`:''}${bad&&!fixed?`<button class="bqstopb" data-tx="${r.id}" data-who="${esc(who)}" style="background:none;border:none;padding:0 4px;font-size:.72rem;color:#9a9284;cursor:pointer;text-decoration:underline" title="התורם הפסיק — לעצור את החיוב האוטומטי, ולהוריד מרשימת החיובים שחזרו (נשאר רק בכרטיס שלו)">⛔ הפסיק את החיוב החודשי</button>`:''}</div>
     </div>`:''}</div>`;}
 function bqDonorDL(){return `<datalist id="bq_dl">${DB.slice(0,4000).map(d=>`<option value="${esc(((d.last||'')+' '+(d.first||'')).trim())} #${d.id}">`).join('')}</datalist>`;}
 function bqPickDonor(v){const m=/#(\d+)\s*$/.exec(v||'');if(m)return +m[1];
@@ -8486,7 +8490,10 @@ function bqFormKeep(){if(!bqNew)return;const g=id=>document.getElementById(id);
     .forEach(x=>{const[k,id]=x.split(':');if(g(id))bqNew[k]=g(id).value;});}
 function bqWire(box){const g=id=>document.getElementById(id);
   box.querySelectorAll('[data-bqt]').forEach(b=>b.onclick=()=>{bqTab=b.dataset.bqt;bqOpen=null;renderBQ();});
-  box.querySelectorAll('.bqrh').forEach(b=>b.onclick=()=>{bqOpen=bqOpen===b.dataset.op?null:b.dataset.op;renderBQ(false);});
+  // מאיר: "כשאני לוחץ על השם שלו בחיובים המסך קופץ ועולה, ולא מתביית על החיוב שלו" — נשארים במקום, והשורה שנפתחה בתצוגה
+  box.querySelectorAll('.bqrh').forEach(b=>b.onclick=async()=>{const op=b.dataset.op,y=window.scrollY;bqOpen=bqOpen===op?null:op;
+    await renderBQ(false);window.scrollTo(0,y);
+    const el=document.querySelector('.bqrh[data-op="'+op+'"]');if(el&&bqOpen===op)el.closest('.bqrow').scrollIntoView({block:'nearest'});});
   let qt;const q=g('bq_q');if(q)q.oninput=()=>{clearTimeout(qt);qt=setTimeout(()=>{bqQ=q.value.trim();renderBQ().then(()=>{const n=g('bq_q');if(n){n.focus();n.setSelectionRange(n.value.length,n.value.length);}});},350);};
   if(!document.getElementById('bq_dl'))box.insertAdjacentHTML('beforeend',bqDonorDL());
   g('bq_day').onclick=()=>{if(bqDay){bqDay=null;renderBQ(false);}else{const t=(bqStat&&bqStat.today)||todayStr();bqDayLoad(t,t);}};
@@ -8649,7 +8656,7 @@ async function bqDonorBlock(d,body){
     const qi=document.getElementById('q');if(qi)qi.value='';q='';
     render();
     let n=0;const t=setInterval(()=>{const el=document.querySelector('.bqrh[data-op="s'+sid+'"]');
-      if(el||++n>40){clearInterval(t);if(el)el.closest('.bqrow').scrollIntoView({behavior:'smooth',block:'start'});}},150);});
+      if(el||++n>40){clearInterval(t);if(el)el.closest('.bqrow').scrollIntoView({block:'center'});}},150);});
   const a=box.querySelector('#bqd_once'), b2=box.querySelector('#bqd_rec');
   if(a)a.onclick=go('once'); if(b2)b2.onclick=go('rec');
 }
@@ -19084,6 +19091,21 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   bqHist={};await load();render();
   if(did&&inCard){const d=DB.find(x=>x.id===did);if(d)openDonor(d);}
 });
+// ⛔ "הפסיק את החיוב החודשי" — מאיזה תאריך, ואז: הוראת הקבע נעצרת, והחיובים שחזרו לו יוצאים מרשימת "חזרו"
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.bqstopb');if(!b)return;e.stopPropagation();
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox"><div class="cm">⛔ ${esc(b.dataset.who||'')} הפסיק את החיוב החודשי?<br><small>• החיוב האוטומטי בבנק ווסט ייעצר (גם הניסיונות החוזרים)<br>• יוצא מרשימת החיובים שחזרו — נשאר רק בכרטיס שלו</small></div>
+    <label class="fld" style="margin:8px 0"><span>📅 מאיזה תאריך הפסיק?</span><input type="date" id="bs_d" value="${todayStr()}"></label>
+    <label class="fld" style="margin:8px 0"><span>📝 סיבה / הערה (לא חובה)</span><input id="bs_w" placeholder="למשל: אין לו כרגע, עבר דירה, ביקש להפסיק"></label>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">⛔ כן, הפסיק</button></div></div>`;
+  document.body.appendChild(o);
+  const ok=await new Promise(res=>{o.querySelector('.cno').onclick=()=>res(false);o.querySelector('.cyes').onclick=()=>res(true);});
+  const dt=o.querySelector('#bs_d').value||todayStr(),why=o.querySelector('#bs_w').value.trim();o.remove();if(!ok)return;
+  b.disabled=true;const r=await api('POST','/api/bq/tx/'+b.dataset.tx+'/stopped',{date:dt,reason:why}).catch(()=>null);b.disabled=false;
+  if(!r||!r.ok){uiAlert((r&&r.error)||'לא נשמר');return;}
+  if((r.sched_err||[]).length)await uiAlert('סומן שהפסיק ✓ — אבל החיוב האוטומטי לא נעצר בבנק ווסט: '+r.sched_err.join(' · ')+'\nצריך לעצור אותו ידנית (⏸ השהה).');
+  else toast('⛔ סומן שהפסיק'+((r.sched||[]).length?' · החיוב האוטומטי נעצר':''));
+  await load();render();});
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.bqfixb');if(!b)return;
   e.preventDefault();e.stopPropagation();
   if(await bqFixFlow(+b.dataset.tx,b.dataset.amt,b.dataset.who||''))renderBQ();});
@@ -19310,7 +19332,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   const qi=document.getElementById('q');if(qi)qi.value='';q='';bqQ='';
   if(sid){bqTab='rec';bqNew=null;bqOpen='s'+sid;bqSwap=sid;await renderBQ();
     let n=0;const t=setInterval(()=>{const el=document.querySelector('.bqrh[data-op="s'+sid+'"]');
-      if(el||++n>40){clearInterval(t);if(el)el.closest('.bqrow').scrollIntoView({behavior:'smooth',block:'start'});else toast('הוראת הקבע לא נמצאה — אפשר לחפש אותה בלשונית קבועים');}},150);
+      if(el||++n>40){clearInterval(t);if(el)el.closest('.bqrow').scrollIntoView({block:'center'});else toast('הוראת הקבע לא נמצאה — אפשר לחפש אותה בלשונית קבועים');}},150);
     return;}
   bqSwap=null;await bqOpenForm('once',did);
   if(bqNew&&bqNew.did==did){bqNew.pm='new';bqNew.amt=String(amt);renderBQ(false);}
