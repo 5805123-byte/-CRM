@@ -18579,7 +18579,7 @@ function ymRepOpen(jid,t0){
   const cur=YMREP.find(x=>x.job==jid)||{cal:'h',day:1,at:'10:00',only_open:1};
   const txt0=cur.text||cur.orig||t0||'';
   const o=document.createElement('div');o.className='confirmov';
-  o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800">🔁 לשלוח את ההודעה הזו כל חודש</div>
+  o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800">🔁 לחזור על ההודעה הזו — כל יום או כל חודש</div>
     <div class="hintxt" style="margin:6px 0">אותו נוסח, לאותם נמענים. לא יוצא בשבת וביום טוב — נדחה לשעה המתאימה הבאה.</div>
     <div class="mkseg" id="yrf" style="margin:6px 0"><button type="button" data-f="month" class="${cur.freq!=='daily'?'on':''}">פעם בחודש</button><button type="button" data-f="daily" class="${cur.freq==='daily'?'on':''}">📞 כל יום עד שאסמן "סודר"</button></div>
     <div class="hintxt" id="yrfh"></div>
@@ -18609,7 +18609,7 @@ function ymViewJobs(){
   const det=r=>{const j=r.job, ms=r.msgs||[];
     return `<div class="ymdet">
       <div class="addrow" style="justify-content:space-between;flex-wrap:wrap"><div class="ympv" style="flex:1;margin:0">${esc(j.text||'')}</div>
-        <span>${j.channel==='voice'?`<button class="btn sm" id="ym_chk" data-j="${j.id}">🔄 עדכן מהיומן של ימות</button>`:''}${j.channel==='voice'&&!j.test&&ms.some(ymNotHeard)?`<button class="btn sm ymredial" data-j="${j.id}" data-ids="">📞 חייג שוב למי שלא ענה / לא שמע (${ms.filter(ymNotHeard).length})</button>`:''}<button class="btn sm ghost ymjlog" data-j="${j.id}">📜 הלוג הטכני</button>${j.test?'':`<button class="btn sm ymrep" data-j="${j.id}" data-t="${esc((ms[0]&&ms[0].text)||j.text||'')}" title="שההודעה הזו תצא שוב לאותם נמענים כל חודש / כל יום — ואפשר לשנות בה את הנוסח">🔁 ${YMREP.some(x=>x.job==j.id)?'הודעה חודשית ✓':'לשלוח כל חודש'}</button>`}</span></div>
+        <span>${j.channel==='voice'?`<button class="btn sm" id="ym_chk" data-j="${j.id}">🔄 עדכן מהיומן של ימות</button>`:''}${j.channel==='voice'&&!j.test&&ms.some(ymNotHeard)?`<button class="btn sm ymredial" data-j="${j.id}" data-ids="">📞 חייג שוב למי שלא ענה / לא שמע (${ms.filter(ymNotHeard).length})</button>`:''}<button class="btn sm ghost ymjlog" data-j="${j.id}">📜 הלוג הטכני</button>${j.test?'':`<button class="btn sm ymresend" data-j="${j.id}" data-t="${esc((ms[0]&&ms[0].text)||j.text||'')}" title="לשלוח את ההודעה הזו שוב לאותם נמענים — עכשיו או בשעה שתבחר, ואפשר לתקן את הנוסח">📤 לשלוח שוב</button>`}${j.test?'':`<button class="btn sm ymrep" data-j="${j.id}" data-t="${esc((ms[0]&&ms[0].text)||j.text||'')}" title="שההודעה הזו תצא שוב לאותם נמענים כל חודש / כל יום — ואפשר לשנות בה את הנוסח">🔁 ${YMREP.some(x=>x.job==j.id)?((YMREP.find(x=>x.job==j.id)||{}).freq==='daily'?'חוזרת כל יום ✓ — לשנות':'חוזרת כל חודש ✓ — לשנות'):'לחזור על ההודעה — כל יום / כל חודש'}</button>`}</span></div>
       ${(()=>{const x=YMREP.find(x=>x.job==j.id);return x?`<div class="hintxt">🔁 יוצאת כל חודש — ${esc(ymRepWhen(x))} · הפעם הבאה: <b>${esc(ymRepDt(x.next_run))}</b></div>`:'';})()}
       ${j.label&&j.status==='error'?`<div class="ymwarn">${esc(j.label)}</div>`:''}${j.retry_of?`<div class="hintxt">${/חיוג חוזר/.test(j.label||'')?'📞 חיוג חוזר ידני':'🔁 ניסיון חוזר אוטומטי — למי שלא ענה שעתיים קודם'}</div>`:''}
       <div class="ymtblw"><table class="ymtbl"><thead><tr><th>נמען</th><th>טלפון</th>${ms.some(m=>+m.amount)?'<th>סכום</th>':''}<th>נשלח</th><th>תוצאה</th></tr></thead><tbody>
@@ -18654,6 +18654,22 @@ function ymViewJobs(){
     b.disabled=true;const r=await api('POST','/api/yemot/job/'+b.dataset.j+'/redial',{ids});
     if(!r||!r.ok){b.disabled=false;await uiAlert((r&&r.error)||'לא יצא');return;}
     toast('📞 החיוג החוזר יצא ל-'+r.n+' ✓');await ymLoadStatus();const x=await api('GET','/api/yemot/job/'+b.dataset.j);if(x&&x.ok)ymJobView=x;renderCommYm();});
+  // 📤 מאיר: "אני רוצה אפשרות לשלוח לו שוב מכאן, מהחלון הזה" — אותם נמענים, הנוסח (אפשר לתקן), עכשיו או בשעה מסוימת
+  view.querySelectorAll('.ymresend').forEach(b=>b.onclick=async ev=>{ev.stopPropagation();
+    const o=document.createElement('div');o.className='confirmov';
+    const p2=n=>String(n).padStart(2,'0'),t=new Date(Date.now()+3600e3),def=t.getFullYear()+'-'+p2(t.getMonth()+1)+'-'+p2(t.getDate())+'T'+p2(t.getHours())+':00';
+    o.innerHTML=`<div class="confirmbox"><div class="cm" style="font-weight:800">📤 לשלוח שוב</div>
+      <label class="fld" style="margin:6px 0"><span>🗣 הנוסח (אפשר לתקן)</span><textarea id="rs_t" rows="4" style="width:100%">${esc(b.dataset.t||'')}</textarea></label>
+      <div class="mkseg" id="rs_w"><button type="button" data-w="now" class="on">עכשיו</button><button type="button" data-w="later">בתאריך ושעה</button></div>
+      <input type="datetime-local" id="rs_at" value="${def}" style="display:none;margin-top:6px;width:100%">
+      <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">📤 שלח</button></div></div>`;
+    document.body.appendChild(o);let w='now';
+    o.querySelectorAll('#rs_w [data-w]').forEach(x=>x.onclick=()=>{w=x.dataset.w;o.querySelectorAll('#rs_w button').forEach(y=>y.classList.toggle('on',y===x));o.querySelector('#rs_at').style.display=w==='later'?'':'none';o.querySelector('.cyes').textContent=w==='later'?'⏰ לתזמן':'📤 שלח';});
+    const ok=await new Promise(res=>{o.querySelector('.cno').onclick=()=>res(false);o.querySelector('.cyes').onclick=()=>res(true);});
+    const tx=o.querySelector('#rs_t').value.trim(),at=w==='later'?o.querySelector('#rs_at').value:'';o.remove();if(!ok)return;
+    const r=await api('POST','/api/yemot/job/'+b.dataset.j+'/resend',{text:tx,send_at:at}).catch(()=>null);
+    if(!r||!r.ok){uiAlert('לא נשלח:\n'+((r&&r.error)||'שגיאה'));return;}
+    toast(r.send_at?'⏰ מתוזמן ל-'+ymRepDt(r.send_at):'📤 נשלח שוב');await ymLoadStatus();renderCommYm();});
   view.querySelectorAll('.ymjlog').forEach(b=>b.onclick=async ev=>{ev.stopPropagation();ymLogJob=+b.dataset.j;ymView='log';await ymLoadLog();renderCommYm();window.scrollTo(0,0);});
 }
 // ---------------- 📞 יומן שיחות (LogFolderEnterExit של ימות) ----------------

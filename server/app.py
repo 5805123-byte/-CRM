@@ -4881,8 +4881,8 @@ def ensure_schema():
     except Exception as e:
         print('  sukkot fix error:', e)
     # מאיר (2.11.2026): "לרשום הכל אצל אירני. את בליסקו תעזוב — אל תתייחס לתשלומים שלו, רק אירני, וזה החוב של אירני נטו".
-    # מבטל את החלוקה 540/720 לבליסקו, מחזיר לאירני כל מה שהועבר מהחיובים שלו לבליסקו, היששכר־זבולון של בליסקו עובר
-    # לאירני מספטמבר 2026 (ה-1,000$ של אירני מכסים ספטמבר + אוקטובר), ובליסקו מסומן שהפסיק — בלי חוב ובלי חיובים חוזרים
+    # מבטל את החלוקה 540/720 לבליסקו ומחזיר לאירני כל מה שהועבר מהחיובים שלו לבליסקו. אצל אירני — התחייבות 720$
+    # לחודש מאוקטובר 2026; אצל בליסקו — היששכר־זבולון ממשיך בלי תשלום, בלי חוב ובלי חיובים חוזרים
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='irni_all_v1'").fetchone():
             _ir = con.execute("SELECT id FROM donors WHERE last LIKE 'אירנ%' OR lower(COALESCE(english,'')) LIKE '%irani%' OR lower(COALESCE(english,'')) LIKE '%irni%'").fetchall()
@@ -4905,23 +4905,29 @@ def ensure_schema():
                 con.execute("UPDATE recon SET donor_id=? WHERE donor_id=? AND tid IN (SELECT tid FROM donations WHERE donor_id=? AND tid IS NOT NULL)", (ir, bl, ir))
                 con.execute("UPDATE bq_tx SET donor_id=? WHERE donor_id=? AND SUBSTR(created,1,10)>='2026-10-26' AND status NOT IN (%s)"
                             % ','.join("'%s'" % x for x in ('declined', 'error', 'failed', 'blocked')), (ir, bl))
-                # היששכר־זבולון של בליסקו → אירני, מספטמבר 2026
-                _np = 0
-                for _p in con.execute("SELECT id FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0", (bl,)).fetchall():
-                    try: _hd = greg_to_heb_full('2026-09-01')
-                    except Exception: _hd = ''
-                    con.execute("UPDATE partners SET donor_id=?, start_greg='2026-09-01', start_date=COALESCE(NULLIF(?,''),start_date), "
-                                "paid_thru='', note=TRIM(COALESCE(note,'')||' · הועבר מבליסקו יצחק — אירני משלם מספטמבר 2026',' ·') WHERE id=?", (ir, _hd, _p['id']))
-                    _np += 1
+                # מאיר: "החצי יששכר־זבולון של בליסקו ממשיך, אבל בלי תשלום" — השותפות נשארת אצלו, בחלק תשלום 0 (מחזיק ואינו משלם)
+                _np = con.execute("UPDATE partners SET share='0', note=TRIM(COALESCE(note,'')||' · ממשיך בלי תשלום — אירני משלם (מאיר, 2.11.2026)',' ·') "
+                                  "WHERE donor_id=? AND COALESCE(active,1)<>0", (bl,)).rowcount
+                # "תכתוב שאצל אירני ההתחייבות שלו מהחודש העשירי היא 720 לחודש"
+                _pl = con.execute("SELECT id,amount,permo FROM pledges WHERE donor_id=? AND COALESCE(monthly,0)=1 AND COALESCE(status,'')<>'הסתיים' "
+                                  "ORDER BY id DESC LIMIT 1", (ir,)).fetchone()
+                if _pl:
+                    _old = (_pl['permo'] or _pl['amount'] or '').strip()
+                    con.execute("UPDATE pledges SET permo='720', amount='720', prev_amount=?, since='2026-10-01', cur='$', confirmed=1 WHERE id=?",
+                                (_old if _old and _old != '720' else '', _pl['id']))
+                else:
+                    con.execute("INSERT INTO pledges(donor_id,category,amount,permo,status,date,note,monthly,since,cur,confirmed) "
+                                "VALUES(?,'קבוע','720','720','נתן',?,?,1,'2026-10-01','$',1)",
+                                (ir, today_iso(), 'כולל את החלק של בליסקו ביששכר־זבולון (מאיר, 2.11.2026)'))
                 # בליסקו — הפסיק (בלי חוב, בלי חיובים חוזרים, לא בדו"ח)
-                con.execute("UPDATE donors SET monthly_stop='2026-09-01', monthly_stop_charge=1, monthly_stop_note='אירני משלם הכל במקומו' WHERE id=?", (bl,))
+                con.execute("UPDATE donors SET monthly_stop='2026-09-01', monthly_stop_charge=1, monthly_stop_note='אירני משלם הכל — היששכר־זבולון ממשיך בלי תשלום' WHERE id=?", (bl,))
                 try: mstop_apply(con, bl)
                 except Exception as e: print('  blisko stop error:', e)
-                for _d, _txt in ((ir, '🤝 הכל נרשם כאן: התשלומים מהכרטיס (גם החלק שנחשב לבליסקו) והיששכר־זבולון שהיה של בליסקו — מספטמבר 2026 (מאיר)'),
-                                 (bl, '⛔ הפסיק — אירני משלם הכל במקומו. היששכר־זבולון עבר לכרטיס של אירני מספטמבר 2026 (מאיר)')):
+                for _d, _txt in ((ir, '🤝 הכל נרשם כאן — כל התשלומים מהכרטיס (גם מה שנחשב קודם לבליסקו). ההתחייבות: $720 לחודש מאוקטובר 2026 (מאיר)'),
+                                 (bl, '⛔ לא משלם — אירני משלם הכל. היששכר־זבולון נשאר אצלו, בלי תשלום (מאיר)')):
                     con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
                                 (_d, today_iso(), 'מערכת', _txt, '', now_iso()))
-                print('  הכל אצל אירני: %d תשלומים חזרו, %d שותפויות יש"ז עברו' % (_mv, _np))
+                print('  הכל אצל אירני: %d תשלומים חזרו, %d שותפויות של בליסקו בלי תשלום, התחייבות 720 מ-10/2026' % (_mv, _np))
                 con.execute("INSERT INTO seed_flags(name) VALUES('irni_all_v1')"); con.commit()
             else:
                 print('  הכל אצל אירני: נמצאו %d / %d — לא בוצע' % (len(_ir), len(_bl)))
@@ -26661,6 +26667,43 @@ class H(BaseHTTPRequestHandler):
                 _thr.Thread(target=ym_worker, args=(jid,), daemon=True).start()
             return self._send(200, {'ok': True, 'job': jid, 'total': len(recs), 'no_phone': sum(1 for r in recs if not r['phone']),
                                     'send_at': sat, 'moved': bool(sat and want_ and sat != want_.strftime('%Y-%m-%d %H:%M')), 'repeat_next': rep_next})
+        m = re.match(r'/api/yemot/job/(\d+)/resend$', self.path)
+        if m:
+            # 📤 לשלוח שוב את אותו משלוח (אותם נמענים), בנוסח שאולי תוקן — עכשיו או בשעה שנבחרה
+            jid0 = int(m.group(1))
+            con = db()
+            try:
+                j0 = con.execute("SELECT * FROM ym_job WHERE id=? AND COALESCE(test,0)=0", (jid0,)).fetchone()
+                if not j0:
+                    return self._send(200, {'ok': False, 'error': 'המשלוח לא נמצא'})
+                src = list(con.execute("SELECT * FROM ym_msg WHERE job=? AND COALESCE(retry_of,0)=0 ORDER BY id", (jid0,)))
+                if not src:
+                    return self._send(200, {'ok': False, 'error': 'אין נמענים במשלוח'})
+                tx = str(b.get('text') or '').strip()
+                sat = ''
+                if re.fullmatch(r'\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}', str(b.get('send_at') or '').strip()[:16]):
+                    okd = ym_next_ok(datetime.datetime.strptime(str(b['send_at']).strip()[:16].replace('T', ' '), '%Y-%m-%d %H:%M'))
+                    if okd > il_now().replace(tzinfo=None) + datetime.timedelta(minutes=1):
+                        sat = okd.strftime('%Y-%m-%d %H:%M')
+                same = tx == ((src[0]['text'] or '').strip())
+                con.execute("INSERT INTO ym_job(created,channel,text,amount,total,status,test,label,bill_path,send_at) VALUES(?,?,?,?,?,?,0,?,?,?)",
+                            (now_iso(), j0['channel'], tx or j0['text'], j0['amount'] or '', len(src), 'scheduled' if sat else 'queued',
+                             '📤 נשלח שוב', j0['bill_path'] or '', sat))
+                nj = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                for r in src:
+                    con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,fund) VALUES(?,?,?,?,?,?,'queued',?,?,?)",
+                                (nj, r['kind'], r['ref_id'], r['name'], r['phone'],
+                                 r['text'] if (same or not tx) else ym_fill(tx, r['name'] or '', r['amount'] or '', '', ''),
+                                 r['amount'] or '', r['req_off'], r['fund'] if 'fund' in r.keys() else ''))
+                if j0['status'] == 'error':          # המשלוח הישן שנכשל (database is locked) — לא יישלח פעמיים
+                    con.execute("UPDATE ym_msg SET status='skipped' WHERE job=? AND status='queued'", (jid0,))
+                con.commit()
+            finally:
+                con.close()
+            if not sat:
+                import threading as _thr3
+                _thr3.Thread(target=ym_worker, args=(nj,), daemon=True).start()
+            return self._send(200, {'ok': True, 'job': nj, 'send_at': sat})
         m = re.match(r'/api/yemot/job/(\d+)/check$', self.path)
         if m:
             con = db()
