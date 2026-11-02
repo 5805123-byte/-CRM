@@ -951,6 +951,10 @@ def ensure_schema():
                     "phone TEXT, from_gid TEXT, from_name TEXT, to_gid TEXT, to_name TEXT, fee REAL, call_id TEXT, ok INTEGER, error TEXT)")
         con.execute("CREATE INDEX IF NOT EXISTS ix_mkglog_cid ON mkg_log(cid, at)")
     except Exception: pass
+    for col in ('amount REAL', 'method TEXT', 'conf TEXT', 'status TEXT', 'debt_id TEXT'):
+        try:
+            con.execute("ALTER TABLE mkg_log ADD COLUMN " + col)
+        except Exception: pass
     # 📨 בקשות להחלפת קבוצה שנשלחו מהשלוחה (מי שעבר את המקסימום) — מטופלות במשרד
     try:
         con.execute("CREATE TABLE IF NOT EXISTS mkg_req(id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, cid TEXT, name TEXT, code TEXT, "
@@ -23633,9 +23637,17 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
             for g in groups:
                 g['say'] = mkg_say(cfg, g['id'], g['name'])
+                g['erech'] = mkg_is_erech(cfg, g['id'], g['name'])
+            gr_ = {g['id']: g for g in groups}
+            for rq in reqs:
+                cc = byid.get(str(rq['cid']))
+                if rq['status'] == 'new' and cc and rq['to_gid'] in gr_:
+                    rq['quote'] = mkg_quote(cfg, cc, gr_, rq['to_gid'])
+            import nedarim as _nd
+            accts = [{'mosad': a['mosad'], 'name': a['name'], 'mk': a['mosad'] == mk_mosad()} for a in _nd.accounts()]
             lk = [{'id': x, 'name': ((byid.get(x) or {}).get('firstName', '') + ' ' + ((byid.get(x) or {}).get('lastName') or '')).strip(),
                    'code': (byid.get(x) or {}).get('clientCode')} for x in locked]
-            return self._send(200, {'ok': True, 'cfg': cfg, 'groups': groups, 'link': link, 'log': log, 'reqs': reqs, 'locked': lk,
+            return self._send(200, {'ok': True, 'cfg': cfg, 'groups': groups, 'link': link, 'log': log, 'reqs': reqs, 'locked': lk, 'accounts': accts,
                                     'new_reqs': sum(1 for r in reqs if r['status'] == 'new'),
                                     'month': {'n': month['n'], 'fees': month['f']}})
         if self.path.split('?')[0] == '/api/mikveh/selfgroup_lock':
@@ -26635,21 +26647,25 @@ class H(BaseHTTPRequestHandler):
                                 (r['cid'], now_iso(), 'group', '✗ נדחתה הבקשה לעבור לקבוצה %s%s' % (r['to_name'], (' · ' + note) if note else '')))
                     con.commit()
                     return self._send(200, {'ok': True})
-                fee = 0.0
                 try:
-                    _mk.set_group(r['cid'], r['to_gid'])
-                    if str(_mk.client(r['cid']).get('groupId')) != str(r['to_gid']):
-                        raise RuntimeError('המקווה לא עדכן את הקבוצה')
+                    gr_ = {g['id']: g for g in _mk.groups()}
+                    cc = _mk.client(r['cid'])
                 except Exception as e:
                     return self._send(200, {'ok': False, 'error': str(e)[:300]})
-                err = ''
+                if r['to_gid'] not in gr_ or cc.get('groupId') not in gr_:
+                    return self._send(200, {'ok': False, 'error': 'הקבוצה לא נמצאה במקווה'})
+                cfg = mkg_cfg(con)
+                q = mkg_quote(cfg, cc, gr_, r['to_gid'])
+                if b.get('amount') not in (None, ''):          # המנהל יכול לשנות את הסכום (0 = בלי חוב / זיכוי)
+                    try:
+                        q['amount'] = round(float(b.get('amount')), 2)
+                    except ValueError:
+                        pass
+                meth = 'debt' if q['amount'] > 0 else 'credit' if q['amount'] < 0 else 'free'
+                ok_, err, _d = mkg_apply(con, r['cid'], cc, gr_, cc.get('groupId'), r['to_gid'], q, meth, 'req:%d' % r['id'], r['phone'] or '')
+                if not ok_:
+                    return self._send(200, {'ok': False, 'error': err})
                 con.execute("UPDATE mkg_req SET status='done', handled_at=?, note=? WHERE id=?", (now_iso(), note, r['id']))
-                con.execute("INSERT INTO mkg_log(at,cid,name,code,phone,from_gid,from_name,to_gid,to_name,fee,call_id,ok,error) "
-                            "VALUES(?,?,?,?,?,?,?,?,?,?,?,1,?)",
-                            (now_iso(), r['cid'], r['name'], r['code'], r['phone'], r['from_gid'], r['from_name'], r['to_gid'], r['to_name'],
-                             fee, 'req:%d' % r['id'], err))
-                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                            (r['cid'], now_iso(), 'group', '✓ אושרה הבקשה מהטלפון: %s → %s' % (r['from_name'], r['to_name'])))
                 con.commit()
             finally:
                 con.close()
@@ -26690,7 +26706,14 @@ class H(BaseHTTPRequestHandler):
             cfg = {'enabled': bool(b.get('enabled')), 'groups': gs, 'max': int(num('max', 0, 99, 1)),
                    'days': int(num('days', 1, 366, 30)), 'say': say,
                    'locked_groups': [str(x) for x in (b.get('locked_groups') or []) if str(x) in known],
-                   'req_on': bool(b.get('req_on'))}
+                   'req_on': bool(b.get('req_on')),
+                   'divisor': num('divisor', 1, 366, 30), 'round': num('round', 0, 100, 1),
+                   'credit_down': bool(b.get('credit_down')), 'say_prices': bool(b.get('say_prices')),
+                   'cancel_on': bool(b.get('cancel_on')),
+                   'pay_methods': [m for m in (b.get('pay_methods') or []) if m in ('keva', 'card', 'debt')] or ['debt'],
+                   'nd_mosad': str(b.get('nd_mosad') or '').strip()[:20],
+                   'erech_groups': [str(x) for x in (b.get('erech_groups') or []) if str(x) in known]
+                   if isinstance(b.get('erech_groups'), list) else 'auto'}
             if cfg['enabled'] and len(gs) < 2:
                 return self._send(200, {'ok': False, 'error': 'צריך לבחור לפחות 2 קבוצות שאפשר לעבור ביניהן'})
             con = db()
@@ -34538,14 +34561,33 @@ def ivr_log(P, ans):
 # שלוחת API נפרדת ממה שיש כבר". קוד סודי משלה (לא של שלוחת התשלום), הגדרות ב-app_kv (mkg_cfg), יומן ב-mkg_log.
 # הזיהוי — לפי הטלפון שממנו מתקשרים (כמו שרשום ללקוח במקווה). הקנס נרשם כחוב אצל הלקוח במקווה עצמו.
 # מאיר: "לא אמור להיות קנס בכלל… הגדרה שאפשר להחליף X פעמים בתוך Y ימים, וזהו"
-MKG_DEFAULT = {'enabled': False, 'groups': [], 'max': 1, 'days': 30, 'say': {}, 'locked_groups': [], 'req_on': False}
+MKG_DEFAULT = {'enabled': False, 'groups': [], 'max': 1, 'days': 30, 'say': {}, 'locked_groups': [], 'req_on': False,
+               # 💰 מאיר: "המערכת צריכה לדעת את המחירים, כי אם יש מנוי בתוקף ומשנה למשהו שעולה יותר בחודש…" —
+               # הפרש = (מחיר חדש − נוכחי) × ימים שנשארו ÷ divisor. לשלם: הוראת קבע / אשראי בטלפון / חוב במקווה;
+               # זול יותר: זיכוי ביתרה הזמנית (בלי ביטול). חוב שעוד לא שולם — אפשר לבטל את המעבר בטלפון.
+               'divisor': 30, 'round': 1, 'credit_down': True, 'pay_methods': ['debt'], 'nd_mosad': '',
+               'erech_groups': 'auto', 'say_prices': True, 'cancel_on': True}
 
 # 🗣️ מאיר: "אני רוצה אפשרות לשנות טקסטים בשלוחה API" — כל מה שהשלוחות של המקווה אומרות. בסוגריים מסולסלים —
 # מה שהמערכת ממלאת לבד (שם, קבוצה, סכום…). מה שלא שונה — ברירת המחדל. נשמר ב-app_kv (mk_ivr_texts).
 MK_TEXTS = [
     # (מפתח, שלוחה, תיאור, ברירת מחדל)
     ('hello', 'grp', 'פתיחה — הקבוצה הנוכחית', 'שלום {name}, אתם כעת בקבוצה {group}'),
-    ('option', 'grp', 'אפשרות בתפריט', 'למעבר לקבוצה {group} הקישו {n}'),
+    ('option', 'grp', 'אפשרות בתפריט (בלי מחיר)', 'למעבר לקבוצה {group} הקישו {n}'),
+    ('option_price', 'grp', 'אפשרות בתפריט (עם המחיר לחודש)', 'למעבר לקבוצה {group}, {price} שקלים לחודש, הקישו {n}'),
+    ('quote_pay', 'grp', 'הצעת מחיר — יש הפרש לתשלום', 'המעבר לקבוצה {group} עולה {price} שקלים לחודש. נשארו לכם {days} ימים במנוי, ולכן ההפרש לתשלום הוא {amount} שקלים. לאישור הקישו 1, לביטול הקישו 2'),
+    ('quote_credit', 'grp', 'הצעת מחיר — מגיע זיכוי', 'במעבר לקבוצה {group} תקבלו זיכוי של {amount} שקלים ביתרה הזמנית, על {days} הימים שנשארו לכם במנוי. שימו לב, את המעבר הזה אי אפשר לבטל. לאישור הקישו 1, לביטול הקישו 2'),
+    ('pay_keva', 'grp', 'תשלום — הוראת קבע', 'לתשלום מהוראת הקבע בכרטיס המסתיים בספרות {last4} הקישו {n}'),
+    ('pay_card', 'grp', 'תשלום — כרטיס אשראי', 'לתשלום בכרטיס אשראי הקישו {n}'),
+    ('pay_debt', 'grp', 'תשלום — חוב במקווה', 'לרישום חוב במקווה ותשלום במשרד הקישו {n}'),
+    ('pay_fail', 'grp', 'החיוב לא עבר', 'החיוב לא עבר'),
+    ('pay_cancel', 'grp', 'התשלום בוטל', 'התשלום בוטל, הקבוצה לא שונתה'),
+    ('done_paid', 'grp', 'שולם והועבר', 'התשלום של {amount} שקלים התקבל, והועברתם לקבוצה {group}. תודה רבה'),
+    ('done_debt', 'grp', 'הועבר עם חוב', 'הועברתם לקבוצה {group}. נרשם לכם חוב של {amount} שקלים במקווה. כל עוד החוב לא שולם, אפשר לבטל את המעבר בשלוחה הזו'),
+    ('done_credit', 'grp', 'הועבר עם זיכוי', 'הועברתם לקבוצה {group}. זיכינו אתכם על סך {amount} שקלים ביתרה הזמנית. תודה רבה'),
+    ('cancel_offer', 'grp', 'הצעה לבטל מעבר שלא שולם', 'יש לכם מעבר לקבוצה {group} שעדיין לא שולם. לביטול המעבר וחזרה לקבוצה {old} הקישו 9'),
+    ('cancel_done', 'grp', 'המעבר בוטל', 'המעבר בוטל. חזרתם לקבוצה {old} והחוב נמחק. תודה רבה'),
+    ('paid_fail', 'grp', 'שולם אבל המעבר נכשל', 'התשלום התקבל, אבל הקבוצה לא שונתה. המשרד יטפל בזה בהקדם'),
     ('end_opt', 'grp', 'סיום התפריט', 'לסיום הקישו 0'),
     ('confirm', 'grp', 'אישור החלפה (בחינם)', 'לאישור מעבר לקבוצה {group} הקישו 1. לביטול הקישו 2'),
     ('done', 'grp', 'ההחלפה בוצעה (בחינם)', 'הועברתם לקבוצה {group}. תודה רבה'),
@@ -34656,16 +34698,94 @@ def _mkg_phones(c):
     return out
 
 
+def mkg_is_erech(cfg, gid, name):
+    """קבוצת ערך צבור — בלי מחיר חודשי (מנוי → ערך צבור: כל מה שנשאר במנוי חוזר כזיכוי)"""
+    eg = cfg.get('erech_groups')
+    if eg is None or eg == 'auto':
+        return 'ערך צבור' in str(name or '')
+    return gid in (eg or [])
+
+
+def mkg_quote(cfg, c, gr, tgt):
+    """כמה עולה המעבר: (מחיר חודשי חדש − מחיר חודשי נוכחי) × ימים שנשארו במנוי ÷ ימים בחודש.
+    חיובי = לשלם, שלילי = זיכוי. בלי מנוי בתוקף — 0. המחיר הנוכחי: האישי של הלקוח אם יש, אחרת של הקבוצה."""
+    import mikveh as _mk
+    cur = c.get('groupId')
+    sl = _mk.slim(c)
+    old = sl.get('price')
+    if old is None:
+        old = (gr.get(cur) or {}).get('price') or 0
+    if mkg_is_erech(cfg, cur, (gr.get(cur) or {}).get('name')):
+        old = 0
+    new = (gr.get(tgt) or {}).get('price') or 0
+    if mkg_is_erech(cfg, tgt, (gr.get(tgt) or {}).get('name')):
+        new = 0
+    days = 0
+    end = str(c.get('subscriptionEndDate') or '')[:10]
+    if re.fullmatch(r'\d{4}-\d{2}-\d{2}', end):
+        days = max(0, (datetime.date.fromisoformat(end) - il_now().date()).days)
+    div = float(cfg.get('divisor') or 30)
+    amt = (float(new) - float(old)) * days / div
+    if amt < 0 and not cfg.get('credit_down', True):
+        amt = 0
+    step = float(cfg.get('round') or 1)
+    amt = round(round(amt / step) * step, 2) if step > 0 else round(amt, 2)
+    return {'old_price': float(old), 'new_price': float(new), 'days': days, 'amount': amt}
+
+
+def mkg_nd_acct(cfg):
+    """חשבון נדרים פלוס שנבחר לתשלום בטלפון (או None)"""
+    import nedarim as _nd
+    mo = str(cfg.get('nd_mosad') or '')
+    return next((a for a in _nd.accounts() if str(a['mosad']) == mo), None) if mo else None
+
+
+def mkg_apply(con, cid, c, gr, cur, tgt, q, method, call_id, phone, conf=''):
+    """מבצע את המעבר במקווה + חוב / זיכוי, ורושם ביומן. מחזיר (הצליח?, שגיאה, מזהה חוב)"""
+    import mikveh as _mk
+    name = (str(c.get('firstName') or '').strip() + ' ' + str(c.get('lastName') or '').strip()).strip()
+    amt = q['amount']
+    row = [now_iso(), cid, name, c.get('clientCode'), phone, cur, gr[cur]['name'], tgt, gr[tgt]['name'], 0, call_id, amt, method, conf]
+    try:
+        _mk.set_group(cid, tgt)
+        if str(_mk.client(cid).get('groupId')) != str(tgt):
+            raise RuntimeError('המקווה לא עדכן את הקבוצה')
+    except Exception as e:
+        con.execute("INSERT INTO mkg_log(at,cid,name,code,phone,from_gid,from_name,to_gid,to_name,fee,call_id,amount,method,conf,ok,error,status) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,'')", row + [str(e)[:300]])
+        con.commit()
+        return False, str(e)[:300], ''
+    err, debt_id = '', ''
+    try:
+        if method == 'debt' and amt > 0:
+            res = _mk.add_debt(cid, int(round(amt * 100)), 'הפרש החלפת קבוצה: %s → %s' % (gr[cur]['name'], gr[tgt]['name']))
+            debt_id = str((res or {}).get('id') or '') if isinstance(res, dict) else ''
+        elif method == 'credit' and amt < 0:
+            _mk.add_credit(cid, int(round(-amt * 100)), temp=True)
+    except Exception as e:
+        err = 'הקבוצה הוחלפה, אבל %s לא נרשם במקווה: %s' % ('החוב' if method == 'debt' else 'הזיכוי', str(e)[:200])
+    con.execute("INSERT INTO mkg_log(at,cid,name,code,phone,from_gid,from_name,to_gid,to_name,fee,call_id,amount,method,conf,ok,error,status,debt_id) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,'active',?)", row + [err, debt_id])
+    how = {'debt': ' · נרשם חוב ₪%g במקווה' % amt, 'card': ' · שילם ₪%g באשראי' % amt, 'keva': ' · שילם ₪%g מהוראת הקבע' % amt,
+           'credit': ' · זיכוי ₪%g ביתרה הזמנית' % -amt}.get(method, '') if amt else ''
+    con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                (cid, now_iso(), 'group', ('📞 החליף קבוצה בטלפון: %s → %s' if call_id and not str(call_id).startswith('req:') else '✓ אושרה הבקשה מהטלפון: %s → %s')
+                 % (gr[cur]['name'], gr[tgt]['name']) + how))
+    con.commit()
+    return True, err, debt_id
+
+
 def mkg_ivr(P):
-    """השיחה: זיהוי לפי הטלפון → (אם יש כמה לקוחות על אותו מספר — בחירה) → הקבוצה הנוכחית ותפריט הקבוצות
-    המותרות → אישור (עם הקנס, אם יש) → העברה במקווה + חוב הקנס. ימות שולחים בכל פנייה את כל מה שהוקש עד עכשיו.
-    מי שעבר את המקסימום (אם הוגדר) — יכול לשלוח בקשה למשרד, בלי הקלטה (mkg_req)."""
-    import mikveh as _mk, yemot as _ym
+    """השיחה: זיהוי לפי הטלפון → (כמה מנויים על המספר — בחירה) → הקבוצה הנוכחית ותפריט הקבוצות עם המחיר לחודש →
+    הצעת מחיר (הפרש לפי הימים שנשארו במנוי) → תשלום (הוראת קבע / אשראי / חוב במקווה) או זיכוי ביתרה הזמנית → המעבר.
+    מי שעבר בחוב שעוד לא שולם — יכול לבטל (9). מי שעבר את המקסימום — בקשה למשרד. ימות שולחים בכל פנייה את כל מה שהוקש."""
+    import mikveh as _mk, yemot as _ym, nedarim as _nd
     END = '&'   # מאיר: "לא לנתק את השיחה אף פעם" — בלי go_to_folder
     con = db()
     try:
         TX = mk_texts(con)
-        msg = lambda key, **kw: 'id_list_message=t-' + _ivr_t(mk_t(TX, key, **kw)) + END
+        T = lambda key, **kw: mk_t(TX, key, **kw)
+        msg = lambda key, **kw: 'id_list_message=t-' + _ivr_t(T(key, **kw)) + END
         if (P.get('k') or '') != mkg_key(con):
             return 'id_list_message=t-' + _ivr_t('שגיאה בהגדרות השלוחה') + END
         if P.get('hangup') == 'yes':
@@ -34673,7 +34793,7 @@ def mkg_ivr(P):
         cfg = mkg_cfg(con)
         call_id = str(P.get('ApiCallId') or '')[:60]
         if call_id:
-            done = con.execute("SELECT to_gid, to_name FROM mkg_log WHERE call_id=? AND ok=1", (call_id,)).fetchone()
+            done = con.execute("SELECT * FROM mkg_log WHERE call_id=? AND ok=1", (call_id,)).fetchone()
             if done:
                 return msg('done', group=mkg_say(cfg, done['to_gid'], done['to_name']))
             if con.execute("SELECT 1 FROM mkg_req WHERE call_id=?", (call_id,)).fetchone():
@@ -34698,8 +34818,8 @@ def mkg_ivr(P):
         mine = mine[:9]
         if len(mine) > 1:
             if 'Who' not in P:
-                parts = [mk_t(TX, 'who')] + [mk_t(TX, 'who_item', name=((c.get('firstName') or '') + ' ' + (c.get('lastName') or '')).strip(), n=i)
-                                             for i, c in enumerate(mine, 1)]
+                parts = [T('who')] + [T('who_item', name=((c.get('firstName') or '') + ' ' + (c.get('lastName') or '')).strip(), n=i)
+                                      for i, c in enumerate(mine, 1)]
                 return ('read=t-' + _ivr_t(', '.join(parts)) + '=Who,no,1,1,10,NO,yes,yes,,' +
                         ''.join(str(i) for i in range(1, len(mine) + 1)) + ',2,,,,no')
             try:
@@ -34714,27 +34834,50 @@ def mkg_ivr(P):
         if c.get('isBlocked'):
             return msg('blocked')
         cur = c.get('groupId')
-        # מאיר: "מי שיש לו קבוצה מסוימת לא יוכל להעביר לקבוצה אחרת" + "לנעול ללקוח שלא יוכל להחליף קבוצה אף פעם"
         if cur not in gr or cur in (cfg.get('locked_groups') or []) or cid in mkg_locked(con):
             return msg('locked')
-        opts = [g for g in allowed if g != cur][:9]
-        if not opts:
+        # ↩️ מעבר אחרון בחוב שעוד לא שולם — אפשר לבטל (9)
+        undo = None
+        if cfg.get('cancel_on', True):
+            lr = con.execute("SELECT * FROM mkg_log WHERE cid=? AND ok=1 AND status='active' AND method='debt' AND COALESCE(debt_id,'')<>'' "
+                             "ORDER BY id DESC LIMIT 1", (cid,)).fetchone()
+            if lr and lr['to_gid'] == cur:
+                try:
+                    if any(str(d['id']) == lr['debt_id'] and d['open'] for d in _mk.debts(cid)):
+                        undo = lr
+                except Exception:
+                    pass
+        if undo and P.get('Grp') == '9':
+            try:
+                _mk.set_group(cid, undo['from_gid'])
+                if str(_mk.client(cid).get('groupId')) != str(undo['from_gid']):
+                    raise RuntimeError('המקווה לא עדכן את הקבוצה')
+                _mk.delete_debt(undo['debt_id'])
+            except Exception as e:
+                print('  mkg undo error:', e)
+                return msg('error')
+            con.execute("UPDATE mkg_log SET ok=0, status='cancelled' WHERE id=?", (undo['id'],))
+            con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                        (cid, now_iso(), 'group', '↩️ ביטל בטלפון את המעבר: חזר ל%s, והחוב ₪%g נמחק' % (undo['from_name'], undo['amount'] or 0)))
+            con.commit()
+            return msg('cancel_done', old=mkg_say(cfg, undo['from_gid'], undo['from_name']))
+        opts = [g for g in allowed if g != cur][:8]
+        if not opts and not undo:
             return msg('no_target')
         used, left = mkg_used(con, cid, cfg.get('days') or 30)
-        over = 'max' if int(cfg.get('max') or 0) and used >= int(cfg['max']) else ''
-        if over:
-            # מאיר: "מי שעבר לו כמות הפעמים בחודש יוכל לשלוח פנייה ישירה בלי להקליט, וזה יופיע במערכת"
-            first_msg = mk_t(TX, 'max', used=used, max=cfg.get('max'), days=cfg.get('days'), left=left)
+        over = bool(int(cfg.get('max') or 0) and used >= int(cfg['max']))
+        if over and not undo:
+            first_msg = T('max', used=used, max=cfg.get('max'), days=cfg.get('days'), left=left)
             if not cfg.get('req_on'):
                 return 'id_list_message=t-' + _ivr_t(first_msg) + END
             if con.execute("SELECT 1 FROM mkg_req WHERE cid=? AND status='new'", (cid,)).fetchone():
-                return 'id_list_message=t-' + _ivr_t(first_msg + ', ' + mk_t(TX, 'req_dup')) + END
+                return 'id_list_message=t-' + _ivr_t(first_msg + ', ' + T('req_dup')) + END
             if 'Req' not in P:
-                return 'read=t-' + _ivr_t(first_msg + ', ' + mk_t(TX, 'req_offer')) + '=Req,no,1,1,10,NO,yes,yes,,12,2,,,,no'
+                return 'read=t-' + _ivr_t(first_msg + ', ' + T('req_offer')) + '=Req,no,1,1,10,NO,yes,yes,,12,2,,,,no'
             if P.get('Req') != '1':
                 return msg('bye')
             if 'Grp' not in P:
-                parts = [mk_t(TX, 'req_option', group=mkg_say(cfg, g, gr[g]['name']), n=i) for i, g in enumerate(opts, 1)] + [mk_t(TX, 'end_opt')]
+                parts = [T('req_option', group=mkg_say(cfg, g, gr[g]['name']), n=i) for i, g in enumerate(opts, 1)] + [T('end_opt')]
                 return ('read=t-' + _ivr_t(', '.join(parts)) + '=Grp,no,1,1,10,NO,yes,no,,0' +
                         ''.join(str(i) for i in range(1, len(opts) + 1)) + ',2,,,,no')
             try:
@@ -34752,13 +34895,21 @@ def mkg_ivr(P):
                         (cid, now_iso(), 'group', '📨 ביקש בטלפון לעבור לקבוצה %s (בקשה למשרד)' % gr[tgt]['name']))
             con.commit()
             return msg('req_done')
-        fee = 0.0
+        if over:
+            opts = []
         if 'Grp' not in P:
-            parts = [mk_t(TX, 'hello', name=first, group=mkg_say(cfg, cur, gr[cur]['name']))]
-            parts += [mk_t(TX, 'option', group=mkg_say(cfg, g, gr[g]['name']), n=i) for i, g in enumerate(opts, 1)]
-            parts.append(mk_t(TX, 'end_opt'))
-            return ('read=t-' + _ivr_t(', '.join(parts)) + '=Grp,no,1,1,10,NO,yes,no,,0' +
-                    ''.join(str(i) for i in range(1, len(opts) + 1)) + ',2,,,,no')
+            parts = [T('hello', name=first, group=mkg_say(cfg, cur, gr[cur]['name']))]
+            if undo:
+                parts.append(T('cancel_offer', group=mkg_say(cfg, cur, gr[cur]['name']), old=mkg_say(cfg, undo['from_gid'], undo['from_name'])))
+            for i, g in enumerate(opts, 1):
+                pr = gr[g].get('price')
+                if cfg.get('say_prices', True) and pr and not mkg_is_erech(cfg, g, gr[g]['name']):
+                    parts.append(T('option_price', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % pr, n=i))
+                else:
+                    parts.append(T('option', group=mkg_say(cfg, g, gr[g]['name']), n=i))
+            parts.append(T('end_opt'))
+            digs = '0' + ''.join(str(i) for i in range(1, len(opts) + 1)) + ('9' if undo else '')
+            return 'read=t-' + _ivr_t(', '.join(parts)) + '=Grp,no,1,1,10,NO,yes,no,,' + digs + ',2,,,,no'
         try:
             v = int(P.get('Grp') or 0)
         except ValueError:
@@ -34767,30 +34918,96 @@ def mkg_ivr(P):
             return msg('bye')
         tgt = opts[v - 1]
         tname = mkg_say(cfg, tgt, gr[tgt]['name'])
+        q = mkg_quote(cfg, c, gr, tgt)
+        amt = q['amount']
+        A = '%g' % abs(amt)
+        price = '%g' % q['new_price']
         if 'Ok' not in P:
-            return ('read=t-' + _ivr_t(mk_t(TX, 'confirm', group=tname)) +
-                    '=Ok,no,1,1,10,NO,yes,yes,,12,2,,,,no')
+            if amt > 0:
+                t = T('quote_pay', group=tname, price=price, days=q['days'], amount=A)
+            elif amt < 0:
+                t = T('quote_credit', group=tname, price=price, days=q['days'], amount=A)
+            else:
+                t = T('confirm', group=tname)
+            return 'read=t-' + _ivr_t(t) + '=Ok,no,1,1,10,NO,yes,yes,,12,2,,,,no'
         if P.get('Ok') != '1':
             return msg('cancel')
-        row = [now_iso(), cid, name, c.get('clientCode'), phone, cur, gr[cur]['name'], tgt, gr[tgt]['name'], fee, call_id]
+        if amt <= 0:
+            ok, err, _d = mkg_apply(con, cid, c, gr, cur, tgt, q, 'credit' if amt < 0 else 'free', call_id, phone)
+            if not ok:
+                return msg('error')
+            return msg('done_credit', group=tname, amount=A) if amt < 0 else msg('done', group=tname)
+        # 💳 תשלום ההפרש: הוראת קבע / אשראי בטלפון / חוב במקווה — מה שהוגדר
+        meth = [m for m in (cfg.get('pay_methods') or ['debt']) if m in ('keva', 'card', 'debt')]
+        acct = mkg_nd_acct(cfg)
+        ks = []
+        if acct and 'keva' in meth:
+            ks = ivr_kevas(con, phone, (), '' if acct.get('main') else str(acct['mosad']))[:1]
+        menu = []
+        if ks:
+            menu.append(('keva', T('pay_keva', last4=' '.join(re.sub(r'\D', '', ks[0].get('last4') or '') or '0'), n=len(menu) + 1)))
+        if acct and 'card' in meth:
+            menu.append(('card', T('pay_card', n=len(menu) + 1)))
+        if 'debt' in meth:
+            menu.append(('debt', T('pay_debt', n=len(menu) + 1)))
+        if not menu:
+            menu = [('debt', T('pay_debt', n=1))]
+        if 'CreditCard_CODE' in P:
+            if P['CreditCard_CODE'] == 'GoBack':
+                return msg('pay_cancel')
+            ok, err, _d = mkg_apply(con, cid, c, gr, cur, tgt, q, 'card', call_id, phone, conf=str(P['CreditCard_CODE'])[:60])
+            if not ok:
+                mkg_paid_fail(con, cid, name, c, phone, gr, cur, tgt, call_id, amt, 'אשראי')
+                return msg('paid_fail')
+            return msg('done_paid', group=tname, amount=A)
+        pk = P.get('Pay2') or P.get('Pay')
+        if not pk:
+            if len(menu) == 1 and menu[0][0] == 'debt':
+                pk = '1'
+            else:
+                return ('read=t-' + _ivr_t(', '.join(t for _m, t in menu)) + '=Pay,no,1,1,10,NO,yes,yes,,' +
+                        ''.join(str(i) for i in range(1, len(menu) + 1)) + ',2,,,,no')
         try:
-            _mk.set_group(cid, tgt)
-            if str(_mk.client(cid).get('groupId')) != str(tgt):
-                raise RuntimeError('המקווה לא עדכן את הקבוצה')
-        except Exception as e:
-            con.execute("INSERT INTO mkg_log(at,cid,name,code,phone,from_gid,from_name,to_gid,to_name,fee,call_id,ok,error) "
-                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?)", row + [str(e)[:300]])
-            con.commit()
-            return msg('error')
-        err = ''
-        con.execute("INSERT INTO mkg_log(at,cid,name,code,phone,from_gid,from_name,to_gid,to_name,fee,call_id,ok,error) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,1,?)", row + [err])
-        con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                    (cid, now_iso(), 'group', '📞 החליף קבוצה בטלפון: %s → %s' % (gr[cur]['name'], gr[tgt]['name'])))
-        con.commit()
-        return msg('done', group=tname)
+            how = menu[int(pk) - 1][0]
+        except (ValueError, IndexError):
+            return msg('pay_cancel')
+        if how == 'card':
+            return 'credit_card=nedarim_plus,%g,,1,1,,,%s' % (amt, acct['mosad'])
+        if how == 'debt':
+            ok, err, _d = mkg_apply(con, cid, c, gr, cur, tgt, q, 'debt', call_id, phone)
+            if not ok:
+                return msg('error')
+            return msg('done_debt', group=tname, amount=A)
+        # הוראת קבע
+        k = ks[0]
+        with _nd.use(acct):
+            ok, res = _nd.tashlum_boded(k['id'], amt, comments='הפרש החלפת קבוצה במקווה (%s → %s) — טלפון' % (gr[cur]['name'], gr[tgt]['name']),
+                                        ajax=('mkg-' + call_id) if call_id else '')
+        r = res if isinstance(res, dict) else {}
+        if not ok:
+            if 'Pay2' in P:
+                return msg('pay_cancel')
+            rest = [(m, t) for m, t in menu if m != 'keva']
+            parts = [T('pay_fail')] + [t for _m, t in menu if _m != 'keva']
+            return ('read=t-' + _ivr_t(', '.join(parts)) + '=Pay2,no,1,1,10,NO,yes,yes,,' +
+                    ''.join(str(menu.index(x) + 1) for x in rest) + ',2,,,,no')
+        conf = str(r.get('Confirmation') or '')
+        ok2, err, _d = mkg_apply(con, cid, c, gr, cur, tgt, q, 'keva', call_id, phone, conf=conf)
+        if not ok2:
+            mkg_paid_fail(con, cid, name, c, phone, gr, cur, tgt, call_id, amt, 'הוראת קבע, אישור ' + conf)
+            return msg('paid_fail')
+        return msg('done_paid', group=tname, amount=A)
     finally:
         con.close()
+
+
+def mkg_paid_fail(con, cid, name, c, phone, gr, cur, tgt, call_id, amt, how):
+    """שילם אבל המעבר במקווה נכשל — בקשה למשרד, שיעבירו ידנית"""
+    con.execute("INSERT INTO mkg_req(at,cid,name,code,phone,from_gid,from_name,to_gid,to_name,reason,status,call_id) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,'new',?)",
+                (now_iso(), cid, name, c.get('clientCode'), phone, cur, gr[cur]['name'], tgt, gr[tgt]['name'],
+                 '⚠️ שילם ₪%g (%s) אבל המעבר במקווה נכשל — להעביר ידנית' % (amt, how), call_id))
+    con.commit()
 
 
 def mkg_ivr_log(P, ans):
