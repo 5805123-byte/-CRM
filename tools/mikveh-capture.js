@@ -8,7 +8,7 @@
 
   const LOG = [];
   let tag = '';
-  const SENS = /password|passwd|pwd|personalId|idNumber|^tz$|token|authorization|cardSerial|faceImage|creditCard|cardNumber|cvv|cvc|phone|mobile|email/i;
+  const SENS = /password|passwd|pwd|personalId|idNumber|^tz$|token|authorization|cardSerial|faceImage|creditCard|cardNumber|cvv|cvc|phone|mobile|email|paymentResponse|tokef|lastNum/i;
   const MAXARR = 3, MAXSTR = 300;
 
   function clean(v, d = 0) {
@@ -43,6 +43,7 @@
     try { path = new URL(url, location.href).pathname; } catch (e) { path = String(url); }
     if (/\.(js|css|png|jpe?g|gif|svg|woff2?|ttf|ico|map|html)$/i.test(path)) return;
     if (/\/Account\/?$/i.test(path)) return; // הכניסה עצמה — לא נרשמת
+    if (/GetAllPasswords|GetFaceImages|\/CreditCard\//i.test(path)) resp = '"[הוסתר]"'; // סיסמאות / פנים / כרטיסים — לא נשמרים
     LOG.push({
       n: LOG.length + 1,
       time: new Date().toLocaleTimeString('he-IL'),
