@@ -1979,20 +1979,23 @@ async function mkTowelEdit(c){
     const r=await api('POST','/api/mikveh/towel',{id:c.id,on:on2?1:0,size:on2?v:''}).catch(()=>null);
     if(!r||!r.ok){o.querySelectorAll('button').forEach(x=>x.disabled=false);return uiAlert('לא עודכן במקווה:\n'+((r&&r.error)||'אין תשובה'));}
     c.remark=r.remark;o.remove();toast(on2?'🧺 מגבות '+(v==='small'?'קטנות':'גדולות')+' — עודכן במקווה':'🚫 מנוי המגבות הוסר — עודכן במקווה');mkOpen(c);if(tab==='mikveh')mkPaint();});}
-// 💳 מאיר: יתרות צבורות — מי יש לו כסף לזכותו במקווה (ערך צבור שנשאר, זיכויים)
-function mkCreditOpen(){
+// 💰 / 💳 מאיר: "ערך צבור ויש זיכויים (יתרה זמנית) — זה דברים אחרים". kind: bal = ערך צבור (פעימות), zk = זיכוי
+function mkCreditOpen(kind){
+  kind=kind==='zk'?'zk':'bal';
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov'), G={}; MK.groups.forEach(g=>G[g.id]=g);
-  const bal=c=>(c.balance!=null?c.balance:c.last_balance)||0;
+  const bal=kind==='zk'?(c=>c.temp_balance||0):(c=>(c.balance!=null?c.balance:c.last_balance)||0);
   const all=MK.clients.filter(c=>bal(c)>0).sort((a,b)=>bal(b)-bal(a));
   const tot=all.reduce((s,c)=>s+bal(c),0);
   const row=c=>`<div class="mkrow" data-cr="${esc(c.id)}" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc(mkName(c))}</b>
       <div class="mksub"><span dir="ltr">${esc(c.phone||'')}</span> · #${esc(c.code||'')} · ${esc((G[c.group]&&G[c.group].name)||'')}${c.sub_end?(' · מנוי עד '+esc(mkDate(c.sub_end))):''}</div></div>
       <span class="mktag ok">${esc(mkMoney(bal(c)))}</span></div>`;
-  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2e7d4f">💳</div><div><h2>יתרות וזיכויים</h2>
-      <div class="mksub"><b>${all.length}</b> לקוחות עם כסף לזכותם במקווה · סה"כ <b>${esc(mkMoney(tot))}</b></div>
-      <div class="mksub">ערך צבור שנשאר אחרי מעבר למנוי, או זיכוי שנרשם. לחיצה על לקוח פותחת את הכרטיס; שם, בקוביית היתרה, מורידים כשהוא מנצל.</div></div></div>
-    <div class="mklist">${all.map(row).join('')||'<div class="hintxt">אין יתרות</div>'}</div>`;
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2e7d4f">${kind==='zk'?'💳':'💰'}</div><div><h2>${kind==='zk'?'זיכויים (יתרה זמנית)':'ערך צבור (פעימות)'}</h2>
+      <div class="mksub"><b>${all.length}</b> לקוחות · סה"כ <b>${esc(mkMoney(tot))}</b></div>
+      <div class="mksub">${kind==='zk'?'הזיכוי (היתרה הזמנית) של כל לקוח במקווה. לחיצה על לקוח פותחת את הכרטיס; שם, בקוביית הזיכוי, מוסיפים או מורידים.':'הפעימות שנשארו לכל לקוח במקווה. כשהוא נכנס על חשבונן, המקווה מוריד לבד. לחיצה על לקוח פותחת את הכרטיס.'}</div></div></div>
+    <div class="mkseg" style="margin:8px 0"><button data-ck="bal" class="${kind==='bal'?'on':''}">💰 ערך צבור</button><button data-ck="zk" class="${kind==='zk'?'on':''}">💳 זיכויים</button></div>
+    <div class="mklist">${all.map(row).join('')||'<div class="hintxt">'+(kind==='zk'?'אין זיכויים':'אין ערך צבור')+'</div>'}</div>`;
   remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('[data-ck]').forEach(b=>b.onclick=()=>mkCreditOpen(b.dataset.ck));
   rs.querySelectorAll('[data-cr]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.cr);if(c)mkOpen(c);});}
 function mkTowelOpen(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov'), G={}; MK.groups.forEach(g=>G[g.id]=g);
@@ -2108,7 +2111,8 @@ function renderMikveh(){
       <div class="mkstat"><b>${used.length}</b><span>קבוצות</span></div>
       ${expired?`<div class="mkstat"><b>${expired}</b><span>מנוי הסתיים</span></div>`:''}
       <div class="mkstat" id="mkdash" title="מלוח הבקרה של המקווה — מתחילת החודש">${mkDashTxt()}</div>
-      <button class="mkstat" id="mkcredit" style="cursor:pointer;border:0;font:inherit" title="לקוחות עם יתרה צבורה / זיכוי — לחיצה פותחת את הרשימה"><b>${MK.clients.filter(c=>((c.balance!=null?c.balance:c.last_balance)||0)>0).length}</b><span>💳 יתרות / זיכויים</span></button>
+      <button class="mkstat" id="mkcredit" style="cursor:pointer;border:0;font:inherit" title="לקוחות עם ערך צבור (פעימות) — לחיצה פותחת את הרשימה"><b>${MK.clients.filter(c=>((c.balance!=null?c.balance:c.last_balance)||0)>0).length}</b><span>💰 ערך צבור</span></button>
+      <button class="mkstat" id="mkzklist" style="cursor:pointer;border:0;font:inherit" title="לקוחות עם זיכוי (יתרה זמנית) — לחיצה פותחת את הרשימה"><b>${MK.clients.filter(c=>(c.temp_balance||0)>0).length}</b><span>💳 זיכויים</span></button>
       <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button></div>
       <div class="mkhgroups">
         <div class="mkhg"><span>📞 שלוחות בטלפון</span><div><button class="mkibtn" id="mkselfg" title="שלוחה בטלפון שבה כל מנוי מחליף לעצמו קבוצה — הגדרות, קנס ויומן">🔄 החלפת קבוצה<b id="mksgn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button>
@@ -2140,7 +2144,8 @@ function renderMikveh(){
   document.getElementById('mksched').onclick=mkSchedOpen; mkSchedCount();
   document.getElementById('mklogb').onclick=()=>mkLogOpen();
   document.getElementById('mktowel').onclick=()=>{if(mkTowelOnly){mkTowelOnly=false;renderMikveh();}else mkTowelOpen();};
-  const _mc=document.getElementById('mkcredit'); if(_mc)_mc.onclick=mkCreditOpen;
+  const _mc=document.getElementById('mkcredit'); if(_mc)_mc.onclick=()=>mkCreditOpen('bal');
+  const _mz=document.getElementById('mkzklist'); if(_mz)_mz.onclick=()=>mkCreditOpen('zk');
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mkselfg').onclick=()=>mkSelfGroupOpen();
   document.getElementById('mkvmb').onclick=()=>mkVmOpen();
@@ -2280,7 +2285,7 @@ async function mkSetGroup(c,g,on){
   const _bal=(c.balance!=null?c.balance:c.last_balance)||0;
   // מאיר: "כשהוא מנצל אותה זה אמור להחשיב את זה לבד… לא שאצטרך לעשות ידנית" — המקווה מוריד מהיתרה לבד
   // בכל כניסה על חשבונה ("כניסה מאושרת ע"ח פעימות"), והקובייה כאן קוראת את היתרה מהמקווה בכל פתיחה
-  if(_bal>0)setTimeout(()=>uiAlert('💳 נשארה לו יתרה צבורה של '+mkMoney(_bal)+'.\nהיא נשארת לזכותו במקווה. כשהוא נכנס על חשבונה, המקווה מוריד ממנה לבד, וקוביית היתרה בכרטיס מתעדכנת מהמקווה. לא צריך לעשות כלום ידנית.'),300);
+  if(_bal>0)setTimeout(()=>uiAlert('💰 נשאר לו ערך צבור (פעימות) של '+mkMoney(_bal)+'.\nהוא נשאר לזכותו במקווה. כשהוא נכנס על חשבונו, המקווה מוריד ממנו לבד, וקוביית הערך הצבור בכרטיס מתעדכנת מהמקווה. לא צריך לעשות כלום ידנית.'),300);
   return true;
 }
 // כרטיס לקוח: הפרטים כאריחים, הקבוצות כלחצנים. בחירה → שורת אישור למטה → "מעביר…" עם ספינר
@@ -2297,10 +2302,11 @@ function mkOpen(c){
     if(r.email){c.email=r.email;const m=document.getElementById('mkmail');if(m){m.textContent=r.email;m.style.display='';}}
     const idb=document.getElementById('mkident');
     if(idb){if(r.ident){idb.style.display='';idb.textContent='🪪 ת.ז. ••••'+String(r.ident).slice(-3);idb.onclick=e=>{e.preventDefault();idb.textContent='🪪 ת.ז. '+r.ident;};}else idb.style.display='none';}
+    if(r.zikui!=null){c.temp_balance=r.zikui;const z=document.getElementById('mkzk');if(z)z.querySelector('b').textContent=mkMoney(r.zikui);}
     if(r.balance==null)return; c.balance=r.balance;
     const el=document.getElementById('mkbal'); if(!el)return;
     el.classList.toggle('bad',r.balance<0);
-    el.querySelector('span').textContent=(r.balance>0?'💳 יתרה / זיכוי':'💰 יתרה')+' ✎';
+    el.querySelector('span').textContent='💰 ערך צבור (פעימות) ✎';
     el.querySelector('b').textContent=mkMoney(r.balance);
   }).catch(()=>{});
   let pick=null, state='', info='';
@@ -2323,7 +2329,8 @@ function mkOpen(c){
         <div class="mktile mkedit ${mkTowel(c)?'ok':''}" id="mktwl" title="לחיצה — להוסיף / להסיר מנוי מגבות (מתעדכן במקווה)"><span>🧺 מנוי מגבות ✎</span><b>${mkTowel(c)?({small:'קטנות',large:'גדולות'}[mkTowelSize(c)]||'כן')+(mkTwPr(c)!=null?' · ₪'+esc(mkTwPr(c))+(MKTW&&MKTW.hmonth?' <small>('+esc(MKTW.hmonth.split(' ')[0])+')</small>':''):''):'לא'}</b></div>
         ${mkTowel(c)&&mkTwPr(c)!=null&&(c.price!=null||(g&&g.price!=null))?`<div class="mktile ok"><span>💰 סה״כ לחודש${MKTW&&MKTW.hmonth?' '+esc(MKTW.hmonth.split(' ')[0]):''}</span><b>${mkNis((c.price!=null?c.price:g.price)+mkTwPr(c))}</b><small style="display:block;color:#777">מנוי ${mkNis(c.price!=null?c.price:g.price)} + מגבות ₪${esc(mkTwPr(c))}</small></div>`:''}
         ${tile('כניסה אחרונה',esc(mkAgo(c.last_in)))}
-        <div class="mktile mkedit${c.balance!=null&&c.balance<0?' bad':''}" id="mkbal" title="לחיצה — לעדכן את היתרה במקווה (למשל: נתן חלק במזומן)"><span>${((c.balance!=null?c.balance:c.last_balance)||0)>0?'💳 יתרה / זיכוי':'💰 יתרה'}${c.balance==null&&c.last_balance!=null?' (אחרונה)':''} ✎</span><b>${bal||'—'}</b></div>
+        <div class="mktile mkedit${c.balance!=null&&c.balance<0?' bad':''}" id="mkbal" title="לחיצה — לעדכן את היתרה במקווה (למשל: נתן חלק במזומן)"><span>💰 ערך צבור (פעימות)${c.balance==null&&c.last_balance!=null?' (אחרונה)':''} ✎</span><b>${bal||'—'}</b></div>
+        <div class="mktile mkedit" id="mkzk" title="לחיצה — להוסיף / להוריד זיכוי (יתרה זמנית) במקווה"><span>💳 זיכוי (יתרה זמנית) ✎</span><b>${c.temp_balance!=null?mkMoney(c.temp_balance):'—'}</b></div>
         ${tile('טביעת אצבע',c.finger?'✓ רשומה':'')}
       </div>
       <div style="display:flex;gap:8px;margin:14px 0 4px;align-items:center;flex-wrap:wrap">
@@ -2370,6 +2377,7 @@ function mkOpen(c){
     ctShow();
     mkHistLoad(c.id); mkPayLoad(c.id); mkDebtLoad(c.id); mkVmCard(c.id);
     document.getElementById('mkzikui').onclick=()=>mkZikui(c);
+    document.getElementById('mkzk').onclick=()=>mkZikui(c);
     document.getElementById('mkblock').onclick=()=>mkBlock(c,draw);
     document.getElementById('mklock').onclick=async()=>{const on=!MKLOCK[c.id];
       if(on&&!await uiConfirm('לנעול את '+mkName(c)+'? הוא לא יוכל להחליף קבוצה בשלוחה בטלפון (במשרד אפשר כרגיל).'))return;
@@ -2625,8 +2633,10 @@ function mkHistRes(r){
   if(r.y_ans!=null&&+r.y_ans===0)return '<span class="mktag bad">📵 לא ענה'+(+r.y_retried>0?(+r.y_r_ans===1?' · ✅ ענה בניסיון השני':' · 🔁 ניסיון שני יצא'):(r.y_retry_at?' · 🔁 ינסה שוב '+esc(String(r.y_retry_at).slice(5,16)):''))+'</span>';
   return '<span class="mktag mu" title="'+esc(r.y_call||'')+'">⏳ בודק אם ענה…</span>';}
 function mkHistHTML(cid){const L=MKHIST[cid];if(!L)return '<div class="mksub">⏳ טוען…</div>';if(!L.length)return '<div class="mksub">עוד לא נשלחו לו הודעות מכאן ולא הועבר קבוצה.</div>';
-  return '<div class="mklist">'+L.map(r=>`<div class="mkrow schrow"><div class="mknm"><b>${esc(String(r.at||'').slice(8,10)+'/'+String(r.at||'').slice(5,7)+' '+String(r.at||'').slice(11,16))} · ${esc(r.summary||'')}</b>
-    ${mkHistBody(r)}</div></div>`).join('')+'</div>';}
+  return '<div class="mklist">'+L.map(r=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc(String(r.at||'').slice(8,10)+'/'+String(r.at||'').slice(5,7)+' '+String(r.at||'').slice(11,16))} · ${esc(r.summary||'')}</b>
+    ${mkHistBody(r)}</div>${r.can_del?`<button class="btn sm ghost" title="למחוק מהיומן (לא משנה כלום במקווה)" onclick="mkHistDel('${esc(cid)}',${+r.id})">🗑️</button>`:'<span></span>'}</div>`).join('')+'</div>';}
+async function mkHistDel(cid,id){if(!await uiConfirm('למחוק את השורה מהיומן? (במקווה עצמו לא משתנה כלום)'))return;
+  const r=await api('POST','/api/mikveh/log_del',{id}).catch(()=>null);if(r&&r.ok){toast('🗑️ נמחק');mkHistLoad(cid);}else uiAlert('לא נמחק');}
 function mkHistBody(r){
   if(r.kind==='mail')return `<div class="mksub">${mkHistRes(r)}</div><details><summary class="mksub">המייל</summary><div class="mksub"><b>${esc(r.m_subj||'')}</b></div><div class="mksub" style="white-space:pre-wrap">${esc(r.m_body||'')}</div></details>`;
   if(r.kind!=='msg')return '';
@@ -2657,7 +2667,7 @@ async function mkActLoad(cid,fresh){
 function mkActHTML(cid){const A=MKACT[cid];if(!A)return '';
   if(!A.ok)return `<div class="mksub">⚠️ ${esc(A.error||'')}</div><button class="btn sm" id="mkactagain" style="margin-top:6px">🔄 לנסות שוב</button>`;
   const KN={pay:'💳 תשלום',entry:'🚪 כניסה',entry_fail:'⛔ כניסה שנדחתה',other:'📝'};
-  const XL={balancebefore:'יתרה לפני',balanceafter:'יתרה אחרי',cash:'מזומן',credit:'אשראי',pulse:'פעימות',surplus:'עודף',change:'עודף'};
+  const XL={balancebefore:'ערך צבור לפני',balanceafter:'ערך צבור אחרי',cash:'מזומן',credit:'אשראי',pulse:'פעימות',surplus:'עודף',change:'עודף'};
   const xl=k=>{const n=k.toLowerCase().replace(/[_\s]/g,'');for(const p in XL)if(n.indexOf(p)>=0)return XL[p];return k;};
   const d=s=>{const [dd,tt]=String(s||'').split(' ');return (dd?dd.slice(8,10)+'/'+dd.slice(5,7)+'/'+dd.slice(2,4):'')+(tt?' '+tt:'');};
   if(!(A.rows||[]).length)return '<div class="mksub">אין לו פעילות ביומן המקווה בשנה האחרונה.</div><button class="btn sm ghost" id="mkactagain" style="margin-top:6px">🔄 לבדוק שוב</button>';
@@ -2735,7 +2745,7 @@ async function mkSubEdit(c){
       <div class="hcrow"><button type="button" class="btn hcbtn" data-cal="mksd_e" id="mksd_eb"></button><input class="cinp" type="date" id="mksd_e" value="${esc(ce)}" title="או תאריך לועזי"></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 12px"><button class="btn sm ghost" data-add="rc">עד סוף החודש העברי</button><button class="btn sm ghost" data-add="30">+30 יום לסוף</button><button class="btn sm ghost" data-add="m1">חודש מההתחלה</button><button class="btn sm ghost" data-add="365">+שנה לסוף</button></div>
       <div class="mksub" id="mksd_days" style="margin:-6px 0 12px"></div>
-      <label class="cmsub" style="display:block;margin-bottom:4px">💳 זיכוי ליתרה (לא חובה) — סכום בש"ח שיתווסף ליתרה שלו במקווה${c.balance!=null?' (יתרה עכשיו '+esc(mkMoney(c.balance))+')':''}</label>
+      <label class="cmsub" style="display:block;margin-bottom:4px">💳 זיכוי (יתרה זמנית, לא חובה) — סכום בש"ח שיתווסף לזיכוי שלו במקווה${c.temp_balance!=null?' (זיכוי עכשיו '+esc(mkMoney(c.temp_balance))+')':''}</label>
       <input class="cinp" id="mksd_cr" inputmode="decimal" placeholder="למשל 37">
       <label class="cmsub" style="display:block;margin-bottom:4px">הערה (לא חובה) — למשל: אישור מיוחד, התחיל באמצע החודש</label>
       <input class="cinp" id="mksd_n" placeholder="הערה">
@@ -2778,9 +2788,9 @@ async function mkSubEdit(c){
     c.sub_end=r.sub_end;c.sub_start=r.sub_start;const x=(MK.clients||[]).find(y=>y.id===c.id);if(x){x.sub_end=r.sub_end;x.sub_start=r.sub_start;}
     msg='✓ המנוי'+(r.sub_start?' מ-'+mkDate(r.sub_start):'')+' עד '+mkDate(r.sub_end)+(hebOfIso(r.sub_end)?' ('+hebOfIso(r.sub_end)+')':'')+' — עודכן במקווה';}
   if(credit){ // מאיר: "אופציה של זיכוי יתרה — אם ארצה ארשום ידנית" — מתווסף ליתרה שלו במקווה
-    const rb=await api('POST','/api/mikveh/balance',{id:c.id,add:credit,note:(r0.note?r0.note+' · ':'')+'זיכוי עם שינוי תאריכי המנוי'}).catch(()=>null);
-    if(!rb||!rb.ok){mkOpen(c);return uiAlert((msg?msg+'\n\n':'')+'אבל הזיכוי ליתרה לא נקלט במקווה:\n'+((rb&&rb.error)||'אין תשובה מהשרת'));}
-    c.balance=rb.balance;c.last_balance=rb.balance;msg+=(msg?' · ':'✓ ')+'זיכוי ₪'+credit.toLocaleString('he-IL')+' — יתרה עכשיו '+mkMoney(rb.balance);}
+    const rb=await api('POST','/api/mikveh/zikui',{id:c.id,add:credit,note:(r0.note?r0.note+' · ':'')+'זיכוי עם שינוי תאריכי המנוי'}).catch(()=>null);
+    if(!rb||!rb.ok){mkOpen(c);return uiAlert((msg?msg+'\n\n':'')+'אבל הזיכוי לא נקלט במקווה:\n'+((rb&&rb.error)||'אין תשובה מהשרת'));}
+    c.temp_balance=rb.zikui;msg+=(msg?' · ':'✓ ')+'זיכוי ₪'+credit.toLocaleString('he-IL')+' — זיכוי עכשיו '+mkMoney(rb.zikui);}
   toast(msg);mkOpen(c);}
 async function mkBalanceEdit(c){
   const cur=c.balance!=null?c.balance/100:null;
@@ -2939,7 +2949,7 @@ async function mkSelfGroupOpen(){
   const reqRow=x=>`<div class="mkrow ${x.status==='new'?'schrow':''}" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(dt(x.at))} · <a href="#" data-sgc="${esc(x.cid)}">${esc(x.name||'')}</a>${x.code?' #'+esc(x.code):''}</b>
       <div class="mksub">רוצה לעבור: ${esc(x.from_name||'')} ← <b>${esc(x.to_name||'')}</b> · ${esc(x.reason||'')}${x.note?' · 🗒️ '+esc(x.note):''}</div></div>
       ${x.status==='new'?`<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-rqok="${x.id}">✓ לאשר ולהעביר</button><button class="btn sm ghost" data-rqno="${x.id}">✗ לדחות</button></div>`
-        :`<b style="color:${x.status==='done'?'#2e7d32':'#c0392b'}">${x.status==='done'?'✓ אושרה':'✗ נדחתה'}</b>`}</div>`;
+        :`<div style="display:flex;gap:6px;align-items:center"><b style="color:${x.status==='done'?'#2e7d32':'#c0392b'}">${x.status==='done'?'✓ אושרה':'✗ נדחתה'}</b><button class="btn sm ghost" data-rqdel="${x.id}" title="למחוק את הבקשה מהרשימה">🗑️</button></div>`}</div>`;
   const TABS=[['set','⚙️ הגדרות'],['req','📨 בקשות'+(newR.length?' ('+newR.length+')':'')],['lock','🔒 לקוחות נעולים'],['txt','🗣️ טקסטים'],['log','📜 יומן']];
   rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📞</div><div><h2>שלוחת החלפת קבוצה</h2>
       <div class="mksub">כל מנוי מתקשר, מזוהה לפי הטלפון שרשום לו במקווה, ובוחר קבוצה חדשה. ההחלפה נעשית במקווה מיד.</div></div></div>
@@ -2976,7 +2986,7 @@ async function mkSelfGroupOpen(){
     <div data-tp="txt" id="sgtxt"><div class="mksub">⏳ טוען…</div></div>
     <div data-tp="log">${(r.log||[]).length?`<div class="mklist">${r.log.map(x=>`<div class="mkrow schrow ${x.ok?'':'bad'}" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(dt(x.at))} · <a href="#" data-sgc="${esc(x.cid)}">${esc(x.name||'')}</a>${x.code?' #'+esc(x.code):''}</b>
         <div class="mksub">${esc(x.from_name||'')} ← ${esc(x.to_name||'')}${String(x.call_id||'').startsWith('req:')?' · באישור המשרד':''}${x.ok?'':' · ✗ לא בוצע'}${x.error?' · '+esc(x.error):''}</div></div>
-        <b style="${x.fee?'color:#c0392b':''}">${x.fee?'קנס '+esc(mkNis(x.fee)):'חינם'}</b></div>`).join('')}</div>`:'<div class="mksub">עוד לא היו החלפות.</div>'}</div>`;
+        <div style="display:flex;gap:6px;align-items:center"><b style="${x.fee?'color:#c0392b':''}">${x.fee?'קנס '+esc(mkNis(x.fee)):'חינם'}</b><button class="btn sm ghost" data-lgdel="${x.id}" title="למחוק מהיומן (נספר שוב כאילו לא החליף; במקווה לא משתנה כלום)">🗑️</button></div></div>`).join('')}</div>`:'<div class="mksub">עוד לא היו החלפות.</div>'}</div>`;
   const showTab=()=>{rs.querySelectorAll('[data-tp]').forEach(d=>d.style.display=d.dataset.tp===MKSG_TAB?'':'none');
     rs.querySelectorAll('#sgtabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===MKSG_TAB));
     if(MKSG_TAB==='txt'&&!rs.querySelector('#sgtxt [data-tx]'))mkTextsHTML('grp').then(h=>{const el=document.getElementById('sgtxt');if(el){el.innerHTML=h;mkTextsWire(el,'grp',()=>{MKSG_TAB='txt';mkSelfGroupOpen();});}});};
@@ -2988,6 +2998,10 @@ async function mkSelfGroupOpen(){
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   document.getElementById('sgcopy').onclick=()=>{try{navigator.clipboard.writeText(ini);toast('הועתק');}catch(e){uiAlert(ini);}};
   rs.querySelectorAll('[data-sgc]').forEach(el=>el.onclick=e=>{e.preventDefault();const c=MK&&MK.clients.find(z=>z.id===el.dataset.sgc);if(c)mkOpen(c);});
+  rs.querySelectorAll('[data-lgdel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את השורה מיומן ההחלפות?\nהיא לא תיספר יותר בכמות ההחלפות החודש. במקווה עצמו לא משתנה כלום.'))return;
+    await api('POST','/api/mikveh/selfgroup_log_del',{id:+b.dataset.lgdel});toast('🗑️ נמחק');mkSelfGroupOpen();});
+  rs.querySelectorAll('[data-rqdel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את הבקשה מהרשימה?'))return;
+    await api('POST','/api/mikveh/selfgroup_req_del',{id:+b.dataset.rqdel});toast('🗑️ נמחק');mkSelfGroupOpen();});
   rs.querySelectorAll('[data-unl]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/selfgroup_lock',{id:b.dataset.unl,locked:false});toast('🔓 הנעילה בוטלה');mkSelfGroupOpen();});
   rs.querySelectorAll('[data-rqno]').forEach(b=>b.onclick=async()=>{const n=await uiPrompt('לדחות את הבקשה. הערה (לא חובה):','');if(n==null)return;
     const x=await api('POST','/api/mikveh/selfgroup_req/'+b.dataset.rqno,{action:'reject',note:n}).catch(()=>null);if(x&&x.ok){toast('✗ הבקשה נדחתה');mkSelfGroupOpen();}else uiAlert('⚠️ '+((x&&x.error)||'לא נשמר'));});
@@ -3043,6 +3057,7 @@ async function mkZikui(c){const a=await uiPrompt('כמה ₪ להוסיף לזי
   const note=await uiPrompt('הערה (לא חובה)','');
   const r=await api('POST','/api/mikveh/zikui',{id:c.id,add:a,note:note||''}).catch(()=>null);
   if(!r||!r.ok){uiAlert('⚠️ '+((r&&r.error)||'לא עודכן'));return;}
+  c.temp_balance=r.zikui;const z=document.getElementById('mkzk');if(z)z.querySelector('b').textContent=mkMoney(r.zikui);
   toast('✓ הזיכוי במקווה עכשיו '+mkNis(r.zikui/100));mkHistLoad(c.id);}
 // ⛔ חסימה / ביטול חסימה במקווה
 async function mkBlock(c,redraw){let reason='';

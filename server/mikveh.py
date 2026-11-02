@@ -707,7 +707,7 @@ def att_norm(r):
     if sub.get('key') == 'Activity_Log_SubLine_SubscriptionValidUntil' and (sub.get('params') or {}).get('date'):
         parts.append('מנוי בתוקף עד ' + sub['params']['date'])
     if r.get('balanceBeforeAgorot') is not None:
-        parts.append('יתרה לפני ₪%g' % (r['balanceBeforeAgorot'] / 100.0))
+        parts.append('ערך צבור לפני ₪%g' % (r['balanceBeforeAgorot'] / 100.0))
     if not parts:
         parts.append('פעולה %s' % r.get('actionType'))
     return {'at': _local(r.get('createdAt')), 'cid': r.get('clientId'), 'name': nm, 'group': None,
@@ -811,7 +811,7 @@ def activity(cid, days=365):
         elif paid > 0 or _h_failed(x):
             kind, text = 'pay', _h_desc(x) + (' · ✗ נכשל' if _h_failed(x) else '')
         elif src == 'Entrances':
-            kind, text = 'entry', 'כניסה' + (' על חשבון היתרה' if (x.get('balanceBefore') or 0) != (x.get('balanceAfter') or 0) else '')
+            kind, text = 'entry', 'כניסה' + (' על חשבון ערך צבור (פעימות)' if (x.get('balanceBefore') or 0) != (x.get('balanceAfter') or 0) else '')
         else:
             kind, text = 'other', _h_desc(x)
         extra = {}

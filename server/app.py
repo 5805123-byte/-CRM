@@ -23750,7 +23750,7 @@ class H(BaseHTTPRequestHandler):
                                      "FROM mk_log l LEFT JOIN ym_msg y ON y.id=l.msg_id LEFT JOIN ym_job j ON j.id=y.job "
                                      "LEFT JOIN mk_mail mm ON mm.id=l.mail_id WHERE l.cid=? ORDER BY l.at DESC, l.id DESC LIMIT 100",
                                      (m.group(1),)):
-                    rows.append(dict(r))
+                    rows.append(dict(r, can_del=1))
                 # הודעות מלפני היומן — לפי המזהה (אם נשמר בהודעה) או לפי הטלפון של הלקוח במקווה
                 try:
                     import mikveh as _mk
@@ -23830,7 +23830,13 @@ class H(BaseHTTPRequestHandler):
                         try: bal = int(round(float(v))); break
                         except (TypeError, ValueError): pass
                 # מאיר: "פה אני רוצה לראות גם תעודת זהות שלו ואימייל שלו" — חיים מהמקווה, לא נשמרים אצלנו
-                return self._send(200, {'ok': True, 'ms': int((time.time() - t0) * 1000), 'balance': bal,
+                zk = None
+                for k in ('tempBalance', 'lastTempBalance'):
+                    v = cl.get(k) if isinstance(cl, dict) else None
+                    if v is not None:
+                        try: zk = int(round(float(v))); break
+                        except (TypeError, ValueError): pass
+                return self._send(200, {'ok': True, 'ms': int((time.time() - t0) * 1000), 'balance': bal, 'zikui': zk,
                                         'email': str(cl.get('email') or '').strip() if isinstance(cl, dict) else '',
                                         'ident': _mk.ident(cl)})
             except Exception as e:
@@ -26576,6 +26582,20 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path in ('/api/mikveh/log_del', '/api/mikveh/selfgroup_log_del', '/api/mikveh/selfgroup_req_del'):
+            # 🗑️ מאיר: "שיהיה אפשרות למחוק דברים מהיומן מהדברים שבדקו" — רק מהיומנים שלנו (לא משנה כלום במקווה)
+            try:
+                rid = int(b.get('id'))
+            except (TypeError, ValueError):
+                return self._send(200, {'ok': False, 'error': 'שורה לא תקינה'})
+            tbl = {'/api/mikveh/log_del': 'mk_log', '/api/mikveh/selfgroup_log_del': 'mkg_log', '/api/mikveh/selfgroup_req_del': 'mkg_req'}[self.path]
+            con = db()
+            try:
+                con.execute("DELETE FROM %s WHERE id=?" % tbl, (rid,))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/mikveh/selfgroup_lock':
             # 🔒 מאיר: "אפשרות לנעול ללקוח שלא יוכל להחליף קבוצה אף פעם" (בשלוחה)
             cid = str(b.get('id') or '').strip()
@@ -26800,7 +26820,7 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                            (cid, now_iso(), 'balance', '💰 יתרה במקווה: %s → ₪%g%s · %.1f שנ\'' % (('₪%g' % (old / 100.0)) if isinstance(old, (int, float)) else '—', bal, (' · ' + note) if note else '', time.time() - t0)))
+                            (cid, now_iso(), 'balance', '💰 ערך צבור (פעימות) במקווה: %s → ₪%g%s · %.1f שנ\'' % (('₪%g' % (old / 100.0)) if isinstance(old, (int, float)) else '—', bal, (' · ' + note) if note else '', time.time() - t0)))
                 con.commit()
             finally:
                 con.close()
