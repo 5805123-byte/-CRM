@@ -4955,6 +4955,42 @@ def ensure_schema():
                 print('  הכל אצל אירני: נמצאו %d / %d — לא בוצע' % (len(_ir), len(_bl)))
     except Exception as e:
         print('  irni all error:', e)
+    # מאיר (2.11.2026): "תעצור אצלנו מעכשיו את החיובים שלו באשראי" — חיים (Howard) הרשקוביץ עובר לשלם דרך קרן
+    # התרומות שלו (DAF). רק החיוב בכרטיס נעצר (הוראת הקבע בבנק ווסט); ההתחייבות ליששכר־זבולון נשארת — הוא ממשיך לתרום
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='herskowitz_card_stop_v1'").fetchone():
+            _h = con.execute("SELECT id FROM donors WHERE TRIM(last)='הרשקוביץ' AND TRIM(first) LIKE 'חיים%'").fetchall()
+            if len(_h) == 1:
+                _hid = _h[0]['id']
+                import banquest as _bqh
+                _ok, _bad = [], []
+                for _sc in con.execute("SELECT id,amount FROM bq_sched WHERE COALESCE(active,0)=1 AND (donor_id=? OR customer_id IN "
+                                       "(SELECT id FROM bq_cust WHERE donor_id=?))", (_hid, _hid)).fetchall():
+                    try:
+                        _c, _r = _bqh.update_schedule(_sc['id'], active=False)
+                        if 200 <= int(_c or 0) < 300:
+                            con.execute("UPDATE bq_sched SET active=0, status='paused' WHERE id=?", (_sc['id'],))
+                            _ok.append('$%g' % (_sc['amount'] or 0))
+                        else:
+                            _bad.append('$%g: %s' % (_sc['amount'] or 0, str(_r)[:80]))
+                    except Exception as e:
+                        _bad.append('$%g: %s' % (_sc['amount'] or 0, str(e)[:80]))
+                if _ok:
+                    _txt = '⏸ החיוב החודשי בכרטיס (בנק ווסט, %s) נעצר — עובר לשלם דרך קרן התרומות שלו (DAF). ההתחייבות נשארת (מאיר)' % ', '.join(_ok)
+                else:
+                    _txt = ('⏸ לעצור את החיוב בכרטיס ****0239 ($750 ב-15 לחודש) — הוראת הקבע לא נמצאה במערכת (היא בחשבון השני של בנק ווסט, kolelch26). '
+                            'ביקשנו מבנק ווסט במייל ב-2.11.2026 לבטל אותה ולזכות את 2026. ההתחייבות נשארת — ישלם דרך קרן התרומות (DAF)'
+                            + ((' · שגיאה: ' + '; '.join(_bad)) if _bad else ''))
+                    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note,assignee) VALUES(?,?,?,?,'')",
+                                (_hid, today_iso(), 'followup', 'הרשקוביץ חיים: לוודא שבנק ווסט ביטלו את הוראת הקבע ($750, כרטיס 0239) וזיכו את 2026'))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (_hid, today_iso(), 'מערכת', _txt, '', now_iso()))
+                print('  הרשקוביץ: ' + ('נעצר %s' % ', '.join(_ok) if _ok else 'לא נמצאה הוראה במערכת — נפתחה משימה'))
+                con.execute("INSERT INTO seed_flags(name) VALUES('herskowitz_card_stop_v1')"); con.commit()
+            else:
+                print('  הרשקוביץ חיים: נמצאו %d כרטיסים — לא נעצר' % len(_h))
+    except Exception as e:
+        print('  herskowitz stop error:', e)
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
