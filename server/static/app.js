@@ -3084,8 +3084,8 @@ async function mkSelfGroupOpen(){
           <div style="display:flex;flex-direction:column;gap:6px">
           <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;color:#2f6fb0"><input type="checkbox" data-mg="${esc(g.id)}" style="width:20px;height:20px" ${memG.has(g.id)?'checked':''}> 👥 רק לחברי קהילה</label>
           <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;color:#c0392b"><input type="checkbox" data-lg="${esc(g.id)}" style="width:20px;height:20px" ${lockG.has(g.id)?'checked':''}> 🔒 נעולה</label></div></div>`).join('')}</div>
-      <div class="mksub" style="margin:6px 2px">👥 <b>רק לחברי קהילה</b> — הקבוצה מוצעת בטלפון רק למי שהטלפון שלו שייך לחבר קהילה פעיל ומאושר במערכת (מסך הקהילה). לאחרים היא לא מוקראת.</div>
-      <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="sgmkeva" style="width:20px;height:20px" ${C.member_keva?'checked':''}> וגם שיש לו הוראת קבע פעילה לקהילה (דמי חבר)</label>
+      <div class="mksub" style="margin:6px 2px;line-height:1.7">👥 <b>רק לחברי קהילה</b> — קבוצת הנחה. חבר קהילה (לפי הטלפון, ברשימת הקהילה) שומע בטלפון: 1 לקבוצות ההנחה, 2 לקבוצות הרגילות.
+        ההנחה ניתנת לבד רק אם יש לו <b>הוראת קבע פעילה לקהילה</b>, ורק אם <b>אין לקוח אחר במקווה עם אותו טלפון או ת.ז.</b> שכבר בקבוצת הנחה. אחרת הוא שומע בדיוק למה, ויכול לשלוח בקשה למשרד.</div>
       <div class="mksec" style="margin-top:14px">⚖️ כמה פעמים אפשר להחליף</div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-weight:700;margin:6px 0">אפשר להחליף
         <input type="number" id="sgmax" min="0" value="${esc(C.max)}" style="width:80px"> פעמים בתוך
@@ -3139,7 +3139,7 @@ async function mkSelfGroupOpen(){
   document.getElementById('sgsave').onclick=async()=>{const say={};rs.querySelectorAll('[data-say]').forEach(i=>{if(i.value.trim())say[i.dataset.say]=i.value.trim();});
     const body={enabled:document.getElementById('sgon').checked,groups:[...rs.querySelectorAll('[data-sg]')].filter(x=>x.checked).map(x=>x.dataset.sg),
       locked_groups:[...rs.querySelectorAll('[data-lg]')].filter(x=>x.checked).map(x=>x.dataset.lg),say,
-      member_groups:[...rs.querySelectorAll('[data-mg]')].filter(x=>x.checked).map(x=>x.dataset.mg),member_keva:document.getElementById('sgmkeva').checked,req_on:document.getElementById('sgreq').checked,
+      member_groups:[...rs.querySelectorAll('[data-mg]')].filter(x=>x.checked).map(x=>x.dataset.mg),req_on:document.getElementById('sgreq').checked,
       max:document.getElementById('sgmax').value,days:document.getElementById('sgdays').value,
       divisor:document.getElementById('pcdiv').value,round:document.getElementById('pcround').value,
       pay_methods:[...rs.querySelectorAll('[data-pm]')].filter(x=>x.checked).map(x=>x.dataset.pm),nd_mosad:document.getElementById('pcnd').value,
