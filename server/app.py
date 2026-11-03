@@ -23905,6 +23905,14 @@ class H(BaseHTTPRequestHandler):
                 cc = byid.get(str(rq['cid']))
                 if rq['status'] == 'new' and cc and rq['to_gid'] in gr_:
                     rq['quote'] = mkg_quote(cfg, cc, gr_, rq['to_gid'])
+                    if rq['to_gid'] in (cfg.get('member_groups') or []):
+                        con2 = db()
+                        try:
+                            mm = mkg_member(con2, cc, cfg)
+                        finally:
+                            con2.close()
+                        rq['member'] = mm['name'] if mm else ''
+                        rq['member_needed'] = True
             import nedarim as _nd
             accts = [{'mosad': a['mosad'], 'name': a['name'], 'mk': a['mosad'] == mk_mosad()} for a in _nd.accounts()]
             lk = [{'id': x, 'name': ((byid.get(x) or {}).get('firstName', '') + ' ' + ((byid.get(x) or {}).get('lastName') or '')).strip(),
@@ -27006,7 +27014,9 @@ class H(BaseHTTPRequestHandler):
                    'pay_methods': [m for m in (b.get('pay_methods') or []) if m in ('keva', 'card', 'debt')] or ['debt'],
                    'nd_mosad': str(b.get('nd_mosad') or '').strip()[:20],
                    'erech_groups': [str(x) for x in (b.get('erech_groups') or []) if str(x) in known]
-                   if isinstance(b.get('erech_groups'), list) else 'auto'}
+                   if isinstance(b.get('erech_groups'), list) else 'auto',
+                   'member_groups': [str(x) for x in (b.get('member_groups') or []) if str(x) in known],
+                   'member_keva': bool(b.get('member_keva'))}
             if cfg['enabled'] and len(gs) < 2:
                 return self._send(200, {'ok': False, 'error': 'צריך לבחור לפחות 2 קבוצות שאפשר לעבור ביניהן'})
             con = db()
@@ -34976,7 +34986,10 @@ MKG_DEFAULT = {'enabled': False, 'groups': [], 'max': 1, 'days': 30, 'say': {}, 
                # הפרש = (מחיר חדש − נוכחי) × ימים שנשארו ÷ divisor. לשלם: הוראת קבע / אשראי בטלפון / חוב במקווה;
                # זול יותר: זיכוי ביתרה הזמנית (בלי ביטול). חוב שעוד לא שולם — אפשר לבטל את המעבר בטלפון.
                'divisor': 30, 'round': 1, 'credit_down': True, 'pay_methods': ['debt'], 'nd_mosad': '',
-               'erech_groups': 'auto', 'say_prices': True, 'cancel_on': True}
+               'erech_groups': 'auto', 'say_prices': True, 'cancel_on': True,
+               # 👥 מאיר: "העברה לקבוצה שדרוש להיות חבר בקהילה" — הקבוצות האלה מוצעות רק למי שהטלפון שלו
+               # שייך לחבר קהילה פעיל ומאושר ב-CRM (ואם member_keva — שיש לו גם הוראת קבע פעילה לקהילה)
+               'member_groups': [], 'member_keva': False}
 
 # 🗣️ מאיר: "אני רוצה אפשרות לשנות טקסטים בשלוחה API" — כל מה שהשלוחות של המקווה אומרות. בסוגריים מסולסלים —
 # מה שהמערכת ממלאת לבד (שם, קבוצה, סכום…). מה שלא שונה — ברירת המחדל. נשמר ב-app_kv (mk_ivr_texts).
@@ -34989,11 +35002,12 @@ MK_TEXTS = [
     ('quote_credit', 'grp', 'הצעת מחיר — מגיע זיכוי', 'במעבר לקבוצה {group} תקבלו זיכוי של {amount} שקלים ביתרה הזמנית, על {days} הימים שנשארו לכם במנוי. שימו לב, את המעבר הזה אי אפשר לבטל. לאישור הקישו 1, לביטול הקישו 2'),
     ('pay_keva', 'grp', 'תשלום — הוראת קבע', 'לתשלום מהוראת הקבע בכרטיס המסתיים בספרות {last4} הקישו {n}'),
     ('pay_card', 'grp', 'תשלום — כרטיס אשראי', 'לתשלום בכרטיס אשראי הקישו {n}'),
-    ('pay_debt', 'grp', 'תשלום — חוב במקווה', 'לרישום חוב במקווה ותשלום במשרד הקישו {n}'),
+    ('pay_debt', 'grp', 'תשלום — חוב במקווה', 'לרישום חוב במקווה ותשלום במכונה של המקווה הקישו {n}'),
     ('pay_fail', 'grp', 'החיוב לא עבר', 'החיוב לא עבר'),
     ('pay_cancel', 'grp', 'התשלום בוטל', 'התשלום בוטל, הקבוצה לא שונתה'),
     ('done_paid', 'grp', 'שולם והועבר', 'התשלום של {amount} שקלים התקבל, והועברתם לקבוצה {group}. תודה רבה'),
-    ('done_debt', 'grp', 'הועבר עם חוב', 'הועברתם לקבוצה {group}. נרשם לכם חוב של {amount} שקלים במקווה. כל עוד החוב לא שולם, אפשר לבטל את המעבר בשלוחה הזו'),
+    ('done_debt', 'grp', 'הועבר עם חוב', 'הועברתם לקבוצה {group}. נרשם לכם חוב של {amount} שקלים, ואפשר לשלם אותו במכונה של המקווה באשראי או במזומן. כל עוד החוב לא שולם, אפשר לבטל את המעבר בשלוחה הזו'),
+    ('not_member', 'grp', 'הקבוצה רק לחברי קהילה', 'המעבר לקבוצות האלה מיועד לחברי הקהילה בלבד. לפרטים אנא פנו למשרד'),
     ('done_credit', 'grp', 'הועבר עם זיכוי', 'הועברתם לקבוצה {group}. זיכינו אתכם על סך {amount} שקלים ביתרה הזמנית. תודה רבה'),
     ('cancel_offer', 'grp', 'הצעה לבטל מעבר שלא שולם', 'יש לכם מעבר לקבוצה {group} שעדיין לא שולם. לביטול המעבר וחזרה לקבוצה {old} הקישו 9'),
     ('cancel_done', 'grp', 'המעבר בוטל', 'המעבר בוטל. חזרתם לקבוצה {old} והחוב נמחק. תודה רבה'),
@@ -35143,6 +35157,22 @@ def mkg_quote(cfg, c, gr, tgt):
     return {'old_price': float(old), 'new_price': float(new), 'days': days, 'amount': amt}
 
 
+def mkg_member(con, c, cfg):
+    """חבר הקהילה של לקוח המקווה (לפי הטלפון): חבר פעיל ומאושר ב-CRM, ואם הוגדר — עם הוראת קבע פעילה לקהילה. dict או None"""
+    phones = _mkg_phones(c)
+    if not phones:
+        return None
+    import yemot as _ym
+    for r in con.execute("SELECT id, last, first, phone FROM members WHERE COALESCE(active,1)=1 AND COALESCE(pending,0)=0 AND COALESCE(phone,'')<>''"):
+        mine = {_ym.norm_phone(x) for x in re.split(r'[,;/|]|\s{2,}', str(r['phone'] or ''))}
+        if phones & mine:
+            if cfg.get('member_keva') and not con.execute(
+                    "SELECT 1 FROM nd_keva WHERE member_id=? AND active=1 AND COALESCE(mosad,'')=''", (r['id'],)).fetchone():
+                return None
+            return {'id': r['id'], 'name': ((r['first'] or '') + ' ' + (r['last'] or '')).strip()}
+    return None
+
+
 def mkg_nd_acct(cfg):
     """חשבון נדרים פלוס שנבחר לתשלום בטלפון (או None)"""
     import nedarim as _nd
@@ -35271,7 +35301,13 @@ def mkg_ivr(P):
                         (cid, now_iso(), 'group', '↩️ ביטל בטלפון את המעבר: חזר ל%s, והחוב ₪%g נמחק' % (undo['from_name'], undo['amount'] or 0)))
             con.commit()
             return msg('cancel_done', old=mkg_say(cfg, undo['from_gid'], undo['from_name']))
-        opts = [g for g in allowed if g != cur][:8]
+        opts = [g for g in allowed if g != cur]
+        mgs = set(cfg.get('member_groups') or [])
+        if mgs & set(opts) and not mkg_member(con, c, cfg):
+            opts = [g for g in opts if g not in mgs]
+            if not opts and not undo:
+                return msg('not_member')
+        opts = opts[:8]
         if not opts and not undo:
             return msg('no_target')
         used, left = mkg_used(con, cid, cfg.get('days') or 30)

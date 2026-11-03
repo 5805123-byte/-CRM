@@ -2962,6 +2962,7 @@ async function mkReqOpen(){
       <div><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b style="font-size:1.05rem"><a href="#" data-rqc="${esc(x.cid)}">${esc(x.name||'')}</a>${x.code?' <small style="color:#777">#'+esc(x.code)+'</small>':''}</b><small style="color:#777">${esc(dt(x.at))}</small></div>
         <div style="margin:6px 0;font-weight:700"><span class="mktag">${esc(x.from_name||'')}</span> ← <span class="mktag ok">${esc(x.to_name||'')}</span></div>
         <div class="mksub">${esc(x.reason||'')}${x.phone?' · <span dir="ltr">'+esc(x.phone)+'</span>':''}${x.note?' · 🗒️ '+esc(x.note):''}</div>
+        ${x.member_needed?`<div class="mksub" style="font-weight:700;color:${x.member?'#2e7d32':'#c0392b'}">👥 ${x.member?'חבר קהילה: '+esc(x.member):'לא נמצא כחבר קהילה — הקבוצה מיועדת לחברי קהילה בלבד'}</div>`:''}
         ${x.quote?`<div class="mksub" style="font-weight:700;color:${x.quote.amount>0?'#c0392b':x.quote.amount<0?'#2e7d32':'inherit'}">${x.quote.amount>0?'💳 הפרש לתשלום: '+esc(mkNis(x.quote.amount))+' (יירשם חוב במקווה)':x.quote.amount<0?'💳 זיכוי: '+esc(mkNis(-x.quote.amount))+' (ביתרה הזמנית)':'בלי הפרש'} · ₪${esc(x.quote.old_price)} ← ₪${esc(x.quote.new_price)} לחודש · ${x.quote.days} ימים נשארו</div>`:''}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${x.status==='new'
           ?`<button class="mkbtn" data-rqok="${x.id}">✓ לאשר ולהעביר</button><button class="mkbtn gh" data-rqno="${x.id}">✗ לדחות</button>`
@@ -3016,7 +3017,7 @@ async function mkSelfGroupOpen(){
     document.getElementById('rx').onclick=()=>remov.classList.remove('show');}
   const r=await api('GET','/api/mikveh/selfgroup').catch(()=>null);
   if(!r||!r.ok){rs.innerHTML='<button class="x" id="rx">✕</button><div class="mksub">⚠️ '+esc((r&&r.error)||'לא נטען')+'</div>';document.getElementById('rx').onclick=()=>remov.classList.remove('show');return;}
-  const C=r.cfg, sel=new Set(C.groups||[]), lockG=new Set(C.locked_groups||[]);
+  const C=r.cfg, sel=new Set(C.groups||[]), lockG=new Set(C.locked_groups||[]), memG=new Set(C.member_groups||[]);
   const ini=`type=api\napi_link=${r.link}\napi_hangup_send=no`;
   const dt=s=>String(s||'').slice(8,10)+'/'+String(s||'').slice(5,7)+' '+String(s||'').slice(11,16);
   const newR=(r.reqs||[]).filter(x=>x.status==='new'), oldR=(r.reqs||[]).filter(x=>x.status!=='new');
@@ -3037,7 +3038,11 @@ async function mkSelfGroupOpen(){
           <div><b><span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g.name)}${g.price!=null?' <small style="color:#777">'+esc(mkNis(g.price))+'</small>':''}</b>
             <input data-say="${esc(g.id)}" value="${esc(g.say)}" title="איך השם יוקרא בטלפון" placeholder="השם בטלפון" style="margin-top:6px"></div>
           <label style="display:flex;gap:6px;align-items:center;white-space:nowrap"><input type="checkbox" data-sg="${esc(g.id)}" style="width:20px;height:20px" ${sel.has(g.id)?'checked':''}> אפשר לעבור אליה</label>
-          <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;color:#c0392b"><input type="checkbox" data-lg="${esc(g.id)}" style="width:20px;height:20px" ${lockG.has(g.id)?'checked':''}> 🔒 נעולה</label></div>`).join('')}</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+          <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;color:#2f6fb0"><input type="checkbox" data-mg="${esc(g.id)}" style="width:20px;height:20px" ${memG.has(g.id)?'checked':''}> 👥 רק לחברי קהילה</label>
+          <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;color:#c0392b"><input type="checkbox" data-lg="${esc(g.id)}" style="width:20px;height:20px" ${lockG.has(g.id)?'checked':''}> 🔒 נעולה</label></div></div>`).join('')}</div>
+      <div class="mksub" style="margin:6px 2px">👥 <b>רק לחברי קהילה</b> — הקבוצה מוצעת בטלפון רק למי שהטלפון שלו שייך לחבר קהילה פעיל ומאושר במערכת (מסך הקהילה). לאחרים היא לא מוקראת.</div>
+      <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="sgmkeva" style="width:20px;height:20px" ${C.member_keva?'checked':''}> וגם שיש לו הוראת קבע פעילה לקהילה (דמי חבר)</label>
       <div class="mksec" style="margin-top:14px">⚖️ כמה פעמים אפשר להחליף</div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-weight:700;margin:6px 0">אפשר להחליף
         <input type="number" id="sgmax" min="0" value="${esc(C.max)}" style="width:80px"> פעמים בתוך
@@ -3055,7 +3060,7 @@ async function mkSelfGroupOpen(){
         · עיגול ל- <select id="pcround" style="width:auto"><option value="1"${+C.round===1?' selected':''}>שקל שלם</option><option value="5"${+C.round===5?' selected':''}>5 שקלים</option><option value="0.01"${+C.round<1&&+C.round>0?' selected':''}>אגורה</option></select></div>
       <div class="hintxt" id="pcex"></div>
       <div class="mksec" style="margin-top:12px">💳 איך משלמים הפרש (כשעוברים לקבוצה יקרה יותר)</div>
-      ${[['keva','מהוראת הקבע שלו בנדרים פלוס (אם יש לו בקופה שנבחרה)'],['card','בכרטיס אשראי בטלפון (נדרים פלוס)'],['debt','חוב במקווה — ישלם במשרד']].map(([k,l])=>`<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" data-pm="${k}" style="width:20px;height:20px" ${PM.has(k)?'checked':''}> ${l}</label>`).join('')}
+      ${[['keva','מהוראת הקבע שלו בנדרים פלוס (אם יש לו בקופה שנבחרה)'],['card','בכרטיס אשראי בטלפון (נדרים פלוס)'],['debt','חוב במקווה — ישלם במכונה של המקווה (אשראי / מזומן)']].map(([k,l])=>`<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" data-pm="${k}" style="width:20px;height:20px" ${PM.has(k)?'checked':''}> ${l}</label>`).join('')}
       <label class="fld" style="display:block;margin:10px 0"><span>קופת נדרים פלוס לתשלום בטלפון</span><select id="pcnd"><option value="">— לא נבחרה (רק חוב במקווה) —</option>
         ${(r.accounts||[]).map(a=>`<option value="${esc(a.mosad)}"${String(C.nd_mosad||'')===String(a.mosad)?' selected':''}>${esc(a.name)} · ${esc(a.mosad)}${a.mk?' (המקווה)':''}</option>`).join('')}</select></label>
       ${(r.accounts||[]).length?'':'<div class="mksub" style="color:#c0392b">אין חשבונות נדרים פלוס מחוברים למערכת — אפשר רק חוב במקווה.</div>'}
@@ -3090,7 +3095,8 @@ async function mkSelfGroupOpen(){
   document.getElementById('pcsave').onclick=()=>document.getElementById('sgsave').click();
   document.getElementById('sgsave').onclick=async()=>{const say={};rs.querySelectorAll('[data-say]').forEach(i=>{if(i.value.trim())say[i.dataset.say]=i.value.trim();});
     const body={enabled:document.getElementById('sgon').checked,groups:[...rs.querySelectorAll('[data-sg]')].filter(x=>x.checked).map(x=>x.dataset.sg),
-      locked_groups:[...rs.querySelectorAll('[data-lg]')].filter(x=>x.checked).map(x=>x.dataset.lg),say,req_on:document.getElementById('sgreq').checked,
+      locked_groups:[...rs.querySelectorAll('[data-lg]')].filter(x=>x.checked).map(x=>x.dataset.lg),say,
+      member_groups:[...rs.querySelectorAll('[data-mg]')].filter(x=>x.checked).map(x=>x.dataset.mg),member_keva:document.getElementById('sgmkeva').checked,req_on:document.getElementById('sgreq').checked,
       max:document.getElementById('sgmax').value,days:document.getElementById('sgdays').value,
       divisor:document.getElementById('pcdiv').value,round:document.getElementById('pcround').value,
       pay_methods:[...rs.querySelectorAll('[data-pm]')].filter(x=>x.checked).map(x=>x.dataset.pm),nd_mosad:document.getElementById('pcnd').value,
