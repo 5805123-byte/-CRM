@@ -15627,7 +15627,8 @@ function renderComm(){
   document.getElementById('cm_jobs').onclick=()=>{cmSub='jobs';CMJOBS=null;render();window.scrollTo(0,0);};
   // 🔍 מאיר: "לא הבנתי איפה אני רואה את זה פה, נדרים פלוס" — החיפוש ישר מהמסך הראשי של הקהילה
   document.getElementById('cm_ndfind').onclick=async()=>{const v=await uiPrompt('את מי לחפש בנדרים פלוס? שם (למשל: אלחדד שמעון) או טלפון','');if(v===null)return;avPaidOpen(String(v).trim()||' ');};
-  document.getElementById('cm_sch').onclick=()=>{const sb=document.getElementById('cm_schbox');if(sb){SCH=null;renderSched(sb);sb.scrollIntoView({behavior:'smooth',block:'start'});}else{cmSub='sched';render();}};
+  // מאיר: "כשאני לוחץ עליו בקהילה הוא מדלג על הכל וקופץ ללמטה" — נפתח כדף משלו, מלמעלה
+  document.getElementById('cm_sch').onclick=()=>{SCH=null;cmSub='sched';render();window.scrollTo({top:0});};
   document.getElementById('cm_zm').onclick=()=>{cmSub='zmanim';render();window.scrollTo(0,0);};
   if(CMJOBS===null)api('GET','/api/cm/jobs').then(r=>{if(!r||!r.ok||CMJOBS)return;CMJOBS=r;const n=r.rows.filter(j=>j.status!=='done').length,bt=document.getElementById('cm_jobs');if(bt&&n)bt.innerHTML='✅ משימות צוות <b>'+n+'</b>';});
   if(CMREMS===null)cmRemsLoad().then(()=>{if(tab==='comm'&&cmSub==='list')render();});
