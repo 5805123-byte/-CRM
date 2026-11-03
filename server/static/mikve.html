@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ניהול המקווה</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- 🛁 מאיר: "אתר חדש לניהול האופציות של המקווה… אותן קריאות API בדיוק, עיצוב חדש בלבד".
+     כל מה שנעשה כאן עובר דרך אותם /api/mikveh/… של האתר הרגיל — שינוי בצד אחד נראה מיד בצד השני. -->
+<style>
+:root{--bg:#f3f6fb;--card:#fff;--ink:#1d2433;--muted:#6b7488;--line:#e6eaf2;--soft:#eef3ff;--blue:#2f6fed;--blue2:#e8efff;
+  --green:#15b97c;--green2:#e3f8ef;--red:#ef4444;--red2:#fdecec;--amber:#f59e0b;--amber2:#fff4dc;--violet:#7c5cff;--violet2:#efeaff;
+  --r:14px;--sh:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.06)}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{font-family:Heebo,system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:15px}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--blue);text-decoration:none}
+.app{display:grid;grid-template-columns:250px 1fr;min-height:100vh}
+.side{background:#fff;border-inline-start:1px solid var(--line);position:sticky;top:0;height:100vh;display:flex;flex-direction:column}
+.brand{padding:22px 22px 14px;font-weight:800;font-size:1.25rem;color:var(--blue);display:flex;align-items:center;gap:10px}
+.brand small{display:block;color:var(--muted);font-weight:500;font-size:.75rem}
+.nav{padding:6px 10px;display:flex;flex-direction:column;gap:2px;overflow:auto;flex:1}
+.nav button{display:flex;align-items:center;gap:12px;border:0;background:none;padding:11px 14px;border-radius:10px;cursor:pointer;text-align:right;font-weight:600;color:#3b4456}
+.nav button:hover{background:var(--soft)}
+.nav button.on{background:var(--blue2);color:var(--blue)}
+.nav button svg{width:20px;height:20px;flex:none}
+.nav .badge{margin-inline-start:auto;background:var(--red);color:#fff;border-radius:20px;padding:0 8px;font-size:.75rem;min-width:22px;text-align:center}
+.side .foot{padding:14px 18px;border-top:1px solid var(--line);font-size:.8rem;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+.main{min-width:0;padding:22px 26px 60px}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.top h1{margin:0;font-size:1.45rem;display:flex;align-items:center;gap:10px}
+.top h1 svg{width:24px;height:24px;color:var(--blue)}
+.top .sub{color:var(--muted);font-size:.85rem}
+.top .grow{flex:1}
+.btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:600;display:inline-flex;gap:8px;align-items:center;white-space:nowrap}
+.btn:hover{border-color:#cfd7e6}
+.btn.p{background:var(--blue);color:#fff;border-color:var(--blue)}.btn.p:hover{filter:brightness(1.05)}
+.btn.g{background:var(--green);color:#fff;border-color:var(--green)}
+.btn.r{color:var(--red)}
+.btn.sm{padding:5px 10px;font-size:.85rem;border-radius:8px}
+.btn:disabled{opacity:.55;cursor:default}
+.btn svg{width:16px;height:16px}
+.grid{display:grid;gap:16px}.grid>*,.main{min-width:0}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(165px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh)}
+.card.pad{padding:18px}
+.card h3{margin:0 0 12px;font-size:1rem;display:flex;align-items:center;gap:8px}
+.kpi{padding:16px 18px;display:flex;gap:14px;align-items:flex-start;cursor:default}
+.kpi.click{cursor:pointer}.kpi.click:hover{border-color:#cfd7e6}
+.kpi .ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex:none;background:var(--blue2);color:var(--blue)}
+.kpi .ic svg{width:21px;height:21px}
+.kpi .t{color:var(--muted);font-size:.85rem;font-weight:500}
+.kpi .v{font-size:1.7rem;font-weight:800;line-height:1.25;letter-spacing:-.5px}
+.kpi .s{color:var(--muted);font-size:.8rem}
+.ic.g{background:var(--green2);color:var(--green)}.ic.r{background:var(--red2);color:var(--red)}.ic.a{background:var(--amber2);color:var(--amber)}.ic.v{background:var(--violet2);color:var(--violet)}
+.two{grid-template-columns:2fr 1fr}.three{grid-template-columns:repeat(3,1fr)}
+@media(max-width:1100px){.two,.three{grid-template-columns:1fr}}
+.legend{display:flex;gap:14px;font-size:.8rem;color:var(--muted)}.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-inline-end:5px;vertical-align:-1px}
+.chart svg{width:100%;height:200px;display:block}
+.bc{position:relative}.bcmax{font-size:.75rem;color:var(--muted);margin-bottom:4px}
+.bcx{position:relative;height:20px;margin-top:4px;direction:ltr}.bcx span{position:absolute;transform:translateX(-50%);font-size:.72rem;color:var(--muted);white-space:nowrap}
+.card h3 svg{width:18px;height:18px;flex:none;color:var(--blue)}
+.bars .row{display:grid;grid-template-columns:110px 1fr 70px;gap:10px;align-items:center;margin:8px 0;font-size:.88rem}
+.bars .track{height:8px;background:#eef1f6;border-radius:6px;overflow:hidden}.bars .fill{height:100%;background:var(--blue);border-radius:6px}
+.bars .n{color:var(--muted);text-align:left;font-variant-numeric:tabular-nums}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.search{flex:1;min-width:220px;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:0 12px}
+.search input{border:0;outline:0;padding:11px 0;width:100%;background:none}
+.search svg{width:18px;color:var(--muted)}
+select,input[type=text],input[type=number],input[type=date],input[type=time],input:not([type]),textarea{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:#fff;outline:0}
+select:focus,input:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(47,111,237,.12)}
+textarea{width:100%;resize:vertical}
+.seg{display:inline-flex;background:#e9eef7;border-radius:11px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg button{border:0;background:none;padding:6px 12px;border-radius:9px;cursor:pointer;font-weight:600;color:#4b5568;font-size:.88rem}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:var(--sh)}
+.seg button i{font-style:normal;color:var(--muted);font-weight:500;margin-inline-start:4px}
+table.t{width:100%;border-collapse:collapse;font-size:.9rem}
+.t th{text-align:right;font-weight:600;color:var(--muted);font-size:.8rem;padding:11px 12px;border-bottom:1px solid var(--line);background:#fafbfd;position:sticky;top:0}
+.t td{padding:10px 12px;border-bottom:1px solid #f0f3f8;vertical-align:middle}
+.t tr.cl{cursor:pointer}.t tr.cl:hover td{background:#f7f9ff}
+.tw{overflow:auto;border-radius:var(--r)}
+.who{display:flex;align-items:center;gap:10px}.who b{font-weight:600}.who small{display:block;color:var(--muted);font-size:.78rem}
+.av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:.82rem;flex:none}
+.av.lg{width:54px;height:54px;font-size:1.1rem}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;background:#f1f4f9;font-size:.8rem;font-weight:600;white-space:nowrap}
+.chip .d{width:8px;height:8px;border-radius:50%}
+.tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:.76rem;font-weight:600;background:#f1f4f9;color:#4b5568;white-space:nowrap}
+.tag.g{background:var(--green2);color:#0b8a5b}.tag.r{background:var(--red2);color:#c02626}.tag.a{background:var(--amber2);color:#b45309}.tag.b{background:var(--blue2);color:var(--blue)}
+.red{color:var(--red)}.green{color:#0b8a5b}.mut{color:var(--muted)}.num{font-variant-numeric:tabular-nums}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+.skel{background:linear-gradient(90deg,#eef1f6 25%,#f7f9fc 50%,#eef1f6 75%);background-size:200% 100%;animation:sk 1.2s infinite;border-radius:10px}
+@keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.spin{width:16px;height:16px;border:2px solid currentColor;border-inline-end-color:transparent;border-radius:50%;display:inline-block;animation:sp .7s linear infinite;vertical-align:-3px}
+@keyframes sp{to{transform:rotate(360deg)}}
+/* מגירת לקוח */
+.ov{position:fixed;inset:0;background:rgba(17,24,39,.35);z-index:40;display:none}
+.ov.on{display:block}
+.drawer{position:fixed;top:0;bottom:0;left:0;width:min(640px,100%);background:var(--bg);z-index:41;transform:translateX(-102%);transition:transform .22s ease;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.18)}
+.drawer.on{transform:none}
+.dh{background:#fff;padding:18px 20px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;position:sticky;top:0;z-index:2}
+.dh h2{margin:0;font-size:1.2rem}.dh .x{margin-inline-start:auto}
+.db{padding:18px 20px;overflow:auto;flex:1}
+.x{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:#fff;cursor:pointer;display:grid;place-items:center;flex:none}
+.x svg{width:18px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.tile{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.tile span{display:block;color:var(--muted);font-size:.76rem}.tile b{font-size:1.05rem}
+.tile.click{cursor:pointer}.tile.click:hover{border-color:var(--blue)}
+.acts{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:8px 0 12px;overflow:auto}
+.tabs button{border:0;background:none;padding:10px 12px;cursor:pointer;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}
+.tabs button.on{color:var(--blue);border-bottom-color:var(--blue)}
+.list .it{background:#fff;border:1px solid var(--line);border-radius:12px;padding:11px 14px;margin-bottom:8px;display:flex;gap:12px;align-items:center}
+.list .it .m{flex:1;min-width:0}.list .it .m small{display:block;color:var(--muted);font-size:.8rem}
+/* חלון */
+.modal{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;background:rgba(17,24,39,.4);padding:16px}
+.modal.on{display:flex}
+.mbox{background:#fff;border-radius:16px;width:min(520px,100%);max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.mbox .mh{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;position:sticky;top:0;background:#fff}
+.mbox .mh h3{margin:0;font-size:1.05rem;flex:1}
+.mbox .mb{padding:18px 20px}
+.mbox .mf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-start;position:sticky;bottom:0;background:#fff}
+.fld{display:block;margin-bottom:12px}.fld>span{display:block;font-size:.82rem;color:var(--muted);margin-bottom:5px;font-weight:500}
+.fld input,.fld select,.fld textarea{width:100%}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chk{display:flex;gap:9px;align-items:center;margin:8px 0;cursor:pointer}.chk input{width:18px;height:18px}
+.hint{background:var(--soft);border-radius:10px;padding:10px 12px;font-size:.85rem;color:#3b4456;line-height:1.6;margin:8px 0}
+.warn{background:var(--red2);color:#a61b1b;border-radius:10px;padding:10px 12px;font-size:.88rem;margin:8px 0}
+pre.code{direction:ltr;text-align:left;background:#0f172a;color:#e2e8f0;border-radius:10px;padding:12px;font-size:.82rem;white-space:pre-wrap;word-break:break-all}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:#111827;color:#fff;padding:10px 18px;border-radius:12px;opacity:0;transition:.2s;z-index:80;font-weight:500}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.login{max-width:380px;margin:12vh auto;background:#fff;border:1px solid var(--line);border-radius:18px;padding:28px;box-shadow:var(--sh)}
+.mobbar{display:none}
+@media(max-width:860px){
+  .app{grid-template-columns:1fr}.side{position:fixed;inset:0 0 0 auto;width:260px;z-index:50;transform:translateX(105%);transition:.2s}
+  .side.on{transform:none}.main{padding:14px 14px 60px}
+  .mobbar{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .t .hm{display:none}
+}
+.kcs{display:flex;flex-wrap:wrap;gap:4px 14px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" id="side">
+    <div class="brand"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 6a2 2 0 1 1 4 0v8"/><path d="M3 14h18v1a6 6 0 0 1-6 6H9a6 6 0 0 1-6-6v-1z"/><path d="M6 21l-1 1M18 21l1 1"/></svg>
+      <div>ניהול המקווה<small>מקווה לייביש עוזר</small></div></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="foot"><a href="/" id="oldsite">↩ למערכת הרגילה</a><span id="who"></span></div>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+<div class="ov" id="ov"></div>
+<div class="drawer" id="drawer"></div>
+<div class="modal" id="modal"><div class="mbox" id="mbox"></div></div>
+<div class="toast" id="toast"></div>
+<script>
+'use strict';
+// ---------- עזרים ----------
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nis=n=>n==null||n===''?'—':'₪'+(+n).toLocaleString('he-IL',{maximumFractionDigits:2});
+const money=ag=>ag==null?'—':nis((+ag||0)/100);
+const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const TODAY=iso(new Date());
+const dmy=s=>{s=String(s||'');return s.length>=10?s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(2,4):'—';};
+const dmyhm=s=>{s=String(s||'');return s.length>=16?dmy(s)+' '+s.slice(11,16):dmy(s);};
+const past=s=>!!s&&String(s).slice(0,10)<TODAY;
+const ago=s=>{if(!s)return '—';const d=new Date(s);if(isNaN(d))return '—';const days=Math.floor((new Date().setHours(0,0,0,0)-new Date(d).setHours(0,0,0,0))/864e5);
+  const hm=d.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});return days<=0?'היום '+hm:days===1?'אתמול '+hm:days<7?'לפני '+days+' ימים':dmy(s);};
+function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('on');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('on'),2200);}
+async function api(m,u,b){
+  const r=await fetch(u,{method:m,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
+  if(r.status===401){showLogin();throw new Error('auth');}
+  if(r.status===403)return {ok:false,error:'אין הרשאה — צריך להיכנס בסיסמה הראשית'};
+  try{return await r.json();}catch(e){return {ok:false,error:'השרת לא ענה ('+r.status+')'};}
+}
+const ICON={
+ dash:'<path d="M21 12A9 9 0 1 1 12 3v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/>',
+ users:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16 14.2a5 5 0 0 1 5.5 5"/>',
+ door:'<path d="M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17"/><path d="M3 21h18"/><circle cx="15" cy="12" r="1"/>',
+ debt:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/><path d="M7 15h4"/>',
+ inbox:'<path d="M4 13l2.5-7h11L20 13"/><path d="M4 13v6h16v-6h-5a3 3 0 0 1-6 0z"/>',
+ mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+ alert:'<path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.01"/>',
+ send:'<path d="M21 3L10 14"/><path d="M21 3l-7 18-4-7-7-4z"/>',
+ phone:'<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.1-8.7A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
+ refresh:'<path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12A9 9 0 0 1 18.5 5.8L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/>',
+ search:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+ x:'<path d="M18 6L6 18M6 6l12 12"/>',
+ cash:'<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>',
+ cal:'<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
+ check:'<circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/>',
+ swap:'<path d="M7 7h13l-4-4M17 17H4l4 4"/>',
+ lock:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+ ban:'<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
+ msg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+ ext:'<path d="M14 4h6v6M10 14L20 4M19 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h6"/>',
+ trash:'<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>',
+ gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+ menu:'<path d="M3 6h18M3 12h18M3 18h18"/>',
+ wallet:'<path d="M20 7V5a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15v12H5a2 2 0 0 1-2-2V6"/><circle cx="16" cy="14" r="1"/>',
+ gift:'<rect x="3" y="8" width="18" height="4"/><path d="M12 8v13M5 12v9h14v-9M12 8S10 3 7.5 4.5 9 8 12 8zM12 8s2-5 4.5-3.5S15 8 12 8z"/>'
+};
+const ic=(n,cls='')=>`<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON[n]||''}</svg>`;
+
+// ---------- חלונות ----------
+function modal(title,body,buttons){
+  return new Promise(res=>{const m=$('#modal'),b=$('#mbox');
+    b.innerHTML=`<div class="mh"><h3>${title}</h3><button class="x" data-x>${ic('x')}</button></div><div class="mb">${body}</div>
+      <div class="mf">${(buttons||[{t:'סגירה',v:null}]).map((x,i)=>`<button class="btn ${x.cls||''}" data-i="${i}">${x.t}</button>`).join('')}</div>`;
+    m.classList.add('on');const done=v=>{m.classList.remove('on');res(v);};
+    b.querySelector('[data-x]').onclick=()=>done(null);
+    b.querySelectorAll('[data-i]').forEach(e=>e.onclick=async()=>{const x=buttons[+e.dataset.i];
+      if(x.run){e.disabled=true;const old=e.innerHTML;e.innerHTML='<span class="spin"></span>';const v=await x.run(b);if(v===false){e.disabled=false;e.innerHTML=old;return;}done(v);}else done(x.v);});
+    const f=b.querySelector('input,textarea,select');if(f)setTimeout(()=>f.focus(),50);});}
+const confirmBox=(t,txt)=>modal(t,`<div style="line-height:1.7">${txt||''}</div>`,[{t:'אישור',v:true,cls:'p'},{t:'ביטול',v:false}]);
+const alertBox=(t,txt)=>modal(t,`<div style="line-height:1.7;white-space:pre-wrap">${esc(txt)}</div>`,[{t:'סגירה',v:null,cls:'p'}]);
+async function promptBox(t,label,def,type){const v=await modal(t,`<label class="fld"><span>${label}</span><input id="pv" ${type?'type="'+type+'"':''} value="${esc(def||'')}"></label>`,
+  [{t:'אישור',cls:'p',run:b=>b.querySelector('#pv').value},{t:'ביטול',v:null}]);return v;}
+
+// ---------- מצב ----------
+const S={view:'dash',mk:null,G:{},dash:null,series:null,debts:null,sgr:null,reqs:null,vm:null,ccache:{},filter:{q:'',g:'',st:'act',sort:'name',lim:200}};
+const NAV=[['dash','לוח בקרה','dash'],['clients','לקוחות','users'],['entr','כניסות ליום','door'],['debts','חובות','debt'],
+  ['reqs','בקשות ופניות','inbox'],['vm','הודעות מוקלטות','mic'],['expiry','בדיקת פג תוקף','alert'],['sent','הודעות שנשלחו','send'],['ivr','שלוחות טלפון','phone']];
+function navPaint(){$('#nav').innerHTML=NAV.map(([k,t,i])=>`<button data-v="${k}" class="${S.view===k?'on':''}">${ic(i)}<span>${t}</span>${k==='reqs'&&S.badge?`<span class="badge">${S.badge}</span>`:''}${k==='vm'&&S.vmBadge?`<span class="badge">${S.vmBadge}</span>`:''}</button>`).join('');
+  $$('#nav [data-v]').forEach(b=>b.onclick=()=>go(b.dataset.v));}
+function go(v){S.view=v;location.hash=v;navPaint();$('#side').classList.remove('on');render();}
+function head(icon,title,sub,right){return `<div class="mobbar"><button class="btn sm" onclick="document.getElementById('side').classList.toggle('on')">${ic('menu')}</button><b>ניהול המקווה</b></div>
+  <div class="top"><div><h1>${ic(icon)}${title}</h1>${sub?`<div class="sub">${sub}</div>`:''}</div><span class="grow"></span>${right||''}</div>`;}
+function render(){const f={dash:vDash,clients:vClients,entr:vEntr,debts:vDebts,reqs:vReqs,vm:vVm,expiry:vExpiry,sent:vSent,ivr:vIvr}[S.view]||vDash;f();}
+
+// ---------- נתוני בסיס ----------
+const gColor=g=>g&&/^#[0-9a-f]{6}$/i.test(g.color||'')?g.color:'#5b6cf0';
+const cName=c=>((c.first||'')+' '+(c.last||'')).trim()||'—';
+const cInit=c=>((c.first||'').trim()[0]||'')+((c.last||'').trim()[0]||'')||'?';
+const cBal=c=>c.balance!=null?c.balance:c.last_balance;
+async function loadMk(fresh){const r=await api('GET','/api/mikveh/clients'+(fresh?'?fresh=1':''));
+  if(!r.ok){S.mk={ok:false,error:r.error||'אין חיבור למקווה',clients:[],groups:[]};return S.mk;}
+  S.mk=r;S.G={};r.groups.forEach(g=>S.G[g.id]=g);return r;}
+async function badges(){try{const [a,b,c]=await Promise.all([api('GET','/api/mikveh/selfgroup'),api('GET','/api/mikveh/requests'),api('GET','/api/mikveh/vm')]);
+  S.badge=(a.ok?a.new_reqs||0:0)+(b.ok?b.new||0:0);S.vmBadge=c.ok?c.new||0:0;navPaint();}catch(e){}}
+
+// ---------- גרף עמודות (SVG) ----------
+function barChart(rows,keys,colors,labelEvery){
+  // עמודות ב-SVG (נמתח לרוחב), התוויות ב-HTML כדי שהטקסט לא יימתח
+  const W=1000,H=200,n=rows.length||1,bw=W/n;
+  const mx=Math.max(1,...rows.map(r=>keys.reduce((s,k)=>s+(+r[k]||0),0)));
+  let g='';[.25,.5,.75].forEach(f=>g+=`<line x1="0" x2="${W}" y1="${H-H*f}" y2="${H-H*f}" stroke="#eef1f6" vector-effect="non-scaling-stroke"/>`);
+  let lab='';rows.forEach((r,i)=>{let y=H;keys.forEach((k,j)=>{const v=+r[k]||0,h=v/mx*(H-4);if(!h)return;y-=h;
+      g+=`<rect x="${i*bw+bw*.18}" y="${y}" width="${bw*.64}" height="${h}" fill="${colors[j]}"><title>${dmy(r.date)} · ${keys.map(kk=>(+r[kk]||0).toLocaleString('he-IL')).join(' / ')}</title></rect>`;});
+    if(i%labelEvery===0||i===n-1)lab+=`<span style="left:${(i+.5)/n*100}%">${r.date.slice(8,10)}/${r.date.slice(5,7)}</span>`;});
+  return `<div class="bc"><div class="bcmax num">${Math.round(mx).toLocaleString('he-IL')}</div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${g}<line x1="0" x2="${W}" y1="${H}" y2="${H}" stroke="#d9dee8" vector-effect="non-scaling-stroke"/></svg><div class="bcx">${lab}</div></div>`;}
+const barsList=(items,fmt)=>{const mx=Math.max(1,...items.map(x=>+x.v||0));return `<div class="bars">${items.map(x=>`<div class="row"><span>${esc(x.k)}</span><div class="track"><div class="fill" style="width:${(+x.v||0)/mx*100}%;${x.c?'background:'+x.c:''}"></div></div><span class="n">${fmt?fmt(x.v):x.v}</span></div>`).join('')||'<div class="mut">אין נתונים</div>'}</div>`;};
+
+// ---------- לוח בקרה ----------
+async function vDash(){
+  $('#main').innerHTML=head('dash','לוח בקרה','עודכן '+new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}),`<button class="btn" id="dref">${ic('refresh')}רענון</button>`)+
+   `<div class="grid kpis" id="kp">${'<div class="card skel" style="height:96px"></div>'.repeat(6)}</div>
+    <div class="grid two" style="margin-top:16px"><div class="card pad chart"><h3>כניסות ב-30 הימים האחרונים</h3><div id="ch1"><div class="skel" style="height:220px"></div></div></div>
+      <div class="card pad"><h3>הכנסות החודש לפי אמצעי תשלום</h3><div id="pm"><div class="skel" style="height:120px"></div></div><h3 style="margin-top:18px">לפי סוג</h3><div id="pt"></div></div></div>
+    <div class="grid two" style="margin-top:16px"><div class="card pad chart"><h3>הכנסות ב-30 הימים האחרונים <span class="legend" style="margin-inline-start:auto"><span><i style="background:var(--green)"></i>מזומן</span><span><i style="background:var(--blue)"></i>אשראי</span></span></h3><div id="ch2"><div class="skel" style="height:220px"></div></div></div>
+      <div class="card pad"><h3>לקוחות לפי קבוצה</h3><div id="bg"></div></div></div>
+    <div class="grid three" style="margin-top:16px"><div class="card pad"><h3>${ic('cal')} מנויים שמסתיימים השבוע</h3><div id="exp7"></div></div>
+      <div class="card pad"><h3>${ic('debt')} חובות פתוחים גדולים</h3><div id="dbg"></div></div>
+      <div class="card pad"><h3>${ic('inbox')} ממתין לטיפול</h3><div id="pend"></div></div></div>`;
+  $('#dref').onclick=()=>{S.dash=S.series=S.debts=null;loadMk(true).then(vDash);};
+  if(!S.mk)await loadMk();
+  const C=S.mk.clients||[], act=C.filter(c=>c.sub_end&&!past(c.sub_end)).length;
+  const kp=(icn,cls,t,v,s,go_)=>`<div class="card kpi ${go_?'click':''}" ${go_?`data-go="${go_}"`:''}><div class="ic ${cls}">${ic(icn)}</div><div><div class="t">${t}</div><div class="v num">${v}</div><div class="s">${s||''}</div></div></div>`;
+  const paintK=()=>{const D=S.dash||{},db=S.debts||{},sr=S.series||[],td=sr.length?sr[sr.length-1]:null,yd=sr.length>1?sr[sr.length-2]:null;
+    const bm=(D.by_method||[]).map(x=>esc(x.method)+' '+nis(x.sum)).join(' · ');
+    $('#kp').innerHTML=kp('users','',"לקוחות פעילים",`${act} <span class="mut" style="font-size:1rem;font-weight:500">/ ${C.length}</span>`,`${C.filter(c=>c.blocked).length} חסומים`,'clients')+
+      kp('cash','g','הכנסות החודש',D.income!=null?nis(D.income):'<span class="spin"></span>',bm)+
+      kp('door','v','כניסות החודש',D.entrances!=null?(+D.entrances).toLocaleString('he-IL'):'<span class="spin"></span>',D.active!=null?D.active+' לקוחות נכנסו':'')+
+      kp('cal','a','כניסות היום',td&&td.entrances!=null?td.entrances:'<span class="spin"></span>',yd&&yd.entrances!=null?'אתמול '+yd.entrances:'','entr')+
+      kp('debt','r','חובות פתוחים',db.ok?nis(db.sum):'<span class="spin"></span>',db.ok?(db.rows||[]).filter(x=>x.status===-1||x.status===0).length+' חובות':'','debts')+
+      kp('wallet','','ערך צבור / זיכויים',C.filter(c=>(cBal(c)||0)>0).length+' / '+C.filter(c=>(c.temp_balance||0)>0).length,'לקוחות עם יתרה לזכותם','clients');
+    $$('#kp [data-go]').forEach(e=>e.onclick=()=>go(e.dataset.go));};
+  paintK();
+  // לפי קבוצה
+  const cnt={};C.forEach(c=>cnt[c.group]=(cnt[c.group]||0)+1);
+  $('#bg').innerHTML=barsList(Object.keys(cnt).map(k=>({k:(S.G[k]||{}).name||'—',v:cnt[k],c:gColor(S.G[k])})).sort((a,b)=>b.v-a.v).slice(0,10));
+  const wk=iso(new Date(Date.now()+7*864e5));
+  const ex=C.filter(c=>c.sub_end&&String(c.sub_end).slice(0,10)>=TODAY&&String(c.sub_end).slice(0,10)<=wk).sort((a,b)=>String(a.sub_end).localeCompare(String(b.sub_end)));
+  $('#exp7').innerHTML=ex.length?`<div class="list">${ex.slice(0,8).map(c=>`<div class="it" style="cursor:pointer" data-c="${esc(c.id)}"><div class="av" style="background:${gColor(S.G[c.group])}">${esc(cInit(c))}</div><div class="m"><b>${esc(cName(c))}</b><small>${esc((S.G[c.group]||{}).name||'')}</small></div><span class="tag a">${dmy(c.sub_end)}</span></div>`).join('')}</div>${ex.length>8?`<div class="mut">ועוד ${ex.length-8}</div>`:''}`:'<div class="mut">אין מנויים שמסתיימים השבוע</div>';
+  $$('#exp7 [data-c]').forEach(e=>e.onclick=()=>openClient(e.dataset.c));
+  // טעינות ברקע
+  (S.dash?Promise.resolve(S.dash):api('GET','/api/mikveh/dashboard')).then(D=>{S.dash=D.ok?D:{};paintK();
+    if(!$('#pm'))return;$('#pm').innerHTML=barsList((D.by_method||[]).map(x=>({k:x.method,v:x.sum,c:x.method==='מזומן'?'var(--green)':'var(--blue)'})),nis);
+    $('#pt').innerHTML=barsList((D.by_type||[]).map(x=>({k:x.type,v:x.sum,c:'var(--violet)'})),nis);});
+  (S.series?Promise.resolve({ok:true,rows:S.series}):api('GET','/api/mikveh/series?days=30')).then(r=>{if(!r.ok){if($('#ch1'))$('#ch1').innerHTML='<div class="warn">'+esc(r.error||'לא נטען')+'</div>';return;}
+    S.series=r.rows;paintK();if(!$('#ch1'))return;
+    $('#ch1').innerHTML=barChart(r.rows,['entrances'],['var(--blue)'],5);$('#ch2').innerHTML=barChart(r.rows,['cash','credit'],['var(--green)','var(--blue)'],5);});
+  (S.debts?Promise.resolve(S.debts):api('GET','/api/mikveh/debts_all')).then(r=>{S.debts=r;paintK();if(!$('#dbg'))return;
+    const o=(r.rows||[]).filter(x=>x.status===-1||x.status===0).sort((a,b)=>b.amount-a.amount).slice(0,6);
+    $('#dbg').innerHTML=o.length?`<div class="list">${o.map(x=>`<div class="it" style="cursor:pointer" data-c="${esc(x.cid)}"><div class="m"><b>${esc(x.name||'לקוח לא ברשימה')}</b><small>${esc(x.reason||'')} · ${dmy(x.date)}</small></div><b class="red num">${nis(x.amount)}</b></div>`).join('')}</div>`:'<div class="mut">אין חובות פתוחים</div>';
+    $$('#dbg [data-c]').forEach(e=>e.onclick=()=>openClient(e.dataset.c));});
+  Promise.all([api('GET','/api/mikveh/selfgroup'),api('GET','/api/mikveh/requests'),api('GET','/api/mikveh/vm')]).then(([a,b,c])=>{if(!$('#pend'))return;
+    const it=(t,n,v)=>`<div class="it" style="cursor:pointer" data-go="${v}"><div class="m"><b>${t}</b></div><span class="tag ${n?'r':'g'}">${n||'✓'}</span></div>`;
+    $('#pend').innerHTML=`<div class="list">${it('בקשות להחלפת קבוצה',a.ok?a.new_reqs||0:0,'reqs')}${it('פניות מנדרים פלוס',b.ok?b.new||0:0,'reqs')}${it('הודעות מוקלטות חדשות',c.ok?c.new||0:0,'vm')}</div>`;
+    $$('#pend [data-go]').forEach(e=>e.onclick=()=>go(e.dataset.go));});
+}
+
+// ---------- לקוחות ----------
+function filtClients(){const F=S.filter,C=(S.mk&&S.mk.clients)||[],q=F.q.trim().toLowerCase(),qd=q.replace(/\D/g,'');
+  let a=C.filter(c=>{if(F.g&&c.group!==F.g)return false;
+    if(F.st==='act'&&!(c.sub_end&&!past(c.sub_end)))return false;if(F.st==='exp'&&!(c.sub_end&&past(c.sub_end)))return false;
+    if(F.st==='blk'&&!c.blocked)return false;if(F.st==='bal'&&!((cBal(c)||0)>0))return false;if(F.st==='zk'&&!((c.temp_balance||0)>0))return false;
+    if(!q)return true;return cName(c).toLowerCase().includes(q)||(qd.length>=3&&String(c.phone||'').replace(/\D/g,'').includes(qd))||String(c.code||'')===q;});
+  const sk={name:c=>(c.last||'')+(c.first||''),code:c=>+c.code||0,last:c=>String(c.last_in||''),end:c=>String(c.sub_end||'')}[F.sort];
+  a.sort((x,y)=>{const A=sk(x),B=sk(y);return F.sort==='last'?String(B).localeCompare(String(A)):typeof A==='number'?A-B:String(A).localeCompare(String(B),'he');});return a;}
+async function vClients(){
+  $('#main').innerHTML=head('users','לקוחות','חי מהמקווה',`<button class="btn" id="cref">${ic('refresh')}רענון מהמקווה</button>`)+'<div id="cbody"><div class="skel" style="height:400px"></div></div>';
+  $('#cref').onclick=async()=>{$('#cbody').innerHTML='<div class="skel" style="height:400px"></div>';await loadMk(true);vClients();};
+  if(!S.mk)await loadMk();if(!S.mk.ok){$('#cbody').innerHTML='<div class="warn">'+esc(S.mk.error)+'</div>';return;}
+  const F=S.filter,C=S.mk.clients;
+  const n=k=>C.filter(c=>k==='all'||(k==='act'?c.sub_end&&!past(c.sub_end):k==='exp'?c.sub_end&&past(c.sub_end):k==='blk'?c.blocked:k==='bal'?(cBal(c)||0)>0:(c.temp_balance||0)>0)).length;
+  $('#cbody').innerHTML=`<div class="toolbar"><div class="search">${ic('search')}<input id="cq" placeholder="חיפוש — שם, טלפון או מספר לקוח" value="${esc(F.q)}"></div>
+      <select id="cg"><option value="">כל הקבוצות</option>${S.mk.groups.map(g=>`<option value="${esc(g.id)}"${F.g===g.id?' selected':''}>${esc(g.name)}</option>`).join('')}</select>
+      <select id="cs">${[['name','מיון: שם'],['code','מספר לקוח'],['last','כניסה אחרונה'],['end','סיום מנוי']].map(([k,t])=>`<option value="${k}"${F.sort===k?' selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="toolbar"><div class="seg" id="cst">${[['act','פעילים'],['exp','מנוי הסתיים'],['blk','חסומים'],['bal','עם ערך צבור'],['zk','עם זיכוי'],['all','הכל']].map(([k,t])=>`<button data-s="${k}" class="${F.st===k?'on':''}">${t}<i>${n(k)}</i></button>`).join('')}</div><span class="grow"></span><span class="mut" id="ccount"></span></div>
+    <div class="card tw"><table class="t"><thead><tr><th>לקוח</th><th class="hm">טלפון</th><th>קבוצה</th><th>מנוי עד</th><th class="hm">ערך צבור</th><th class="hm">זיכוי</th><th class="hm">כניסה אחרונה</th></tr></thead><tbody id="ctb"></tbody></table></div>
+    <div style="text-align:center;margin-top:12px"><button class="btn" id="cmore" style="display:none">להציג עוד</button></div>`;
+  const paint=()=>{const a=filtClients();$('#ccount').textContent=a.length+' לקוחות';
+    $('#ctb').innerHTML=a.slice(0,F.lim).map(c=>{const g=S.G[c.group];return `<tr class="cl" data-c="${esc(c.id)}"><td><div class="who"><div class="av" style="background:${gColor(g)}">${esc(cInit(c))}</div><div><b>${esc(cName(c))}</b><small>#${esc(c.code||'')}${c.blocked?' · <span class="red">חסום</span>':''}</small></div></div></td>
+      <td class="hm num" dir="ltr" style="text-align:right">${esc(c.phone||'—')}</td><td><span class="chip"><span class="d" style="background:${gColor(g)}"></span>${esc(g?g.name:'—')}</span></td>
+      <td><span class="tag ${!c.sub_end?'':past(c.sub_end)?'r':'g'}">${c.sub_end?dmy(c.sub_end):'—'}</span></td><td class="hm num">${(cBal(c)||0)?money(cBal(c)):'—'}</td><td class="hm num">${(c.temp_balance||0)?money(c.temp_balance):'—'}</td><td class="hm mut">${ago(c.last_in)}</td></tr>`;}).join('')||'<tr><td colspan="7" class="empty">אין לקוחות שמתאימים</td></tr>';
+    $('#cmore').style.display=a.length>F.lim?'':'none';$$('#ctb [data-c]').forEach(r=>r.onclick=()=>openClient(r.dataset.c));};
+  paint();
+  $('#cq').oninput=e=>{F.q=e.target.value;F.lim=200;paint();};$('#cg').onchange=e=>{F.g=e.target.value;paint();};$('#cs').onchange=e=>{F.sort=e.target.value;paint();};
+  $('#cst').onclick=e=>{const b=e.target.closest('[data-s]');if(!b)return;F.st=b.dataset.s;$$('#cst button').forEach(x=>x.classList.toggle('on',x===b));paint();};
+  $('#cmore').onclick=()=>{F.lim+=300;paint();};$('#cq').focus();
+}
+
+// ---------- כרטיס לקוח (מגירה) ----------
+let CUR=null,CTAB='pay';
+function closeDrawer(){$('#drawer').classList.remove('on');$('#ov').classList.remove('on');CUR=null;}
+$('#ov').onclick=null;   // מאיר: חלון נסגר רק ב-X
+async function openClient(cid){
+  if(!S.mk)await loadMk();const c=(S.mk.clients||[]).find(x=>x.id===cid);if(!c){toast('הלקוח לא ברשימת המקווה');return;}
+  CUR=c;$('#ov').classList.add('on');$('#drawer').classList.add('on');drawClient();
+  api('GET','/api/mikveh/prefetch?id='+encodeURIComponent(cid)).then(r=>{if(!r.ok||CUR!==c)return;if(r.balance!=null)c.balance=r.balance;if(r.zikui!=null)c.temp_balance=r.zikui;c.email=r.email||c.email;c.ident=r.ident;drawClient(true);});
+  api('GET','/api/mikveh/selfgroup_lock?id='+encodeURIComponent(cid)).then(r=>{if(r.ok&&CUR===c){c._lock=!!r.locked;drawClient(true);}});
+}
+function drawClient(keepTab){const c=CUR;if(!c)return;const g=S.G[c.group],pr=c.price!=null?c.price:(g&&g.price);
+  $('#drawer').innerHTML=`<div class="dh"><div class="av lg" style="background:${gColor(g)}">${esc(cInit(c))}</div><div style="min-width:0"><h2>${esc(cName(c))}</h2>
+      <div class="mut" style="font-size:.85rem">#${esc(c.code||'')} · <span dir="ltr">${esc(c.phone||'אין טלפון')}</span>${c.email?' · '+esc(c.email):''}${c.ident?' · ת.ז. '+esc(c.ident):''}</div>
+      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><span class="chip"><span class="d" style="background:${gColor(g)}"></span>${esc(g?g.name:'—')}</span>${c.blocked?`<span class="tag r">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}${c._lock?'<span class="tag a">🔒 נעול להחלפה בטלפון</span>':''}</div></div>
+    <button class="x" id="dx">${ic('x')}</button></div>
+    <div class="db">
+      <div class="tiles">
+        <div class="tile click" data-a="grp"><span>קבוצה ✎</span><b>${esc(g?g.name:'—')}</b></div>
+        <div class="tile"><span>מחיר לחודש${c.price!=null?' (אישי)':''}</span><b>${pr!=null?nis(pr):'—'}</b></div>
+        <div class="tile click" data-a="sub"><span>מנוי עד ✎</span><b class="${past(c.sub_end)?'red':'green'}">${c.sub_end?dmy(c.sub_end):'—'}</b></div>
+        <div class="tile"><span>רישיון עד</span><b class="${past(c.lic_exp)?'red':''}">${c.lic_exp?dmy(c.lic_exp):'—'}</b></div>
+        <div class="tile click" data-a="bal"><span>ערך צבור (פעימות) ✎</span><b>${money(cBal(c))}</b></div>
+        <div class="tile click" data-a="zk"><span>זיכוי (יתרה זמנית) ✎</span><b>${money(c.temp_balance)}</b></div>
+        <div class="tile"><span>כניסה אחרונה</span><b style="font-size:.95rem">${ago(c.last_in)}</b></div>
+        <div class="tile"><span>טביעת אצבע / אמצעי תשלום</span><b style="font-size:.95rem">${c.finger?'✓':'—'} / ${c.pay_method?'✓':'—'}</b></div>
+      </div>
+      <div class="acts">
+        <button class="btn p" data-a="grp">${ic('swap')}החלפת קבוצה</button>
+        <button class="btn" data-a="msg">${ic('msg')}הודעה</button>
+        <button class="btn" data-a="sub">${ic('cal')}תאריכי מנוי</button>
+        <button class="btn" data-a="debt">${ic('plus')}חוב</button>
+        <button class="btn ${c.blocked?'':'r'}" data-a="blk">${ic('ban')}${c.blocked?'ביטול חסימה':'חסימה'}</button>
+        <button class="btn" data-a="lock">${ic('lock')}${c._lock?'ביטול נעילה בטלפון':'נעילה בטלפון'}</button>
+        <button class="btn" data-a="web">${ic('ext')}באתר המקווה</button>
+      </div>
+      <div class="tabs" id="ctabs">${[['pay','תשלומים'],['act','פעילות'],['debts','חובות'],['hist','היסטוריה'],['vm','הודעות מוקלטות']].map(([k,t])=>`<button data-t="${k}" class="${CTAB===k?'on':''}">${t}</button>`).join('')}</div>
+      <div id="ctab"></div></div>`;
+  $('#dx').onclick=closeDrawer;
+  $$('#drawer [data-a]').forEach(e=>e.onclick=()=>cAction(e.dataset.a));
+  $('#ctabs').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;CTAB=b.dataset.t;$$('#ctabs button').forEach(x=>x.classList.toggle('on',x===b));cTab();};
+  if(!keepTab||!$('#ctab').innerHTML)cTab();}
+async function cTab(){const c=CUR,el=$('#ctab');if(!c)return;el.innerHTML='<div class="skel" style="height:140px"></div>';
+  const id=encodeURIComponent(c.id);
+  if(CTAB==='pay'){const r=await api('GET','/api/mikveh/pay/'+id);if(CUR!==c)return;
+    el.innerHTML=!r.ok?`<div class="warn">${esc(r.error||'')}</div>`:(r.tx||[]).length?`<div class="hint">שילם ${r.count} פעמים · סה״כ <b>${nis(r.sum)}</b>${r.since?' · מאז '+dmy(r.since):''}</div><div class="list">${r.tx.map(t=>`<div class="it"><div class="m"><b>${dmy(t.iso)} ${esc(t.time||'')}${t.failed?' · <span class="red">נכשל</span>':''}</b><small>${esc([t.desc,t.how].filter(Boolean).join(' · '))}</small></div><b class="num ${t.failed?'red':''}">${nis(t.amount)}</b></div>`).join('')}</div>`:'<div class="empty">אין תשלומים בשנה האחרונה</div>';}
+  else if(CTAB==='act'){const r=await api('GET','/api/mikveh/activity/'+id);if(CUR!==c)return;
+    const KN={pay:'💳 תשלום',entry:'🚪 כניסה',entry_fail:'⛔ כניסה שנדחתה',other:'📝'};
+    el.innerHTML=!r.ok?`<div class="warn">${esc(r.error||'')}</div>`:(r.rows||[]).length?`<div class="list">${r.rows.map(x=>`<div class="it"><div class="m"><b>${dmyhm(x.at)} · ${KN[x.kind]||''}</b><small>${esc(x.text||'')}${x.method?' · '+esc(x.method):''}${Object.keys(x.extra||{}).map(k=>' · '+esc({balanceBefore:'ערך צבור לפני',balanceAfter:'ערך צבור אחרי',cash:'מזומן',credit:'אשראי'}[k]||k)+' '+esc(x.extra[k])).join('')}</small></div><b class="num ${x.kind==='entry_fail'?'red':''}">${x.amount?nis(x.amount):''}</b></div>`).join('')}</div>`:'<div class="empty">אין פעילות בשנה האחרונה</div>';}
+  else if(CTAB==='debts'){const r=await api('GET','/api/mikveh/debts?id='+id);if(CUR!==c)return;
+    el.innerHTML=!r.ok?`<div class="warn">${esc(r.error||'')}</div>`:`${r.open?`<div class="warn">חוב פתוח: <b>${nis(r.open)}</b> — משלמים במכונה של המקווה</div>`:''}<div class="list">${(r.rows||[]).map(x=>`<div class="it"><div class="m"><b>${dmy(x.date)} · ${esc(x.reason||'חוב')}</b><small>${x.open?'פתוח':x.status===2?'✓ שולם'+(x.paid?' '+dmy(x.paid):''):esc(x.label||'')}</small></div><b class="num ${x.open?'red':''}">${nis(x.amount)}</b>${x.open?`<button class="btn sm r" data-dd="${esc(x.id)}">${ic('trash')}</button>`:''}</div>`).join('')||'<div class="empty">אין חובות</div>'}</div><button class="btn" id="dadd">${ic('plus')}הוספת חוב</button>`;
+    const ad=$('#dadd');if(ad)ad.onclick=()=>cAction('debt');
+    $$('#ctab [data-dd]').forEach(b=>b.onclick=async()=>{if(!await confirmBox('מחיקת חוב','למחוק את החוב במקווה?'))return;const x=await api('POST','/api/mikveh/debt_del',{id:c.id,debt:b.dataset.dd});x.ok?(toast('החוב נמחק'),cTab()):alertBox('לא נמחק',x.error);});}
+  else if(CTAB==='hist'){const r=await api('GET','/api/mikveh/log/'+id);if(CUR!==c)return;
+    el.innerHTML=(r.rows||[]).length?`<div class="list">${r.rows.map(x=>`<div class="it"><div class="m"><b>${dmyhm(x.at)}</b><small>${esc(x.summary||'')}${x.y_st?' · '+esc(x.y_st==='sent'?'יצאה':x.y_st==='failed'?'לא יצאה':x.y_st):''}</small></div>${x.can_del?`<button class="btn sm" data-hd="${x.id}">${ic('trash')}</button>`:''}</div>`).join('')}</div>`:'<div class="empty">אין היסטוריה</div>';
+    $$('#ctab [data-hd]').forEach(b=>b.onclick=async()=>{if(!await confirmBox('מחיקה מהיומן','למחוק את השורה? במקווה לא משתנה כלום.'))return;await api('POST','/api/mikveh/log_del',{id:+b.dataset.hd});cTab();});}
+  else if(CTAB==='vm'){const r=await api('GET','/api/mikveh/vm?cid='+id);if(CUR!==c)return;
+    el.innerHTML=(r.rows||[]).length?`<div class="list">${r.rows.map(x=>`<div class="it" style="display:block"><b>${dmyhm(x.at)}</b><audio controls preload="none" src="/api/mikveh/vm/${x.id}.wav" style="width:100%;margin:6px 0"></audio><div class="mut" style="font-size:.88rem">${esc(x.transcript||'')}</div></div>`).join('')}</div>`:'<div class="empty">לא השאיר הודעות</div>';}
+}
+async function cAction(a){const c=CUR;if(!c)return;
+  const refresh=async(upd)=>{if(upd)Object.assign(c,upd);drawClient(true);cTab();};
+  if(a==='grp'){const cur=c.group;
+    const v=await modal('החלפת קבוצה — '+esc(cName(c)),`<div class="hint">נוכחית: <b>${esc((S.G[cur]||{}).name||'—')}</b>. ההחלפה נעשית במקווה מיד.</div>
+      <div class="list">${S.mk.groups.map(g=>`<label class="it" style="cursor:pointer"><input type="radio" name="gg" value="${esc(g.id)}" ${g.id===cur?'checked disabled':''}><span class="d" style="width:10px;height:10px;border-radius:50%;background:${gColor(g)}"></span><div class="m"><b>${esc(g.name)}</b></div><span class="mut num">${g.price!=null?nis(g.price):''}</span></label>`).join('')}</div>`,
+      [{t:'להעביר',cls:'p',run:async b=>{const gid=(b.querySelector('[name=gg]:checked:not(:disabled)')||{}).value;if(!gid){toast('לבחור קבוצה');return false;}
+        const r=await api('POST','/api/mikveh/group',{id:c.id,group:gid});if(!r.ok){alertBox('לא הועבר',r.error);return false;}return r;}},{t:'ביטול',v:null}]);
+    if(v){c.group=(v.client&&v.client.group)||c.group;toast('הועבר ל"'+(v.group_name||'')+'"');refresh();if(c.phone&&await confirmBox('לשלוח הודעה?','לשלוח ל'+esc(cName(c))+' הודעה שהקבוצה עודכנה?'))sendMsg(c,'group');}}
+  else if(a==='sub'){const v=await modal('תאריכי מנוי — '+esc(cName(c)),`<div class="row2"><label class="fld"><span>תחילת המנוי</span><input type="date" id="ss" value="${esc(String(c.sub_start||'').slice(0,10))}"></label>
+      <label class="fld"><span>סוף המנוי</span><input type="date" id="se" value="${esc(String(c.sub_end||'').slice(0,10))}"></label></div>
+      <div class="acts" style="margin:0 0 10px"><button class="btn sm" type="button" data-add="30">+30 יום</button><button class="btn sm" type="button" data-add="90">+3 חודשים</button><button class="btn sm" type="button" data-add="365">+שנה</button></div>
+      <label class="fld"><span>זיכוי ביתרה הזמנית (לא חובה, ₪)</span><input id="szk" inputmode="decimal"></label><label class="fld"><span>הערה</span><input id="sn"></label>`,
+      [{t:'לעדכן במקווה',cls:'p',run:async b=>{const s=b.querySelector('#ss').value,e=b.querySelector('#se').value,zk=b.querySelector('#szk').value.trim(),n=b.querySelector('#sn').value;
+        const r=await api('POST','/api/mikveh/subdates',{id:c.id,start:s,end:e,note:n});if(!r.ok){alertBox('לא עודכן',r.error);return false;}
+        if(zk){const z=await api('POST','/api/mikveh/zikui',{id:c.id,add:zk,note:(n?n+' · ':'')+'זיכוי עם שינוי תאריכי המנוי'});if(!z.ok)alertBox('הזיכוי לא נקלט',z.error);else c.temp_balance=z.zikui;}
+        return r;}},{t:'ביטול',v:null}]);
+    if(v){c.sub_end=v.sub_end||c.sub_end;c.sub_start=v.sub_start||c.sub_start;toast('עודכן במקווה');refresh();}}
+  else if(a==='bal'||a==='zk'){const zk=a==='zk';
+    const v=await modal((zk?'זיכוי (יתרה זמנית)':'ערך צבור (פעימות)')+' — '+esc(cName(c)),`<div class="hint">עכשיו: <b>${money(zk?c.temp_balance:cBal(c))}</b></div>
+      <label class="fld"><span>סכום להוסיף (מינוס = להוריד)</span><input id="ba" inputmode="decimal" placeholder="למשל 50 או ‎-20"></label><label class="fld"><span>הערה</span><input id="bn"></label>`,
+      [{t:'לעדכן במקווה',cls:'p',run:async b=>{const add=b.querySelector('#ba').value.trim();if(!add)return false;
+        const r=await api('POST',zk?'/api/mikveh/zikui':'/api/mikveh/balance',{id:c.id,add,note:b.querySelector('#bn').value});if(!r.ok){alertBox('לא עודכן',r.error);return false;}return r;}},{t:'ביטול',v:null}]);
+    if(v){if(zk)c.temp_balance=v.zikui;else{c.balance=v.balance;c.last_balance=v.balance;}toast('עודכן במקווה');refresh();}}
+  else if(a==='debt'){const v=await modal('חוב חדש — '+esc(cName(c)),`<label class="fld"><span>סכום (₪)</span><input id="da" inputmode="decimal"></label><label class="fld"><span>סיבה</span><input id="dr" placeholder="למשל: חוב מגבת"></label><div class="hint">החוב נרשם במקווה, ומשלמים אותו במכונה (אשראי / מזומן).</div>`,
+      [{t:'להוסיף',cls:'p',run:async b=>{const r=await api('POST','/api/mikveh/debt',{id:c.id,amount:b.querySelector('#da').value,reason:b.querySelector('#dr').value});if(!r.ok){alertBox('לא נשמר',r.error);return false;}return r;}},{t:'ביטול',v:null}]);
+    if(v){toast('החוב נוסף');CTAB='debts';drawClient();S.debts=null;}}
+  else if(a==='blk'){if(!c.blocked){const rs=await promptBox('חסימה במקווה','סיבה (לא חובה)','');if(rs===null)return;
+      const r=await api('POST','/api/mikveh/block',{id:c.id,blocked:true,reason:rs});r.ok?(c.blocked=true,c.block_reason=r.reason,toast('נחסם'),refresh()):alertBox('לא עודכן',r.error);}
+    else{if(!await confirmBox('ביטול חסימה','לבטל את החסימה של '+esc(cName(c))+' במקווה?'))return;const r=await api('POST','/api/mikveh/block',{id:c.id,blocked:false});r.ok?(c.blocked=false,toast('החסימה בוטלה'),refresh()):alertBox('לא עודכן',r.error);}}
+  else if(a==='lock'){const on=!c._lock;if(on&&!await confirmBox('נעילה בטלפון','הלקוח לא יוכל להחליף קבוצה בשלוחה בטלפון (במשרד אפשר כרגיל).'))return;
+    const r=await api('POST','/api/mikveh/selfgroup_lock',{id:c.id,locked:on});if(r.ok){c._lock=on;toast(on?'ננעל':'הנעילה בוטלה');refresh();}}
+  else if(a==='web'){const r=await api('GET','/api/mikveh/link');if(r.url)window.open(r.url.replace('{id}',encodeURIComponent(c.id)).replace('{code}',encodeURIComponent(c.code||'')),'_blank','noopener');}
+  else if(a==='msg')sendMsg(c,'free');}
+
+// ---------- שליחת הודעה (אותו /api/mikveh/notify של האתר הרגיל) ----------
+let TPL=null;
+async function sendMsg(c,tid){if(!TPL){const r=await api('GET','/api/mikveh/templates');TPL=r.templates||[];}
+  const g=S.G[c.group]||{};
+  const fill=t=>String(t||'').replace(/\{שם\}/g,c.first||'').replace(/\{שם מלא\}/g,cName(c)).replace(/\{קבוצה\}/g,(g.name||'').replace(/^\s*\d+\s*[.\-)]\s*/,'')).replace(/\{מנוי עד\}/g,dmy(c.sub_end)).replace(/\{רישיון עד\}/g,dmy(c.lic_exp)).replace(/\{מספר לקוח\}/g,c.code||'');
+  const t0=TPL.find(x=>x.id===tid)||TPL.find(x=>x.id==='free')||TPL[0]||{text:'שלום {שם}, '};
+  const v=await modal('הודעה ל'+esc(cName(c)),`<div class="seg" id="mch" style="margin-bottom:12px"><button data-c="sms" class="on">💬 SMS</button><button data-c="voice">📞 שיחה קולית</button></div>
+    <label class="fld"><span>נושא</span><select id="mt">${TPL.map(x=>`<option value="${esc(x.id)}"${x.id===t0.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
+    <label class="fld"><span>הטקסט</span><textarea id="mtx" rows="4">${esc(fill(t0.text))}</textarea></label>
+    <label class="fld"><span>לשלוח מאוחר יותר (לא חובה)</span><input type="datetime-local" id="mat"></label><div class="mut" style="font-size:.82rem">ל: <span dir="ltr">${esc(c.phone||'')}</span></div>`,
+    [{t:'לשלוח',cls:'p',run:async b=>{const ch=b.querySelector('#mch .on').dataset.c,text=b.querySelector('#mtx').value.trim();if(!text)return false;
+      const r=await api('POST','/api/mikveh/notify',{channel:ch,text,phone:c.phone,name:cName(c),cid:c.id,send_at:b.querySelector('#mat').value,cat:(TPL.find(x=>x.id===b.querySelector('#mt').value)||{}).name});
+      if(!r.ok){alertBox('לא נשלח',r.error);return false;}return r;}},{t:'ביטול',v:null}]);
+  const b=$('#mbox');
+  if(v)toast(v.send_at?'ההודעה תצא ב-'+v.send_at:'ההודעה יוצאת');
+  setTimeout(()=>{},0);}
+document.addEventListener('click',e=>{const b=e.target.closest('#mch [data-c]');if(b){$$('#mch button').forEach(x=>x.classList.toggle('on',x===b));}
+  const s=e.target.closest('#mt');});
+document.addEventListener('change',e=>{if(e.target.id==='mt'&&CUR&&TPL){const t=TPL.find(x=>x.id===e.target.value);if(t){const c=CUR,g=S.G[c.group]||{};
+  $('#mtx').value=String(t.text||'').replace(/\{שם\}/g,c.first||'').replace(/\{שם מלא\}/g,cName(c)).replace(/\{קבוצה\}/g,(g.name||'').replace(/^\s*\d+\s*[.\-)]\s*/,'')).replace(/\{מנוי עד\}/g,dmy(c.sub_end)).replace(/\{רישיון עד\}/g,dmy(c.lic_exp)).replace(/\{מספר לקוח\}/g,c.code||'');}}});
+
+// ---------- כניסות ליום ----------
+async function vEntr(day,frm){day=day||TODAY;frm=frm||'00:00';
+  $('#main').innerHTML=head('door','כניסות ליום','מיומן הכניסות של המקווה — כל כניסה, גם של מזדמנים')+
+   `<div class="toolbar"><input type="date" id="ed" value="${day}"><span class="mut">משעה</span><input type="time" id="ef" value="${frm}"><button class="btn p" id="ego">הצגה</button></div><div id="eb"><div class="card pad"><span class="spin"></span> <span id="ew">בודק במקווה…</span></div></div>`;
+  $('#ego').onclick=()=>vEntr($('#ed').value,$('#ef').value);
+  const t0=Date.now(),tm=setInterval(()=>{const e=$('#ew');if(!e){clearInterval(tm);return;}e.textContent='בודק במקווה… '+Math.round((Date.now()-t0)/1000)+' שניות';},1000);
+  const r=await api('GET','/api/mikveh/towel_day?date='+day+'&from='+encodeURIComponent(frm));clearInterval(tm);if(!$('#eb'))return;
+  if(!r.ok){$('#eb').innerHTML='<div class="warn">'+esc(r.error||'')+'</div>';return;}
+  const R=r.rows||[],C=r.count||{},byG={};R.filter(x=>x.cat!=='casual').forEach(x=>byG[x.group||'—']=(byG[x.group||'—']||0)+1);
+  const CAT={casual:['מזדמן','a'],erech:['ערך צבור','b'],towel:['מנוי עם מגבת','g'],other:['מנוי','']};
+  $('#eb').innerHTML=`<div class="grid kpis"><div class="card kpi"><div class="ic">${ic('door')}</div><div><div class="t">סה״כ כניסות</div><div class="v">${R.length}</div><div class="s">${esc(r.heb||'')}</div></div></div>
+      <div class="card kpi"><div class="ic a">${ic('users')}</div><div><div class="t">מזדמנים</div><div class="v">${C.casual||0}</div></div></div>
+      <div class="card kpi"><div class="ic v">${ic('wallet')}</div><div><div class="t">ערך צבור</div><div class="v">${C.erech||0}</div></div></div>
+      <div class="card kpi"><div class="ic g">${ic('gift')}</div><div><div class="t">מגיעה מגבת</div><div class="v">${r.towels||0}</div></div></div></div>
+    <div class="grid two" style="margin-top:16px"><div class="card tw"><table class="t"><thead><tr><th>שעה</th><th>שם</th><th>קבוצה</th><th>סוג</th></tr></thead><tbody>${R.map(x=>`<tr class="${x.id?'cl':''}" data-c="${esc(x.id||'')}"><td class="num">${esc(x.time)}</td><td><b>${esc(x.name||'—')}</b>${x.code?' <span class="mut">#'+esc(x.code)+'</span>':''}</td><td>${esc(x.group||'')}</td><td><span class="tag ${CAT[x.cat][1]}">${CAT[x.cat][0]}</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">אין כניסות</td></tr>'}</tbody></table></div>
+      <div class="card pad"><h3>לפי קבוצה</h3>${barsList(Object.keys(byG).map(k=>({k,v:byG[k]})).sort((a,b)=>b.v-a.v).concat(C.casual?[{k:'מזדמנים',v:C.casual,c:'var(--amber)'}]:[]))}${r.src!=='log'?'<div class="warn">לא נמצא יומן הכניסות — הנתונים לפי "כניסה אחרונה" בלבד</div>':''}</div></div>`;
+  $$('#eb [data-c]').forEach(e=>{if(e.dataset.c)e.onclick=()=>openClient(e.dataset.c);});}
+
+// ---------- חובות ----------
+async function vDebts(all){
+  $('#main').innerHTML=head('debt','חובות','משלמים במכונה של המקווה — אשראי או מזומן')+`<div class="toolbar"><div class="seg" id="dseg"><button data-a="0" class="${all?'':'on'}">פתוחים</button><button data-a="1" class="${all?'on':''}">הכל (כולל ששולמו / נמחקו)</button></div></div><div id="db2"><div class="skel" style="height:300px"></div></div>`;
+  $('#dseg').onclick=e=>{const b=e.target.closest('[data-a]');if(b)vDebts(b.dataset.a==='1');};
+  const r=await api('GET','/api/mikveh/debts_all'+(all?'?all=1':''));if(!$('#db2'))return;if(!all&&r.ok)S.debts=r;
+  if(!r.ok){$('#db2').innerHTML='<div class="warn">'+esc(r.error||'')+'</div>';return;}
+  const rows=r.rows||[],open=rows.filter(x=>x.status===-1||x.status===0);
+  $('#db2').innerHTML=`<div class="grid kpis" style="margin-bottom:16px"><div class="card kpi"><div class="ic r">${ic('debt')}</div><div><div class="t">סה״כ חובות פתוחים</div><div class="v">${nis(r.sum)}</div><div class="s">${open.length} חובות</div></div></div></div>
+    <div class="card tw"><table class="t"><thead><tr><th>לקוח</th><th>תאריך</th><th>סיבה</th><th>מצב</th><th>סכום</th></tr></thead><tbody>${rows.map(x=>`<tr class="cl" data-c="${esc(x.cid)}"><td><b>${esc(x.name||'לקוח לא ברשימה')}</b>${x.code?' <span class="mut">#'+esc(x.code)+'</span>':''}</td><td>${dmy(x.date)}</td><td>${esc(x.reason||'')}</td>
+      <td><span class="tag ${x.status===2?'g':x.status===3?'':'r'}">${x.status===2?'שולם'+(x.paid?' '+dmy(x.paid):''):esc(x.label)}</span></td><td class="num ${x.status===-1||x.status===0?'red':''}"><b>${nis(x.amount)}</b></td></tr>`).join('')||'<tr><td colspan="5" class="empty">אין חובות</td></tr>'}</tbody></table></div>`;
+  $$('#db2 [data-c]').forEach(e=>e.onclick=()=>openClient(e.dataset.c));}
+
+// ---------- בקשות ופניות ----------
+let RTAB='grp';
+async function vReqs(){
+  $('#main').innerHTML=head('inbox','בקשות ופניות','')+`<div class="tabs" id="rtabs">${[['grp','בקשות החלפת קבוצה'],['nd','פניות מנדרים פלוס']].map(([k,t])=>`<button data-t="${k}" class="${RTAB===k?'on':''}">${t}</button>`).join('')}</div><div id="rb"><div class="skel" style="height:300px"></div></div>`;
+  $('#rtabs').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;RTAB=b.dataset.t;vReqs();};
+  if(RTAB==='grp'){const r=await api('GET','/api/mikveh/selfgroup');if(!$('#rb'))return;if(!r.ok){$('#rb').innerHTML='<div class="warn">'+esc(r.error||'')+'</div>';return;}
+    const nw=(r.reqs||[]).filter(x=>x.status==='new'),old=(r.reqs||[]).filter(x=>x.status!=='new');
+    const card=x=>`<div class="card pad" style="margin-bottom:10px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="font-size:1.05rem;cursor:pointer" data-c="${esc(x.cid)}">${esc(x.name||'')}</b>${x.code?'<span class="mut">#'+esc(x.code)+'</span>':''}<span class="grow" style="flex:1"></span><span class="mut">${dmyhm(x.at)}</span></div>
+      <div style="margin:8px 0"><span class="tag">${esc(x.from_name||'')}</span> ← <span class="tag b">${esc(x.to_name||'')}</span></div>
+      <div class="mut" style="font-size:.88rem">${esc(x.reason||'')}${x.phone?' · <span dir="ltr">'+esc(x.phone)+'</span>':''}${x.note?' · '+esc(x.note):''}</div>
+      ${x.member_needed?`<div class="${x.member?'green':'red'}" style="font-weight:600;margin-top:6px">👥 ${x.member?'חבר קהילה: '+esc(x.member):'לא נמצא כחבר קהילה'}</div>`:''}
+      ${x.quote?`<div style="font-weight:600;margin-top:6px" class="${x.quote.amount>0?'red':x.quote.amount<0?'green':''}">${x.quote.amount>0?'הפרש לתשלום '+nis(x.quote.amount):x.quote.amount<0?'זיכוי '+nis(-x.quote.amount):'בלי הפרש'} · ₪${x.quote.old_price} ← ₪${x.quote.new_price} · ${x.quote.days} ימים</div>`:''}
+      <div class="acts" style="margin-bottom:0">${x.status==='new'?`<button class="btn g" data-ok="${x.id}">${ic('check')}לאשר ולהעביר</button><button class="btn" data-no="${x.id}">לדחות</button>`:`<span class="tag ${x.status==='done'?'g':'r'}">${x.status==='done'?'אושרה':'נדחתה'}</span><button class="btn sm" data-del="${x.id}">${ic('trash')}</button>`}</div></div>`;
+    $('#rb').innerHTML=(nw.length?nw.map(card).join(''):'<div class="card empty">אין בקשות שמחכות 👍</div>')+(old.length?`<h3 style="margin:22px 0 10px">טופלו</h3>${old.map(card).join('')}`:'');
+    const by=id=>(r.reqs||[]).find(x=>x.id==id);
+    $$('#rb [data-c]').forEach(e=>e.onclick=()=>openClient(e.dataset.c));
+    $$('#rb [data-del]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/selfgroup_req_del',{id:+b.dataset.del});vReqs();});
+    $$('#rb [data-no]').forEach(b=>b.onclick=async()=>{const n=await promptBox('דחיית בקשה','הערה (לא חובה)','');if(n===null)return;await api('POST','/api/mikveh/selfgroup_req/'+b.dataset.no,{action:'reject',note:n});toast('נדחתה');badges();vReqs();});
+    $$('#rb [data-ok]').forEach(b=>b.onclick=async()=>{const q=by(b.dataset.ok);const am=await promptBox('לאשר ולהעביר את '+esc(q.name),'הפרש (₪): חיובי = חוב במקווה, שלילי = זיכוי, 0 = בלי',String(q.quote?q.quote.amount:0));if(am===null)return;
+      const x=await api('POST','/api/mikveh/selfgroup_req/'+q.id,{action:'approve',amount:am});if(!x.ok){alertBox('לא בוצע',x.error);return;}
+      toast('הועבר במקווה');badges();await loadMk(true);const c=S.mk.clients.find(z=>z.id===q.cid);vReqs();if(c&&c.phone&&await confirmBox('לשלוח הודעה?','לשלוח ל'+esc(cName(c))+' הודעה שהקבוצה הוחלפה?'))sendMsg(c,'group');});}
+  else{$('#rb').innerHTML='<div class="card pad"><span class="spin"></span> בודק פניות חדשות…</div>';await api('POST','/api/mikveh/requests/sync',{}).catch(()=>null);
+    const r=await api('GET','/api/mikveh/requests');if(!$('#rb'))return;const R=r.rows||[],nw=R.filter(x=>x.status!=='done'),dn=R.filter(x=>x.status==='done');
+    const card=x=>`<div class="card pad" style="margin-bottom:10px;${x.status==='done'?'opacity:.7':''}"><div style="display:flex;gap:10px;flex-wrap:wrap"><b style="font-size:1.05rem">${esc(((x.first||'')+' '+(x.last||'')).trim()||'—')}</b><span class="grow" style="flex:1"></span><span class="mut">${dmyhm(x.at)}${x.form_no?' · טופס '+esc(x.form_no):''}</span></div>
+      ${x.phone?`<div class="mut" dir="ltr" style="text-align:right">${esc(x.phone)}</div>`:''}<div style="white-space:pre-wrap;margin:8px 0;line-height:1.6">${esc(x.text||'')}</div>${x.note?'<div class="mut">📝 '+esc(x.note)+'</div>':''}
+      <div class="acts" style="margin-bottom:0">${x.phone?`<a class="btn sm" href="tel:${esc(x.phone)}">${ic('phone')}חיוג</a>`:''}<button class="btn sm" data-n="${esc(x.id)}">הערה</button><button class="btn sm ${x.status==='done'?'':'g'}" data-d="${esc(x.id)}" data-v="${x.status==='done'?'new':'done'}">${x.status==='done'?'להחזיר':'✓ טופל'}</button></div></div>`;
+    $('#rb').innerHTML=`<div class="mut" style="margin-bottom:10px">${r.last&&r.last.at?'נבדק '+esc(r.last.at):''}</div>`+(nw.length?nw.map(card).join(''):'<div class="card empty">אין פניות חדשות</div>')+(dn.length?`<h3 style="margin:22px 0 10px">טופלו (${dn.length})</h3>${dn.map(card).join('')}`:'');
+    $$('#rb [data-d]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/requests/'+encodeURIComponent(b.dataset.d),{status:b.dataset.v});badges();vReqs();});
+    $$('#rb [data-n]').forEach(b=>b.onclick=async()=>{const x=R.find(z=>z.id===b.dataset.n);const v=await promptBox('הערה לפנייה','הערה',x&&x.note||'');if(v===null)return;await api('POST','/api/mikveh/requests/'+encodeURIComponent(b.dataset.n),{note:v});vReqs();});}}
+
+// ---------- הודעות מוקלטות ----------
+async function vVm(sync){
+  $('#main').innerHTML=head('mic','הודעות מוקלטות','מהשלוחה של המקווה — עם תמלול',`<button class="btn" id="vref">${ic('refresh')}לבדוק עכשיו</button>`)+'<div id="vb"><div class="skel" style="height:300px"></div></div>';
+  $('#vref').onclick=()=>vVm(true);
+  const r=await api('GET','/api/mikveh/vm'+(sync?'?sync=1':''));if(!$('#vb'))return;if(!r.ok){$('#vb').innerHTML='<div class="warn">'+esc(r.error||'')+'</div>';return;}
+  S.vmBadge=r.new||0;navPaint();const blk=new Set(r.blocked||[]);
+  const card=x=>`<div class="card pad" style="margin-bottom:10px;${x.done?'opacity:.65':''}"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">${x.heard||x.done?'':'<span class="tag r">חדש</span>'}<b>${x.cid?`<a href="#" data-c="${esc(x.cid)}">${esc(x.cname||'')}</a>`:'<span class="mut">לא מזוהה</span>'}</b><span dir="ltr" class="mut">${esc(x.phone||'')}</span><span class="grow" style="flex:1"></span><span class="mut">${dmyhm(x.at)}</span></div>
+    <audio controls preload="none" src="/api/mikveh/vm/${x.id}.wav" style="width:100%;margin:8px 0" data-p="${x.id}"></audio><div style="line-height:1.6">${x.transcript?esc(x.transcript):x.transcript===''?'<span class="mut">(לא תומלל)</span>':'<span class="mut">מתמלל…</span>'}</div>${x.note?'<div class="mut">📝 '+esc(x.note)+'</div>':''}
+    <div class="acts" style="margin-bottom:0"><button class="btn sm ${x.done?'':'g'}" data-d="${x.id}" data-v="${x.done?0:1}">${x.done?'להחזיר':'✓ טופל'}</button><button class="btn sm" data-n="${x.id}">הערה</button>${x.phone?(blk.has(x.phone)?`<button class="btn sm" data-ub="${esc(x.phone)}">ביטול חסימה</button>`:`<button class="btn sm r" data-b="${esc(x.phone)}">${ic('ban')}חסימה</button>`):''}</div></div>`;
+  const R=r.rows||[],op=R.filter(x=>!x.done),dn=R.filter(x=>x.done);
+  $('#vb').innerHTML=(op.length?op.map(card).join(''):'<div class="card empty">אין הודעות שמחכות</div>')+(dn.length?`<h3 style="margin:22px 0 10px">טופלו (${dn.length})</h3>${dn.map(card).join('')}`:'')+
+    `<div class="card pad" style="margin-top:20px"><h3>${ic('ban')} מספרים חסומים</h3>${[...blk].map(p=>`<div class="it" style="display:flex;gap:10px;align-items:center;margin:6px 0"><span dir="ltr">${esc(p)}</span><button class="btn sm" data-ub="${esc(p)}">ביטול חסימה</button></div>`).join('')||'<div class="mut">אין</div>'}
+      <div class="toolbar" style="margin:10px 0 0"><input id="vbn" dir="ltr" placeholder="מספר לחסימה"><button class="btn" id="vbadd">חסימה</button></div></div>`;
+  $$('#vb [data-c]').forEach(e=>e.onclick=ev=>{ev.preventDefault();openClient(e.dataset.c);});
+  $$('#vb [data-p]').forEach(a=>a.onplay=()=>{const x=R.find(z=>z.id==a.dataset.p);if(x&&!x.heard){x.heard=1;api('POST','/api/mikveh/vm/'+x.id,{heard:1});}});
+  $$('#vb [data-d]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/vm/'+b.dataset.d,{done:b.dataset.v==='1',heard:1});vVm();});
+  $$('#vb [data-n]').forEach(b=>b.onclick=async()=>{const x=R.find(z=>z.id==b.dataset.n);const v=await promptBox('הערה','הערה',x&&x.note||'');if(v===null)return;await api('POST','/api/mikveh/vm/'+b.dataset.n,{note:v});vVm();});
+  $$('#vb [data-b]').forEach(b=>b.onclick=async()=>{if(!await confirmBox('חסימה','לחסום את '+esc(b.dataset.b)+'? לא יוכל להשאיר הודעה.'))return;await api('POST','/api/mikveh/vm_cfg',{block:b.dataset.b});vVm();});
+  $$('#vb [data-ub]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/vm_cfg',{unblock:b.dataset.ub});toast('החסימה בוטלה');vVm();});
+  $('#vbadd').onclick=async()=>{const v=$('#vbn').value.trim();if(!v)return;const x=await api('POST','/api/mikveh/vm_cfg',{block:v});x.ok?vVm():alertBox('לא נשמר',x.error);};}
+
+// ---------- בדיקת פג תוקף ----------
+async function vExpiry(){
+  $('#main').innerHTML=head('alert','בדיקת פג תוקף','מי שהמנוי או הרישיון שלו הסתיים, ולמה')+`<div class="hint">הבדיקה עוברת במקווה על כל מי שפג לו ב-60 הימים האחרונים: האם החידוש האוטומטי כבוי, האם אין לו אמצעי תשלום, או שחיוב נכשל. לכן היא לוקחת קצת זמן.</div><div id="xb"><div class="card pad"><span class="spin"></span> <span id="xw">בודק במקווה…</span></div></div>`;
+  const t0=Date.now(),tm=setInterval(()=>{const e=$('#xw');if(!e){clearInterval(tm);return;}e.textContent='בודק במקווה… '+Math.round((Date.now()-t0)/1000)+' שניות';},1000);
+  const r=await api('GET','/api/mikveh/expired_check');clearInterval(tm);if(!$('#xb'))return;if(!r.ok){$('#xb').innerHTML='<div class="warn">'+esc(r.error||'')+'</div>';return;}
+  const A=r.rows||[],rec=A.filter(x=>x.recent),rest=A.filter(x=>!x.recent);
+  const wk=r.weeks||[];
+  const row=x=>`<tr class="cl" data-c="${esc(x.id)}"><td><b>${esc(x.name)}</b></td><td>${x.sub_bad?'<span class="tag r">'+dmy(x.sub_end)+'</span>':'—'}</td><td>${x.lic_bad?'<span class="tag a">'+dmy(x.lic_exp)+'</span>':'—'}</td><td style="font-size:.85rem">${(x.why||[]).map(esc).join('<br>')||'<span class="mut">—</span>'}</td></tr>`;
+  $('#xb').innerHTML=`${wk.length?`<div class="card pad chart" style="margin-bottom:16px"><h3>כמה מנויים פגו בכל שבוע</h3>${barChart(wk.map(w=>({date:w.from,n:w.n})),['n'],['var(--red)'],1)}</div>`:''}
+    <div class="card tw"><table class="t"><thead><tr><th>לקוח</th><th>מנוי עד</th><th>רישיון עד</th><th>למה</th></tr></thead><tbody>${rec.map(row).join('')||'<tr><td colspan="4" class="empty">אין</td></tr>'}</tbody></table></div>
+    ${rest.length?`<details style="margin-top:14px"><summary class="btn">ועוד ${rest.length} שפג להם לפני יותר מ-60 יום</summary><div class="card tw" style="margin-top:10px"><table class="t"><tbody>${rest.map(row).join('')}</tbody></table></div></details>`:''}`;
+  $$('#xb [data-c]').forEach(e=>e.onclick=()=>openClient(e.dataset.c));}
+
+// ---------- הודעות שנשלחו ----------
+async function vSent(){
+  $('#main').innerHTML=head('send','הודעות שנשלחו','SMS, שיחות ומיילים שיצאו מהמקווה')+'<div id="sb"><div class="skel" style="height:300px"></div></div>';
+  const r=await api('GET','/api/mikveh/log');if(!$('#sb'))return;const R=r.rows||[];
+  const res=x=>x.kind==='mail'?(x.m_st==='sent'?'<span class="tag g">נשלח'+(x.m_open?' · נפתח':'')+'</span>':x.m_st==='failed'?'<span class="tag r">נכשל</span>':'<span class="tag">בתור</span>')
+    :x.j_st==='scheduled'?'<span class="tag b">מתוזמנת '+esc(String(x.send_at||'').slice(5,16))+'</span>':x.y_st==='sent'?(x.ch==='voice'?(x.y_ans?'<span class="tag g">ענה'+(x.y_listen?' · שמע '+x.y_listen+' שנ\'':'')+'</span>':'<span class="tag a">לא ענה</span>'):'<span class="tag g">יצאה</span>'):x.y_st==='failed'?'<span class="tag r">לא יצאה</span>':'<span class="tag">'+esc(x.y_st||'')+'</span>';
+  $('#sb').innerHTML=`<div class="card tw"><table class="t"><thead><tr><th>מתי</th><th>למי</th><th>ערוץ</th><th>מה</th><th>תוצאה</th></tr></thead><tbody>${R.map(x=>`<tr class="${x.cid?'cl':''}" data-c="${esc(x.cid||'')}"><td class="num">${dmyhm(x.at)}</td><td><b>${esc(x.nm||'')}</b></td><td>${x.kind==='mail'?'✉️ מייל':x.ch==='sms'?'💬 SMS':'📞 שיחה'}</td><td style="max-width:420px;font-size:.86rem">${esc(x.summary||'')}</td><td>${res(x)}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">אין</td></tr>'}</tbody></table></div>`;
+  $$('#sb [data-c]').forEach(e=>{if(e.dataset.c)e.onclick=()=>openClient(e.dataset.c);});}
+
+// ---------- שלוחות טלפון ----------
+let ITAB='gen';
+async function vIvr(){
+  $('#main').innerHTML=head('phone','שלוחות טלפון','החלפת קבוצה והודעות מוקלטות בימות המשיח')+`<div class="tabs" id="itabs">${[['gen','החלפת קבוצה — כללי'],['price','מחירים ותשלום'],['lock','לקוחות נעולים'],['log','יומן החלפות'],['txt','טקסטים'],['vmset','שלוחת הודעות']].map(([k,t])=>`<button data-t="${k}" class="${ITAB===k?'on':''}">${t}</button>`).join('')}</div><div id="ib"><div class="skel" style="height:300px"></div></div>`;
+  $('#itabs').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;ITAB=b.dataset.t;vIvr();};
+  if(ITAB==='txt'||ITAB==='vmset')return ivrTexts();
+  const r=await api('GET','/api/mikveh/selfgroup');if(!$('#ib'))return;if(!r.ok){$('#ib').innerHTML='<div class="warn">'+esc(r.error||'')+'</div>';return;}
+  const C=r.cfg,sel=new Set(C.groups||[]),lk=new Set(C.locked_groups||[]),mg=new Set(C.member_groups||[]),PM=new Set(C.pay_methods||['debt']);
+  const save=async extra=>{const body={enabled:C.enabled,groups:C.groups,locked_groups:C.locked_groups,member_groups:C.member_groups,say:C.say,req_on:C.req_on,max:C.max,days:C.days,
+      divisor:C.divisor,round:C.round,pay_methods:C.pay_methods,nd_mosad:C.nd_mosad,cancel_on:C.cancel_on,credit_down:C.credit_down,say_prices:true,
+      erech_groups:Array.isArray(C.erech_groups)?C.erech_groups:r.groups.filter(g=>g.erech).map(g=>g.id),min_keva:C.min_keva,keva_cats:C.keva_cats||[]};Object.assign(body,extra||{});
+    const x=await api('POST','/api/mikveh/selfgroup',body);if(!x.ok){alertBox('לא נשמר',x.error);return;}toast('נשמר');vIvr();};
+  if(ITAB==='gen'){
+    $('#ib').innerHTML=`<div class="grid two"><div class="card pad"><h3>${ic('swap')} הקבוצות בשלוחה</h3>
+        <label class="chk"><input type="checkbox" id="ion" ${C.enabled?'checked':''}><b>השלוחה פתוחה למתקשרים</b></label>
+        <div class="tw"><table class="t"><thead><tr><th>קבוצה</th><th>אפשר לעבור</th><th>👥 חברי קהילה</th><th>🔒 נעולה</th><th>השם בטלפון</th></tr></thead><tbody>${r.groups.map(g=>`<tr><td><span class="chip"><span class="d" style="background:${gColor(g)}"></span>${esc(g.name)}</span> <span class="mut num">${g.price!=null?nis(g.price):''}</span></td>
+          <td><input type="checkbox" data-sg="${esc(g.id)}" ${sel.has(g.id)?'checked':''}></td><td><input type="checkbox" data-mg="${esc(g.id)}" ${mg.has(g.id)?'checked':''}></td><td><input type="checkbox" data-lg="${esc(g.id)}" ${lk.has(g.id)?'checked':''}></td>
+          <td><input data-say="${esc(g.id)}" value="${esc(g.say)}" style="width:100%"></td></tr>`).join('')}</tbody></table></div></div>
+      <div class="card pad"><h3>${ic('gear')} כללים</h3>
+        <label class="fld"><span>אפשר להחליף</span><div style="display:flex;gap:8px;align-items:center"><input type="number" id="imax" value="${esc(C.max)}" style="width:80px"> פעמים בתוך <input type="number" id="idays" value="${esc(C.days)}" style="width:80px"> ימים</div></label>
+        <label class="fld"><span>הנחת חבר קהילה — מינימום הוראת קבע (₪)</span><input type="number" id="imin" value="${esc(C.min_keva!=null?C.min_keva:100)}"></label>
+        <div class="fld"><span>קטגוריית הוראת הקבע בנדרים שנחשבת להנחה</span><div class="kcs">${[...new Set([...(r.keva_cats||[]),...(C.keva_cats||[])])].map(k=>`<label class="chk"><input type="checkbox" data-kc="${esc(k)}" ${(C.keva_cats||[]).includes(k)?'checked':''}>${esc(k)}</label>`).join('')||'<span class="mut">אין עדיין קטגוריות בהוראות הקבע שנמשכו</span>'}</div><div class="hint">הוראת קבע בקטגוריה אחרת לא נחשבת. בלי סימון — כל הוראת קבע לקהילה נחשבת.</div></div>
+        <div class="hint">👥 חבר קהילה (לפי הטלפון ברשימת הקהילה) שומע: 1 לקבוצות ההנחה, 2 לרגילות. ההנחה ניתנת לבד רק עם הוראת קבע פעילה מהמינימום ומעלה, ורק אם אין לקוח אחר עם אותו טלפון / ת.ז. שכבר בהנחה. אחרת הוא שומע למה, ויכול לשלוח בקשה.</div>
+        <label class="chk"><input type="checkbox" id="ireq" ${C.req_on?'checked':''}>מי שאין לו הרשאה / עבר את המקסימום — יכול לשלוח בקשה למשרד</label>
+        <button class="btn p" id="isave" style="margin-top:10px">שמירה</button>
+        <h3 style="margin-top:22px">הגדרה בימות המשיח</h3><pre class="code">type=api\napi_link=${esc(r.link)}\napi_hangup_send=no</pre></div></div>`;
+    $('#isave').onclick=()=>{const say={};$$('#ib [data-say]').forEach(i=>{if(i.value.trim())say[i.dataset.say]=i.value.trim();});
+      save({enabled:$('#ion').checked,groups:$$('#ib [data-sg]').filter(x=>x.checked).map(x=>x.dataset.sg),member_groups:$$('#ib [data-mg]').filter(x=>x.checked).map(x=>x.dataset.mg),
+        locked_groups:$$('#ib [data-lg]').filter(x=>x.checked).map(x=>x.dataset.lg),say,max:$('#imax').value,days:$('#idays').value,min_keva:$('#imin').value,keva_cats:$$('#ib [data-kc]').filter(x=>x.checked).map(x=>x.dataset.kc),req_on:$('#ireq').checked});};}
+  else if(ITAB==='price'){
+    $('#ib').innerHTML=`<div class="grid two"><div class="card pad"><h3>${ic('cash')} חישוב ההפרש</h3>
+        <div class="hint">(המחיר החודשי החדש − המחיר החודשי שלו) × ימים שנשארו במנוי ÷ ימים בחודש. בלי מנוי בתוקף — אין הפרש.</div>
+        <div class="row2"><label class="fld"><span>ימים בחודש</span><input type="number" id="pdiv" value="${esc(C.divisor||30)}"></label>
+        <label class="fld"><span>עיגול</span><select id="prnd"><option value="1"${+C.round===1?' selected':''}>שקל שלם</option><option value="5"${+C.round===5?' selected':''}>5 שקלים</option><option value="0.01"${+C.round<1&&+C.round>0?' selected':''}>אגורה</option></select></label></div>
+        <label class="chk"><input type="checkbox" id="pcr" ${C.credit_down!==false?'checked':''}>מעבר לקבוצה זולה — זיכוי ביתרה הזמנית (אי אפשר לבטל)</label>
+        <label class="chk"><input type="checkbox" id="pcan" ${C.cancel_on!==false?'checked':''}>מי שעבר עם חוב שלא שולם — יכול לבטל בטלפון</label>
+        <h3 style="margin-top:16px">קבוצות ערך צבור (בלי מחיר חודשי)</h3>${r.groups.map(g=>`<label class="chk"><input type="checkbox" data-eg="${esc(g.id)}" ${g.erech?'checked':''}>${esc(g.name)}</label>`).join('')}</div>
+      <div class="card pad"><h3>${ic('wallet')} תשלום ההפרש</h3>
+        ${[['keva','מהוראת הקבע (נדרים פלוס)'],['card','אשראי בטלפון (נדרים פלוס)'],['debt','חוב במקווה — משלם במכונה']].map(([k,t])=>`<label class="chk"><input type="checkbox" data-pm="${k}" ${PM.has(k)?'checked':''}>${t}</label>`).join('')}
+        <label class="fld" style="margin-top:10px"><span>קופת נדרים פלוס</span><select id="pnd"><option value="">— לא נבחרה —</option>${(r.accounts||[]).map(a=>`<option value="${esc(a.mosad)}"${String(C.nd_mosad||'')===String(a.mosad)?' selected':''}>${esc(a.name)} · ${esc(a.mosad)}</option>`).join('')}</select></label>
+        <button class="btn p" id="psave">שמירה</button></div></div>`;
+    $('#psave').onclick=()=>{const pm=$$('#ib [data-pm]').filter(x=>x.checked).map(x=>x.dataset.pm);if(pm.some(m=>m!=='debt')&&!$('#pnd').value){alertBox('חסרה קופה','לתשלום באשראי / הוראת קבע צריך לבחור קופת נדרים פלוס');return;}
+      save({divisor:$('#pdiv').value,round:$('#prnd').value,credit_down:$('#pcr').checked,cancel_on:$('#pcan').checked,pay_methods:pm,nd_mosad:$('#pnd').value,erech_groups:$$('#ib [data-eg]').filter(x=>x.checked).map(x=>x.dataset.eg)});};}
+  else if(ITAB==='lock'){
+    $('#ib').innerHTML=`<div class="card pad"><div class="hint">לקוחות שלא יכולים להחליף קבוצה בטלפון. נועלים מכרטיס הלקוח.</div><div class="list">${(r.locked||[]).map(x=>`<div class="it"><div class="m"><b>${esc(x.name||x.id)}</b><small>${x.code?'#'+esc(x.code):''}</small></div><button class="btn sm" data-ul="${esc(x.id)}">ביטול נעילה</button></div>`).join('')||'<div class="empty">אין לקוחות נעולים</div>'}</div></div>`;
+    $$('#ib [data-ul]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/selfgroup_lock',{id:b.dataset.ul,locked:false});toast('הנעילה בוטלה');vIvr();});}
+  else if(ITAB==='log'){
+    $('#ib').innerHTML=`<div class="card tw"><table class="t"><thead><tr><th>מתי</th><th>לקוח</th><th>מעבר</th><th>הפרש</th><th></th></tr></thead><tbody>${(r.log||[]).map(x=>`<tr><td class="num">${dmyhm(x.at)}</td><td><b>${esc(x.name||'')}</b></td><td>${esc(x.from_name||'')} ← ${esc(x.to_name||'')}${x.status==='cancelled'?' <span class="tag a">בוטל</span>':x.ok?'':' <span class="tag r">לא בוצע</span>'}</td>
+      <td class="num">${x.amount?(x.amount>0?'<span class="red">'+nis(x.amount)+'</span> '+esc({debt:'חוב',card:'אשראי',keva:'הו"ק'}[x.method]||''):'<span class="green">זיכוי '+nis(-x.amount)+'</span>'):'—'}</td><td><button class="btn sm" data-ld="${x.id}">${ic('trash')}</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">אין</td></tr>'}</tbody></table></div>`;
+    $$('#ib [data-ld]').forEach(b=>b.onclick=async()=>{if(!await confirmBox('מחיקה מהיומן','השורה לא תיספר יותר בכמות ההחלפות. במקווה לא משתנה כלום.'))return;await api('POST','/api/mikveh/selfgroup_log_del',{id:+b.dataset.ld});vIvr();});}}
+async function ivrTexts(){const ext=ITAB==='vmset'?'vm':'grp';const [r,v]=await Promise.all([api('GET','/api/mikveh/ivr_texts'),ext==='vm'?api('GET','/api/mikveh/vm'):Promise.resolve(null)]);if(!$('#ib'))return;
+  const T=(r.texts||[]).filter(x=>x.ext===ext);
+  $('#ib').innerHTML=`<div class="card pad">${ext==='vm'&&v&&v.ok?`<h3>הגדרה בימות המשיח</h3><pre class="code">type=api\napi_link=${esc(v.link)}\napi_hangup_send=yes</pre>`:''}
+    <div class="hint">בסוגריים מסולסלים — המערכת ממלאת לבד: {name} שם, {group} קבוצה, {price} מחיר, {amount} סכום, {days} ימים, {who} שם, {min} מינימום. שדה ריק = הנוסח המקורי.</div>
+    ${T.map(x=>`<label class="fld"><span>${esc(x.label)}${x.val?' <b style="color:var(--blue)">· שונה</b>':''}</span><textarea rows="2" data-tx="${esc(x.key)}" placeholder="${esc(x.def)}">${esc(x.val||x.def)}</textarea></label>`).join('')}
+    <div class="acts"><button class="btn p" id="tsave">שמירה</button><button class="btn" id="treset">להחזיר הכל לנוסח המקורי</button></div></div>`;
+  const all=()=>{const t={};$$('#ib [data-tx]').forEach(x=>t[x.dataset.tx]=x.value);return t;};
+  $('#tsave').onclick=async()=>{const x=await api('POST','/api/mikveh/ivr_texts',{texts:all()});x.ok?(toast('נשמר'),vIvr()):alertBox('לא נשמר',x.error);};
+  $('#treset').onclick=async()=>{if(!await confirmBox('נוסח מקורי','להחזיר את כל הטקסטים בלשונית הזו לנוסח המקורי?'))return;const t=all();Object.keys(t).forEach(k=>t[k]='');await api('POST','/api/mikveh/ivr_texts',{texts:t});vIvr();};}
+
+// ---------- כניסה ----------
+function showLogin(msg){document.body.innerHTML=`<div class="login"><h2 style="margin-top:0">🛁 ניהול המקווה</h2><div class="mut" style="margin-bottom:14px">${esc(msg||'הקלד את הסיסמה של המערכת')}</div>
+  <input type="password" id="lp" style="width:100%" placeholder="סיסמה"><button class="btn p" id="lb" style="width:100%;justify-content:center;margin-top:12px">כניסה</button>
+  <div style="margin-top:14px;text-align:center"><a href="/">או כניסה דרך המערכת הרגילה</a></div></div>`;
+  const go_=async()=>{const r=await (await fetch('/api/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('#lp').value,portal:'admin'})})).json().catch(()=>({}));
+    if(r&&r.ok)location.reload();else showLogin((r&&r.error)||'סיסמה שגויה');};
+  $('#lb').onclick=go_;$('#lp').onkeydown=e=>{if(e.key==='Enter')go_();};$('#lp').focus();}
+
+// ---------- התחלה ----------
+(async()=>{const me=await (await fetch('/api/me',{credentials:'same-origin'})).json().catch(()=>({}));
+  if(me.auth_on&&!me.role){showLogin();return;}
+  if(me.auth_on&&me.role!=='admin'){showLogin('הכניסה הזו פותחת רק חלק מהמערכת — צריך את הסיסמה הראשית');return;}
+  $('#who').textContent=me.auth_on?'מחובר':'';
+  S.view=(location.hash||'#dash').slice(1);if(!NAV.some(n=>n[0]===S.view))S.view='dash';
+  navPaint();render();badges();setInterval(badges,120000);
+  window.addEventListener('hashchange',()=>{const v=location.hash.slice(1);if(v&&v!==S.view&&NAV.some(n=>n[0]===v)){S.view=v;navPaint();render();}});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modal').classList.contains('on'))$('#modal').classList.remove('on');});})();
+</script>
+</body>
+</html>

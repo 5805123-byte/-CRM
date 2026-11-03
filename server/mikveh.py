@@ -189,7 +189,8 @@ def groups(fresh=False):
             _GR.setdefault('hidden_names', {})[g.get('id')] = (g.get('name') or '').strip()
             continue
         out.append({'id': g.get('id'), 'name': (g.get('name') or '').strip(), 'color': g.get('color') or '',
-                    'price': (g.get('subscriptionPrice') or 0) / 100.0 if g.get('subscriptionPrice') is not None else None})
+                    'price': (g.get('subscriptionPrice') or 0) / 100.0 if g.get('subscriptionPrice') is not None else None,
+                    'entry': (g.get('basePrice') or 0) / 100.0 if g.get('basePrice') else None})
     out.sort(key=lambda g: g['name'])
     _GR.update(at=time.time(), rows=out, hidden=hid)
     return out
@@ -999,3 +1000,37 @@ def update_group(gid, changes):
         raise RuntimeError('העדכון במקווה נכשל: %s' % (LAST.get('error') or code))
     _GR.update(rows=None)
     return res if isinstance(res, dict) else obj
+
+
+_SERIES = {}
+
+
+def day_series(days=30):
+    """כניסות והכנסות לכל יום ב-days הימים האחרונים (מהדוחות של לוח הבקרה, יום-יום). ימים שעברו נשמרים בזיכרון."""
+    from concurrent.futures import ThreadPoolExecutor
+    t = datetime.datetime.now(_IL).date()
+    ds = [(t - datetime.timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
+    terms = terminals()
+
+    def one(d):
+        if d != t.isoformat() and d in _SERIES:
+            return _SERIES[d]
+        body = {'terminals': terms, 'fromDate': _utc(d), 'toDate': _utc(d, end=True), 'timeFilter': 1}
+        c1, ent = call('POST', 'Report/GetMonthlyEntranceCount', body=body, timeout=30)
+        c2, inc = call('POST', 'Report/GetMonthlyIncome', body=body, timeout=30)
+        c3, pm = call('POST', 'Report/GetChartPaymentData', body=body, timeout=30)
+        row = {'date': d, 'entrances': ent if c1 == 200 and isinstance(ent, (int, float)) else None,
+               'income': _nis(inc) if c2 == 200 and isinstance(inc, (int, float)) else None,
+               'cash': 0.0, 'credit': 0.0}
+        if c3 == 200 and isinstance(pm, list):
+            for x in pm:
+                if x.get('paymentType') == 0:
+                    row['cash'] = _nis(x.get('value') or 0)
+                elif x.get('paymentType') == 1:
+                    row['credit'] = _nis(x.get('value') or 0)
+        if d != t.isoformat() and row['entrances'] is not None:
+            _SERIES[d] = row
+        return row
+
+    with ThreadPoolExecutor(6) as ex:
+        return list(ex.map(one, ds))

@@ -20235,7 +20235,7 @@ class H(BaseHTTPRequestHandler):
         role = auth_role_of(self.headers.get('Cookie'))
         if not role:
             fp = os.path.normpath(os.path.join(STATIC, (path if path != '/' else '/index.html').lstrip('/')))
-            if self.command == 'GET' and (path in PORTALS or (fp.startswith(STATIC) and os.path.isfile(fp) and not path.startswith('/api/'))):
+            if self.command == 'GET' and (path in PORTALS or path.rstrip('/') == '/mikve' or (fp.startswith(STATIC) and os.path.isfile(fp) and not path.startswith('/api/'))):
                 self.role = ''
                 return True
             if path.startswith('/api/'):
@@ -20259,7 +20259,7 @@ class H(BaseHTTPRequestHandler):
         if allow is not None and (not any(path.startswith(x) for x in allow) or any(path.startswith(x) for x in AUTH_LIMITED_DENY)
                                   or (role in ('parnes', 'gabbai') and self.command == 'DELETE' and path.startswith('/api/donor'))):
             fp = os.path.normpath(os.path.join(STATIC, (path if path != '/' else '/index.html').lstrip('/')))
-            if self.command == 'GET' and (path in PORTALS or (fp.startswith(STATIC) and os.path.isfile(fp) and not path.startswith('/api/'))):
+            if self.command == 'GET' and (path in PORTALS or path.rstrip('/') == '/mikve' or (fp.startswith(STATIC) and os.path.isfile(fp) and not path.startswith('/api/'))):
                 return True
             self._send(403, {'ok': False, 'error': 'forbidden',
                              'detail': 'הסיסמה הזו פותחת רק את %s' % ROLE_DESC.get(role, 'חלק מהמערכת')})
@@ -20350,6 +20350,9 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] in PORTALS:
             # הקישורים המיוחדים — אותו מסך, והוא יודע לפי הכתובת איזו סיסמה לבקש
             return self._send(200, open(os.path.join(STATIC, 'index.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0].rstrip('/') == '/mikve':
+            # 🛁 מאיר: "אתר חדש לניהול האופציות של המקווה… אותן קריאות API בדיוק, עיצוב חדש בלבד"
+            return self._send(200, open(os.path.join(STATIC, 'mikve.html'), 'rb').read(), 'text/html')
         if self.path == '/api/data':
             if getattr(self, 'role', '') in ('parnes', 'gabbai'):
                 return self._send(200, dict(_data_parnes(), role=self.role))
@@ -23968,6 +23971,8 @@ class H(BaseHTTPRequestHandler):
                 month = con.execute("SELECT COUNT(*) n, 0 f FROM mkg_log WHERE ok=1 AND at>=?", (mkg_month_start(),)).fetchone()
                 reqs = [dict(r) for r in con.execute("SELECT * FROM mkg_req ORDER BY CASE WHEN status='new' THEN 0 ELSE 1 END, id DESC LIMIT 200")]
                 locked = sorted(mkg_locked(con))
+                keva_cats = [r[0] for r in con.execute("SELECT groupe, COUNT(*) n FROM nd_keva WHERE active=1 AND COALESCE(mosad,'')='' "
+                                                      "AND TRIM(COALESCE(groupe,''))<>'' GROUP BY groupe ORDER BY n DESC")]
             finally:
                 con.close()
             try:
@@ -23996,6 +24001,7 @@ class H(BaseHTTPRequestHandler):
             lk = [{'id': x, 'name': ((byid.get(x) or {}).get('firstName', '') + ' ' + ((byid.get(x) or {}).get('lastName') or '')).strip(),
                    'code': (byid.get(x) or {}).get('clientCode')} for x in locked]
             return self._send(200, {'ok': True, 'cfg': cfg, 'groups': groups, 'link': link, 'log': log, 'reqs': reqs, 'locked': lk, 'accounts': accts,
+                                    'keva_cats': keva_cats,
                                     'new_reqs': sum(1 for r in reqs if r['status'] == 'new'),
                                     'month': {'n': month['n'], 'fees': month['f']}})
         if self.path.split('?')[0] == '/api/mikveh/selfgroup_lock':
@@ -24014,6 +24020,17 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             return self._send(200, {'ok': True, 'texts': [{'key': k, 'ext': w, 'label': l, 'def': d, 'val': cur.get(k, '')}
                                                           for k, w, l, d in MK_TEXTS]})
+        if self.path.split('?')[0] == '/api/mikveh/series':
+            # 📈 כניסות והכנסות לפי יום (לגרף באתר המקווה החדש)
+            import mikveh as _mk
+            try:
+                days = max(7, min(60, int((urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('days') or ['30'])[0])))
+            except ValueError:
+                days = 30
+            try:
+                return self._send(200, {'ok': True, 'rows': _mk.day_series(days)})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
         if self.path.split('?')[0] == '/api/mikveh/reqapi':
             # 📥 ההגדרות של משיכת הפניות ישירות מנדרים פלוס
             import nedarim as _nd
@@ -27158,7 +27175,8 @@ class H(BaseHTTPRequestHandler):
                    'erech_groups': [str(x) for x in (b.get('erech_groups') or []) if str(x) in known]
                    if isinstance(b.get('erech_groups'), list) else 'auto',
                    'member_groups': [str(x) for x in (b.get('member_groups') or []) if str(x) in known],
-                   'member_keva': bool(b.get('member_keva'))}
+                   'member_keva': bool(b.get('member_keva')), 'min_keva': round(num('min_keva', 0, 100000, 100), 2),
+                   'keva_cats': [str(x).strip()[:80] for x in (b.get('keva_cats') or []) if str(x).strip()][:30]}
             if cfg['enabled'] and len(gs) < 2:
                 return self._send(200, {'ok': False, 'error': 'צריך לבחור לפחות 2 קבוצות שאפשר לעבור ביניהן'})
             con = db()
@@ -35131,7 +35149,9 @@ MKG_DEFAULT = {'enabled': False, 'groups': [], 'max': 1, 'days': 30, 'say': {}, 
                'erech_groups': 'auto', 'say_prices': True, 'cancel_on': True,
                # 👥 מאיר: "העברה לקבוצה שדרוש להיות חבר בקהילה" — הקבוצות האלה מוצעות רק למי שהטלפון שלו
                # שייך לחבר קהילה פעיל ומאושר ב-CRM (ואם member_keva — שיש לו גם הוראת קבע פעילה לקהילה)
-               'member_groups': [], 'member_keva': False}
+               'member_groups': [], 'member_keva': False,
+               # מאיר: "מינימום של הוראת קבע — רק מי שיש לו הוראת קבע של לפחות 100 שקל, שיהיה ניתן לשינוי"
+               'min_keva': 100, 'keva_cats': []}
 
 # 🗣️ מאיר: "אני רוצה אפשרות לשנות טקסטים בשלוחה API" — כל מה שהשלוחות של המקווה אומרות. בסוגריים מסולסלים —
 # מה שהמערכת ממלאת לבד (שם, קבוצה, סכום…). מה שלא שונה — ברירת המחדל. נשמר ב-app_kv (mk_ivr_texts).
@@ -35140,6 +35160,7 @@ MK_TEXTS = [
     ('hello', 'grp', 'פתיחה', 'שלום {name}, אתם בקבוצה {group}'),
     ('choose', 'grp', 'לפני רשימת הקבוצות (עד 9)', 'בחרו קבוצה'),
     ('choose_hash', 'grp', 'לפני רשימת הקבוצות (10 ומעלה — עם סולמית)', 'בחרו קבוצה והקישו סולמית בסיום'),
+    ('option_entry', 'grp', 'אפשרות בתפריט — ערך צבור, מחיר לכניסה (המספר נאמר אחרי)', 'לקבוצה {group}, {price} שקלים לכניסה, הקישו'),
     ('option', 'grp', 'אפשרות בתפריט (המספר נאמר אחרי)', 'לקבוצה {group} הקישו'),
     ('option_price', 'grp', 'אפשרות בתפריט עם מחיר (המספר נאמר אחרי)', 'לקבוצה {group}, {price} שקלים לחודש, הקישו'),
     ('quote_pay', 'grp', 'הצעת מחיר — יש הפרש לתשלום', 'המעבר לקבוצה {group} עולה {price} שקלים לחודש. נשארו לכם {days} ימים במנוי, ולכן ההפרש לתשלום הוא {amount} שקלים. לאישור הקישו 1, לביטול הקישו 2'),
@@ -35180,6 +35201,8 @@ MK_TEXTS = [
     ('cat_disc', 'grp', 'חבר קהילה — קבוצות ההנחה (המספר נאמר אחרי)', 'לקבוצות בהנחת חבר קהילה, בהוראת קבע פעילה, הקישו'),
     ('cat_reg', 'grp', 'חבר קהילה — הקבוצות הרגילות (המספר נאמר אחרי)', 'לקבוצות הרגילות הקישו'),
     ('no_keva', 'grp', 'אין הוראת קבע פעילה', 'אין לכם הוראת קבע פעילה לקהילה, ולכן אין לכם עדיין הרשאה להנחה'),
+    ('no_keva_cat', 'grp', 'אין הוראת קבע בקטגוריה שנבחרה', 'אין לכם הוראת קבע פעילה בקטגוריה {cat}, ולכן אין לכם עדיין הרשאה להנחה'),
+    ('low_keva', 'grp', 'הוראת קבע נמוכה מהמינימום', 'הוראת הקבע שלכם לקהילה היא {amount} שקלים, וההנחה ניתנת רק מ {min} שקלים ומעלה'),
     ('disc_used', 'grp', 'ההנחה כבר בשימוש', 'כבר יש משתמש בשם {who} שמשתמש בהנחת חבר קהילה'),
     ('vm_greet', 'vm', 'פתיחה — לפני הצליל', 'שלום, הגעתם למקווה. אנא השאירו את הודעתכם אחרי הצליל ובסיום הקישו סולמית'),
     ('vm_saved', 'vm', 'ההודעה נשמרה', 'ההודעה נשמרה, תודה רבה'),
@@ -35319,12 +35342,23 @@ def mkg_member(con, c, cfg):
     return None
 
 
-def mkg_disc_block(con, c, member, mgs, allc):
+def mkg_disc_block(con, c, member, mgs, allc, min_keva=0, keva_cats=None):
     """למה אין הנחת חבר קהילה (None = יש): אין הוראת קבע פעילה לקהילה, או שלקוח אחר במקווה עם אותו טלפון / ת.ז.
     כבר בקבוצה של חברי קהילה. מחזיר (מפתח טקסט, פרמטרים, סיבה לבקשה)"""
     import mikveh as _mk
-    if not con.execute("SELECT 1 FROM nd_keva WHERE member_id=? AND active=1 AND COALESCE(mosad,'')=''", (member['id'],)).fetchone():
+    # מאיר: "ההוראת קבע אמורה להיות משויכת לקטגוריה מסוימת בלבד, אם יש לו הוראת קבע אחרת זה לא נחשב"
+    cats = {str(x).strip() for x in (keva_cats or []) if str(x).strip()}
+    rows = con.execute("SELECT amount, groupe FROM nd_keva WHERE member_id=? AND active=1 AND COALESCE(mosad,'')=''", (member['id'],)).fetchall()
+    if cats:
+        rows = [r for r in rows if str(r['groupe'] or '').strip() in cats]
+    ks = [float(re.sub(r'[^\d.]', '', str(r['amount'] or '')) or 0) for r in rows]
+    if not ks:
+        if cats:
+            return 'no_keva_cat', {'cat': ' או '.join(sorted(cats))}, 'אין הוראת קבע פעילה בקטגוריה ' + ' / '.join(sorted(cats))
         return 'no_keva', {}, 'אין הוראת קבע פעילה לקהילה'
+    mn = float(min_keva or 0)
+    if mn and max(ks) < mn:
+        return 'low_keva', {'min': '%g' % mn, 'amount': '%g' % max(ks)}, 'הוראת הקבע לקהילה ₪%g — פחות מ-₪%g' % (max(ks), mn)
     cid, phones, idn = str(c.get('id')), _mkg_phones(c), _mk.ident(c)
     for o in allc:
         if str(o.get('id')) == cid or o.get('groupId') not in mgs:
@@ -35488,7 +35522,8 @@ def mkg_ivr(P):
             if 'Grp' not in P:
                 parts = [choose(len(opts_))]
                 for i, g in enumerate(opts_, 1):
-                    parts += [S('req_option', group=mkg_say(cfg, g, gr[g]['name'])), N(i)]
+                    pr_ = gr[g].get('price') or gr[g].get('entry')
+                    parts += [S('req_option', group=mkg_say(cfg, g, gr[g]['name']) + ((', %g שקלים' % pr_) if pr_ else '')), N(i)]
                 return ask(parts + [S('end_opt')], 'Grp', 1 if len(opts_) <= 9 else 2)
             try:
                 v_ = int(P.get('Grp') or 0)
@@ -35511,7 +35546,7 @@ def mkg_ivr(P):
                     return ask([S('hello', name=first, group=mkg_say(cfg, cur, gr[cur]['name'])), S('cat_intro'),
                                 S('cat_disc'), N(1), S('cat_reg'), N(2), S('end_opt')], 'Cat', 1)
             if cat == '1':
-                blk = mkg_disc_block(con, c, member, mgs, mine_all)
+                blk = mkg_disc_block(con, c, member, mgs, mine_all, cfg.get('min_keva') or 0, cfg.get('keva_cats') or [])
                 if blk:
                     # מאיר: "שלא יתן באופן אוטומטי ויצטרכו לשלוח בקשה — יגיד בדיוק למה אין לו הרשאה"
                     return req_menu(disc_opts, blk[2], [S(blk[0], **blk[1])])
@@ -35544,8 +35579,13 @@ def mkg_ivr(P):
             if opts:
                 parts.append(choose(count))
             for i, g in enumerate(opts, 1):
-                pr = gr[g].get('price')
-                if cfg.get('say_prices', True) and pr and not mkg_is_erech(cfg, g, gr[g]['name']):
+                # מאיר: "תמיד שהוא מקריא קבוצה הוא גם צריך להקריא את המחיר" — לחודש, ובערך צבור — לכניסה
+                pr, en = gr[g].get('price'), gr[g].get('entry')
+                if pr and not mkg_is_erech(cfg, g, gr[g]['name']):
+                    parts += [S('option_price', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % pr), N(i)]
+                elif en:
+                    parts += [S('option_entry', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % en), N(i)]
+                elif pr:
                     parts += [S('option_price', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % pr), N(i)]
                 else:
                     parts += [S('option', group=mkg_say(cfg, g, gr[g]['name'])), N(i)]

@@ -3085,7 +3085,9 @@ async function mkSelfGroupOpen(){
           <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;color:#2f6fb0"><input type="checkbox" data-mg="${esc(g.id)}" style="width:20px;height:20px" ${memG.has(g.id)?'checked':''}> 👥 רק לחברי קהילה</label>
           <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;color:#c0392b"><input type="checkbox" data-lg="${esc(g.id)}" style="width:20px;height:20px" ${lockG.has(g.id)?'checked':''}> 🔒 נעולה</label></div></div>`).join('')}</div>
       <div class="mksub" style="margin:6px 2px;line-height:1.7">👥 <b>רק לחברי קהילה</b> — קבוצת הנחה. חבר קהילה (לפי הטלפון, ברשימת הקהילה) שומע בטלפון: 1 לקבוצות ההנחה, 2 לקבוצות הרגילות.
-        ההנחה ניתנת לבד רק אם יש לו <b>הוראת קבע פעילה לקהילה</b>, ורק אם <b>אין לקוח אחר במקווה עם אותו טלפון או ת.ז.</b> שכבר בקבוצת הנחה. אחרת הוא שומע בדיוק למה, ויכול לשלוח בקשה למשרד.</div>
+        ההנחה ניתנת לבד רק אם יש לו <b>הוראת קבע פעילה לקהילה של לפחות ₪<input type="number" id="sgminkeva" min="0" value="${esc(C.min_keva!=null?C.min_keva:100)}" style="width:80px;display:inline-block;padding:2px 6px"></b>, ורק אם <b>אין לקוח אחר במקווה עם אותו טלפון או ת.ז.</b> שכבר בקבוצת הנחה. אחרת הוא שומע בדיוק למה, ויכול לשלוח בקשה למשרד.</div>
+      <div class="mksub" style="margin:6px 2px;line-height:1.7"><b>📂 רק הוראות קבע מהקטגוריות האלה בנדרים פלוס נחשבות</b> (הוראת קבע בקטגוריה אחרת לא נחשבת. אם לא מסמנים כלום — כל הוראת קבע לקהילה נחשבת):
+        <div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:4px">${[...new Set([...(r.keva_cats||[]),...(C.keva_cats||[])])].map(k=>`<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-kc="${esc(k)}" style="width:18px;height:18px" ${(C.keva_cats||[]).includes(k)?'checked':''}> ${esc(k)}</label>`).join('')||'<span style="color:#999">אין עדיין קטגוריות בהוראות הקבע שנמשכו מנדרים</span>'}</div></div>
       <div class="mksec" style="margin-top:14px">⚖️ כמה פעמים אפשר להחליף</div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-weight:700;margin:6px 0">אפשר להחליף
         <input type="number" id="sgmax" min="0" value="${esc(C.max)}" style="width:80px"> פעמים בתוך
@@ -3113,8 +3115,7 @@ async function mkSelfGroupOpen(){
       <div class="mksec" style="margin-top:12px">💰 קבוצות ערך צבור (בלי מחיר חודשי)</div>
       <div class="mksub" style="margin:-2px 2px 6px">מנוי חודשי שעובר לקבוצה כזו — כל מה שנשאר לו במנוי חוזר אליו כזיכוי. ${EG?'':'כרגע — לפי השם ("ערך צבור").'}</div>
       ${r.groups.map(g=>`<label style="display:flex;gap:8px;align-items:center;margin:4px 0"><input type="checkbox" data-eg="${esc(g.id)}" style="width:20px;height:20px" ${g.erech?'checked':''}> ${esc(g.name)}</label>`).join('')}
-      <div class="mksec" style="margin-top:12px">🗣️ בטלפון</div>
-      <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="pcsay" style="width:20px;height:20px" ${C.say_prices!==false?'checked':''}> להגיד בתפריט כמה עולה כל קבוצה לחודש</label>
+      <div class="mksub" style="margin-top:12px">🗣️ בטלפון המחיר של כל קבוצה תמיד נאמר: לחודש, ובקבוצת ערך צבור — לכניסה.</div>
       <button class="mkbtn" id="pcsave" style="margin-top:10px">💾 לשמור</button></div>
     <div data-tp="lock"><div class="mksub" style="margin:4px 2px 8px">לקוחות שלא יכולים להחליף קבוצה בטלפון אף פעם. נועלים מתוך הכרטיס של הלקוח (🔒).</div>
       ${(r.locked||[]).length?`<div class="mklist">${r.locked.map(x=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><b><a href="#" data-sgc="${esc(x.id)}">${esc(x.name||x.id)}</a>${x.code?' #'+esc(x.code):''}</b><button class="btn sm ghost" data-unl="${esc(x.id)}">🔓 לבטל נעילה</button></div>`).join('')}</div>`:'<div class="mksub">אין לקוחות נעולים.</div>'}</div>
@@ -3143,7 +3144,8 @@ async function mkSelfGroupOpen(){
       max:document.getElementById('sgmax').value,days:document.getElementById('sgdays').value,
       divisor:document.getElementById('pcdiv').value,round:document.getElementById('pcround').value,
       pay_methods:[...rs.querySelectorAll('[data-pm]')].filter(x=>x.checked).map(x=>x.dataset.pm),nd_mosad:document.getElementById('pcnd').value,
-      cancel_on:document.getElementById('pccancel').checked,credit_down:document.getElementById('pccredit').checked,say_prices:document.getElementById('pcsay').checked,
+      cancel_on:document.getElementById('pccancel').checked,credit_down:document.getElementById('pccredit').checked,say_prices:true,
+      min_keva:document.getElementById('sgminkeva').value,keva_cats:[...rs.querySelectorAll('[data-kc]')].filter(x=>x.checked).map(x=>x.dataset.kc),
       erech_groups:[...rs.querySelectorAll('[data-eg]')].filter(x=>x.checked).map(x=>x.dataset.eg)};
     if(body.pay_methods.some(m=>m!=='debt')&&!body.nd_mosad){uiAlert('לתשלום באשראי / הוראת קבע צריך לבחור קופת נדרים פלוס');return;}
     const r2=await api('POST','/api/mikveh/selfgroup',body).catch(()=>null);
