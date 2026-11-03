@@ -19126,8 +19126,9 @@ def cal_day_pdf(con, day):
         txt = re.sub(r'^[^\w"\'(]+', '', txt)
         sub = ' · '.join(x for x in [who, ('מקום: ' + t['place']) if (t.get('place') or '').strip() else '',
                                      ('הועבר מ-' + datetime.date.fromisoformat(t['orig_date']).strftime('%d/%m')) if t.get('orig_date') and t['orig_date'] < day else ''] if x)
-        return ('<tr><td class="bx"><div class="sq"></div></td><td class="tm">%s</td><td class="tx"><b>%s</b>%s</td></tr>'
-                % (e(t.get('at_time') or ''), e(txt), ('<div class="sb">%s</div>' % e(sub)) if sub else ''))
+        tm = (t.get('at_time') or '').strip()
+        return ('<tr><td class="bx"><div class="sq"></div></td><td class="tx">%s<b>%s</b>%s</td></tr>'
+                % (('<b class="tm">%s</b>&nbsp;&nbsp;' % e(tm)) if tm else '', e(txt), ('<div class="sb">%s</div>' % e(sub)) if sub else ''))
     timed = [t for t in rows if (t.get('at_time') or '').strip()]
     untimed = [t for t in rows if not (t.get('at_time') or '').strip()]
     parts = []
@@ -19137,7 +19138,7 @@ def cal_day_pdf(con, day):
         parts.append('<h2>במשך היום</h2><table>%s</table>' % ''.join(line(t) for t in untimed))
     if pn:
         parts.append('<h2>לימוד לזכות / פרנס</h2><table>%s</table>' % ''.join(
-            '<tr><td class="bx"><div class="sq"></div></td><td class="tm"></td><td class="tx"><b>%s</b>%s</td></tr>'
+            '<tr><td class="bx"><div class="sq"></div></td><td class="tx"><b>%s</b>%s</td></tr>'
             % (e(((p.get('last') or '') + ' ' + (p.get('first') or '')).strip() or 'פרנס'),
                ('<div class="sb">%s</div>' % e(' · '.join(x for x in [p.get('date_text') or '', p.get('dedication') or ''] if x))) if (p.get('date_text') or p.get('dedication')) else '')
             for p in pn))
@@ -19149,26 +19150,44 @@ def cal_day_pdf(con, day):
              '<div class="ft">הודפס %s</div>') % (
         e(heb or d.strftime('%d/%m/%Y')), DOW[d.weekday()], d.strftime('%d/%m/%Y'),
         'משימה אחת' if n == 1 else '%d משימות' % n, ''.join(parts), il_now().strftime('%d/%m/%Y %H:%M'))
-    css = ('@font-face{font-family:fr;src:url(frankruhl-regular.ttf)}@font-face{font-family:fr;font-weight:bold;src:url(frankruhl-bold.ttf)}'
-           '*{font-family:fr}body{direction:rtl;text-align:right;color:#2a2416;font-size:14pt}'
-           '.hd{text-align:center;border-bottom:2px solid #9c7a2e;padding-bottom:8px;margin-bottom:6px}'
-           '.k{color:#9c7a2e;font-size:12pt;font-weight:bold}h1{font-size:26pt;margin:2px 0;color:#3b357a}.g{font-size:13pt;color:#6b6249}'
-           'h2{font-size:15pt;color:#7a5a12;margin:14px 0 4px;border-bottom:1px solid #e0d4b0}'
-           'table{width:100%;border-collapse:collapse}td{padding:7px 4px;border-bottom:1px solid #eee5cc;vertical-align:top}'
-           '.bx{width:26px}.sq{width:15px;height:15px;border:1.6px solid #3b357a;margin-top:3px}'
-           '.tm{width:52px;font-weight:bold;color:#3b357a;font-size:14pt}.tx b{font-size:14pt}.sb{font-size:12pt;color:#6b6249}'
-           '.none{text-align:center;color:#6b6249;margin-top:30px}.ft{margin-top:18px;font-size:10pt;color:#9a9080;text-align:center}')
-    story = _pm.Story(html=html_, user_css=css, archive=_pm.Archive(STATIC))
+    # מאיר: "תמיד שזה יהיה הדפסה רק על דף אחד — שזה יצטמצם אם יש הרבה ויהיה גדול אם יש קצת" —
+    # מחפשים את גודל האותיות הגדול ביותר (פי 0.35 עד פי 1.9) שעוד נכנס בעמוד אחד
+    def css_(k):
+        f = lambda pt: '%.1fpt' % (pt * k)
+        px = lambda v: '%.1fpx' % (v * k)
+        return ('@font-face{font-family:fr;src:url(frankruhl-regular.ttf)}@font-face{font-family:fr;font-weight:bold;src:url(frankruhl-bold.ttf)}'
+                '*{font-family:fr}body{direction:rtl;text-align:right;color:#2a2416;font-size:%s}' % f(14) +
+                '.hd{text-align:center;border-bottom:2px solid #9c7a2e;padding-bottom:%s;margin-bottom:%s}' % (px(8), px(6)) +
+                '.k{color:#9c7a2e;font-size:%s;font-weight:bold}h1{font-size:%s;margin:2px 0;color:#3b357a}.g{font-size:%s;color:#6b6249}' % (f(12), f(26), f(13)) +
+                'h2{font-size:%s;color:#7a5a12;margin:%s 0 %s;border-bottom:1px solid #e0d4b0}' % (f(15), px(14), px(4)) +
+                'table{width:100%%;border-collapse:collapse}td{padding:%s 4px;border-bottom:1px solid #eee5cc;vertical-align:top}' % px(7) +
+                '.bx{width:%s}.sq{width:%s;height:%s;border:1.6px solid #3b357a;margin-top:%s}' % (px(26), px(15), px(15), px(3)) +
+                '.tm{font-weight:bold;color:#3b357a;font-size:%s}.tx b{font-size:%s}.sb{font-size:%s;color:#6b6249}' % (f(14), f(14), f(12)) +
+                '.none{text-align:center;color:#6b6249;margin-top:30px}.ft{margin-top:%s;font-size:%s;color:#9a9080;text-align:center}' % (px(18), f(10)))
+    arch = _pm.Archive(STATIC)
+    mb = _pm.paper_rect('a4')
+    where = mb + (36, 36, -36, -36)
+
+    def fits(k):
+        st = _pm.Story(html=html_, user_css=css_(k), archive=arch)
+        more, _ = st.place(where)
+        return not more
+    lo, hi = 0.35, 1.9
+    if fits(hi):
+        k = hi
+    else:
+        for _ in range(9):
+            mid = (lo + hi) / 2
+            if fits(mid): lo = mid
+            else: hi = mid
+        k = lo
+    story = _pm.Story(html=html_, user_css=css_(k), archive=arch)
     buf = io.BytesIO()
     wr = _pm.DocumentWriter(buf)
-    mb = _pm.paper_rect('a4')
-    where = mb + (40, 40, -40, -40)
-    more = True
-    while more:
-        dev = wr.begin_page(mb)
-        more, _ = story.place(where)
-        story.draw(dev)
-        wr.end_page()
+    dev = wr.begin_page(mb)
+    story.place(where)
+    story.draw(dev)
+    wr.end_page()
     wr.close()
     return buf.getvalue()
 
