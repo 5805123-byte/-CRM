@@ -5148,6 +5148,15 @@ def ensure_schema():
                 print('  repeat granitzki: ההודעה שלו לא נמצאה')
             con.execute("INSERT INTO seed_flags(name) VALUES('repeat_granitzki_v1')")
             con.commit()
+        # מאיר: "למה יש כל כך הרבה פעמים אותו דבר?" — לכל מספר נשארת רק ההודעה החוזרת האחרונה שהוגדרה
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='repeat_dedupe_v1'").fetchone():
+            _n = 0
+            for rp in con.execute("SELECT id FROM ym_repeat WHERE active=1 ORDER BY id DESC").fetchall():
+                if con.execute("SELECT active FROM ym_repeat WHERE id=?", (rp['id'],)).fetchone()['active']:
+                    _n += ym_repeat_dedupe(con, rp['id'])
+            print('  הודעות חוזרות כפולות שהופסקו:', _n)
+            con.execute("INSERT INTO seed_flags(name) VALUES('repeat_dedupe_v1')")
+            con.commit()
         # מאיר (3.11.2026): "כל בוקר זה אמור להתקשר אליו בעשר בבוקר עד שהוא מסדר את החוב" — 10:00 במקום 12:00
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='repeat_granitzki_10_v1'").fetchone():
             for rp in con.execute("SELECT DISTINCT r.id FROM ym_repeat r JOIN ym_msg m ON m.job=r.job WHERE r.active=1 "
@@ -18762,6 +18771,26 @@ def ym_repeat_rows(con):
     return out
 
 
+def ym_repeat_dedupe(con, keep_id):
+    """מאיר: "למה יש כל כך הרבה פעמים אותו דבר?" — הודעה חוזרת חדשה לאותם מספרים מחליפה את הקודמות
+    (אחרת אותו אדם מקבל כמה שיחות כל יום). מחזיר כמה הופסקו."""
+    def phones(job):
+        return frozenset(re.sub(r'\D', '', x['phone'] or '')[-9:] for x in con.execute(
+            "SELECT phone FROM ym_msg WHERE job=? AND COALESCE(retry_of,0)=0", (job,)) if re.sub(r'\D', '', x['phone'] or ''))
+    k = con.execute("SELECT * FROM ym_repeat WHERE id=?", (keep_id,)).fetchone()
+    if not k:
+        return 0
+    ps = phones(k['job'])
+    if not ps:
+        return 0
+    n = 0
+    for r in con.execute("SELECT id,job FROM ym_repeat WHERE active=1 AND id<>?", (keep_id,)).fetchall():
+        if phones(r['job']) == ps:
+            con.execute("UPDATE ym_repeat SET active=0 WHERE id=?", (r['id'],))
+            n += 1
+    return n
+
+
 def ym_repeat_scan():
     con = db()
     try:
@@ -26231,6 +26260,7 @@ class H(BaseHTTPRequestHandler):
                     tx = ''                       # לא שונה — נשאר הנוסח המקורי (עם השם של כל נמען)
                 con.execute("INSERT INTO ym_repeat(job,cal,day,at,only_open,active,created,next_run,freq,text) VALUES(?,?,?,?,?,1,?,?,?,?)",
                             (jid, cal, day, at, 1 if b.get('only_open', 1) else 0, now_iso(), nxt, freq, tx[:2000]))
+                ym_repeat_dedupe(con, con.execute("SELECT last_insert_rowid()").fetchone()[0])
                 con.commit()
             finally:
                 con.close()
@@ -27222,6 +27252,7 @@ class H(BaseHTTPRequestHandler):
                     rep_next = ym_repeat_next(cal_, day_, at_, first + datetime.timedelta(minutes=5))
                 con.execute("INSERT INTO ym_repeat(job,cal,day,at,only_open,active,created,next_run,freq) VALUES(?,?,?,?,1,1,?,?,?)",
                             (jid, cal_, day_, at_, now_iso(), rep_next, b['repeat']))
+                ym_repeat_dedupe(con, con.execute("SELECT last_insert_rowid()").fetchone()[0])
             con.commit(); con.close()
             if not sat:
                 import threading as _thr
