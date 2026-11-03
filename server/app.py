@@ -29906,7 +29906,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             # ↩️ מאיר: "אם אני רוצה לבטל חיוב של מישהו שעשיתי בטעות או להחזיר לו חלק מהכסף — שאוכל
             # לעשות את זה בכרטיס שלו אצלנו". ביטול (לפני שהחיוב נסגר) או החזר מלא/חלקי לכרטיס
-            out = bq_refund(int(m.group(1)), b.get('amount'), str(b.get('reason') or '').strip()[:200])
+            out = bq_refund(int(m.group(1)), b.get('amount'), str(b.get('reason') or '').strip()[:200], notify=bool(b.get('notify')))
             if out.get('ok'):
                 bump_data()
             return self._send(200, out)
@@ -31459,7 +31459,7 @@ def bq_sched_set_pm(con, row, pm):
     return new_id, 'נפתחה הוראה על הכרטיס החדש, אבל הישנה לא הושהתה — השהה אותה ידנית כדי שלא יהיה חיוב כפול', ''
 
 
-def bq_refund(tx_id, amount=None, reason=''):
+def bq_refund(tx_id, amount=None, reason='', notify=False):
     """ביטול / החזר של עסקת בנק ווסט, ועדכון התרומה בכרטיס התורם. עסקה שעוד לא נסגרה ומוחזרת
     במלואה — מבוטלת (void, בלי עמלה); אחרת — החזר לכרטיס (refund), גם חלקי."""
     import banquest as _bq
@@ -31522,8 +31522,42 @@ def bq_refund(tx_id, amount=None, reason=''):
         if t['donor_id']:
             con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,?,?,'')",
                         (t['donor_id'], today_iso(), 'בנק ווסט', '↩️ %s מתוך $%s (חיוב %d)%s' % (what, format(total, ',.2f'), ref, (' — ' + reason) if reason else '')))
+        # 📧 מאיר: "צריך להגדיר שחיים הרשקוביץ יקבל אימייל על הביטול שאעשה לו אצלנו" — מייל קצר באנגלית לתורם
+        sent_to, mail_err = '', ''
+        if notify:
+            d0 = con.execute("SELECT first,last,english,email FROM donors WHERE id=?", (t['donor_id'],)).fetchone() if t['donor_id'] else None
+            to = (t['email'] or '').strip() or ((d0['email'] or '').split(',')[0].strip() if d0 else '')
+            if to and '@' in to:
+                nm = ((d0['english'] if d0 else '') or t['name'] or '').strip()
+                try:
+                    cdt = datetime.date.fromisoformat(str(t['created'] or '')[:10]).strftime('%B %d, %Y')
+                except ValueError:
+                    cdt = str(t['created'] or '')[:10]
+                card = re.sub(r'\D', '', str(t['card'] or ''))[-4:]
+                body = ('Dear %s,\n\n' % (nm.split(' ')[0] if nm else 'Friend') +
+                        'As you requested, we have %s $%s to your credit card%s, for the charge of %s.\n'
+                        % ('cancelled the charge of' if kind == 'void' else 'refunded', format(amt, ',.2f'),
+                           (' ending in ' + card) if card else '', cdt) +
+                        'It usually appears on your card statement within a few business days.\n\n'
+                        'Thank you for your continued support of the Torah learning at Chatzos.\n\n'
+                        'Kollel Chatzos Eretz Yisroel\nchatzot18@gmail.com · 1-646-403-3750')
+                try:
+                    import mailer
+                    if mailer.configured():
+                        mailer.send(to, 'Kollel Chatzos — refund to your card ($%s)' % format(amt, ',.2f'), body, rtl=False)
+                        sent_to = to
+                        if t['donor_id']:
+                            con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,?,?,'')",
+                                        (t['donor_id'], today_iso(), 'אימייל', '📧 נשלח לו מייל על הזיכוי של $%s (אל %s)' % (format(amt, ',.2f'), to)))
+                    else:
+                        mail_err = 'המייל לא מוגדר במערכת'
+                except Exception as e:
+                    mail_err = str(e)[:120]
+            else:
+                mail_err = 'אין לו כתובת מייל'
         con.commit()
-        return {'ok': True, 'kind': kind, 'amount': amt, 'left': round(total - newdone, 2), 'warn': warn}
+        return {'ok': True, 'kind': kind, 'amount': amt, 'left': round(total - newdone, 2), 'warn': warn,
+                'mailed': sent_to, 'mail_err': mail_err}
     finally:
         con.close()
 

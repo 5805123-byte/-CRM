@@ -19426,9 +19426,18 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   const amt=amtNum(v); if(!amt||amt>left+0.005){toast('אפשר להחזיר עד '+bqMoney(left));return;}
   const full=Math.abs(amt-left)<0.005;
   const why=(await uiPrompt('סיבה (לא חובה) — נרשמת ביומן של התורם:',full?'חיוב בטעות':''))||'';
-  if(!await uiConfirm((full?(unsettled?'לבטל את כל החיוב של ':'להחזיר את כל החיוב של '):'להחזיר ל')+who+' '+bqMoney(amt)+(full?'':' מתוך '+bqMoney(left))+'?\nהכסף חוזר לכרטיס שלו'+(b.dataset.card?' ('+b.dataset.card+')':'')+'. התרומה בכרטיס אצלנו '+(full?'תימחק':'תוקטן')+' בהתאם.','↩️ כן, '+(full?'לבטל':'להחזיר'),'ביטול'))return;
+  // 📧 מאיר: "שיקבל אימייל על הביטול" — אפשר לשלוח לתורם מייל קצר באנגלית יחד עם הזיכוי
+  let notify=false;
+  {const o=document.createElement('div');o.className='confirmov';
+    o.innerHTML=`<div class="confirmbox"><div class="cm">${esc((full?(unsettled?'לבטל את כל החיוב של ':'להחזיר את כל החיוב של '):'להחזיר ל')+who+' '+bqMoney(amt)+(full?'':' מתוך '+bqMoney(left))+'?')}<br><small>הכסף חוזר לכרטיס שלו${b.dataset.card?' ('+esc(b.dataset.card)+')':''}. התרומה בכרטיס אצלנו ${full?'תימחק':'תוקטן'} בהתאם.</small></div>
+      <label class="gvall"><input type="checkbox" id="rf_mail"> 📧 לשלוח לו מייל באנגלית שהכסף הוחזר לכרטיס</label>
+      <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">↩️ כן, ${full?'לבטל':'להחזיר'}</button></div></div>`;
+    document.body.appendChild(o);
+    const ok=await new Promise(res=>{o.querySelector('.cno').onclick=()=>res(false);o.querySelector('.cyes').onclick=()=>res(true);});
+    notify=o.querySelector('#rf_mail').checked;o.remove();if(!ok)return;}
   b.disabled=true;b.textContent='שולח לבנק ווסט…';
-  const r=await api('POST','/api/bq/tx/'+b.dataset.tx+'/refund',{amount:amt,reason:why.trim()});
+  const r=await api('POST','/api/bq/tx/'+b.dataset.tx+'/refund',{amount:amt,reason:why.trim(),notify:notify?1:0});
+  if(r&&r.ok&&notify)setTimeout(()=>toast(r.mailed?'📧 נשלח לו מייל ('+r.mailed+')':'📧 המייל לא נשלח: '+(r.mail_err||'')),1800);
   if(!r||!r.ok){b.disabled=false;b.textContent=b.classList.contains('bqrefmini')?'↩︎':'↩️ ביטול / החזר';await uiAlert('לא בוצע:\n'+((r&&r.error)||'שגיאה'));return;}
   toast(r.kind==='void'?'↩️ החיוב בוטל ✓':'↩️ הוחזרו '+bqMoney(r.amount)+' לכרטיס ✓');
   if(r.warn)await uiAlert(r.warn);
