@@ -3068,7 +3068,7 @@ async function mkSelfGroupOpen(){
     <div data-tp="set">
       <div style="display:flex;gap:10px;align-items:center;margin:8px 0;font-weight:800;font-size:1.05rem"><input type="checkbox" id="sgon" style="width:22px;height:22px;flex:none" ${C.enabled?'checked':''}><label for="sgon" style="cursor:pointer">השלוחה פתוחה למתקשרים</label></div>
       <div class="mksec">🔄 הקבוצות</div>
-      <div class="mksub" style="margin:-2px 2px 8px"><b>אפשר לעבור אליה</b> — מופיעה בתפריט בטלפון (עד 9, בסדר הזה). <b>נעולה</b> — מי שנמצא בה לא יכול להחליף קבוצה בטלפון. בשדה — איך השם יוקרא.</div>
+      <div class="mksub" style="margin:-2px 2px 8px"><b>אפשר לעבור אליה</b> — מופיעה בתפריט בטלפון, בסדר הזה (1, 2, 3… — גם 10 ומעלה; מקישים את המספר וסולמית). <b>נעולה</b> — מי שנמצא בה לא יכול להחליף קבוצה בטלפון. בשדה — איך השם יוקרא.</div>
       <div class="mklist">${r.groups.map(g=>`<div class="mkrow" style="grid-template-columns:1fr auto auto;cursor:default;gap:12px;align-items:center">
           <div><b><span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g.name)}${g.price!=null?' <small style="color:#777">'+esc(mkNis(g.price))+'</small>':''}</b>
             <input data-say="${esc(g.id)}" value="${esc(g.say)}" title="איך השם יוקרא בטלפון" placeholder="השם בטלפון" style="margin-top:6px"></div>
@@ -3138,7 +3138,6 @@ async function mkSelfGroupOpen(){
       cancel_on:document.getElementById('pccancel').checked,credit_down:document.getElementById('pccredit').checked,say_prices:document.getElementById('pcsay').checked,
       erech_groups:[...rs.querySelectorAll('[data-eg]')].filter(x=>x.checked).map(x=>x.dataset.eg)};
     if(body.pay_methods.some(m=>m!=='debt')&&!body.nd_mosad){uiAlert('לתשלום באשראי / הוראת קבע צריך לבחור קופת נדרים פלוס');return;}
-    if(body.groups.length>9){uiAlert('אפשר עד 9 קבוצות (מקש אחד לכל קבוצה)');return;}
     const r2=await api('POST','/api/mikveh/selfgroup',body).catch(()=>null);
     if(!r2||!r2.ok){uiAlert('⚠️ '+((r2&&r2.error)||'לא נשמר'));return;}
     toast('✓ נשמר');mkSelfGroupOpen();};

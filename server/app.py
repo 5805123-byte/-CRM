@@ -27127,7 +27127,7 @@ class H(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     return d
                 return max(lo, min(hi, v))
-            gs = [str(x) for x in (b.get('groups') or []) if str(x) in known][:9]
+            gs = [str(x) for x in (b.get('groups') or []) if str(x) in known][:97]
             say = {str(k): str(v).strip()[:60] for k, v in (b.get('say') or {}).items() if str(k) in known and str(v).strip()}
             cfg = {'enabled': bool(b.get('enabled')), 'groups': gs, 'max': int(num('max', 0, 99, 1)),
                    'days': int(num('days', 1, 366, 30)), 'say': say,
@@ -35121,8 +35121,9 @@ MKG_DEFAULT = {'enabled': False, 'groups': [], 'max': 1, 'days': 30, 'say': {}, 
 MK_TEXTS = [
     # (מפתח, שלוחה, תיאור, ברירת מחדל)
     ('hello', 'grp', 'פתיחה — הקבוצה הנוכחית', 'שלום {name}, אתם כעת בקבוצה {group}'),
-    ('option', 'grp', 'אפשרות בתפריט (בלי מחיר)', 'למעבר לקבוצה {group} הקישו {n}'),
-    ('option_price', 'grp', 'אפשרות בתפריט (עם המחיר לחודש)', 'למעבר לקבוצה {group}, {price} שקלים לחודש, הקישו {n}'),
+    ('choose', 'grp', 'לפני רשימת הקבוצות', 'נא בחרו את הקבוצה הרצויה, והקישו סולמית לסיום'),
+    ('option', 'grp', 'אפשרות בתפריט (בלי מחיר)', 'לקבוצה {group} הקישו {n}'),
+    ('option_price', 'grp', 'אפשרות בתפריט (עם המחיר לחודש)', 'לקבוצה {group}, {price} שקלים לחודש, הקישו {n}'),
     ('quote_pay', 'grp', 'הצעת מחיר — יש הפרש לתשלום', 'המעבר לקבוצה {group} עולה {price} שקלים לחודש. נשארו לכם {days} ימים במנוי, ולכן ההפרש לתשלום הוא {amount} שקלים. לאישור הקישו 1, לביטול הקישו 2'),
     ('quote_credit', 'grp', 'הצעת מחיר — מגיע זיכוי', 'במעבר לקבוצה {group} תקבלו זיכוי של {amount} שקלים ביתרה הזמנית, על {days} הימים שנשארו לכם במנוי. שימו לב, את המעבר הזה אי אפשר לבטל. לאישור הקישו 1, לביטול הקישו 2'),
     ('pay_keva', 'grp', 'תשלום — הוראת קבע', 'לתשלום מהוראת הקבע בכרטיס המסתיים בספרות {last4} הקישו {n}'),
@@ -35134,7 +35135,7 @@ MK_TEXTS = [
     ('done_debt', 'grp', 'הועבר עם חוב', 'הועברתם לקבוצה {group}. נרשם לכם חוב של {amount} שקלים, ואפשר לשלם אותו במכונה של המקווה באשראי או במזומן. כל עוד החוב לא שולם, אפשר לבטל את המעבר בשלוחה הזו'),
     ('not_member', 'grp', 'הקבוצה רק לחברי קהילה', 'המעבר לקבוצות האלה מיועד לחברי הקהילה בלבד. לפרטים אנא פנו למשרד'),
     ('done_credit', 'grp', 'הועבר עם זיכוי', 'הועברתם לקבוצה {group}. זיכינו אתכם על סך {amount} שקלים ביתרה הזמנית. תודה רבה'),
-    ('cancel_offer', 'grp', 'הצעה לבטל מעבר שלא שולם', 'יש לכם מעבר לקבוצה {group} שעדיין לא שולם. לביטול המעבר וחזרה לקבוצה {old} הקישו 9'),
+    ('cancel_offer', 'grp', 'הצעה לבטל מעבר שלא שולם', 'יש לכם מעבר לקבוצה {group} שעדיין לא שולם. לביטול המעבר וחזרה לקבוצה {old} הקישו {n}'),
     ('cancel_done', 'grp', 'המעבר בוטל', 'המעבר בוטל. חזרתם לקבוצה {old} והחוב נמחק. תודה רבה'),
     ('paid_fail', 'grp', 'שולם אבל המעבר נכשל', 'התשלום התקבל, אבל הקבוצה לא שונתה. המשרד יטפל בזה בהקדם'),
     ('end_opt', 'grp', 'סיום התפריט', 'לסיום הקישו 0'),
@@ -35412,27 +35413,13 @@ def mkg_ivr(P):
                         undo = lr
                 except Exception:
                     pass
-        if undo and P.get('Grp') == '9':
-            try:
-                _mk.set_group(cid, undo['from_gid'])
-                if str(_mk.client(cid).get('groupId')) != str(undo['from_gid']):
-                    raise RuntimeError('המקווה לא עדכן את הקבוצה')
-                _mk.delete_debt(undo['debt_id'])
-            except Exception as e:
-                print('  mkg undo error:', e)
-                return msg('error')
-            con.execute("UPDATE mkg_log SET ok=0, status='cancelled' WHERE id=?", (undo['id'],))
-            con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                        (cid, now_iso(), 'group', '↩️ ביטל בטלפון את המעבר: חזר ל%s, והחוב ₪%g נמחק' % (undo['from_name'], undo['amount'] or 0)))
-            con.commit()
-            return msg('cancel_done', old=mkg_say(cfg, undo['from_gid'], undo['from_name']))
         opts = [g for g in allowed if g != cur]
         mgs = set(cfg.get('member_groups') or [])
         if mgs & set(opts) and not mkg_member(con, c, cfg):
             opts = [g for g in opts if g not in mgs]
             if not opts and not undo:
                 return msg('not_member')
-        opts = opts[:8]
+        opts = opts[:97]
         if not opts and not undo:
             return msg('no_target')
         used, left = mkg_used(con, cid, cfg.get('days') or 30)
@@ -35448,9 +35435,8 @@ def mkg_ivr(P):
             if P.get('Req') != '1':
                 return msg('bye')
             if 'Grp' not in P:
-                parts = [T('req_option', group=mkg_say(cfg, g, gr[g]['name']), n=i) for i, g in enumerate(opts, 1)] + [T('end_opt')]
-                return ('read=t-' + _ivr_t(', '.join(parts)) + '=Grp,no,1,1,10,NO,yes,no,,0' +
-                        ''.join(str(i) for i in range(1, len(opts) + 1)) + ',2,,,,no')
+                parts = [T('choose')] + [T('req_option', group=mkg_say(cfg, g, gr[g]['name']), n=i) for i, g in enumerate(opts, 1)] + [T('end_opt')]
+                return 'read=t-' + _ivr_t(', '.join(parts)) + '=Grp,no,2,1,15,NO,yes,no,,,2,,,,no'
             try:
                 v = int(P.get('Grp') or 0)
             except ValueError:
@@ -35468,19 +35454,34 @@ def mkg_ivr(P):
             return msg('req_done')
         if over:
             opts = []
+        if undo and P.get('Grp') == str(len(opts) + 1):
+            try:
+                _mk.set_group(cid, undo['from_gid'])
+                if str(_mk.client(cid).get('groupId')) != str(undo['from_gid']):
+                    raise RuntimeError('המקווה לא עדכן את הקבוצה')
+                _mk.delete_debt(undo['debt_id'])
+            except Exception as e:
+                print('  mkg undo error:', e)
+                return msg('error')
+            con.execute("UPDATE mkg_log SET ok=0, status='cancelled' WHERE id=?", (undo['id'],))
+            con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                        (cid, now_iso(), 'group', '↩️ ביטל בטלפון את המעבר: חזר ל%s, והחוב ₪%g נמחק' % (undo['from_name'], undo['amount'] or 0)))
+            con.commit()
+            return msg('cancel_done', old=mkg_say(cfg, undo['from_gid'], undo['from_name']))
         if 'Grp' not in P:
-            parts = [T('hello', name=first, group=mkg_say(cfg, cur, gr[cur]['name']))]
-            if undo:
-                parts.append(T('cancel_offer', group=mkg_say(cfg, cur, gr[cur]['name']), old=mkg_say(cfg, undo['from_gid'], undo['from_name'])))
+            # מאיר: "למה רק עד 9 מקשים? שיהיה 10 וכו' ויצטרכו להקיש סולמית" — מספר של עד 2 ספרות + סולמית
+            parts = [T('hello', name=first, group=mkg_say(cfg, cur, gr[cur]['name'])), T('choose')]
             for i, g in enumerate(opts, 1):
                 pr = gr[g].get('price')
                 if cfg.get('say_prices', True) and pr and not mkg_is_erech(cfg, g, gr[g]['name']):
                     parts.append(T('option_price', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % pr, n=i))
                 else:
                     parts.append(T('option', group=mkg_say(cfg, g, gr[g]['name']), n=i))
+            if undo:
+                parts.append(T('cancel_offer', group=mkg_say(cfg, cur, gr[cur]['name']), old=mkg_say(cfg, undo['from_gid'], undo['from_name']),
+                               n=len(opts) + 1))
             parts.append(T('end_opt'))
-            digs = '0' + ''.join(str(i) for i in range(1, len(opts) + 1)) + ('9' if undo else '')
-            return 'read=t-' + _ivr_t(', '.join(parts)) + '=Grp,no,1,1,10,NO,yes,no,,' + digs + ',2,,,,no'
+            return 'read=t-' + _ivr_t(', '.join(parts)) + '=Grp,no,2,1,15,NO,yes,no,,,2,,,,no'
         try:
             v = int(P.get('Grp') or 0)
         except ValueError:
