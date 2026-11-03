@@ -1843,50 +1843,78 @@ async function mkUnpaidOpen(start){
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='נכנס ולא שילם.csv';document.body.appendChild(a);a.click();a.remove();};
   if(r.running||start)setTimeout(()=>{if(document.getElementById('remov').classList.contains('show')&&rs.querySelector('h2')&&rs.querySelector('h2').textContent==='נכנס ולא שילם')mkUnpaidOpen();},2500);}
 let MKREQ=null;
+// 📥 מאיר: "בפניות צריך לראות את כל הפרטים המלאים מנדרים פלוס, וכפתורים לעדכון… הכל באופן מפורט"
+const MKRQ_ST={new:['🆕 חדשה','#e74c3c'],wip:['⏳ בטיפול','#e67e22'],done:['✓ טופלה','#27ae60'],rejected:['✗ נדחתה','#7f8c8d']};
+let MKRQ_F='open';
 async function mkReqOpen(sync=true){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
-  const paint=(msg)=>{const R=(MKREQ&&MKREQ.rows)||[], nw=R.filter(x=>x.status!=='done'), dn=R.filter(x=>x.status==='done');
+  const paint=(msg)=>{const R=(MKREQ&&MKREQ.rows)||[];
+    const cnt={open:R.filter(x=>x.status==='new'||x.status==='wip').length,new:R.filter(x=>x.status==='new').length,wip:R.filter(x=>x.status==='wip').length,
+      done:R.filter(x=>x.status==='done').length,rejected:R.filter(x=>x.status==='rejected').length,all:R.length};
+    const L=R.filter(x=>MKRQ_F==='all'||(MKRQ_F==='open'?(x.status==='new'||x.status==='wip'):x.status===MKRQ_F));
     const dt=s=>s?String(s).slice(8,10)+'/'+String(s).slice(5,7)+'/'+String(s).slice(0,4)+' '+String(s).slice(11,16):'';
     const wa=p=>'https://wa.me/972'+String(p).replace(/\D/g,'').replace(/^0/,'');
     const cli=x=>{const d=String(x.phone||'').replace(/\D/g,'');return d.length>=9&&MK&&MK.ok?MK.clients.find(c=>String(c.phone||'').replace(/\D/g,'').endsWith(d.slice(-9))):null;};
-    const card=x=>{const c=cli(x);return `<div class="mkrow" style="grid-template-columns:1fr;cursor:default;${x.status==='done'?'opacity:.7':''}">
-      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${esc(((x.first||'')+' '+(x.last||'')).trim()||'—')}</b><span class="mksub">${esc(dt(x.at))}${x.form_no?' · טופס '+esc(x.form_no):''}</span></div>
-      ${x.phone?`<div class="mksub"><span dir="ltr">${esc(x.phone)}</span></div>`:''}
-      <div style="white-space:pre-wrap;margin:6px 0;line-height:1.5">${esc(x.text||'')}</div>
-      ${x.note?`<div class="mksub">📝 ${esc(x.note)}</div>`:''}
-      <div style="display:flex;gap:6px;flex-wrap:wrap">${x.phone?`<a class="btn sm" href="tel:${esc(x.phone)}">📞 חיוג</a><a class="btn sm ghost" href="${wa(x.phone)}" target="_blank" rel="noopener">💬 וואטסאפ</a>`:''}
-        ${c?`<button class="btn sm ghost" data-rqc="${esc(c.id)}">🛁 כרטיס במקווה</button><button class="btn sm ghost" data-rqm="${esc(c.id)}">✉️ לשלוח הודעה</button>`:''}
-        <button class="btn sm ghost" data-rqn="${esc(x.id)}">📝 הערה</button>
-        <button class="btn sm ${x.status==='done'?'ghost':''}" data-rqd="${esc(x.id)}" data-v="${x.status==='done'?'new':'done'}">${x.status==='done'?'↩️ להחזיר לחדשות':'✓ טופל'}</button></div></div>`;};
+    const card=x=>{const c=cli(x),st=MKRQ_ST[x.status]||MKRQ_ST.new,D=x.details||[];
+      const btn=(v,t,cls)=>x.status===v?'':`<button class="btn sm ${cls||'ghost'}" data-rqs="${esc(x.id)}" data-v="${v}">${t}</button>`;
+      return `<div class="mkrow" style="grid-template-columns:1fr;cursor:default;border-inline-start:4px solid ${st[1]};${x.status==='done'||x.status==='rejected'?'opacity:.8':''}">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><b style="font-size:1.05rem">${esc(((x.first||'')+' '+(x.last||'')).trim()||'—')}</b>
+        <span style="background:${st[1]};color:#fff;border-radius:12px;padding:1px 10px;font-size:.8rem;font-weight:700">${st[0]}</span></div>
+      <div class="mksub" style="display:flex;gap:10px;flex-wrap:wrap">${x.phone?`<span dir="ltr">📞 ${esc(x.phone)}</span>`:''}<span>🕒 ${esc(dt(x.at))}</span>${x.kind?`<span>🏷️ ${esc(x.kind)}</span>`:''}${x.form_no?`<span>#${esc(x.form_no)}</span>`:''}<span>מקור: ${esc(x.via||'')}</span>${x.handled_at?`<span>טופל ${esc(dt(x.handled_at))}</span>`:''}</div>
+      ${x.text?`<div style="white-space:pre-wrap;margin:8px 0;line-height:1.6;background:#f7f9fc;border-radius:8px;padding:8px 10px">${esc(x.text)}</div>`:''}
+      ${D.length?`<details ${x.status==='new'||x.status==='wip'?'open':''} style="margin:4px 0"><summary class="mksub" style="cursor:pointer;font-weight:700">🗂️ כל הפרטים מנדרים פלוס (${D.length})</summary>
+        <table class="tbl" style="font-size:.85rem;margin-top:6px;width:100%">${D.map(d=>`<tr><th style="text-align:start;white-space:nowrap;width:1%;color:#555">${esc(d.label)}</th><td style="white-space:pre-wrap">${esc(d.value)}</td></tr>`).join('')}</table></details>`
+        :(x.via&&/API/.test(x.via)?'<div class="mksub">הפרטים המלאים יימשכו מנדרים בבדיקה הבאה</div>':'')}
+      ${x.note?`<div class="mksub" style="margin:4px 0">📝 <b>הערה:</b> ${esc(x.note)}</div>`:''}
+      ${(x.hist||[]).length?`<details style="margin:4px 0"><summary class="mksub" style="cursor:pointer">📜 היסטוריה (${x.hist.length})</summary>${x.hist.slice().reverse().map(h=>`<div class="mksub">${esc(dt(h.at))} · ${esc(h.what)}</div>`).join('')}</details>`:''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+        ${btn('wip','⏳ בטיפול')}${btn('done','✓ טופל','')}${btn('rejected','✗ נדחה')}${x.status!=='new'?btn('new','↩️ להחזיר לחדשה'):''}
+        <button class="btn sm ghost" data-rqn="${esc(x.id)}">📝 ${x.note?'לערוך הערה':'הערה'}</button>
+        ${x.phone?`<a class="btn sm ghost" href="tel:${esc(x.phone)}">📞 חיוג</a><a class="btn sm ghost" href="${wa(x.phone)}" target="_blank" rel="noopener">💬 וואטסאפ</a>`:''}
+        ${c?`<button class="btn sm ghost" data-rqc="${esc(c.id)}">🛁 כרטיס במקווה</button><button class="btn sm ghost" data-rqm="${esc(c.id)}">✉️ לשלוח הודעה</button>`:(x.phone?'<span class="mksub">לא נמצא לקוח במקווה עם הטלפון הזה</span>':'')}</div></div>`;};
+    const F=[['open','לטיפול'],['new','חדשות'],['wip','בטיפול'],['done','טופלו'],['rejected','נדחו'],['all','הכל']];
     rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📥</div><div><h2>פניות</h2>
-        <div class="mksub">טופסי פניות מנדרים פלוס (סוג הפניה: מקווה) · מהמייל ${esc((MKREQ&&MKREQ.box)||'')}${MKREQ&&MKREQ.last&&MKREQ.last.at?' · נבדק '+esc(MKREQ.last.at.slice(11))+(MKREQ.last.new?' · '+MKREQ.last.new+' חדשות':''):''}</div>
-        ${MKREQ&&MKREQ.last&&MKREQ.last.error?`<div class="mksub" style="color:#c0392b;font-weight:700">⚠️ הבדיקה במייל נכשלה: ${esc(MKREQ.last.error==='not_configured'?'אין חיבור למייל ב-Render (MIKVEH_MAIL_USER + MIKVEH_MAIL_PASS, או GMAIL_USER + GMAIL_APP_PASSWORD)':MKREQ.last.error)}</div>`:''}
+        <div class="mksub">טופס הפניות בנדרים פלוס${MKREQ&&MKREQ.box?' · '+esc(MKREQ.box):''}${MKREQ&&MKREQ.last&&MKREQ.last.at?' · נבדק '+esc(MKREQ.last.at.slice(11))+(MKREQ.last.new?' · '+MKREQ.last.new+' חדשות':''):''}</div>
+        ${MKREQ&&MKREQ.last&&MKREQ.last.error?`<div class="mksub" style="color:#c0392b;font-weight:700">⚠️ הבדיקה נכשלה: ${esc(MKREQ.last.error==='not_configured'?'אין חיבור למייל ב-Render (MIKVEH_MAIL_USER + MIKVEH_MAIL_PASS, או GMAIL_USER + GMAIL_APP_PASSWORD)':MKREQ.last.error)}</div>`:''}
         ${msg?`<div class="mksub">${msg}</div>`:''}</div></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm ghost" id="rqsync">🔄 לבדוק עכשיו</button><button class="btn sm ghost" id="rqapi">⚙️ חיבור ישיר לנדרים פלוס (בלי מייל)</button></div>
-      <div class="mksec" style="margin-top:10px">🆕 חדשות (${nw.length})</div><div class="mklist">${nw.map(card).join('')||'<div class="hintxt">אין פניות חדשות</div>'}</div>
-      ${dn.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">✓ טופלו (${dn.length})</summary><div class="mklist">${dn.map(card).join('')}</div></details>`:''}`;
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm ghost" id="rqsync">🔄 לבדוק עכשיו</button><button class="btn sm ghost" id="rqapi">⚙️ חיבור ושמות השדות</button></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${F.map(([k,t])=>`<button class="btn sm ${MKRQ_F===k?'':'ghost'}" data-rqf="${k}">${t} (${cnt[k]})</button>`).join('')}</div>
+      <div class="mklist">${L.map(card).join('')||'<div class="hintxt">אין פניות כאן 👍</div>'}</div>`;
     document.getElementById('rx').onclick=()=>{remov.classList.remove('show');if(tab==='mikveh')renderMikveh();};
     document.getElementById('rqsync').onclick=()=>mkReqOpen(true);
     document.getElementById('rqapi').onclick=()=>mkReqApiSetup();
-    rs.querySelectorAll('[data-rqd]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/requests/'+encodeURIComponent(b.dataset.rqd),{status:b.dataset.v});
-      const x=MKREQ.rows.find(z=>z.id===b.dataset.rqd);if(x)x.status=b.dataset.v;MKREQ.new=MKREQ.rows.filter(z=>z.status==='new').length;paint();});
+    rs.querySelectorAll('[data-rqf]').forEach(b=>b.onclick=()=>{MKRQ_F=b.dataset.rqf;paint();});
+    rs.querySelectorAll('[data-rqs]').forEach(b=>b.onclick=async()=>{const v=b.dataset.v;let note=null;
+      if(v==='rejected'){note=await uiPrompt('למה נדחתה? (לא חובה)','');if(note===null)return;}
+      const body={status:v};if(note)body.note=note;
+      const y=await api('POST','/api/mikveh/requests/'+encodeURIComponent(b.dataset.rqs),body).catch(()=>null);
+      if(!y||!y.ok){uiAlert('⚠️ '+((y&&y.error)||'לא נשמר'));return;}
+      const x=MKREQ.rows.find(z=>z.id===b.dataset.rqs);if(x){x.status=v;x.hist=y.hist||x.hist;if(note)x.note=note;if(v==='done'||v==='rejected')x.handled_at=new Date().toISOString();}
+      MKREQ.new=MKREQ.rows.filter(z=>z.status==='new').length;toast(MKRQ_ST[v][0]);paint();mkPendLoad();});
     rs.querySelectorAll('[data-rqn]').forEach(b=>b.onclick=async()=>{const x=MKREQ.rows.find(z=>z.id===b.dataset.rqn);const v=await uiPrompt('הערה לפנייה',x&&x.note||'');if(v===null)return;
-      await api('POST','/api/mikveh/requests/'+encodeURIComponent(b.dataset.rqn),{note:v});if(x)x.note=v;paint();});
+      const y=await api('POST','/api/mikveh/requests/'+encodeURIComponent(b.dataset.rqn),{note:v}).catch(()=>null);if(x){x.note=v;if(y&&y.hist)x.hist=y.hist;}paint();});
     rs.querySelectorAll('[data-rqc]').forEach(b=>b.onclick=()=>{const c=MK.clients.find(z=>z.id===b.dataset.rqc);if(c)mkOpen(c);});
     rs.querySelectorAll('[data-rqm]').forEach(b=>b.onclick=()=>{const c=MK.clients.find(z=>z.id===b.dataset.rqm);if(c)mkNotify(c,'free');});};
   remov.classList.add('show');
   if(!MKREQ||!MKREQ.rows){MKREQ={rows:[],new:0};}
-  paint(sync?'<span class="mkspin"></span> בודק במייל…':'');
+  paint(sync?'<span class="mkspin"></span> בודק בנדרים פלוס…':'');
   if(sync){const s2=await api('POST','/api/mikveh/requests/sync',{}).catch(()=>null);
     const r=await api('GET','/api/mikveh/requests').catch(()=>null);if(r&&r.ok)MKREQ=r;
     paint(s2&&s2.ok===false?'⚠️ '+esc(s2.error==='not_configured'?'המייל לא מחובר — צריך ב-Render את GMAIL_USER (או MIKVEH_MAIL_USER) וסיסמת האפליקציה':s2.error)
-      :(s2&&s2.new?'✓ נוספו '+s2.new+' פניות חדשות':s2&&!s2.busy?'נבדקו '+(s2.scanned||0)+' מיילים מ-90 הימים האחרונים'+(s2.mailbox?' ('+esc(s2.mailbox)+')':'')+' — לא נמצאו פניות חדשות'+((s2.errors||[]).length?' · ⚠️ '+esc(s2.errors[0]):''):''));}}
+      :(s2&&s2.new?'✓ נוספו '+s2.new+' פניות חדשות':s2&&!s2.busy?'✓ נבדק — אין פניות חדשות':''));mkPendLoad();}}
+// 🔔 מאיר: "אמור להופיע בתחילת הממשק שיש פניות לטיפול או בקשות" — פס בראש מסך המקווה
+async function mkPendLoad(){const r=await api('GET','/api/mikveh/pending').catch(()=>null);const el=document.getElementById('mkpend');if(!el||!r||!r.ok)return;
+  const it=[[r.req_new,'פניות חדשות מנדרים','mkpreq'],[r.req_wip,'פניות בטיפול','mkpreq'],[r.grp_new,'בקשות להחלפת קבוצה','mkpgrp'],[r.vm_new,'הודעות מוקלטות שלא נשמעו','mkpvm']].filter(x=>x[0]);
+  if(!it.length){el.innerHTML='';return;}
+  el.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff4e5;border:1px solid #f5c26b;border-radius:12px;padding:10px 14px;margin-bottom:12px">
+    <b style="color:#b9770e">🔔 ממתין לטיפול:</b>${it.map(x=>`<button class="btn sm" data-pg="${x[2]}" style="background:#fff;color:#333;border:1px solid #f5c26b"><b style="color:#c0392b">${x[0]}</b> ${x[1]}</button>`).join('')}</div>`;
+  el.querySelectorAll('[data-pg]').forEach(b=>b.onclick=()=>{const k=b.dataset.pg;if(k==='mkpreq'){MKRQ_F='open';mkReqOpen();}else if(k==='mkpgrp')mkSgReqOpen();else mkVmOpen();});}
 // 📥 מאיר: "לבדוק פניות מנדרים פלוס — לא צריך במייל, אפשר עם ה-API" — טופס הפניות ישירות מנדרים פלוס
 async function mkReqApiSetup(sample){
   const rs=document.getElementById('remsheet');
   const r=await api('GET','/api/mikveh/reqapi').catch(()=>null);if(!r||!r.ok){uiAlert('לא נטען');return;}
   const C=r.cfg, M=Object.assign({},C.map||{});
-  const F=sample&&sample.fields||Object.values(M).filter(Boolean);
+  const F=sample&&sample.fields||[...new Set([...Object.values(M).filter(Boolean),...Object.keys(C.labels||{}),...(r.seen||[])])].sort((a,b)=>(+a.replace(/\D/g,''))-(+b.replace(/\D/g,''))||a.localeCompare(b));
   // ניחוש ראשוני (אם עוד לא נבחר): טלפון = ספרות; סוג הפניה = מופיע "מקווה" / ערכים חוזרים; תוכן = הטקסט הארוך; שמות = מילים קצרות
   if(sample&&sample.rows&&!Object.keys(M).length){const R=sample.rows,val=f=>R.map(x=>String(x[f]||'').trim()),used=new Set();
     const pick=(k,test)=>{const f=F.find(f=>!used.has(f)&&test(val(f)));if(f){M[k]=f;used.add(f);}};
@@ -1908,6 +1936,8 @@ async function mkReqApiSetup(sample){
     ${F.length?`<div class="mksec" style="margin-top:12px">איזה שדה הוא מה</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">${Object.keys(L).map(k=>`<label class="fld"><span>${L[k]}</span>${sel(k)}</label>`).join('')}</div>
       <label class="fld" style="display:block;margin:8px 0"><span>רק פניות שבסוג הפניה מופיע (ריק = כל הפניות בטופס)</span><input id="rakf" value="${esc(C.kind_filter||'')}"></label>
+      <div class="mksec" style="margin-top:12px">🏷️ השם של כל שדה (כך הוא יופיע בפרטי הפנייה)</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px">${F.map(f=>{const mk=Object.keys(M).find(k=>M[k]===f);return `<label class="fld"><span dir="ltr" style="text-align:right">${esc(f)}${sample&&sample.rows&&sample.rows[0]&&sample.rows[0][f]?' · '+esc(String(sample.rows[0][f]).slice(0,25)):''}</span><input data-lbl="${esc(f)}" value="${esc((C.labels||{})[f]||'')}" placeholder="${esc(mk?L[mk]:'שדה '+f.replace(/\D/g,''))}"></label>`;}).join('')}</div>
       <button class="mkbtn" id="rasave">💾 לשמור ולמשוך עכשיו</button>`:''}
     <div class="mksub" style="margin-top:10px">נמשכות רק פניות מ-21.10.2026 והלאה. פנייה שכבר הגיעה במייל לא תופיע פעמיים.</div>`;
   document.getElementById('rx').onclick=()=>mkReqOpen(false);
@@ -1920,7 +1950,8 @@ async function mkReqApiSetup(sample){
     mkReqApiSetup(p);};
   const sv=document.getElementById('rasave');if(sv)sv.onclick=async()=>{const map={};rs.querySelectorAll('[data-map]').forEach(x=>{if(x.value)map[x.dataset.map]=x.value;});
     sv.disabled=true;sv.innerHTML='<span class="mkspin"></span> מושך מנדרים פלוס…';
-    const x=await api('POST','/api/mikveh/reqapi',{mosad:document.getElementById('raacct').value,tofes:document.getElementById('ratf').value.trim(),map,kind_filter:document.getElementById('rakf').value,sync:1}).catch(()=>null);
+    const labels={};rs.querySelectorAll('[data-lbl]').forEach(x=>{if(x.value.trim())labels[x.dataset.lbl]=x.value.trim();});
+    const x=await api('POST','/api/mikveh/reqapi',{mosad:document.getElementById('raacct').value,tofes:document.getElementById('ratf').value.trim(),map,labels,kind_filter:document.getElementById('rakf').value,sync:1}).catch(()=>null);
     if(!x||x.ok===false){sv.disabled=false;sv.textContent='💾 לשמור ולמשוך עכשיו';uiAlert('⚠️ '+((x&&x.error)||'לא נשמר'));return;}
     toast('✓ נשמר'+(x.new?' · נוספו '+x.new+' פניות':''));mkReqOpen(true);};}
 // 📊 מאיר: "כמה מנוי ערך צבור נכנסו ביום שישי וכמה מזדמנים — אני שואל על מקווה, לא על מגבות"
@@ -2149,7 +2180,7 @@ function renderMikveh(){
   const cnt={}; MK.clients.forEach(c=>{cnt[c.group]=(cnt[c.group]||0)+1;});
   const used=MK.groups.filter(g=>cnt[g.id]).sort((a,b)=>(cnt[b.id]||0)-(cnt[a.id]||0));
   const expired=MK.clients.filter(c=>mkPast(c.sub_end)).length;
-  view.innerHTML=`<div class="mkw">
+  view.innerHTML=`<div class="mkw"><div id="mkpend" class="noprint"></div>
     <div class="mkhero"><div class="mkhtop"><h2>🛁 לקוחות המקווה<small>חי מהמקווה · לא נשמר במערכת · לחיצה על לקוח פותחת את הכרטיס שלו</small></h2>
       <button class="mkibtn" id="mkfresh" title="לטעון שוב מהמקווה">🔄 רענון</button></div>
       <div class="mkhstats">
@@ -2201,6 +2232,7 @@ function renderMikveh(){
   document.getElementById('mkdebtsb').onclick=()=>mkDebtsAll();
   mkVmCount();
   mkReqCount();
+  mkPendLoad();
   mkDashLoad();
   document.getElementById('mkentday').onclick=()=>mkEntDay();
   document.getElementById('mkreqb').onclick=()=>mkReqOpen();

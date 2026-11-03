@@ -18519,6 +18519,71 @@ def mkreq_api_cfg(con):
     return c
 
 
+MKREQ_ALL_FIELDS = dict([('Field%d' % i, 'Field%d' % i) for i in range(1, 41)] +
+                        [('Field%dMax' % i, 'Field%dMax' % i) for i in range(1, 11)])
+MKREQ_KEY_LABEL = {'first': 'שם פרטי', 'last': 'שם משפחה', 'phone': 'טלפון', 'kind': 'סוג הפניה', 'text': 'תוכן הפניה'}
+MKREQ_STATUS = {'new': 'חדשה', 'wip': 'בטיפול', 'done': 'טופלה', 'rejected': 'נדחתה'}
+
+
+def mkreq_cols(con):
+    con.execute("CREATE TABLE IF NOT EXISTS mk_req(id TEXT PRIMARY KEY, form_no TEXT, at TEXT, first TEXT, last TEXT, phone TEXT, "
+                "kind TEXT, text TEXT, via TEXT, msg_id TEXT, status TEXT DEFAULT 'new', handled_at TEXT, note TEXT, created TEXT)")
+    have = {r[1] for r in con.execute("PRAGMA table_info(mk_req)")}
+    for col in ('raw', 'hist'):
+        if col not in have:
+            con.execute("ALTER TABLE mk_req ADD COLUMN %s TEXT" % col)
+
+
+def mkreq_labels(c):
+    """שם לכל שדה בטופס: מה שנכתב במסך החיבור, ואם לא — לפי המיפוי (שם פרטי / טלפון…), ואם לא — 'שדה N'"""
+    lb = {}
+    for k, f in (c.get('map') or {}).items():
+        if k in MKREQ_KEY_LABEL and f:
+            lb[f] = MKREQ_KEY_LABEL[k]
+    for f, t in (c.get('labels') or {}).items():
+        if str(t or '').strip():
+            lb[f] = str(t).strip()
+    return lb
+
+
+def mkreq_details(row, labels):
+    """כל הפרטים של הפנייה, לפי סדר השדות בטופס: [{label, value}]"""
+    try:
+        raw = json.loads(row.get('raw') or '{}')
+    except Exception:
+        raw = {}
+    out = []
+    if raw.get('ID'):
+        out.append({'label': 'מספר רשומה בנדרים', 'value': raw['ID']})
+    if raw.get('CreatedDate'):
+        out.append({'label': 'נשלח בתאריך', 'value': raw['CreatedDate']})
+    def order(k):
+        m_ = re.match(r'Field(\d+)(Max)?$', k)
+        return (0, int(m_.group(1)), 1 if m_.group(2) else 0) if m_ else (1, 0, 0)
+    for k in sorted((k for k in raw if k not in ('ID', 'CreatedDate')), key=lambda k: (order(k), k)):
+        m_ = re.match(r'Field(\d+)(Max)?$', k)
+        out.append({'label': labels.get(k) or (('שדה %s%s' % (m_.group(1), ' (ארוך)' if m_.group(2) else '')) if m_ else k),
+                    'value': raw[k], 'field': k})
+    return out
+
+
+def mkreq_pending(con):
+    """כמה דברים מחכים לטיפול — לפס שבראש הממשק"""
+    mkreq_cols(con)
+    r = {'req_new': con.execute("SELECT COUNT(*) FROM mk_req WHERE COALESCE(status,'new')='new'").fetchone()[0],
+         'req_wip': con.execute("SELECT COUNT(*) FROM mk_req WHERE status='wip'").fetchone()[0]}
+    try:
+        r['grp_new'] = con.execute("SELECT COUNT(*) FROM mkg_req WHERE status='new'").fetchone()[0]
+    except sqlite3.Error:
+        r['grp_new'] = 0
+    try:
+        r['vm_new'] = con.execute("SELECT COUNT(*) FROM mk_vm WHERE heard=0 AND done=0").fetchone()[0]
+    except sqlite3.Error:
+        r['vm_new'] = 0
+    r['total'] = r['req_new'] + r['grp_new'] + r['vm_new']
+    return r
+
+
 def mkreq_api_on(c):
     return bool(c.get('mosad') and c.get('tofes') and any((c.get('map') or {}).get(k) for k in MKREQ_API_KEYS))
 
@@ -18542,9 +18607,16 @@ def mkreq_api_sync(con):
         return {'ok': False, 'error': 'חשבון נדרים פלוס %s לא מחובר למערכת' % c.get('mosad')}
     con.execute("CREATE TABLE IF NOT EXISTS mk_req(id TEXT PRIMARY KEY, form_no TEXT, at TEXT, first TEXT, last TEXT, phone TEXT, "
                 "kind TEXT, text TEXT, via TEXT, msg_id TEXT, status TEXT DEFAULT 'new', handled_at TEXT, note TEXT, created TEXT)")
+    mkreq_cols(con)
     fields = {k: v for k, v in (c.get('map') or {}).items() if k in MKREQ_API_KEYS and re.fullmatch(r'Field\d{1,3}(Max)?', str(v or ''))}
+    # 🗂️ מאיר: "בפניות צריך לראות את כל הפרטים המלאים מנדרים פלוס" — כל השדות של הרשומה, לא רק החמישה שמופו
+    fields.update(MKREQ_ALL_FIELDS)
     last, new, kf = int(c.get('last_id') or 0), 0, str(c.get('kind_filter') or '').strip()
     since = _gi.MK_REQ_FROM.isoformat()
+    # פניות שנמשכו לפני שנשמרו כל הפרטים — חוזרים אחורה פעם אחת וממלאים להן
+    need = [int(r[0]) for r in con.execute("SELECT id FROM mk_req WHERE COALESCE(raw,'')='' AND via LIKE '%API%'") if str(r[0]).isdigit()]
+    if need:
+        last = min(last, min(need) - 1)
     for _ in range(20):
         with _nd.use(acct):
             ok, rows = _nd.form_records(c['tofes'], fields, last_id=last, max_id=500)
@@ -18563,15 +18635,19 @@ def mkreq_api_sync(con):
                 continue
             if fields.get('kind') and kf and kf not in str(r.get('kind') or ''):
                 continue
+            raw = {k: str(v).strip()[:4000] for k, v in r.items()
+                   if k not in MKREQ_API_KEYS and str(v if v is not None else '').strip()}
+            raw_s = json.dumps(raw, ensure_ascii=False)
             if con.execute("SELECT 1 FROM mk_req WHERE id=? OR form_no=?", (rid, rid)).fetchone():
+                con.execute("UPDATE mk_req SET raw=? WHERE (id=? OR form_no=?) AND COALESCE(raw,'')=''", (raw_s, rid, rid))
                 continue
-            con.execute("INSERT INTO mk_req(id,form_no,at,first,last,phone,kind,text,via,msg_id,status,created) VALUES(?,?,?,?,?,?,?,?,?,?,'new',?)",
+            con.execute("INSERT INTO mk_req(id,form_no,at,first,last,phone,kind,text,via,msg_id,status,created,raw) VALUES(?,?,?,?,?,?,?,?,?,?,'new',?,?)",
                         (rid, rid, at, str(r.get('first') or '').strip(), str(r.get('last') or '').strip(), str(r.get('phone') or '').strip(),
-                         str(r.get('kind') or '').strip(), str(r.get('text') or '').strip()[:4000], 'נדרים פלוס (API)', '', now_iso()))
+                         str(r.get('kind') or '').strip(), str(r.get('text') or '').strip()[:4000], 'נדרים פלוס (API)', '', now_iso(), raw_s))
             new += 1
         if len(rows) < 500:
             break
-    c['last_id'] = last
+    c['last_id'] = max(last, int(c.get('last_id') or 0))
     kv_set(con, 'mkreq_api', json.dumps(c, ensure_ascii=False))
     con.commit()
     return {'ok': True, 'new': new}
@@ -23451,12 +23527,31 @@ class H(BaseHTTPRequestHandler):
         if self.path.split('?')[0] == '/api/mikveh/requests':
             con = db()
             try:
+                mkreq_cols(con)
                 rows = [dict(r) for r in con.execute("SELECT * FROM mk_req ORDER BY at DESC, id DESC LIMIT 300")]
+                rc = mkreq_api_cfg(con)
             finally:
                 con.close()
+            lb = mkreq_labels(rc)
+            for r in rows:
+                r['status'] = r.get('status') or 'new'
+                r['details'] = mkreq_details(r, lb)
+                try:
+                    r['hist'] = json.loads(r.get('hist') or '[]')
+                except Exception:
+                    r['hist'] = []
+                r.pop('raw', None)
             import gmail_intake as _gi
             return self._send(200, {'ok': True, 'rows': rows, 'new': sum(1 for r in rows if r['status'] == 'new'),
+                                    'wip': sum(1 for r in rows if r['status'] == 'wip'), 'statuses': MKREQ_STATUS,
                                     'box': _gi.mk_req_box()[0], 'last': MKREQ_SYNC})
+        if self.path.split('?')[0] == '/api/mikveh/pending':
+            # 🔔 מאיר: "אמור להופיע בתחילת הממשק שיש פניות לטיפול או בקשות"
+            con = db()
+            try:
+                return self._send(200, dict(mkreq_pending(con), ok=True))
+            finally:
+                con.close()
         if self.path.split('?')[0] == '/api/mikveh/unpaid':
             return self._send(200, dict(MK_UNPAID, ok=True))
         if self.path.split('?')[0] == '/api/nd/donate_cfg':
@@ -24037,9 +24132,17 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 c = mkreq_api_cfg(con)
+                mkreq_cols(con)
+                seen = set()
+                for (rw,) in con.execute("SELECT raw FROM mk_req WHERE COALESCE(raw,'')<>'' ORDER BY at DESC LIMIT 200"):
+                    try:
+                        seen |= {k for k in json.loads(rw) if re.fullmatch(r'Field\d{1,3}(Max)?', k)}
+                    except Exception:
+                        pass
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'cfg': c, 'on': mkreq_api_on(c),
+                                    'seen': sorted(seen, key=lambda k: (int(re.sub(r'\D', '', k) or 0), k)),
                                     'accounts': [{'mosad': a['mosad'], 'name': a['name'], 'mk': a['mosad'] == mk_mosad()} for a in _nd.accounts()]})
         if self.path.split('?')[0] == '/api/mikveh/reqapi_probe':
             # 🔍 5 הרשומות האחרונות בטופס, עם כל השדות — כדי לבחור איזה שדה הוא שם / טלפון / סוג הפניה / תוכן
@@ -26631,15 +26734,31 @@ class H(BaseHTTPRequestHandler):
             rid = urllib.parse.unquote(m.group(1))
             con = db()
             try:
+                mkreq_cols(con)
+                row = con.execute("SELECT status, hist FROM mk_req WHERE id=?", (rid,)).fetchone()
+                if not row:
+                    return self._send(200, {'ok': False, 'error': 'הפנייה לא נמצאה'})
+                try:
+                    hist = json.loads(row['hist'] or '[]')
+                except Exception:
+                    hist = []
                 if 'status' in b:
-                    st = 'done' if b.get('status') == 'done' else 'new'
-                    con.execute("UPDATE mk_req SET status=?, handled_at=? WHERE id=?", (st, now_iso() if st == 'done' else None, rid))
+                    st = str(b.get('status') or '')
+                    if st not in MKREQ_STATUS:
+                        return self._send(200, {'ok': False, 'error': 'מצב לא מוכר'})
+                    con.execute("UPDATE mk_req SET status=?, handled_at=? WHERE id=?",
+                                (st, now_iso() if st in ('done', 'rejected') else None, rid))
+                    if st != (row['status'] or 'new'):
+                        hist.append({'at': now_iso(), 'what': 'סטטוס: ' + MKREQ_STATUS[st]})
                 if 'note' in b:
-                    con.execute("UPDATE mk_req SET note=? WHERE id=?", (str(b.get('note') or '')[:500], rid))
+                    nt = str(b.get('note') or '')[:500]
+                    con.execute("UPDATE mk_req SET note=? WHERE id=?", (nt, rid))
+                    hist.append({'at': now_iso(), 'what': ('הערה: ' + nt) if nt else 'ההערה נמחקה'})
+                con.execute("UPDATE mk_req SET hist=? WHERE id=?", (json.dumps(hist[-50:], ensure_ascii=False), rid))
                 con.commit()
             finally:
                 con.close()
-            return self._send(200, {'ok': True})
+            return self._send(200, {'ok': True, 'hist': hist[-50:]})
         if self.path == '/api/mikveh/towel_cfg':
             # 🧺 מחירי מנוי המגבות: קטנות / גדולות, ומחיר מיוחד לחודש עברי
             con = db()
@@ -27069,6 +27188,9 @@ class H(BaseHTTPRequestHandler):
                     c['map'] = {k: str(v) for k, v in b['map'].items() if k in MKREQ_API_KEYS and re.fullmatch(r'Field\d{1,3}(Max)?', str(v or ''))}
                 if 'kind_filter' in b:
                     c['kind_filter'] = str(b.get('kind_filter') or '').strip()[:40]
+                if isinstance(b.get('labels'), dict):
+                    c['labels'] = {str(k): str(v).strip()[:60] for k, v in b['labels'].items()
+                                   if re.fullmatch(r'Field\d{1,3}(Max)?', str(k)) and str(v or '').strip()}
                 kv_set(con, 'mkreq_api', json.dumps(c, ensure_ascii=False))
                 con.commit()
             finally:
