@@ -35138,7 +35138,8 @@ MKG_DEFAULT = {'enabled': False, 'groups': [], 'max': 1, 'days': 30, 'say': {}, 
 MK_TEXTS = [
     # (מפתח, שלוחה, תיאור, ברירת מחדל)
     ('hello', 'grp', 'פתיחה', 'שלום {name}, אתם בקבוצה {group}'),
-    ('choose', 'grp', 'לפני רשימת הקבוצות', 'בחרו קבוצה והקישו סולמית'),
+    ('choose', 'grp', 'לפני רשימת הקבוצות (עד 9)', 'בחרו קבוצה'),
+    ('choose_hash', 'grp', 'לפני רשימת הקבוצות (10 ומעלה — עם סולמית)', 'בחרו קבוצה והקישו סולמית בסיום'),
     ('option', 'grp', 'אפשרות בתפריט (המספר נאמר אחרי)', 'לקבוצה {group} הקישו'),
     ('option_price', 'grp', 'אפשרות בתפריט עם מחיר (המספר נאמר אחרי)', 'לקבוצה {group}, {price} שקלים לחודש, הקישו'),
     ('quote_pay', 'grp', 'הצעת מחיר — יש הפרש לתשלום', 'המעבר לקבוצה {group} עולה {price} שקלים לחודש. נשארו לכם {days} ימים במנוי, ולכן ההפרש לתשלום הוא {amount} שקלים. לאישור הקישו 1, לביטול הקישו 2'),
@@ -35155,7 +35156,7 @@ MK_TEXTS = [
     ('cancel_offer', 'grp', 'ביטול מעבר שלא שולם (המספר נאמר אחרי)', 'לביטול המעבר לקבוצה {group} שעוד לא שולם, וחזרה לקבוצה {old}, הקישו'),
     ('cancel_done', 'grp', 'המעבר בוטל', 'המעבר בוטל. חזרתם לקבוצה {old} והחוב נמחק. תודה רבה'),
     ('paid_fail', 'grp', 'שולם אבל המעבר נכשל', 'התשלום התקבל, אבל הקבוצה לא שונתה. המשרד יטפל בזה בהקדם'),
-    ('end_opt', 'grp', 'סיום (המספר נאמר אחרי)', 'לסיום הקישו'),
+    ('end_opt', 'grp', 'יציאה', 'ליציאה הקישו כוכבית'),
     ('confirm', 'grp', 'אישור החלפה (בחינם)', 'לאישור מעבר לקבוצה {group} הקישו 1. לביטול הקישו 2'),
     ('done', 'grp', 'ההחלפה בוצעה (בחינם)', 'הועברתם לקבוצה {group}. תודה רבה'),
     ('cancel', 'grp', 'המתקשר ביטל', 'ההחלפה בוטלה, הקבוצה לא שונתה'),
@@ -35452,7 +35453,11 @@ def mkg_ivr(P):
         # 📞 מאיר: "זה מדי הרבה טקסט לימות המשיח — t-לקבוצה X הקישו.n-1.t-לקבוצה…" — משפטים קצרים, המספר כ-n-
         S = lambda key, **kw: 't-' + _ivr_t(T(key, **kw))
         N = lambda n: 'n-%d' % n
-        ask = lambda parts, var, maxd=2: 'read=' + '.'.join(parts) + '=%s,no,%d,1,15,NO,yes,no,,,2,,,,no' % (var, maxd)
+        # מאיר: "כוכבית יהיה יציאה, ורק כשיש יותר מ-9 בחירות יצטרכו להקיש סולמית בסיום" — כוכבית מותרת (BlockAsterisk=no)
+        ask = lambda parts, var, maxd=1: 'read=' + '.'.join(parts) + '=%s,no,%d,1,15,NO,no,no,,,2,,,,no' % (var, maxd)
+        choose = lambda count: S('choose_hash' if count > 9 else 'choose')
+        if '*' in (P.get('Who'), P.get('Cat'), P.get('Req'), P.get('Grp'), P.get('Ok'), P.get('Pay'), P.get('Pay2')):
+            return msg('bye')
         mgs = set(cfg.get('member_groups') or [])
         rest = [g for g in allowed if g != cur]
         reg_opts = [g for g in rest if g not in mgs][:97]
@@ -35477,14 +35482,14 @@ def mkg_ivr(P):
             if not cfg.get('req_on'):
                 return 'id_list_message=' + '.'.join(lead) + END
             if 'Req' not in P:
-                return ask(lead + [S('req_offer'), N(1), S('end_opt'), N(2)], 'Req', 1)
+                return ask(lead + [S('req_offer'), N(1), S('end_opt')], 'Req', 1)
             if P.get('Req') != '1':
                 return msg('bye')
             if 'Grp' not in P:
-                parts = [S('choose')]
+                parts = [choose(len(opts_))]
                 for i, g in enumerate(opts_, 1):
                     parts += [S('req_option', group=mkg_say(cfg, g, gr[g]['name'])), N(i)]
-                return ask(parts + [S('end_opt'), N(0)], 'Grp')
+                return ask(parts + [S('end_opt')], 'Grp', 1 if len(opts_) <= 9 else 2)
             try:
                 v_ = int(P.get('Grp') or 0)
             except ValueError:
@@ -35504,7 +35509,7 @@ def mkg_ivr(P):
                     if 'Cat' in P:
                         return msg('bye')
                     return ask([S('hello', name=first, group=mkg_say(cfg, cur, gr[cur]['name'])), S('cat_intro'),
-                                S('cat_disc'), N(1), S('cat_reg'), N(2)], 'Cat', 1)
+                                S('cat_disc'), N(1), S('cat_reg'), N(2), S('end_opt')], 'Cat', 1)
             if cat == '1':
                 blk = mkg_disc_block(con, c, member, mgs, mine_all)
                 if blk:
@@ -35535,8 +35540,9 @@ def mkg_ivr(P):
         if 'Grp' not in P:
             # עד 2 ספרות + סולמית ("בחרו קבוצה והקישו סולמית")
             parts = ([] if (member and disc_opts and reg_opts and not undo) else [S('hello', name=first, group=mkg_say(cfg, cur, gr[cur]['name']))])
+            count = len(opts) + (1 if undo else 0)
             if opts:
-                parts.append(S('choose'))
+                parts.append(choose(count))
             for i, g in enumerate(opts, 1):
                 pr = gr[g].get('price')
                 if cfg.get('say_prices', True) and pr and not mkg_is_erech(cfg, g, gr[g]['name']):
@@ -35546,8 +35552,8 @@ def mkg_ivr(P):
             if undo:
                 parts += [S('cancel_offer', group=mkg_say(cfg, cur, gr[cur]['name']), old=mkg_say(cfg, undo['from_gid'], undo['from_name'])),
                           N(len(opts) + 1)]
-            parts += [S('end_opt'), N(0)]
-            return ask(parts, 'Grp')
+            parts.append(S('end_opt'))
+            return ask(parts, 'Grp', 1 if count <= 9 else 2)
         try:
             v = int(P.get('Grp') or 0)
         except ValueError:
