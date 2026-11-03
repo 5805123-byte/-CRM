@@ -32,6 +32,7 @@ BASE = 'https://matara.pro/nedarimplus/Reports/Manage3.aspx'
 # הוראות קבע בנקאיות (מס"ב) — דף אחר באותו שרת. מאיר: "יש כאלו שיש להם הוראת קבע בנקאית"
 MASAV = 'https://matara.pro/nedarimplus/Reports/Masav3.aspx'
 TAMAL = 'https://matara.pro/nedarimplus/Reports/Tamal3.aspx'     # קבלות של נדרים פלוס
+FORMS = 'https://matara.pro/nedarimplus/Forms/Manage.aspx'      # רשומות שנשלחו בטופס (GetJson)
 MOSAD_DEFAULT = '5777499'
 UA = 'KollelChatzosCRM/1.0'
 LAST = {'at': '', 'ok': None, 'error': '', 'action': ''}
@@ -97,7 +98,7 @@ def call(action, params=None, post=False, timeout=45, raw=False, masav=False, pa
     p = dict(params or {}, Action=action, MosadId=mosad(), ApiPassword=_key())
     if masav:
         p['MosadNumber'] = p['MosadId']      # בדף המס"ב חלק מהפעולות קוראות לזה MosadNumber
-    url = (_env('NEDARIM_TAMAL_BASE') or TAMAL) if page == 'tamal' else (_env('NEDARIM_MASAV_BASE' if masav else 'NEDARIM_BASE') or (MASAV if masav else BASE))
+    url = (_env('NEDARIM_FORMS_BASE') or FORMS) if page == 'forms' else (_env('NEDARIM_TAMAL_BASE') or TAMAL) if page == 'tamal' else (_env('NEDARIM_MASAV_BASE' if masav else 'NEDARIM_BASE') or (MASAV if masav else BASE))
     if page == 'tamal':
         p['MosadNumber'] = p['MosadId']
     data = urllib.parse.urlencode(p).encode('utf-8')
@@ -603,3 +604,18 @@ def history(last_id='', loops=8):
         if len(rows) < 2000:
             break
     return out, last
+
+
+def form_records(tofes_id, fields, last_id=0, max_id=500, desc=False):
+    """📥 רשומות שנשלחו בטופס (Forms/Manage.aspx · GetJson) — בלי הגדרה מוקדמת: fields = {שם בתשובה: 'FieldN'}.
+    מחזיר (הצלחה, רשימה / הודעה). כל הערכים מחרוזות; ID עולה, ומשמש כ-LastId."""
+    p = {'TofesId': str(tofes_id), 'MaxId': str(max_id), 'LastId': str(last_id or 0),
+         'GetJsonParam': json.dumps(fields, ensure_ascii=False)}
+    if desc:
+        p['Order'] = 'Desc'
+    ok, res = call('GetJson', p, post=True, timeout=60, page='forms')
+    if isinstance(res, list):
+        return True, res
+    if isinstance(res, dict) and str(res.get('Status') or '').lower() == 'error':
+        return False, str(res.get('Message') or 'שגיאה')
+    return False, (res if isinstance(res, str) else str(res))[:300]

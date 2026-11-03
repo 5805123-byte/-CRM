@@ -1862,11 +1862,12 @@ async function mkReqOpen(sync=true){
         <div class="mksub">טופסי פניות מנדרים פלוס (סוג הפניה: מקווה) · מהמייל ${esc((MKREQ&&MKREQ.box)||'')}${MKREQ&&MKREQ.last&&MKREQ.last.at?' · נבדק '+esc(MKREQ.last.at.slice(11))+(MKREQ.last.new?' · '+MKREQ.last.new+' חדשות':''):''}</div>
         ${MKREQ&&MKREQ.last&&MKREQ.last.error?`<div class="mksub" style="color:#c0392b;font-weight:700">⚠️ הבדיקה במייל נכשלה: ${esc(MKREQ.last.error==='not_configured'?'אין חיבור למייל ב-Render (MIKVEH_MAIL_USER + MIKVEH_MAIL_PASS, או GMAIL_USER + GMAIL_APP_PASSWORD)':MKREQ.last.error)}</div>`:''}
         ${msg?`<div class="mksub">${msg}</div>`:''}</div></div>
-      <button class="btn sm ghost" id="rqsync">🔄 לבדוק עכשיו במייל</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm ghost" id="rqsync">🔄 לבדוק עכשיו</button><button class="btn sm ghost" id="rqapi">⚙️ חיבור ישיר לנדרים פלוס (בלי מייל)</button></div>
       <div class="mksec" style="margin-top:10px">🆕 חדשות (${nw.length})</div><div class="mklist">${nw.map(card).join('')||'<div class="hintxt">אין פניות חדשות</div>'}</div>
       ${dn.length?`<details style="margin-top:12px"><summary class="mksec" style="cursor:pointer">✓ טופלו (${dn.length})</summary><div class="mklist">${dn.map(card).join('')}</div></details>`:''}`;
     document.getElementById('rx').onclick=()=>{remov.classList.remove('show');if(tab==='mikveh')renderMikveh();};
     document.getElementById('rqsync').onclick=()=>mkReqOpen(true);
+    document.getElementById('rqapi').onclick=()=>mkReqApiSetup();
     rs.querySelectorAll('[data-rqd]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/requests/'+encodeURIComponent(b.dataset.rqd),{status:b.dataset.v});
       const x=MKREQ.rows.find(z=>z.id===b.dataset.rqd);if(x)x.status=b.dataset.v;MKREQ.new=MKREQ.rows.filter(z=>z.status==='new').length;paint();});
     rs.querySelectorAll('[data-rqn]').forEach(b=>b.onclick=async()=>{const x=MKREQ.rows.find(z=>z.id===b.dataset.rqn);const v=await uiPrompt('הערה לפנייה',x&&x.note||'');if(v===null)return;
@@ -1880,6 +1881,40 @@ async function mkReqOpen(sync=true){
     const r=await api('GET','/api/mikveh/requests').catch(()=>null);if(r&&r.ok)MKREQ=r;
     paint(s2&&s2.ok===false?'⚠️ '+esc(s2.error==='not_configured'?'המייל לא מחובר — צריך ב-Render את GMAIL_USER (או MIKVEH_MAIL_USER) וסיסמת האפליקציה':s2.error)
       :(s2&&s2.new?'✓ נוספו '+s2.new+' פניות חדשות':s2&&!s2.busy?'נבדקו '+(s2.scanned||0)+' מיילים מ-90 הימים האחרונים'+(s2.mailbox?' ('+esc(s2.mailbox)+')':'')+' — לא נמצאו פניות חדשות'+((s2.errors||[]).length?' · ⚠️ '+esc(s2.errors[0]):''):''));}}
+// 📥 מאיר: "לבדוק פניות מנדרים פלוס — לא צריך במייל, אפשר עם ה-API" — טופס הפניות ישירות מנדרים פלוס
+async function mkReqApiSetup(sample){
+  const rs=document.getElementById('remsheet');
+  const r=await api('GET','/api/mikveh/reqapi').catch(()=>null);if(!r||!r.ok){uiAlert('לא נטען');return;}
+  const C=r.cfg, M=C.map||{};
+  const F=sample&&sample.fields||Object.values(M).filter(Boolean);
+  const L={first:'שם פרטי',last:'שם משפחה',phone:'טלפון',kind:'סוג הפניה',text:'תוכן הפניה'};
+  const sel=k=>`<select data-map="${k}"><option value="">— לא בשימוש —</option>${F.map(f=>`<option value="${esc(f)}"${M[k]===f?' selected':''}>${esc(f)}${sample&&sample.rows&&sample.rows[0]&&sample.rows[0][f]?' · '+esc(String(sample.rows[0][f]).slice(0,30)):''}</option>`).join('')}</select>`;
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">⚙️</div><div><h2>פניות ישירות מנדרים פלוס</h2>
+      <div class="mksub">${r.on?'✓ מחובר — הפניות נמשכות מנדרים פלוס כל 15 דקות (ובכל פתיחה), בלי מייל':'עוד לא מחובר — כרגע הפניות נבדקות במייל'}</div></div></div>
+    <div class="mksub" style="margin:4px 2px 10px;line-height:1.7">את מספר הטופס רואים בנדרים פלוס במסך <b>ניהול טפסים</b>. אחרי שכותבים אותו לוחצים "להביא דוגמה", ואז בוחרים איזה שדה הוא מה.</div>
+    <label class="fld" style="display:block;margin:6px 0"><span>חשבון נדרים פלוס של הטופס</span><select id="raacct"><option value="">— לבחור —</option>${(r.accounts||[]).map(a=>`<option value="${esc(a.mosad)}"${String(C.mosad||'')===String(a.mosad)?' selected':''}>${esc(a.name)} · ${esc(a.mosad)}${a.mk?' (המקווה)':''}</option>`).join('')}</select></label>
+    <label class="fld" style="display:block;margin:6px 0"><span>מספר הטופס (TofesId)</span><input id="ratf" value="${esc(C.tofes||'')}" dir="ltr" placeholder="למשל 4563"></label>
+    <button class="btn sm" id="raprobe">🔍 להביא דוגמה מהטופס</button>
+    ${sample&&sample.rows?`<div class="mksec" style="margin-top:12px">5 הפניות האחרונות בטופס</div><div style="overflow:auto"><table class="tbl" style="font-size:.8rem"><tr>${['ID','CreatedDate'].concat(sample.fields).map(f=>`<th>${esc(f)}</th>`).join('')}</tr>
+      ${sample.rows.map(x=>`<tr>${['ID','CreatedDate'].concat(sample.fields).map(f=>`<td>${esc(x[f]||'')}</td>`).join('')}</tr>`).join('')}</table></div>`:''}
+    ${F.length?`<div class="mksec" style="margin-top:12px">איזה שדה הוא מה</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">${Object.keys(L).map(k=>`<label class="fld"><span>${L[k]}</span>${sel(k)}</label>`).join('')}</div>
+      <label class="fld" style="display:block;margin:8px 0"><span>רק פניות שבסוג הפניה מופיע (ריק = כל הפניות בטופס)</span><input id="rakf" value="${esc(C.kind_filter||'')}"></label>
+      <button class="mkbtn" id="rasave">💾 לשמור ולמשוך עכשיו</button>`:''}
+    <div class="mksub" style="margin-top:10px">נמשכות רק פניות מ-21.10.2026 והלאה. פנייה שכבר הגיעה במייל לא תופיע פעמיים.</div>`;
+  document.getElementById('rx').onclick=()=>mkReqOpen(false);
+  document.getElementById('raprobe').onclick=async()=>{const mo=document.getElementById('raacct').value,tf=document.getElementById('ratf').value.trim();
+    if(!mo||!tf){uiAlert('צריך לבחור חשבון ולכתוב את מספר הטופס');return;}
+    await api('POST','/api/mikveh/reqapi',{mosad:mo,tofes:tf});
+    const p=await api('GET','/api/mikveh/reqapi_probe?mosad='+encodeURIComponent(mo)+'&tofes='+encodeURIComponent(tf)).catch(()=>null);
+    if(!p||!p.ok){uiAlert('⚠️ '+((p&&p.error)||'אין תשובה מנדרים פלוס'));return;}
+    if(!(p.rows||[]).length){uiAlert('הטופס ריק — עוד לא נשלחו בו פניות');return;}
+    mkReqApiSetup(p);};
+  const sv=document.getElementById('rasave');if(sv)sv.onclick=async()=>{const map={};rs.querySelectorAll('[data-map]').forEach(x=>{if(x.value)map[x.dataset.map]=x.value;});
+    sv.disabled=true;sv.innerHTML='<span class="mkspin"></span> מושך מנדרים פלוס…';
+    const x=await api('POST','/api/mikveh/reqapi',{mosad:document.getElementById('raacct').value,tofes:document.getElementById('ratf').value.trim(),map,kind_filter:document.getElementById('rakf').value,sync:1}).catch(()=>null);
+    if(!x||x.ok===false){sv.disabled=false;sv.textContent='💾 לשמור ולמשוך עכשיו';uiAlert('⚠️ '+((x&&x.error)||'לא נשמר'));return;}
+    toast('✓ נשמר'+(x.new?' · נוספו '+x.new+' פניות':''));mkReqOpen(true);};}
 // 📊 מאיר: "כמה מנוי ערך צבור נכנסו ביום שישי וכמה מזדמנים — אני שואל על מקווה, לא על מגבות"
 // ⏳ מאיר: "לוקח לו הרבה זמן לבדוק" — בזמן ההמתנה למקווה רואים שזה עובד, וכמה שניות עברו
 function mkWaitTick(el,txt){const t0=Date.now();const f=()=>{if(!document.body.contains(el)){clearInterval(i);return;}
@@ -2154,7 +2189,7 @@ function renderMikveh(){
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mkselfg').onclick=()=>mkSelfGroupOpen();
   document.getElementById('mkvmb').onclick=()=>mkVmOpen();
-  document.getElementById('mkrqb').onclick=()=>mkReqOpen();
+  document.getElementById('mkrqb').onclick=()=>mkSgReqOpen();
   document.getElementById('mkdebtsb').onclick=()=>mkDebtsAll();
   mkVmCount();
   mkReqCount();
@@ -2947,7 +2982,7 @@ async function mkDebtsAll(all){
   rs.querySelectorAll('[data-da]').forEach(b=>b.onclick=()=>mkDebtsAll(b.dataset.da==='1'));
   rs.querySelectorAll('[data-dc]').forEach(el=>el.onclick=()=>{const c=MK&&MK.clients.find(z=>z.id===el.dataset.dc);if(c)mkOpen(c);else toast('הלקוח לא ברשימה (אולי מוסתר / נמחק)');});}
 // 📨 מאיר: "לא רואים נורמלי את הבקשות… והמנהל יוכל לאשר בקשות רגיל וכן לשליחת הודעה שזה הוחלף, כמו בהחלפה רגילה"
-async function mkReqOpen(){
+async function mkSgReqOpen(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   if(!remov.classList.contains('show')){rs.innerHTML='<button class="x" id="rx">✕</button><div class="mksub">⏳ טוען…</div>';remov.classList.add('show');
     document.getElementById('rx').onclick=()=>remov.classList.remove('show');}
@@ -2979,10 +3014,10 @@ async function mkReqOpen(){
   rs.querySelectorAll('[data-rqc]').forEach(a=>a.onclick=e=>{e.preventDefault();const c=MK&&MK.clients.find(z=>z.id===a.dataset.rqc);if(c)mkOpen(c);});
   rs.querySelectorAll('[data-rqmsg]').forEach(b=>b.onclick=()=>notify(byId(b.dataset.rqmsg)));
   rs.querySelectorAll('[data-rqdel]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('למחוק את הבקשה מהרשימה?'))return;
-    await api('POST','/api/mikveh/selfgroup_req_del',{id:+b.dataset.rqdel});toast('🗑️ נמחק');mkReqOpen();mkReqCount();});
+    await api('POST','/api/mikveh/selfgroup_req_del',{id:+b.dataset.rqdel});toast('🗑️ נמחק');mkSgReqOpen();mkReqCount();});
   rs.querySelectorAll('[data-rqno]').forEach(b=>b.onclick=async()=>{const n=await uiPrompt('לדחות את הבקשה. הערה (לא חובה):','');if(n==null)return;
     const x=await api('POST','/api/mikveh/selfgroup_req/'+b.dataset.rqno,{action:'reject',note:n}).catch(()=>null);
-    if(x&&x.ok){toast('✗ הבקשה נדחתה');mkReqOpen();mkReqCount();}else uiAlert('⚠️ '+((x&&x.error)||'לא נשמר'));});
+    if(x&&x.ok){toast('✗ הבקשה נדחתה');mkSgReqOpen();mkReqCount();}else uiAlert('⚠️ '+((x&&x.error)||'לא נשמר'));});
   rs.querySelectorAll('[data-rqok]').forEach(b=>b.onclick=async()=>{const q=byId(b.dataset.rqok);
     const qa=q.quote?q.quote.amount:0;
     const am=await uiPrompt('להעביר את '+(q.name||'')+' לקבוצה "'+(q.to_name||'')+'" במקווה.\nהפרש (₪): חיובי = חוב במקווה, שלילי = זיכוי ביתרה הזמנית, 0 = בלי.',String(qa));
@@ -2993,7 +3028,7 @@ async function mkReqOpen(){
     const c=MK&&MK.clients.find(z=>z.id===q.cid);if(c)c.group=q.to_gid;
     toast('✓ הועבר ל"'+q.to_name+'" במקווה');mkReqCount();
     // כמו בהחלפה רגילה — מיד חלון ההודעה ללקוח שהקבוצה הוחלפה
-    if(c&&(c.phone||mkHasMail(c)))setTimeout(()=>notify(q),400);else mkReqOpen();});}
+    if(c&&(c.phone||mkHasMail(c)))setTimeout(()=>notify(q),400);else mkSgReqOpen();});}
 async function mkReqCount(){const r=await api('GET','/api/mikveh/selfgroup').catch(()=>null);const b=document.getElementById('mksgn');
   if(b&&r&&r.ok){b.textContent=r.new_reqs||'';b.style.display=r.new_reqs?'':'none';}}
 // 🗣️ עורך הטקסטים של שלוחות המקווה (ext: grp / vm). ריק = ברירת המחדל. {name} {group} וכו' — המערכת ממלאת

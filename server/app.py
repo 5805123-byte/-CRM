@@ -18500,14 +18500,89 @@ MKREQ_SYNC = {'at': '', 'ok': None, 'new': 0, 'error': ''}
 MKREQ_LOCK = threading.Lock()
 
 
+# 📥 מאיר: "לבדוק פניות מנדרים פלוס — לא צריך לבדוק במייל, אפשר לבדוק עם ה-API" — רשומות טופס הפניות
+# ישירות מנדרים (Forms/Manage.aspx · GetJson). ההגדרות (מוסד, מספר טופס, איזה FieldN הוא מה) ב-app_kv mkreq_api.
+MKREQ_API_KEYS = ('first', 'last', 'phone', 'kind', 'text')
+
+
+def mkreq_api_cfg(con):
+    try:
+        c = json.loads(kv_get(con, 'mkreq_api', '') or '{}')
+    except Exception:
+        c = {}
+    c.setdefault('map', {})
+    c.setdefault('kind_filter', 'מקווה')
+    c.setdefault('last_id', 0)
+    return c
+
+
+def mkreq_api_on(c):
+    return bool(c.get('mosad') and c.get('tofes') and any((c.get('map') or {}).get(k) for k in MKREQ_API_KEYS))
+
+
+def _nd_date(v):
+    """תאריך מנדרים ('dd/mm/yyyy hh:mm' או ISO) → 'YYYY-MM-DD HH:MM:SS'"""
+    v = str(v or '').strip()
+    m = re.match(r'(\d{1,2})/(\d{1,2})/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?', v)
+    if m:
+        d, mo, y, hh, mi, ss = m.groups()
+        return '%s-%02d-%02d %02d:%s:%s' % (y, int(mo), int(d), int(hh or 0), mi or '00', ss or '00')
+    return v.replace('T', ' ')[:19]
+
+
+def mkreq_api_sync(con):
+    """הרשומות החדשות בטופס הפניות (מאז ה-ID האחרון) → mk_req. מחזיר {'ok', 'new'}"""
+    import nedarim as _nd, gmail_intake as _gi
+    c = mkreq_api_cfg(con)
+    acct = next((a for a in _nd.accounts() if str(a['mosad']) == str(c.get('mosad'))), None)
+    if not acct:
+        return {'ok': False, 'error': 'חשבון נדרים פלוס %s לא מחובר למערכת' % c.get('mosad')}
+    con.execute("CREATE TABLE IF NOT EXISTS mk_req(id TEXT PRIMARY KEY, form_no TEXT, at TEXT, first TEXT, last TEXT, phone TEXT, "
+                "kind TEXT, text TEXT, via TEXT, msg_id TEXT, status TEXT DEFAULT 'new', handled_at TEXT, note TEXT, created TEXT)")
+    fields = {k: v for k, v in (c.get('map') or {}).items() if k in MKREQ_API_KEYS and re.fullmatch(r'Field\d{1,3}(Max)?', str(v or ''))}
+    last, new, kf = int(c.get('last_id') or 0), 0, str(c.get('kind_filter') or '').strip()
+    since = _gi.MK_REQ_FROM.isoformat()
+    for _ in range(20):
+        with _nd.use(acct):
+            ok, rows = _nd.form_records(c['tofes'], fields, last_id=last, max_id=500)
+        if not ok:
+            return {'ok': False, 'error': 'נדרים פלוס: %s' % rows}
+        if not rows:
+            break
+        for r in rows:
+            try:
+                last = max(last, int(r.get('ID') or 0))
+            except ValueError:
+                pass
+            rid = str(r.get('ID') or '')
+            at = _nd_date(r.get('CreatedDate'))
+            if not rid or at[:10] < since:
+                continue
+            if fields.get('kind') and kf and kf not in str(r.get('kind') or ''):
+                continue
+            if con.execute("SELECT 1 FROM mk_req WHERE id=? OR form_no=?", (rid, rid)).fetchone():
+                continue
+            con.execute("INSERT INTO mk_req(id,form_no,at,first,last,phone,kind,text,via,msg_id,status,created) VALUES(?,?,?,?,?,?,?,?,?,?,'new',?)",
+                        (rid, rid, at, str(r.get('first') or '').strip(), str(r.get('last') or '').strip(), str(r.get('phone') or '').strip(),
+                         str(r.get('kind') or '').strip(), str(r.get('text') or '').strip()[:4000], 'נדרים פלוס (API)', '', now_iso()))
+            new += 1
+        if len(rows) < 500:
+            break
+    c['last_id'] = last
+    kv_set(con, 'mkreq_api', json.dumps(c, ensure_ascii=False))
+    con.commit()
+    return {'ok': True, 'new': new}
+
+
 def mk_req_sync(days=None):
-    """📥 פניות המקווה מהמייל — פעם ב-15 דקות ברקע, ומיד כשפותחים את החלון (אז — 90 יום אחורה)"""
+    """📥 פניות המקווה — ישירות מנדרים פלוס (API) אם הוגדר, אחרת מהמייל. פעם ב-15 דקות ברקע, ומיד כשפותחים את החלון"""
     import gmail_intake as _gi
     if not MKREQ_LOCK.acquire(blocking=False):
         return {'ok': True, 'busy': True, 'new': 0}
     con = db()
     try:
-        r = _gi.sync_mk_requests(con, days=days or (90 if not MKREQ_SYNC['at'] else 14))
+        r = mkreq_api_sync(con) if mkreq_api_on(mkreq_api_cfg(con)) else \
+            _gi.sync_mk_requests(con, days=days or (90 if not MKREQ_SYNC['at'] else 14))
     except Exception as e:
         r = {'ok': False, 'error': str(e)[:200]}
     finally:
@@ -23936,6 +24011,34 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             return self._send(200, {'ok': True, 'texts': [{'key': k, 'ext': w, 'label': l, 'def': d, 'val': cur.get(k, '')}
                                                           for k, w, l, d in MK_TEXTS]})
+        if self.path.split('?')[0] == '/api/mikveh/reqapi':
+            # 📥 ההגדרות של משיכת הפניות ישירות מנדרים פלוס
+            import nedarim as _nd
+            con = db()
+            try:
+                c = mkreq_api_cfg(con)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'cfg': c, 'on': mkreq_api_on(c),
+                                    'accounts': [{'mosad': a['mosad'], 'name': a['name'], 'mk': a['mosad'] == mk_mosad()} for a in _nd.accounts()]})
+        if self.path.split('?')[0] == '/api/mikveh/reqapi_probe':
+            # 🔍 5 הרשומות האחרונות בטופס, עם כל השדות — כדי לבחור איזה שדה הוא שם / טלפון / סוג הפניה / תוכן
+            import nedarim as _nd
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            mo, tf = (qs.get('mosad') or [''])[0], (qs.get('tofes') or [''])[0].strip()
+            acct = next((a for a in _nd.accounts() if str(a['mosad']) == mo), None)
+            if not acct or not re.fullmatch(r'[A-Za-z0-9]{1,20}', tf):
+                return self._send(200, {'ok': False, 'error': 'צריך לבחור חשבון נדרים ולכתוב את מספר הטופס'})
+            flds = {('Field%d' % i): ('Field%d' % i) for i in range(1, 41)}
+            flds.update({('Field%dMax' % i): ('Field%dMax' % i) for i in range(1, 11)})
+            with _nd.use(acct):
+                ok, rows = _nd.form_records(tf, flds, max_id=5, desc=True)
+            if not ok:
+                return self._send(200, {'ok': False, 'error': str(rows)[:300]})
+            used = sorted({k for r in rows for k, v in r.items() if k.startswith('Field') and str(v or '').strip()},
+                          key=lambda k: (int(re.sub(r'\D', '', k) or 0), k))
+            return self._send(200, {'ok': True, 'fields': used,
+                                    'rows': [{k: str(r.get(k) or '')[:200] for k in ['ID', 'CreatedDate'] + used} for r in rows]})
         if self.path.split('?')[0] == '/api/mikveh/debts_all':
             # 🧾 כל החובות הפתוחים במקווה (Report/GetDebts), עם שם הלקוח
             import mikveh as _mk
@@ -26916,6 +27019,28 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/reqapi':
+            # 📥 שמירת ההגדרות; sync=1 — למשוך עכשיו
+            con = db()
+            try:
+                c = mkreq_api_cfg(con)
+                if 'mosad' in b:
+                    c['mosad'] = str(b.get('mosad') or '').strip()[:20]
+                if 'tofes' in b:
+                    tf = str(b.get('tofes') or '').strip()[:20]
+                    if tf != str(c.get('tofes') or ''):
+                        c['last_id'] = 0
+                    c['tofes'] = tf
+                if isinstance(b.get('map'), dict):
+                    c['map'] = {k: str(v) for k, v in b['map'].items() if k in MKREQ_API_KEYS and re.fullmatch(r'Field\d{1,3}(Max)?', str(v or ''))}
+                if 'kind_filter' in b:
+                    c['kind_filter'] = str(b.get('kind_filter') or '').strip()[:40]
+                kv_set(con, 'mkreq_api', json.dumps(c, ensure_ascii=False))
+                con.commit()
+            finally:
+                con.close()
+            r = mk_req_sync() if b.get('sync') else {'ok': True}
+            return self._send(200, dict(r, on=mkreq_api_on(c)))
         if self.path == '/api/mikveh/selfgroup_lock':
             # 🔒 מאיר: "אפשרות לנעול ללקוח שלא יוכל להחליף קבוצה אף פעם" (בשלוחה)
             cid = str(b.get('id') or '').strip()
