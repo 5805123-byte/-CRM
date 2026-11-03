@@ -18513,6 +18513,9 @@ def mkreq_api_cfg(con):
     c.setdefault('map', {})
     c.setdefault('kind_filter', 'מקווה')
     c.setdefault('last_id', 0)
+    # מאיר (צילום ממסך הטפסים בנדרים): "טופס פניות" = 3029, במוסד של הכולל (5777499) — מוכן מראש
+    c.setdefault('tofes', '3029')
+    c.setdefault('mosad', '5777499')
     return c
 
 

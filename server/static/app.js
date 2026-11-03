@@ -1885,8 +1885,16 @@ async function mkReqOpen(sync=true){
 async function mkReqApiSetup(sample){
   const rs=document.getElementById('remsheet');
   const r=await api('GET','/api/mikveh/reqapi').catch(()=>null);if(!r||!r.ok){uiAlert('לא נטען');return;}
-  const C=r.cfg, M=C.map||{};
+  const C=r.cfg, M=Object.assign({},C.map||{});
   const F=sample&&sample.fields||Object.values(M).filter(Boolean);
+  // ניחוש ראשוני (אם עוד לא נבחר): טלפון = ספרות; סוג הפניה = מופיע "מקווה" / ערכים חוזרים; תוכן = הטקסט הארוך; שמות = מילים קצרות
+  if(sample&&sample.rows&&!Object.keys(M).length){const R=sample.rows,val=f=>R.map(x=>String(x[f]||'').trim()),used=new Set();
+    const pick=(k,test)=>{const f=F.find(f=>!used.has(f)&&test(val(f)));if(f){M[k]=f;used.add(f);}};
+    pick('phone',v=>v.some(x=>/^0\d{8,9}$/.test(x.replace(/\D/g,''))&&!/[א-ת]/.test(x)));
+    pick('kind',v=>v.some(x=>/מקו?וה/.test(x))||(new Set(v.filter(Boolean)).size<v.filter(Boolean).length&&v.every(x=>x.length<25)));
+    const rest=F.filter(f=>!used.has(f)).sort((a,b)=>Math.max(...val(b).map(x=>x.length))-Math.max(...val(a).map(x=>x.length)));
+    if(rest.length){M.text=rest[0];used.add(rest[0]);}
+    pick('first',v=>v.every(x=>x.length<20&&!/\d/.test(x)));pick('last',v=>v.every(x=>x.length<25&&!/\d/.test(x)));}
   const L={first:'שם פרטי',last:'שם משפחה',phone:'טלפון',kind:'סוג הפניה',text:'תוכן הפניה'};
   const sel=k=>`<select data-map="${k}"><option value="">— לא בשימוש —</option>${F.map(f=>`<option value="${esc(f)}"${M[k]===f?' selected':''}>${esc(f)}${sample&&sample.rows&&sample.rows[0]&&sample.rows[0][f]?' · '+esc(String(sample.rows[0][f]).slice(0,30)):''}</option>`).join('')}</select>`;
   rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">⚙️</div><div><h2>פניות ישירות מנדרים פלוס</h2>
