@@ -24036,8 +24036,22 @@ class H(BaseHTTPRequestHandler):
             flds.update({('Field%dMax' % i): ('Field%dMax' % i) for i in range(1, 11)})
             with _nd.use(acct):
                 ok, rows = _nd.form_records(tf, flds, max_id=5, desc=True)
+                if ok and not rows:
+                    # גיבוי: מהישנה לחדשה, בדפים של 500 — ולוקחים את 5 האחרונות
+                    last, allr = 0, []
+                    for _ in range(20):
+                        ok, page = _nd.form_records(tf, flds, last_id=last, max_id=500)
+                        if not ok or not page:
+                            break
+                        allr += page
+                        last = max(int(x.get('ID') or 0) for x in page)
+                        if len(page) < 500:
+                            break
+                    rows = list(reversed(allr[-5:])) if ok else page
             if not ok:
                 return self._send(200, {'ok': False, 'error': str(rows)[:300]})
+            if not rows:
+                return self._send(200, {'ok': True, 'fields': [], 'rows': [], 'raw': str(_nd.LAST)[:300]})
             used = sorted({k for r in rows for k, v in r.items() if k.startswith('Field') and str(v or '').strip()},
                           key=lambda k: (int(re.sub(r'\D', '', k) or 0), k))
             return self._send(200, {'ok': True, 'fields': used,

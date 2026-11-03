@@ -1916,7 +1916,7 @@ async function mkReqApiSetup(sample){
     await api('POST','/api/mikveh/reqapi',{mosad:mo,tofes:tf});
     const p=await api('GET','/api/mikveh/reqapi_probe?mosad='+encodeURIComponent(mo)+'&tofes='+encodeURIComponent(tf)).catch(()=>null);
     if(!p||!p.ok){uiAlert('⚠️ '+((p&&p.error)||'אין תשובה מנדרים פלוס'));return;}
-    if(!(p.rows||[]).length){uiAlert('הטופס ריק — עוד לא נשלחו בו פניות');return;}
+    if(!(p.rows||[]).length){uiAlert('נדרים פלוס לא החזירו אף רשומה מטופס '+tf+'.\nאם בטופס יש רשומות (במסך "הצג רשומות"), תוודא שזה מספר הטופס הנכון ושמפתח ה-API של החשבון כולל הרשאה ל"משיכת רשומות טופס".'+(p.raw?'\n\nתשובת נדרים: '+p.raw:''));return;}
     mkReqApiSetup(p);};
   const sv=document.getElementById('rasave');if(sv)sv.onclick=async()=>{const map={};rs.querySelectorAll('[data-map]').forEach(x=>{if(x.value)map[x.dataset.map]=x.value;});
     sv.disabled=true;sv.innerHTML='<span class="mkspin"></span> מושך מנדרים פלוס…';

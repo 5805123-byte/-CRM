@@ -609,10 +609,14 @@ def history(last_id='', loops=8):
 def form_records(tofes_id, fields, last_id=0, max_id=500, desc=False):
     """📥 רשומות שנשלחו בטופס (Forms/Manage.aspx · GetJson) — בלי הגדרה מוקדמת: fields = {שם בתשובה: 'FieldN'}.
     מחזיר (הצלחה, רשימה / הודעה). כל הערכים מחרוזות; ID עולה, ומשמש כ-LastId."""
-    p = {'TofesId': str(tofes_id), 'MaxId': str(max_id), 'LastId': str(last_id or 0),
-         'GetJsonParam': json.dumps(fields, ensure_ascii=False)}
+    p = {'TofesId': str(tofes_id), 'MaxId': str(max_id), 'GetJsonParam': json.dumps(fields, ensure_ascii=False)}
     if desc:
+        # בסדר יורד LastId הוא הגבול העליון — 0 היה מחזיר כלום. בלי LastId = מהחדשה ביותר
         p['Order'] = 'Desc'
+        if last_id:
+            p['LastId'] = str(last_id)
+    else:
+        p['LastId'] = str(last_id or 0)
     ok, res = call('GetJson', p, post=True, timeout=60, page='forms')
     if isinstance(res, list):
         return True, res
