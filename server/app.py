@@ -4991,6 +4991,26 @@ def ensure_schema():
                 print('  הרשקוביץ חיים: נמצאו %d כרטיסים — לא נעצר' % len(_h))
     except Exception as e:
         print('  herskowitz stop error:', e)
+    # מאיר (3.11.2026): "Sunpoint Gardens זה אהרן דוד קאליש - זה בשביל ארונות ספרים בבנין הקדוש,
+    # וזאפיר זה שמואל סאפיר בשביל שולחן בהיכל הנשמות" — הוראות קבע בחשבון בנק ווסט הקטן
+    # (KOLLEL CHATZOS / kollelc26), שלא מחובר למערכת. נרשם בכרטיס שלהם כדי שיהיה ידוע.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='kollelc26_notes_v1'").fetchone():
+            for _l, _f, _nt in (
+                    ('קאליש', 'אהרן דוד', 'הוראת קבע $1,500 לחודש ב-1 בחודש בבנק ווסט KOLLEL CHATZOS (החשבון הקטן) '
+                     'בשם Sunpoint Gardens, כרטיס 1000 — עבור ארונות ספרים בבנין הקדוש. נשארו 6 חיובים, האחרון 01/05/2027.'),
+                    ('סאפיר', 'שמואל', 'הוראת קבע $212 לחודש ב-20 בחודש בבנק ווסט KOLLEL CHATZOS (החשבון הקטן) '
+                     'בשם Zafir Mark, כרטיס 2828 — עבור שולחן בהיכל הנשמות. נשארו 6 חיובים, האחרון 20/04/2027.')):
+                _r = con.execute("SELECT id,notes FROM donors WHERE TRIM(last)=? AND TRIM(first)=?", (_l, _f)).fetchall()
+                if len(_r) == 1:
+                    if _nt[:30] not in (_r[0]['notes'] or ''):
+                        con.execute("UPDATE donors SET notes=? WHERE id=?",
+                                    (((_r[0]['notes'] or '').strip() + '\n' if (_r[0]['notes'] or '').strip() else '') + _nt, _r[0]['id']))
+                else:
+                    print('  kollelc26: %s %s — נמצאו %d כרטיסים, לא נרשם' % (_f, _l, len(_r)))
+            con.execute("INSERT INTO seed_flags(name) VALUES('kollelc26_notes_v1')"); con.commit()
+    except Exception as e:
+        print('  kollelc26 notes error:', e)
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
@@ -11843,7 +11863,7 @@ def recon_apply(cur, tid, b):
     pay_method = 'Banquest' if 'Banquest' in (row['source'] or '') else 'Authorize'
     # שורות מדוחות צ'קים / זל / דונרס / OJC / Fidelity / ACH / Wire — אמצעי התשלום לפי המקור, לא "אותורייז"
     for _pfx, _pm in (('Checks', "צ'ק"), ('צ׳קים', "צ'ק"), ('Zelle', 'Zelle'), ('Donors Fund', 'דונרס'), ('OJC', 'OJC'),
-                      ('Fidelity', 'Fidelity'), ('ACH', 'ACH'), ('Wire', 'Wire')):
+                      ('Fidelity', 'Fidelity'), ('ACH', 'ACH'), ('Wire', 'Wire'), ('Pledger', 'Pledger')):
         if str(row['source'] or '').startswith(_pfx):
             pay_method = _pm
             break
@@ -31882,6 +31902,82 @@ def mstop_apply(con, did=None):
     return out
 
 
+PLEDGER_LAST = {'at': 0.0, 'res': None}
+
+
+def pledger_sync(con, force=False):
+    """Pledger מפקיד כל חודש את ה-500$ של עקיבא סלקוביץ (485$ אחרי 3% עמלה) ושולח מייל
+    "ACH Notification - M/D/YYYY". מאיר: "צריך כל חודש לעדכן את הכרטיס שאכן נכנס לו".
+    כל מייל כזה נכנס כתשלום בכרטיס שלו — פעם אחת, ולא אם כבר רשום תשלום שלו סביב אותו תאריך."""
+    import time, imaplib, email as _em
+    if not force and time.time() - PLEDGER_LAST['at'] < 6 * 3600:
+        return PLEDGER_LAST['res']
+    PLEDGER_LAST['at'] = time.time()
+    user, pw = os.environ.get('GMAIL_USER'), os.environ.get('GMAIL_APP_PASSWORD')
+    if not (user and pw):
+        return {'ok': False, 'error': 'not_configured'}
+    ds = con.execute("SELECT id,last,first FROM donors WHERE TRIM(last)='סלקוביץ' AND TRIM(first) LIKE 'עקיבא%'").fetchall()
+    if len(ds) != 1:
+        ds = con.execute("SELECT id,last,first FROM donors WHERE LOWER(COALESCE(english,'')) LIKE '%selkowitz%'").fetchall()
+    if len(ds) != 1:
+        PLEDGER_LAST['res'] = {'ok': False, 'error': 'donor', 'found': len(ds)}
+        return PLEDGER_LAST['res']
+    did = ds[0]['id']
+    found, added = [], 0
+    try:
+        M = imaplib.IMAP4_SSL('imap.gmail.com', timeout=60)
+        M.login(user, pw)
+        M.select('"[Gmail]/All Mail"', readonly=True)
+        typ, data = M.search(None, 'SINCE', '01-May-2026', 'FROM', '"notifications@pledgercharitable.org"')
+        ids = data[0].split() if typ == 'OK' else []
+        for i in ids:
+            typ, hd = M.fetch(i, '(BODY.PEEK[HEADER.FIELDS (SUBJECT)] BODY.PEEK[TEXT])')
+            raw = b''.join(p[1] for p in (hd or []) if isinstance(p, tuple) and p[1])
+            txt = raw.decode('utf-8', 'ignore')
+            try:
+                import quopri
+                txt += '\n' + quopri.decodestring(raw).decode('utf-8', 'ignore')
+            except Exception:
+                pass
+            md = re.search(r'ACH Notification\s*-\s*(\d{1,2})/(\d{1,2})/(\d{4})', txt)
+            ma = re.search(r'amount of\s*(?:<[^>]+>\s*)*\$\s*([\d,]+\.\d{2})', txt)
+            if md and ma:
+                found.append(('%s-%02d-%02d' % (md.group(3), int(md.group(1)), int(md.group(2))),
+                              float(ma.group(1).replace(',', ''))))
+        try:
+            M.logout()
+        except Exception:
+            pass
+    except Exception as e:
+        PLEDGER_LAST['res'] = {'ok': False, 'error': 'imap', 'detail': str(e)[:200]}
+        return PLEDGER_LAST['res']
+    for iso, net in sorted(set(found)):
+        tid = 'PLG' + iso.replace('-', '')
+        if con.execute("SELECT 1 FROM recon WHERE tid=?", (tid,)).fetchone():
+            continue
+        g = net / 0.97
+        gross = round(g) if abs(g - round(g)) < 0.02 else net     # 485$ נטו = 500$ שהוא תרם
+        d0 = datetime.date.fromisoformat(iso)
+        lo, hi = (d0 - datetime.timedelta(days=10)).isoformat(), (d0 + datetime.timedelta(days=10)).isoformat()
+        dup = con.execute("SELECT 1 FROM donations WHERE donor_id=? AND date BETWEEN ? AND ? "
+                          "AND (ABS(CAST(REPLACE(amount,',','') AS REAL)-?)<0.01 OR ABS(CAST(REPLACE(amount,',','') AS REAL)-?)<0.01 "
+                          "OR COALESCE(method,'')='Pledger' OR COALESCE(note,'') LIKE '%Pledger%')",
+                          (did, lo, hi, net, gross)).fetchone()
+        con.execute("INSERT INTO recon(tid,first,last,amount,date,addr,city,state,zip,phone,email,"
+                    "recurring,donor_id,category,processed,source,status) "
+                    "VALUES(?,?,?,?,?,'','','','','','',1,?,'',?,'Pledger','settled')",
+                    (tid, ds[0]['first'], ds[0]['last'], '%.2f' % gross, iso, did, 1 if dup else 0))
+        if dup:
+            continue
+        cat = donor_purpose_for(con, did, gross)
+        note = 'נכנס לבנק $%.2f' % net + (' (500$ פחות 3% עמלה)' if gross != net else '')
+        st, _ = recon_apply(con, tid, {'donor_id': did, 'category': cat, 'note': note})
+        added += 1 if st == 200 else 0
+    con.commit()
+    PLEDGER_LAST['res'] = {'ok': True, 'mails': len(found), 'added': added}
+    return PLEDGER_LAST['res']
+
+
 def _bq_loop():
     """כל שעה: מה שבנק ווסט חייב (הוראות קבע בלילה, חיובים ידניים) נכנס למערכת."""
     import time
@@ -31895,6 +31991,12 @@ def _bq_loop():
             con = db(); mstop_apply(con); con.close()
         except Exception as e:
             print('  monthly stop error:', e)
+        try:
+            con = db(); r = pledger_sync(con); con.close()
+            if r and r.get('added'):
+                print('  pledger: נוספו', r['added'])
+        except Exception as e:
+            print('  pledger error:', e)
         time.sleep(max(900, int(os.environ.get('BANQUEST_SECONDS') or 3600)))
 
 
