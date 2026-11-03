@@ -7848,6 +7848,15 @@ def ensure_schema():
         _gc = con.execute("SELECT name FROM avreichim WHERE name LIKE '%גוטליב%' AND name LIKE '%חיים%'").fetchall()
         if len(_gc) == 1:
             _out.append(_gc[0]['name'])
+        # מאיר (3.11.2026): "האברך יונתן פיליפס עזב את הכל לחצות — להוציא אותו ביששכר־זבולון אם יש לו שותף,
+        # וגם מהרשימות של האברכים מחודש חשון"
+        _yp = con.execute("SELECT name FROM avreichim WHERE name LIKE '%פיליפס%' AND name LIKE '%יונתן%'").fetchall()
+        if len(_yp) == 1:
+            _out.append(_yp[0]['name'])
+            # רשימות המלגות החודשיות מחשון תשפ"ז (אוקטובר 2026 ואילך) — בלי שורה שלו
+            _ns = con.execute("DELETE FROM stipends WHERE kind='monthly' AND period>='2026-10' AND name LIKE '%פיליפס%' AND name LIKE '%יונתן%'").rowcount
+            if _ns:
+                print('  פיליפס יונתן: הוסר מ-%d רשימות חודשיות מחשון' % _ns)
         _left = 0
         for anm in _out:
             r = con.execute("SELECT id,ended FROM avreichim WHERE name=?", (anm,)).fetchone()
