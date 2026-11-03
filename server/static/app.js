@@ -3223,6 +3223,7 @@ function renderSched(box){
   V.innerHTML=`<div class="mkw">
     <div class="mkhero"><h2>⏰ מתוזמנים<small>כל מה שעוד אמור לצאת — הודעות, ניסיון חוזר למי שלא ענה, מיילים. עכשיו ${esc(schWhen(S.now))}${S.call_ok?'':' · ⏸ עכשיו לא שולחים (שבת / חג / לילה) — ממשיכים ב'+esc(schWhen(S.next_ok))}</small></h2>
       <div class="mkstat"><b>${S.scheduled.length}</b><span>מתוזמנות</span></div>
+      <div class="mkstat"><b>${(S.repeats||[]).length}</b><span>חוזרות</span></div>
       <div class="mkstat"><b>${S.retries.length}</b><span>ניסיון חוזר</span></div>
       <div class="mkstat"><b>${S.checking.length}</b><span>לבדיקה</span></div>
       <button class="mkibtn" id="schre">🔄 רענון</button></div>
@@ -3232,6 +3233,12 @@ function renderSched(box){
          <div class="mksub">${j.label?'<span class="mktag mu">'+esc(j.label)+'</span>':''}${j.recips.map(r=>esc(r.name||'')+' <span dir="ltr">'+esc(r.phone||'')+'</span>').join(' · ')}${j.total>j.recips.length?' · ועוד '+(j.total-j.recips.length):''}</div>
          <div class="mkphone" style="margin-top:6px;padding:8px"><div class="mkbubble${j.channel==='sms'?'':' v'}" style="font-size:.88rem">${esc((j.recips[0]&&j.recips[0].text)||j.text)}</div></div>`,
         `<button class="mkbtn" data-j="${j.job}" data-a="now">▶️ עכשיו</button><button class="mkbtn gh" data-j="${j.job}" data-a="time">🕒 שעה אחרת</button>${j.total<=1?`<button class="mkbtn gh" data-j="${j.job}" data-a="text">✎ טקסט</button>`:''}<button class="mkbtn gh" data-j="${j.job}" data-a="cancel">✕ ביטול</button>`)).join('')}</div>`:empty('אין הודעות מתוזמנות'))}
+    ${sec('🔁','חוזרות — כל יום / כל חודש','יוצאות לבד בשעה שנקבעה, עד שמפסיקים',(S.repeats||[]).length,
+      (S.repeats||[]).length?`<div class="mklist">${S.repeats.map(r=>row(
+        `<b>${ch(r.channel)} · ${esc((r.who||[]).join(' · ')||'—')}</b>
+         <div class="mksub"><span>${r.freq==='daily'?'כל יום ב-'+esc(r.at||''):'כל חודש ב-'+esc(String(r.day||''))+(r.cal==='h'?' לחודש העברי':' לחודש')+' ב-'+esc(r.at||'')}</span><span>⏭ הבאה: <b>${r.next_run?esc(schWhen(r.next_run)):'—'}</b></span>${r.done_until&&r.next_run===r.done_until?'<span class="mktag ok">✓ סודר החודש</span>':''}${r.last_run?'<span>אחרונה: '+esc(schWhen(r.last_run))+(r.last?' · '+esc(r.last):'')+'</span>':''}</div>
+         ${r.text1?`<div class="mkphone" style="margin-top:6px;padding:8px"><div class="mkbubble${r.channel==='sms'?'':' v'}" style="font-size:.88rem">${esc(r.text1)}</div></div>`:''}`,
+        `<button class="mkbtn gh" data-rp="${r.id}" data-a="at" data-at="${esc(r.at||'')}">🕒 שעה</button>${r.freq==='daily'?`<button class="mkbtn gh" data-rp="${r.id}" data-a="done">✓ סודר החודש</button>`:''}<button class="mkbtn gh" data-rp="${r.id}" data-a="stop">🛑 להפסיק</button>`)).join('')}</div>`:empty('אין הודעות חוזרות'))}
     ${S.sending.length?sec('📤','יוצאות עכשיו','משלוחים באמצע',S.sending.length,`<div class="mklist">${S.sending.map(j=>row(
         `<b>${ch(j.channel)} · ${esc(j.label||'משלוח #'+j.job)}</b><div class="mksub">${j.stuck?'<span class="mktag bad">⚠️ תקוע — לא יצא</span>':'<span class="mkspin" style="color:var(--accent);width:12px;height:12px"></span>'} ${j.sent+j.failed} מתוך ${j.total} · ${j.sent} יצאו${j.failed?' · '+j.failed+' נכשלו':''} · נפתח ${esc(schWhen(j.created))}</div>`,
         j.stuck?`<button class="mkbtn" data-j="${j.job}" data-a="now">▶️ לשלוח עכשיו</button><button class="mkbtn gh" data-j="${j.job}" data-a="cancel">✕ ביטול</button>`
@@ -3257,6 +3264,12 @@ function renderSched(box){
       if(await post('/api/yemot/sched/job/'+id+'/text',{text:v})){toast('✎ עודכן');schLoad();}return;}
     b.disabled=true;b.innerHTML='<span class="mkspin"></span>';
     if(await post('/api/yemot/sched/job/'+id+'/'+a)){toast(a==='now'?'▶️ יוצאת עכשיו':'בוטלה');}schLoad();});
+  V.querySelectorAll('[data-rp]').forEach(b=>b.onclick=async()=>{const id=b.dataset.rp,a=b.dataset.a;
+    if(a==='at'){const v=await uiPrompt('באיזו שעה? (למשל 10:00)',b.dataset.at||'10:00');if(!v)return;
+      const r=await post('/api/yemot/repeat/'+id+'/at',{at:v.trim()});if(r){toast('🕒 הבאה: '+schWhen(r.next_run));schLoad();}return;}
+    if(a==='stop'&&!await uiConfirm('להפסיק את ההודעה החוזרת?','🛑 להפסיק','לא'))return;
+    b.disabled=true;b.innerHTML='<span class="mkspin"></span>';
+    const r=await post('/api/yemot/repeat/'+id+'/'+a,{});if(r)toast(a==='stop'?'🛑 הופסקה':'✓ סודר החודש — ממשיך בחודש הבא');schLoad();});
   V.querySelectorAll('[data-m]').forEach(b=>b.onclick=async()=>{const id=b.dataset.m,a=b.dataset.a;
     if(a==='noretry'&&!await uiConfirm('לא לנסות להתקשר אליו שוב?','✕ לא לנסות','ביטול'))return;
     b.disabled=true;b.innerHTML='<span class="mkspin"></span>';

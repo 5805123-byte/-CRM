@@ -5148,6 +5148,14 @@ def ensure_schema():
                 print('  repeat granitzki: ההודעה שלו לא נמצאה')
             con.execute("INSERT INTO seed_flags(name) VALUES('repeat_granitzki_v1')")
             con.commit()
+        # מאיר (3.11.2026): "כל בוקר זה אמור להתקשר אליו בעשר בבוקר עד שהוא מסדר את החוב" — 10:00 במקום 12:00
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='repeat_granitzki_10_v1'").fetchone():
+            for rp in con.execute("SELECT DISTINCT r.id FROM ym_repeat r JOIN ym_msg m ON m.job=r.job WHERE r.active=1 "
+                                  "AND COALESCE(r.freq,'')='daily' AND COALESCE(m.retry_of,0)=0 "
+                                  "AND (m.name LIKE '%גרניצקי%' OR m.text LIKE '%גרניצקי%')").fetchall():
+                print('  גרניצקי: כל יום ב-10:00, הבאה', ym_repeat_set_at(con, rp['id'], '10:00'))
+            con.execute("INSERT INTO seed_flags(name) VALUES('repeat_granitzki_10_v1')")
+            con.commit()
     except Exception as e:
         print('  repeat granitzki error:', e)
 
@@ -18715,6 +18723,45 @@ def ym_repeat_run(con, rp):
     return nj, skip
 
 
+def ym_repeat_set_at(con, rid, at):
+    """משנה את השעה של הודעה חוזרת ומחשב מחדש את הפעם הבאה (גם היום, אם השעה עוד לא עברה)."""
+    rp = con.execute("SELECT * FROM ym_repeat WHERE id=?", (rid,)).fetchone()
+    if not rp:
+        return None
+    d = dict(rp)
+    d['at'] = at
+    du = d.get('done_until') or ''
+    if du and len(du) >= 16:
+        du = du[:11] + at
+    d['done_until'] = du
+    nxt = ym_repeat_next2(d, il_now().replace(tzinfo=None) - datetime.timedelta(minutes=1))
+    con.execute("UPDATE ym_repeat SET at=?, done_until=?, next_run=? WHERE id=?", (at, du, nxt, rid))
+    return nxt
+
+
+def ym_repeat_rows(con):
+    """ההודעות החוזרות הפעילות — למסך ⏰ מתוזמנים: למי, מתי הבאה, ומה היה בפעם האחרונה."""
+    out = []
+    for r in con.execute("SELECT * FROM ym_repeat WHERE active=1 ORDER BY next_run"):
+        d = {k: r[k] for k in r.keys()}
+        j = con.execute("SELECT channel,text FROM ym_job WHERE id=?", (r['job'],)).fetchone()
+        d['channel'] = j['channel'] if j else ''
+        d['who'] = [x['name'] or x['phone'] for x in con.execute(
+            "SELECT name,phone FROM ym_msg WHERE job=? AND COALESCE(retry_of,0)=0 ORDER BY id LIMIT 5", (r['job'],))]
+        d['text1'] = ((r['text'] if 'text' in r.keys() else '') or '') or \
+            ((con.execute("SELECT text FROM ym_msg WHERE job=? ORDER BY id LIMIT 1", (r['job'],)).fetchone() or [''])[0] or (j['text'] if j else ''))
+        d['last'] = ''
+        if r['last_job']:
+            lj = con.execute("SELECT status,send_at FROM ym_job WHERE id=?", (r['last_job'],)).fetchone()
+            ms = [x['status'] for x in con.execute("SELECT status FROM ym_msg WHERE job=?", (r['last_job'],))]
+            if lj and lj['status'] == 'scheduled':
+                d['last'] = 'מחכה ל-' + (lj['send_at'] or '')
+            elif ms:
+                d['last'] = 'יצאה' if any(s == 'sent' for s in ms) else ('נכשלה' if all(s == 'failed' for s in ms) else 'בתור')
+        out.append(d)
+    return out
+
+
 def ym_repeat_scan():
     con = db()
     try:
@@ -18794,6 +18841,11 @@ def ym_sched_view(con, role='admin'):
     for j in con.execute("SELECT * FROM ym_job WHERE status='scheduled' ORDER BY send_at, id"):
         out['scheduled'].append({'job': j['id'], 'channel': j['channel'], 'label': j['label'] or '', 'send_at': j['send_at'] or '',
                                  'created': j['created'] or '', 'total': j['total'] or 0, 'text': j['text'] or '', 'recips': recips(j['id'])})
+    # מאיר: "למה במתוזמנים אין את אברהם גרניצקי… כל בוקר זה אמור להתקשר אליו" — גם ההודעות החוזרות כאן
+    try:
+        out['repeats'] = ym_repeat_rows(con)
+    except Exception:
+        out['repeats'] = []
     out['sending'] = []
     for j in con.execute("SELECT * FROM ym_job WHERE status IN ('queued','sending') ORDER BY id DESC LIMIT 20"):
         # משלוח שנפתח לפני יותר מחצי שעה ולא יצא ממנו כלום — תקוע (למשל אחרי תקלה / הפעלה מחדש של השרת)
@@ -26203,6 +26255,22 @@ class H(BaseHTTPRequestHandler):
                 con.commit()
             finally:
                 con.close()
+            return self._send(200, {'ok': True, 'next_run': nxt})
+        m = re.match(r'/api/yemot/repeat/(\d+)/at$', self.path)
+        if m:
+            # 🕒 שעה אחרת להודעה החוזרת (מתוך ⏰ מתוזמנים)
+            at = (b.get('at') or '').strip()
+            if not re.fullmatch(r'\d{1,2}:\d{2}', at):
+                return self._send(400, {'ok': False, 'error': 'שעה לא תקינה (למשל 10:00)'})
+            at = '%02d:%s' % (int(at.split(':')[0]), at.split(':')[1])
+            con = db()
+            try:
+                nxt = ym_repeat_set_at(con, int(m.group(1)), at)
+                con.commit()
+            finally:
+                con.close()
+            if nxt is None:
+                return self._send(404, {'ok': False})
             return self._send(200, {'ok': True, 'next_run': nxt})
         m = re.match(r'/api/yemot/repeat/(\d+)/stop$', self.path)
         if m:
