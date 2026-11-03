@@ -18265,7 +18265,7 @@ function ymHead(st){
     :(st.connected===null||st.connected===undefined?`<div class="ymok" style="opacity:.75">🔗 בודק את החיבור לימות המשיח… <span class="mkspin" style="width:11px;height:11px"></span></div>`
     :st.connected?`<div class="ymok">🔗 מחובר לימות המשיח ✓${st.info&&st.info.units!=null?` · יתרה: <b>${esc((+st.info.units).toLocaleString('he-IL',{maximumFractionDigits:2}))}</b> יחידות`:''}</div>`
                   :`<div class="ymwarn">⚠️ החיבור לימות המשיח נכשל: ${esc(st.error||'')} — פרטים בלשונית "לוג טכני"</div>`);
-  const T=[['send','📤 שליחה'],['vm','📥 הודעות שהשאירו'+(CMVM&&CMVM.new?' ('+CMVM.new+')':'')],['jobs','📊 משלוחים ותוצאות'],['calls','📞 יומן שיחות'],['pay','💳 תשלום בטלפון'],['log','📜 לוג טכני']];
+  const T=[['send','📤 שליחה'],['vm','📥 הודעות שהשאירו'+(CMVM&&CMVM.new?' ('+CMVM.new+')':'')],['jobs','📊 משלוחים ותוצאות'],['calls','📞 יומן שיחות'],['pay','💳 תשלום בטלפון'],['sched','⏰ מתוזמנים'],['log','📜 לוג טכני']];
   return `<div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ym_back">← חזרה לרשימת הקהילה</button></div>
     <div class="rbtitle">📞 ימות המשיח — הודעה קולית / SMS</div><div id="ym_conn">${conn}</div>
     <button class="btn" id="ym_quick" style="width:100%;margin:4px 0 8px;background:#1f7a4d;color:#fff">✍️ הודעה לכל מספר — מהירה (גם מי שלא בקהילה) · עם תזמון וחזרה</button>
@@ -18339,6 +18339,8 @@ function renderCommYm(){
   if(ymView==='calls')return ymViewCalls();
   if(ymView==='pay')return ymViewPay();
   if(ymView==='vm')return ymViewVm();
+  // מאיר: "חלון מתוזמנים אמור להיות פה" — לשונית בתוך ימות המשיח
+  if(ymView==='sched'){view.innerHTML=ymHead(ymStatus)+'<div id="cm_schbox"></div>';ymWireHead();SCH=null;renderSched(document.getElementById('cm_schbox'));return;}
   if(ymView==='log'){if(ymLog===null){ymLoadLog().then(()=>{if(tab==='comm'&&cmSub==='ym')renderCommYm();});}return ymViewLog();}
   return ymViewSend();
 }
