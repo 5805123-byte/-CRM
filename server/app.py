@@ -19096,6 +19096,83 @@ def ym_redial_at_scan():
         con.close()
 
 
+# 🖨 מאיר (3.11.2026): "ביומן אני רוצה אפשרות להדפסה של המשימות של אותו יום בקובץ PDF מסודר יפה"
+CAL_PDF_KIND = {'event': 'שמחה / פגישה', 'followup': 'שיחה', 'email': 'מייל / הודעה', 'other': 'משימה'}
+
+
+def cal_day_pdf(con, day):
+    """דף A4 אחד (או יותר) עם כל מה שפתוח ביום: משימות עם שעה, בלי שעה, ולילות פרנס. ריבוע לסימון ✓ ביד."""
+    import pymupdf as _pm
+    import html as _h
+    d = datetime.date.fromisoformat(day)
+    try:
+        heb = greg_to_heb_full(day)
+    except Exception:
+        heb = ''
+    rows = [dict(r) for r in con.execute(
+        "SELECT t.*, d.last dl, d.first df FROM tasks t LEFT JOIN donors d ON d.id=t.donor_id "
+        "WHERE t.due_date=? AND COALESCE(t.done,0)=0 ORDER BY CASE WHEN COALESCE(t.at_time,'')='' THEN '99' ELSE t.at_time END, t.id", (day,))]
+    try:
+        pn = [dict(r) for r in con.execute(
+            "SELECT p.kind,p.date_text,p.dedication,d.last,d.first FROM parnes p LEFT JOIN donors d ON d.id=p.donor_id "
+            "WHERE COALESCE(p.status,'')<>'suggested' AND COALESCE(p.cal_done,0)=0 AND p.night_date=?", (day,))]
+    except Exception:
+        pn = []
+    e = lambda x: _h.escape(str(x or ''))
+
+    def line(t):
+        who = ((t.get('dl') or '') + ' ' + (t.get('df') or '')).strip()
+        txt = (t.get('note') or KIND_HE.get(t.get('kind') or '', '') or 'משימה').strip()
+        txt = re.sub(r'^[^\w"\'(]+', '', txt)
+        sub = ' · '.join(x for x in [who, ('מקום: ' + t['place']) if (t.get('place') or '').strip() else '',
+                                     ('הועבר מ-' + datetime.date.fromisoformat(t['orig_date']).strftime('%d/%m')) if t.get('orig_date') and t['orig_date'] < day else ''] if x)
+        return ('<tr><td class="bx"><div class="sq"></div></td><td class="tm">%s</td><td class="tx"><b>%s</b>%s</td></tr>'
+                % (e(t.get('at_time') or ''), e(txt), ('<div class="sb">%s</div>' % e(sub)) if sub else ''))
+    timed = [t for t in rows if (t.get('at_time') or '').strip()]
+    untimed = [t for t in rows if not (t.get('at_time') or '').strip()]
+    parts = []
+    if timed:
+        parts.append('<h2>לפי שעה</h2><table>%s</table>' % ''.join(line(t) for t in timed))
+    if untimed:
+        parts.append('<h2>במשך היום</h2><table>%s</table>' % ''.join(line(t) for t in untimed))
+    if pn:
+        parts.append('<h2>לימוד לזכות / פרנס</h2><table>%s</table>' % ''.join(
+            '<tr><td class="bx"><div class="sq"></div></td><td class="tm"></td><td class="tx"><b>%s</b>%s</td></tr>'
+            % (e(((p.get('last') or '') + ' ' + (p.get('first') or '')).strip() or 'פרנס'),
+               ('<div class="sb">%s</div>' % e(' · '.join(x for x in [p.get('date_text') or '', p.get('dedication') or ''] if x))) if (p.get('date_text') or p.get('dedication')) else '')
+            for p in pn))
+    if not parts:
+        parts.append('<p class="none">אין משימות פתוחות ביום הזה.</p>')
+    n = len(rows) + len(pn)
+    DOW = ['שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון']
+    html_ = ('<div class="hd"><div class="k">כולל חצות · משימות היום</div><h1>%s</h1><div class="g">יום %s · %s · %s</div></div>%s'
+             '<div class="ft">הודפס %s</div>') % (
+        e(heb or d.strftime('%d/%m/%Y')), DOW[d.weekday()], d.strftime('%d/%m/%Y'),
+        'משימה אחת' if n == 1 else '%d משימות' % n, ''.join(parts), il_now().strftime('%d/%m/%Y %H:%M'))
+    css = ('@font-face{font-family:fr;src:url(frankruhl-regular.ttf)}@font-face{font-family:fr;font-weight:bold;src:url(frankruhl-bold.ttf)}'
+           '*{font-family:fr}body{direction:rtl;text-align:right;color:#2a2416;font-size:14pt}'
+           '.hd{text-align:center;border-bottom:2px solid #9c7a2e;padding-bottom:8px;margin-bottom:6px}'
+           '.k{color:#9c7a2e;font-size:12pt;font-weight:bold}h1{font-size:26pt;margin:2px 0;color:#3b357a}.g{font-size:13pt;color:#6b6249}'
+           'h2{font-size:15pt;color:#7a5a12;margin:14px 0 4px;border-bottom:1px solid #e0d4b0}'
+           'table{width:100%;border-collapse:collapse}td{padding:7px 4px;border-bottom:1px solid #eee5cc;vertical-align:top}'
+           '.bx{width:26px}.sq{width:15px;height:15px;border:1.6px solid #3b357a;margin-top:3px}'
+           '.tm{width:52px;font-weight:bold;color:#3b357a;font-size:14pt}.tx b{font-size:14pt}.sb{font-size:12pt;color:#6b6249}'
+           '.none{text-align:center;color:#6b6249;margin-top:30px}.ft{margin-top:18px;font-size:10pt;color:#9a9080;text-align:center}')
+    story = _pm.Story(html=html_, user_css=css, archive=_pm.Archive(STATIC))
+    buf = io.BytesIO()
+    wr = _pm.DocumentWriter(buf)
+    mb = _pm.paper_rect('a4')
+    where = mb + (40, 40, -40, -40)
+    more = True
+    while more:
+        dev = wr.begin_page(mb)
+        more, _ = story.place(where)
+        story.draw(dev)
+        wr.end_page()
+    wr.close()
+    return buf.getvalue()
+
+
 def tasks_roll_scan():
     """משימה עם roll=1 שלא סומנה ✓ ותאריכה עבר — עוברת להיום, באותה שעה (וכך כל יום, עד שמסמנים ✓ או מוחקים)."""
     con = db()
@@ -22243,6 +22320,26 @@ class H(BaseHTTPRequestHandler):
                                                       (qs.get('y', [''])[0] or '')[:20]))
             except Exception:
                 return self._send(200, {'ok': False, 'len': 30, 'days': {}})
+        if self.path.split('?')[0] == '/api/cal/daypdf':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            day = (qs.get('d', [''])[0] or '').strip()[:10] or il_now().date().isoformat()
+            if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', day):
+                return self._send(400, {'ok': False, 'error': 'תאריך'})
+            con = db()
+            try:
+                data = cal_day_pdf(con, day)
+            except Exception as e:
+                return self._send(500, {'ok': False, 'error': str(e)[:200]})
+            finally:
+                con.close()
+            fname = 'יומן-%s-%s.pdf' % (day, il_now().strftime('%H%M'))
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/pdf')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Content-Disposition', "%s; filename*=UTF-8''%s" % ('attachment' if qs.get('dl') else 'inline', quote(fname)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers(); self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/api/hebdate':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             g = (qs.get('d', [''])[0] or '').strip()[:10]

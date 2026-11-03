@@ -14842,7 +14842,7 @@ async function renderCalDay(today){
     <div class="cdhead"><button class="btn ghost cdnav" data-n="1" aria-label="יום הבא">›</button>
       <div class="cdttl"><b>${esc(heb||fmtGreg(day))}</b><small>יום ${CAL_DOW[new Date(day+'T12:00:00').getDay()]} · ${fmtGreg(day)}${day===today?' · <em>היום</em>':''}</small></div>
       <button class="btn ghost cdnav" data-n="-1" aria-label="יום קודם">‹</button></div>
-    ${day!==today?'<button class="btn sm ghost cdtoday">חזרה להיום</button>':''}
+    <div class="cdtools">${day!==today?'<button class="btn sm ghost cdtoday">חזרה להיום</button>':''}<a class="btn sm ghost" href="/api/cal/daypdf?d=${day}" target="_blank" rel="noopener">🖨 הדפסה — PDF של היום</a></div>
     <div class="cdadd"><input id="cd_new" placeholder="✍️ לכתוב משימה ליום הזה… (Enter)" autocomplete="off"><input type="time" id="cd_newt" aria-label="שעה"><button class="btn" id="cd_addb">➕</button></div>
     <div class="cdlist">${E.length?E.map(row).join(''):'<div class="empty">אין כלום ביום הזה 🙂</div>'}</div>
   </div>${calModeBar()}`;
