@@ -19515,7 +19515,10 @@ function brcRender(){
     const i=BRC.rows.findIndex(y=>y.id===r.id);BRC.rows[i]=x.row;return x.row;};
   const next=()=>{const i=BRC.rows.findIndex(x=>x.id===r.id);const n=BRC.rows.slice(i+1).find(x=>!x.state)||BRC.rows.find(x=>!x.state&&x.id!==r.id);if(n)brcCur=n.id;brcQ='';brcRender();ov.scrollTop=0;};
   ov.querySelectorAll('[data-got]').forEach(b=>b.onclick=async()=>{const d=b.dataset.got,gl=r.got.includes(d)?r.got.filter(x=>x!==d):[...r.got,d];if(await save({got:gl}))brcRender();});
-  ov.querySelectorAll('[data-mode]').forEach(b=>b.onclick=async()=>{if(await save({mode:b.dataset.mode}))brcRender();});
+  // הבחירה נצבעת מיד (בלי לחכות לשרת) ונשמרת ברקע — שלא ייראה "תקוע"
+  ov.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{r.mode=b.dataset.mode;
+    ov.querySelectorAll('[data-mode]').forEach(x=>x.classList.toggle('on',x===b));
+    api('POST','/api/bankrc/'+r.id,{mode:r.mode}).then(x=>{if(x&&x.ok){const i=BRC.rows.findIndex(y=>y.id===r.id);if(i>=0)BRC.rows[i].mode=r.mode;}else toast('הבחירה לא נשמרה — נסה שוב');});});
   ov.querySelectorAll('[data-pick]').forEach(b=>b.onclick=async()=>{brcQ='';if(await save({donor_id:+b.dataset.pick,phone:'',email:''}))brcRender();});
   if(g('bk_unpick'))g('bk_unpick').onclick=async()=>{if(await save({donor_id:0,phone:'',email:''}))brcRender();};
   if(g('bk_open'))g('bk_open').onclick=()=>{const dd=DB.find(x=>x.id==r.donor.id);if(dd){brcClose();openDonor(dd,'details');}};
