@@ -19349,6 +19349,97 @@ function rcOpenWithSlip(f){
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab==='rcpt'));
   flt=''; render(); rcSlipUpload(f);
 }
+
+// ---- 🏦 העברות בנק 2026 → קבלות ----
+// מאיר: "שהכל יהיה מסונכרן עם המערכת שלנו" — רשימת רואת החשבון (העברות לבנק הישראלי שלא יצאה
+// עליהן קבלה). לכל משלם: תורם מהמערכת (או חדש), מה לעשות, ובלחיצה — התרומות בכרטיס והקבלה באיזיקאונט.
+let BRC=null, brcCur='', brcQ='', brcF='open';
+const BRC_MODES=[['annual','קבלה שנתית אחת','בסוף השנה, על כל ההעברות'],['one','קבלה אחת עכשיו','על כל ההעברות עד היום'],['each','קבלה על כל העברה','קבלה נפרדת לכל תאריך'],
+  ['done','כבר יצאה קבלה','רק לרשום את התרומות בכרטיס'],['anon','תורם מזדמן','קבלה בלי שם, בלי כרטיס'],['skip','לא להוציא','לא תרומה / לא צריך']];
+const brcDt=d=>{const [y,m,dd]=String(d).split('-');return dd+'/'+m+'/'+String(y).slice(2);};
+async function brcLoad(){const r=await api('GET','/api/bankrc');BRC=r&&r.ok?r:{rows:[],error:(r&&r.error)||'שגיאה'};}
+async function brcOpen(){const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');rs.innerHTML='<button class="x" id="rx">✕</button><h2>🏦 העברות בנק 2026 → קבלות</h2><div class="hintxt">⏳ טוען…</div>';
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');remov.classList.add('show');await brcLoad();
+  if(!brcCur){const o=BRC.rows.find(x=>!x.state);brcCur=o?o.id:'';}brcRender();}
+function brcRender(){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  const R=BRC.rows||[], nDone=R.filter(x=>x.state).length;
+  const L=R.filter(x=>brcF==='all'||(brcF==='open'?!x.state:!!x.state));
+  const r=R.find(x=>x.id===brcCur);
+  const st=x=>x.state==='done'?'<span class="mktag ok">✓ בוצע</span>':x.state==='annual'?'<span class="mktag ok">🗓 שנתית בסוף השנה</span>':x.state==='skipped'?'<span class="mktag mu">לא להוציא</span>':'<span class="mktag mu">פתוח</span>';
+  let card='';
+  if(r){
+    const inC=Object.fromEntries((r.in_card||[]).map(x=>[x.date,x]));
+    const dn=r.donor;
+    const hits=!dn&&brcQ.trim().length>=2?DB.filter(x=>matchStr([x.last,x.first,x.english,x.business,x.email,x.phone].join(' '),brcQ)).slice(0,8):[];
+    const pickRow=(id,nm,em,ph)=>`<div class="dpr" data-pick="${id}"><b>${esc(nm)}</b>${em?` <small>✉️ ${esc(em)}</small>`:' <small style="color:var(--no)">בלי מייל</small>'}${ph?` <small dir="ltr">${esc(ph)}</small>`:''}</div>`;
+    card=`<div class="sec" style="border:2px solid #0f5c4d;border-radius:12px;padding:12px;margin:8px 0">
+      <div class="rbtitle" style="text-align:right">${esc(r.bank)} <small>אסמכתא ${esc(r.ref)}</small> ${st(r)}</div>
+      <div class="hintxt">${r.rows.length>1?r.rows.length+' העברות · ':''}סה״כ <b>₪${r.total.toLocaleString('he-IL')}</b></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">${r.rows.map(([d,a])=>{const g=r.got.includes(d),c=inC[d];
+        return `<button class="chip${g?' on':''}" data-got="${d}" title="לחיצה: כבר יצאה קבלה על ההעברה הזו">${brcDt(d)} · ₪${a}${g?' ✓ יצאה':''}${c?' · <b style="color:#1d6b3a">בכרטיס'+(c.receipt?' · קבלה '+esc(c.receipt):'')+'</b>':''}</button>`;}).join('')}</div>
+      <div class="hintxt">"בכרטיס" = התרומה כבר רשומה אצלו (אותו סכום, עד שבוע מהתאריך) ולא תירשם שוב. לחיצה על תאריך = כבר יצאה עליו קבלה.</div>
+      <div class="gvlbl" style="margin-top:10px">👤 התורם במערכת</div>
+      ${dn?`<div class="rcsug" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${esc(dn.name)}</b> <small>כרטיס ${dn.id}</small>${dn.email?` <small>✉️ ${esc(dn.email)}</small>`:' <small style="color:var(--no)">בלי מייל</small>'}${dn.phone?` <small dir="ltr">${esc(dn.phone)}</small>`:''}
+          <button class="btn sm ghost" id="brc_open" data-id="${dn.id}">לפתוח כרטיס</button><button class="btn sm ghost" id="brc_unpick">✕ להחליף</button></div>`
+        :`${(r.sugg||[]).length?`<div class="hintxt">אולי אחד מאלה (מהמערכת):</div><div class="dpres">${r.sugg.map(x=>pickRow(x.id,x.name,x.email,x.phone)).join('')}</div>`:''}
+          <input id="brc_q" autocomplete="off" placeholder="🔍 חיפוש תורם במערכת — שם / טלפון / מייל" value="${esc(brcQ)}" style="width:100%;margin-top:6px">
+          <div class="dpres">${hits.map(x=>pickRow(x.id,((x.last||'')+' '+(x.first||'')).trim()||x.business||x.english||'',splitEmails(x.email)[0]||'',x.phone||'')).join('')}</div>
+          <details ${(r.new_last||r.new_first)?'open':''} style="margin-top:6px"><summary><b>➕ תורם חדש</b> (לא קיים במערכת)</summary>
+            <div class="two"><label class="fld"><span>שם משפחה</span><input id="brc_last" value="${esc(r.new_last||'')}"></label><label class="fld"><span>שם פרטי</span><input id="brc_first" value="${esc(r.new_first||'')}"></label></div></details>`}
+      <div class="two"><label class="fld"><span>📱 טלפון ${dn&&dn.phone?'(יש בכרטיס)':''}</span><input id="brc_phone" dir="ltr" value="${esc(r.phone||'')}" placeholder="${esc(dn&&dn.phone||'')}"></label>
+        <label class="fld"><span>✉️ מייל ${dn&&dn.email?'(ריק = מהכרטיס)':''}</span><input id="brc_email" dir="ltr" value="${esc(r.email||'')}" placeholder="${esc(dn&&dn.email||'')}"></label></div>
+      <label class="fld"><span>🎯 מה לכתוב על הקבלה</span><input id="brc_pur" value="${esc(r.purpose||'')}" placeholder="למשל: תרומה להזנה"></label>
+      <div class="gvlbl" style="margin-top:8px">מה לעשות</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px">${BRC_MODES.map(([k,t,d])=>`<button class="btn sm ${r.mode===k?'':'ghost'}" data-mode="${k}" style="text-align:right;display:flex;flex-direction:column;align-items:flex-start"><b>${t}</b><small style="font-weight:400">${d}</small></button>`).join('')}</div>
+      <label class="fld"><span>📝 הערה</span><input id="brc_note" value="${esc(r.note||'')}"></label>
+      <label class="gvall"><input type="checkbox" id="brc_send" ${r.send?'checked':''}> 📧 לשלוח את הקבלה במייל לתורם</label>
+      ${r.result?`<div class="hintxt" style="color:#1d6b3a;font-weight:700">${esc(r.result)}</div>`:''}
+      <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm ghost" id="brc_save">💾 שמור</button>
+        ${r.state!=='done'?`<button class="btn sm" id="brc_go" style="background:#0f5c4d;color:#fff">✅ לבצע — לרשום בכרטיס${['annual','one','each','anon'].includes(r.mode)?' ולהפיק קבלה':''}</button>`:''}
+        ${r.state==='annual'?'<button class="btn sm" id="brc_annual">🧾 להפיק עכשיו את הקבלה השנתית</button>':''}
+        <button class="btn sm ghost" id="brc_next">הבא ←</button></div>
+    </div>`;
+  }
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🏦 העברות בנק 2026 → קבלות</h2>
+    <div class="hintxt">רשימת רואת החשבון: העברות לבנק הישראלי ינואר–אוקטובר 2026. ${nDone} מתוך ${R.length} טופלו.${BRC.ez===false?' <b style="color:var(--no)">⚠️ איזיקאונט לא מחובר</b>':''}</div>
+    ${card}
+    <div class="bqseg" style="margin-top:8px"><button class="${brcF==='open'?'on':''}" data-f="open">פתוחים</button><button class="${brcF==='all'?'on':''}" data-f="all">הכל</button><button class="${brcF==='done'?'on':''}" data-f="done">טופלו</button></div>
+    <div>${L.map(x=>`<div class="dpr${x.id===brcCur?' on':''}" data-row="${x.id}" style="${x.id===brcCur?'outline:2px solid #0f5c4d;':''}"><b>${esc(x.donor?x.donor.name:x.bank)}</b> <small>₪${x.total.toLocaleString('he-IL')}${x.rows.length>1?' · '+x.rows.length+' העברות':' · '+brcDt(x.rows[0][0])}</small> ${st(x)}${x.donor?` <small>${esc(x.bank)}</small>`:''}</div>`).join('')||'<div class="hintxt">אין כאן כלום</div>'}</div>`;
+  const g=id=>document.getElementById(id);
+  g('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{brcF=b.dataset.f;brcRender();});
+  rs.querySelectorAll('[data-row]').forEach(b=>b.onclick=()=>{brcCur=b.dataset.row;brcQ='';brcRender();rs.scrollTop=0;});
+  if(!r)return;
+  const vals=()=>{const o={};[['brc_last','new_last'],['brc_first','new_first'],['brc_phone','phone'],['brc_email','email'],['brc_pur','purpose'],['brc_note','note']].forEach(([i,k])=>{if(g(i))o[k]=g(i).value.trim();});o.send=g('brc_send').checked?1:0;return o;};
+  const save=async(extra)=>{const x=await api('POST','/api/bankrc/'+r.id,Object.assign(vals(),extra||{}));if(!x||!x.ok){uiAlert((x&&x.error)||'לא נשמר');return null;}
+    const i=BRC.rows.findIndex(y=>y.id===r.id);BRC.rows[i]=x.row;return x.row;};
+  rs.querySelectorAll('[data-got]').forEach(b=>b.onclick=async()=>{const d=b.dataset.got,gl=r.got.includes(d)?r.got.filter(x=>x!==d):[...r.got,d];if(await save({got:gl}))brcRender();});
+  rs.querySelectorAll('[data-mode]').forEach(b=>b.onclick=async()=>{if(await save({mode:b.dataset.mode}))brcRender();});
+  rs.querySelectorAll('[data-pick]').forEach(b=>b.onclick=async()=>{brcQ='';if(await save({donor_id:+b.dataset.pick}))brcRender();});
+  if(g('brc_unpick'))g('brc_unpick').onclick=async()=>{if(await save({donor_id:0}))brcRender();};
+  if(g('brc_open'))g('brc_open').onclick=()=>{remov.classList.remove('show');{const dd=DB.find(x=>x.id==g('brc_open').dataset.id);if(dd)openDonor(dd,'details');}};
+  const qi=g('brc_q');if(qi){let t;qi.oninput=()=>{clearTimeout(t);t=setTimeout(()=>{brcQ=qi.value;brcRender();const e=g('brc_q');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},200);};}
+  g('brc_save').onclick=async()=>{if(await save()){toast('💾 נשמר');brcRender();}};
+  g('brc_next').onclick=async()=>{await save();const o=BRC.rows.filter(x=>!x.state&&x.id!==r.id);const i=BRC.rows.findIndex(x=>x.id===r.id);
+    const n=BRC.rows.slice(i+1).find(x=>!x.state)||o[0];if(n){brcCur=n.id;brcQ='';}brcRender();rs.scrollTop=0;};
+  const run=async(path,q)=>{const row=await save();if(!row)return;
+    if(!row.mode){uiAlert('צריך לבחור מה לעשות');return;}
+    const em=row.email||(row.donor&&row.donor.email)||'';
+    const who=row.donor?row.donor.name:((row.new_last||'')+' '+(row.new_first||'')).trim();
+    if(!['skip','anon'].includes(row.mode)&&!who){uiAlert('צריך לבחור תורם מהמערכת או לכתוב שם לתורם חדש');return;}
+    const rc=['annual','one','each','anon'].includes(row.mode)&&(path!=='/apply'||row.mode!=='annual');
+    if(!await uiConfirm(q(who,em,rc,row),'✅ כן','לא'))return;
+    toast('מבצע…');const x=await api('POST','/api/bankrc/'+row.id+path,{});
+    if(x&&x.row){const i=BRC.rows.findIndex(y=>y.id===row.id);BRC.rows[i]=x.row;}
+    if(!x||!x.ok){uiAlert((x&&x.error)||'שגיאה');brcRender();return;}
+    toast('✓ '+x.msg);load();brcRender();};
+  const qtxt=(who,em,rc,row)=>(row.mode==='skip'?'לסמן "לא להוציא קבלה"?':
+    row.mode==='anon'?'להפיק קבלות לתורם מזדמן (בלי שם) על ההעברות?':
+    'לרשום את התרומות בכרטיס של '+who+(row.donor?'':' (תורם חדש)')+'?'+(rc?'\n\nולהפיק '+(row.mode==='each'?'קבלה לכל העברה':'קבלה אחת על כל ההעברות')+' באיזיקאונט'+(row.send&&em?' ולשלוח אל '+em:' (בלי שליחה במייל)'):row.mode==='annual'?'\n\nהקבלה השנתית תופק בסוף השנה (תיפתח משימה).':''));
+  if(g('brc_go'))g('brc_go').onclick=()=>run('/apply',qtxt);
+  if(g('brc_annual'))g('brc_annual').onclick=()=>run('/annual_now',(who,em,rc,row)=>'להפיק עכשיו קבלה שנתית אחת ל'+who+' על כל ההעברות'+(row.send&&em?' ולשלוח אל '+em:' (בלי שליחה במייל)')+'?');
+}
 function renderReceipts(){
   if(RCPTS===null){
     view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען את הקבלות…</div>';
@@ -19368,6 +19459,7 @@ function renderReceipts(){
       <button class="rctab${rcKind==='us'?' on':''}" data-k="us">🇺🇸 חו"ל — העמותה בארה"ב, בדולר <span class="givecnt">${nUs}</span></button>
     </div>
     <div class="rcbar">${rcKind==='il'?`<button class="btn sm ${rcSlip?'ghost':''}" id="rc_slipbtn">${rcSlip?'✕ סגור את האסמכתא':'📎 אסמכתא → קבלה'}</button><input type="file" id="rc_slipf" accept="application/pdf,image/*" style="display:none">`:''}
+      ${rcKind==='il'?'<button class="btn sm" id="rc_bankrc" style="background:#0f5c4d;color:#fff">🏦 העברות בנק 2026 → קבלות</button>':''}
       <button class="btn sm ${rcNew?'':'ghost'}" id="rc_newbtn">${rcNew?'✕ סגור':'➕ הפקת קבלה ידנית'}</button>
       <button class="btn sm ghost" id="rc_reload" title="לטעון מחדש את הרשימה">🔄</button>
       <span class="hintxt">${rows.length} קבלות · סה"כ ${sym}${tot.toLocaleString('en-US',{maximumFractionDigits:2})} · נשלחו ${nSent} · לא נשלחו ${rows.length-nSent}</span>
@@ -19421,6 +19513,7 @@ function renderReceipts(){
   if(sb)sb.onclick=()=>{if(rcSlip){rcSlip=null;renderReceipts();}else sf.click();};
   if(sf)sf.onchange=()=>{if(sf.files[0])rcSlipUpload(sf.files[0]);};
   wireSlip();
+  const bkb=document.getElementById('rc_bankrc'); if(bkb)bkb.onclick=()=>brcOpen();
   const nb=document.getElementById('rc_newbtn'); if(nb)nb.onclick=()=>{rcNew=!rcNew;rcDonor=null;rcQ='';renderReceipts();if(rcNew){const i=document.getElementById('rc_q');if(i)i.focus();}};
   const rl=document.getElementById('rc_reload'); if(rl)rl.onclick=async()=>{toast('טוען…');await Promise.all([rcLoad(true),load()]);renderReceipts();};
   const qi=document.getElementById('rc_q'); if(qi){let _t;qi.oninput=()=>{clearTimeout(_t);_t=setTimeout(()=>{rcQ=qi.value;renderReceipts();

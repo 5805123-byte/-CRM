@@ -5011,6 +5011,23 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('kollelc26_notes_v1')"); con.commit()
     except Exception as e:
         print('  kollelc26 notes error:', e)
+    try:
+        bankrc_schema(con)
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='bankrc_answers_v1'").fetchone():
+            # התשובות שמאיר כבר מילא בדף הקודם (4.11.2026)
+            con.execute("UPDATE bankrc SET mode='annual', new_last='ברוך', new_first='עקיבא', phone='+972 54-985-3660' WHERE id='akiva' AND COALESCE(state,'')=''")
+            con.execute("UPDATE bankrc SET mode='done', note='הקבלה מופקת באיזיקאונט על שם הקרן (כמו ב-2025) ונשלחת לקרן — התרומות אצל אמי פרלוב' "
+                        "WHERE id='hatzlat' AND COALESCE(state,'')=''")
+            _ap = con.execute("SELECT id FROM donors WHERE TRIM(last)='פרלוב' AND TRIM(first) LIKE 'אמי%'").fetchall()
+            if len(_ap) == 1:
+                con.execute("UPDATE bankrc SET donor_id=? WHERE id='hatzlat' AND donor_id IS NULL", (_ap[0]['id'],))
+            _ku = con.execute("SELECT id FROM donors WHERE id=479 AND last LIKE 'קונק%'").fetchone()
+            if _ku:
+                con.execute("UPDATE bankrc SET donor_id=479 WHERE id='kunkel' AND donor_id IS NULL")
+            con.execute("INSERT INTO seed_flags(name) VALUES('bankrc_answers_v1')")
+        con.commit()
+    except Exception as e:
+        print('  bankrc seed error:', e)
     # מאיר: "תכניס לי למשימות שאני צריך לעשות העברה לשמי יוסי מילר… זה לא שום תורם. פשוט תכניס לי
     # את המילים האלה" — משימה כללית של מאיר להיום, בלי כרטיס. (v2 מתקן גרסה שנתלתה בכרטיס)
     try:
@@ -18925,6 +18942,217 @@ def ym_repeat_rows(con):
     return out
 
 
+# ---- 🏦 העברות בנק 2026 → קבלות ----
+# מאיר (4.11.2026): רשימת רואת החשבון — העברות לבנק הישראלי מינואר עד אוקטובר 2026 שלא יצאה עליהן
+# קבלה. "שהכל יהיה מסונכרן עם המערכת שלנו": לכל משלם בוחרים תורם קיים (או חדש), מה לעשות
+# (שנתית / אחת עכשיו / לכל העברה / כבר יצאה / מזדמן / לא להוציא), ובלחיצה התרומות נכנסות לכרטיס
+# והקבלה מופקת באיזיקאונט.
+BANKRC_SEED = [
+    ('akiva', 'עקיבא ברוך', 'זיכוי מבנק וואן זירו מעקיבא', '989018', [('01/01/26', 72), ('01/02/26', 72), ('01/03/26', 72), ('01/04/26', 72), ('01/05/26', 72)]),
+    ('hatzlat', 'פרלוב', 'זיכוי מב.פועלים מהצלת', '989012', [('06/02/26', 117), ('12/03/26', 117), ('15/04/26', 112), ('06/05/26', 111), ('07/06/26', 108), ('09/07/26', 110), ('10/08/26', 110), ('06/09/26', 111), ('13/10/26', 110)]),
+    ('music', 'מוזיק', 'זיכוי מב.פועלים ממיוזיק', '989012', [('04/03/26', 1500)]),
+    ('kunkel', 'קונקל', 'זיכוי מדיסקונט מקונקל', '989011', [('25/03/26', 3442), ('30/08/26', 3560)]),
+    ('im4589', '', 'זיכוי מיידי 4589250020', '99293', [('12/01/26', 180)]),
+    ('chesler', 'צסלר', "זיכוי ממרכנתיל מצ'סלר", '989017', [('25/03/26', 180)]),
+    ('kirsh', 'קירשבאום', 'זיכוי מב.פועלים מקירשבאום', '989012', [('04/03/26', 300)]),
+    ('im3595', '', 'זיכוי מיידי 3595390010', '99293', [('05/03/26', 300)]),
+    ('maor', 'מאור', 'זיכוי מב.המזרחי מאור', '989020', [('25/03/26', 842)]),
+    ('im6420', '', 'זיכוי מיידי 642040011', '99293', [('18/01/26', 1000)]),
+    ('im3641', '', 'זיכוי מיידי 3641840010', '99293', [('02/03/26', 1000)]),
+    ('stern', 'שטרנברג', 'זיכוי מבנק יהב משטרנברג', '989004', [('20/07/26', 1000)]),
+    ('branch', '', 'העברה מח. בסניף', '901', [('10/03/26', 2850)]),
+    ('salary', '', 'משכורת', '99411', [('09/10/26', 3300)]),
+    ('bentzion', 'בן ציון', 'זיכוי מב.פועלים מלוי בן-ציון', '989012', [('17/05/26', 4200)]),
+    ('menachem', 'מנחם נח', 'זיכוי מב.המזרחי ממנחם נח', '989020', [('21/04/26', 5300)]),
+    ('zuck', 'צוקרמן', 'זיכוי מב.המזרחי מצוקרמן', '989020', [('08/10/26', 8000)]),
+    ('tr18000', '', 'העברה', '99279', [('15/10/26', 18000)]),
+    ('z0226', '', 'זיכוי (בלי פרטים)', '0', [('26/02/26', 400)]),
+    ('z0803', '', 'זיכוי (בלי פרטים)', '0', [('08/03/26', 1400)]),
+    ('z0604', '', 'זיכוי (בלי פרטים)', '108', [('06/04/26', 2000)]),
+    ('z0405', '', 'זיכוי (בלי פרטים)', '0', [('04/05/26', 300)]),
+    ('z1105', '', 'זיכוי (בלי פרטים)', '0', [('11/05/26', 330)]),
+    ('z1006', '', 'זיכוי (בלי פרטים)', '0', [('10/06/26', 2000)]),
+    ('z0209', '', 'זיכוי (בלי פרטים)', '0', [('02/09/26', 1200)]),
+    ('im0106', '', 'זיכוי מיידי (בלי מספר)', '99293', [('01/06/26', 330)]),
+    ('im0107', '', 'זיכוי מיידי (בלי מספר)', '99293', [('01/07/26', 430)]),
+    ('im1608', '', 'זיכוי מיידי (בלי מספר)', '99293', [('16/08/26', 550)]),
+    ('im3108', '', 'זיכוי מיידי (בלי מספר)', '99293', [('31/08/26', 1520)]),
+]
+BANKRC_MODES = ('annual', 'one', 'each', 'done', 'anon', 'skip')
+
+
+def bankrc_iso(d):
+    dd, mm, yy = str(d).split('/')
+    return '20%s-%s-%s' % (yy[-2:], mm.zfill(2), dd.zfill(2))
+
+
+def bankrc_schema(con):
+    con.execute("CREATE TABLE IF NOT EXISTS bankrc(id TEXT PRIMARY KEY, ord INTEGER, q TEXT, bank TEXT, ref TEXT, rows TEXT, "
+                "mode TEXT DEFAULT '', donor_id INTEGER, new_last TEXT, new_first TEXT, email TEXT, phone TEXT, purpose TEXT, "
+                "got TEXT DEFAULT '[]', note TEXT, send INTEGER DEFAULT 1, state TEXT DEFAULT '', result TEXT, updated TEXT)")
+    for i, (gid, q, bank, ref, rows) in enumerate(BANKRC_SEED):
+        con.execute("INSERT OR IGNORE INTO bankrc(id,ord,q,bank,ref,rows,mode) VALUES(?,?,?,?,?,?,?)",
+                    (gid, i, q, bank, ref, json.dumps([[bankrc_iso(d), a] for d, a in rows]),
+                     'annual' if len(rows) > 2 else ''))
+
+
+def bankrc_find_don(con, did, dt, a):
+    """תרומה שכבר רשומה בכרטיס על אותה העברה — אותו סכום, עד שבוע מתאריך ההעברה (לפעמים נרשם
+    לפי יום ההפקדה / יום אחר). מאיר: "התרומות האלו כבר רשומות אצלנו במערכת, אם לא — שייכנס"."""
+    d0 = datetime.date.fromisoformat(dt)
+    lo, hi = (d0 - datetime.timedelta(days=7)).isoformat(), (d0 + datetime.timedelta(days=7)).isoformat()
+    return con.execute("SELECT * FROM donations WHERE donor_id=? AND date BETWEEN ? AND ? "
+                       "AND ABS(CAST(REPLACE(REPLACE(amount,',',''),'₪','') AS REAL)-?)<0.01 ORDER BY ABS(julianday(date)-julianday(?)) LIMIT 1",
+                       (did, lo, hi, float(a), dt)).fetchone()
+
+
+def bankrc_row(con, r):
+    d = {k: r[k] for k in r.keys()}
+    d['rows'] = json.loads(r['rows'] or '[]')
+    d['got'] = json.loads(r['got'] or '[]')
+    d['total'] = round(sum(float(x[1]) for x in d['rows']), 2)
+    d['donor'] = None
+    if r['donor_id']:
+        x = con.execute("SELECT id,last,first,business,email,phone FROM donors WHERE id=?", (r['donor_id'],)).fetchone()
+        if x:
+            d['donor'] = {'id': x['id'], 'name': ((x['last'] or '') + ' ' + (x['first'] or '')).strip() or (x['business'] or ''),
+                          'email': (emails_of(x['email'])[0] if x['email'] else ''), 'phone': (x['phone'] or '').strip()}
+    d['sugg'] = [] if d['donor'] else donor_suggest(con, r['q'] or '', 5)
+    d['in_card'] = []          # תאריכי העברות שכבר רשומות בכרטיס של התורם
+    if d['donor']:
+        for dt, a in d['rows']:
+            ex = bankrc_find_don(con, d['donor']['id'], dt, a)
+            if ex:
+                d['in_card'].append({'date': dt, 'don_date': ex['date'], 'receipt': (ex['receipt_num'] or '').strip()})
+    return d
+
+
+def bankrc_receipt_combined(con, r, did, dons, send):
+    """קבלה אחת על כמה העברות — שנתית / אחת עכשיו. תאריך המסמך היום, וכל ההעברות עם התאריכים בהערה."""
+    import ezcount as _ez
+    d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
+    name = ((d['business'] or '').strip() or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()) if d else 'תורם'
+    email = ((r['email'] or '').strip() or (emails_of(d['email'])[0] if d and d['email'] else '')) if send else ''
+    total = round(sum(_amt2(x['amount']) for x in dons), 2)
+    lines = ' · '.join('%s ₪%s' % (datetime.date.fromisoformat(x['date'][:10]).strftime('%d/%m/%Y'), ('%g' % _amt2(x['amount']))) for x in dons)
+    note = 'העברות בנקאיות: ' + lines
+    addr = ', '.join(x for x in (str(d['addr'] or '').strip(), str(d['city'] or '').strip()) if x) if d else ''
+    crn = ''
+    mm = re.search(r'(ח\.?\s?פ\.?|ת\.?\s?ז\.?|ע\.?\s?מ\.?)\s*:?\s*(\d{6,9})', (d['notes'] or '') if d else '')
+    if mm:
+        crn = mm.group(2)
+    ok, res = _ez.send_receipt(name=name, email=email, amount=total, currency='ILS', date=today_iso(),
+                               purpose=(r['purpose'] or '').strip() or 'תרומה לכולל חצות', method='העברה בנקאית', note=note,
+                               address=addr, phone=(r['phone'] or '').strip() or ((d['phone'] or '').strip() if d else ''),
+                               require_email=False, crn=crn)
+    if not ok:
+        return None, str(res)
+    docnum = str(res.get('docnum') or '')
+    url = res.get('doc_url') or ''
+    pdf = _ez.fetch_pdf(url) if url else None
+    sent = now_iso() if (email and res.get('sent')) else None
+    con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,pdf,created,sent_at,sent_to,note,url,src) "
+                "VALUES('il',?,NULL,?,?,?,?,'₪',?,?,?,?,?,?,?,?,?,'ez')",
+                (int(re.sub(r'\D', '', docnum) or 0), did, name, email, total, today_iso(),
+                 (r['purpose'] or '').strip() or 'תרומה', 'העברה בנקאית', pdf, now_iso(), sent, email if sent else None,
+                 'איזיקאונט %s · bankrc:%s · %s' % (docnum, r['id'], note), url))
+    for x in dons:
+        con.execute("UPDATE donations SET receipt_num=?, receipt_at=?, receipt_url=? WHERE id=?", (docnum, now_iso(), url, x['id']))
+    if sent:
+        con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,'מייל',?,'')",
+                    (did, today_iso(), '🧾 נשלחה קבלה %s (איזיקאונט) על ₪%g — העברות בנק אל %s' % (docnum, total, email)))
+    return docnum, ''
+
+
+def bankrc_apply(con, rid, annual_now=False):
+    """מבצע את מה שנבחר: תרומות לכרטיס + קבלה באיזיקאונט. מחזיר (הצלחה, הודעה)."""
+    import ezcount as _ez
+    r = con.execute("SELECT * FROM bankrc WHERE id=?", (rid,)).fetchone()
+    if not r:
+        return False, 'לא נמצא'
+    mode = r['mode'] or ''
+    if mode not in BANKRC_MODES:
+        return False, 'לא נבחר מה לעשות'
+    rows = json.loads(r['rows'] or '[]')
+    got = set(json.loads(r['got'] or '[]'))
+    send = bool(r['send'])
+    if mode == 'skip':
+        con.execute("UPDATE bankrc SET state='skipped', result='לא להוציא קבלה', updated=? WHERE id=?", (now_iso(), rid))
+        return True, 'סומן: לא להוציא קבלה'
+    if (mode in ('one', 'each', 'anon') or (mode == 'annual' and annual_now)) and not ez_ready():
+        return False, 'החיבור לאיזיקאונט לא מוגדר ב-Render'
+    if mode == 'anon':
+        nums = []
+        for dt, a in rows:
+            if dt in got:
+                continue
+            ok, res = _ez.send_receipt(name='תורם מזדמן', email='', amount=a, currency='ILS', date=dt, purpose=(r['purpose'] or '').strip() or 'תרומה לכולל חצות',
+                                       method='העברה בנקאית', note='%s · אסמכתא %s' % (r['bank'], r['ref']), require_email=False)
+            if not ok:
+                return False, 'איזיקאונט: ' + str(res)
+            docnum = str(res.get('docnum') or '')
+            nums.append(docnum)
+            con.execute("INSERT INTO receipt_docs(kind,num,donation_id,donor_id,name,email,amount,cur,date,purpose,method,created,note,url,src) "
+                        "VALUES('il',?,NULL,NULL,'תורם מזדמן','',?,'₪',?,?,'העברה בנקאית',?,?,?,'ez')",
+                        (int(re.sub(r'\D', '', docnum) or 0), float(a), dt, (r['purpose'] or '').strip() or 'תרומה', now_iso(),
+                         'איזיקאונט %s · bankrc:%s' % (docnum, rid), res.get('doc_url') or ''))
+        msg = 'הופקו %d קבלות לתורם מזדמן: %s' % (len(nums), ', '.join(nums))
+        con.execute("UPDATE bankrc SET state='done', result=?, updated=? WHERE id=?", (msg, now_iso(), rid))
+        return True, msg
+    # תורם: קיים או חדש
+    did = r['donor_id']
+    if not did:
+        last, first = (r['new_last'] or '').strip(), (r['new_first'] or '').strip()
+        if not (last or first):
+            return False, 'לא נבחר תורם — בחר תורם קיים או כתוב שם לתורם חדש'
+        con.execute("INSERT INTO donors(last,first,phone,email,category,region,created,source) VALUES(?,?,?,?,'מזדמן','il',?,'העברות בנק 2026')",
+                    (last, first, (r['phone'] or '').strip(), (r['email'] or '').strip(), today_iso()))
+        did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+        con.execute("UPDATE bankrc SET donor_id=? WHERE id=?", (did, rid))
+    if (r['email'] or '').strip():
+        con.execute("UPDATE donors SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", (r['email'].strip(), did))
+    if (r['phone'] or '').strip():
+        con.execute("UPDATE donors SET phone=? WHERE id=? AND COALESCE(TRIM(phone),'')=''", (r['phone'].strip(), did))
+    dons, added = [], 0
+    for dt, a in rows:
+        ex = bankrc_find_don(con, did, dt, a)
+        if not ex:
+            note = '%s · אסמכתא %s' % (r['bank'], r['ref']) + ((' · ' + r['note'].strip()) if (r['note'] or '').strip() else '')
+            con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,cur,paid) VALUES(?,?,?,?,?,?,'₪',1)",
+                        (did, dt, ('%g' % float(a)), (r['purpose'] or '').strip() or 'תרומה', 'העברה בנקאית', note))
+            ex = con.execute("SELECT * FROM donations WHERE id=last_insert_rowid()").fetchone()
+            added += 1
+        if dt not in got and not (ex['receipt_num'] or '').strip():
+            dons.append(ex)
+    msg = ('נכנסו לכרטיס %d תרומות' % added + (' (%d כבר היו רשומות)' % (len(rows) - added) if added < len(rows) else '')) if added else 'כל התרומות כבר היו רשומות בכרטיס'
+    if mode == 'done' or not dons:
+        con.execute("UPDATE bankrc SET state='done', result=?, updated=? WHERE id=?", (msg + (' · כבר יצאה קבלה' if mode == 'done' else ''), now_iso(), rid))
+        return True, msg
+    if mode == 'annual' and not annual_now:
+        if not con.execute("SELECT 1 FROM tasks WHERE donor_id=? AND COALESCE(done,0)=0 AND note LIKE '%קבלה שנתית 2026%'", (did,)).fetchone():
+            con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,'followup',?)",
+                        (did, '2026-12-27', '🧾 להפיק קבלה שנתית 2026 על העברות הבנק (קבלות ← 🏦 העברות בנק)'))
+        msg += ' · הקבלה השנתית תופק בסוף השנה (נפתחה משימה ל-27.12)'
+        con.execute("UPDATE bankrc SET state='annual', result=?, updated=? WHERE id=?", (msg, now_iso(), rid))
+        return True, msg
+    if mode == 'each':
+        nums = []
+        for x in dons:
+            doc, err = receipt_issue_ez(con, x['id'], email=(r['email'] or '').strip(), send=send)
+            if not doc:
+                return False, 'איזיקאונט: ' + err
+            nums.append(str(doc.get('num') or ''))
+        msg += ' · הופקו %d קבלות' % len(nums)
+    else:
+        num, err = bankrc_receipt_combined(con, r, did, dons, send)
+        if not num:
+            return False, 'איזיקאונט: ' + err
+        msg += ' · הופקה קבלה %s על %d העברות' % (num, len(dons))
+        con.execute("UPDATE tasks SET done=1 WHERE donor_id=? AND COALESCE(done,0)=0 AND note LIKE '%קבלה שנתית 2026%'", (did,))
+    con.execute("UPDATE bankrc SET state='done', result=?, updated=? WHERE id=?", (msg, now_iso(), rid))
+    return True, msg
+
+
 def ym_repeat_dedupe(con, keep_id):
     """מאיר: "למה יש כל כך הרבה פעמים אותו דבר?" — הודעה חוזרת חדשה לאותם מספרים מחליפה את הקודמות
     (אחרת אותו אדם מקבל כמה שיחות כל יום). מחזיר כמה הופסקו."""
@@ -23396,6 +23624,14 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'on': bool(c.get('on')), 'phone': c.get('phone') or '', 'phone_env': bool(c.get('phone_env')) and not c.get('phone'),
                                     'phone_show': ph[:3] + '…' + ph[-3:] if ph and not c.get('phone') else ph,
                                     'morning': c.get('morning'), 'lead': int(c.get('lead') or 120), 'preview': prev})
+        if self.path.split('?')[0] == '/api/bankrc':
+            con = db()
+            try:
+                bankrc_schema(con); con.commit()
+                rows = [bankrc_row(con, r) for r in con.execute("SELECT * FROM bankrc ORDER BY ord")]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows, 'ez': ez_ready()})
         if self.path.split('?')[0] == '/api/yemot/repeat':
             # 🔁 ההודעות החודשיות
             con = db()
@@ -26650,6 +26886,39 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'next_run': nxt})
+        m = re.match(r'/api/bankrc/([a-z0-9]+)(/apply|/annual_now)?$', self.path)
+        if m:
+            con = db()
+            try:
+                bankrc_schema(con)
+                rid = m.group(1)
+                if not con.execute("SELECT 1 FROM bankrc WHERE id=?", (rid,)).fetchone():
+                    return self._send(404, {'ok': False, 'error': 'לא נמצא'})
+                if not m.group(2):
+                    sets, vals = [], []
+                    for k in ('mode', 'new_last', 'new_first', 'email', 'phone', 'purpose', 'note'):
+                        if k in b:
+                            sets.append(k + '=?'); vals.append(str(b.get(k) or '').strip()[:300])
+                    if 'donor_id' in b:
+                        sets.append('donor_id=?'); vals.append(int(b.get('donor_id') or 0) or None)
+                    if 'got' in b:
+                        sets.append('got=?'); vals.append(json.dumps([str(x) for x in (b.get('got') or [])]))
+                    if 'send' in b:
+                        sets.append('send=?'); vals.append(1 if b.get('send') else 0)
+                    if sets:
+                        con.execute("UPDATE bankrc SET %s, updated=? WHERE id=?" % ', '.join(sets), vals + [now_iso(), rid])
+                    con.commit()
+                    return self._send(200, {'ok': True, 'row': bankrc_row(con, con.execute("SELECT * FROM bankrc WHERE id=?", (rid,)).fetchone())})
+                try:
+                    ok, msg = bankrc_apply(con, rid, annual_now=(m.group(2) == '/annual_now'))
+                except Exception as e:
+                    ok, msg = False, '%s: %s' % (type(e).__name__, str(e)[:160])
+                con.commit()
+                row = bankrc_row(con, con.execute("SELECT * FROM bankrc WHERE id=?", (rid,)).fetchone())
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': ok, 'msg': msg, 'error': '' if ok else msg, 'row': row})
         m = re.match(r'/api/yemot/repeat/(\d+)/at$', self.path)
         if m:
             # 🕒 שעה אחרת להודעה החוזרת (מתוך ⏰ מתוזמנים)
