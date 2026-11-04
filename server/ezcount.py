@@ -176,7 +176,7 @@ def _pay_type(method):
 
 
 def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
-                 method='', note='', address='', phone='', require_email=True, crn=''):
+                 method='', note='', address='', phone='', require_email=True, crn='', payments=None):
     """מפיק קבלה ושולח אותה לתורם. מחזיר (הצלחה, תוצאה/שגיאה).
 
     בהצלחה התוצאה היא dict עם docnum (מספר הקבלה) ו-doc_url אם התקבל.
@@ -232,7 +232,13 @@ def send_receipt(name, email, amount, currency='ILS', date='', purpose='',
             nice = _dt.date.fromisoformat(date[:10]).strftime('%d.%m.%Y')
         except Exception:
             nice = date
-        body['comment'] = ('התקבל ב-' + nice + ((' · ' + body['comment']) if body.get('comment') else ''))
+        if not payments:
+            body['comment'] = ('התקבל ב-' + nice + ((' · ' + body['comment']) if body.get('comment') else ''))
+    if payments:
+        # קבלה אחת על כמה העברות (קבלה שנתית): שורת תשלום לכל העברה, בתאריך שבו נכנס הכסף.
+        # רואת החשבון: "הקבלה יוצאת עם התאריך של עכשיו ופרטי התשלום עם התאריך שרשום שם".
+        body['payment'] = [{'payment_type': _pay_type(method), 'payment_sum': round(float(a), 2), 'date': str(d)[:10]}
+                           for d, a in payments]
     ok, res = _post('/api/createDoc', body)
     if not ok and _is_type_error(res):
         # סוג מסמך שאינו מותר לסוג החשבון — מנסים את הסוגים שהשרת מציין, ואז את הרשימה שלנו

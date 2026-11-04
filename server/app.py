@@ -19044,7 +19044,8 @@ def bankrc_receipt_combined(con, r, did, dons, send):
     ok, res = _ez.send_receipt(name=name, email=email, amount=total, currency='ILS', date=today_iso(),
                                purpose=(r['purpose'] or '').strip() or 'תרומה לכולל חצות', method='העברה בנקאית', note=note,
                                address=addr, phone=(r['phone'] or '').strip() or ((d['phone'] or '').strip() if d else ''),
-                               require_email=False, crn=crn)
+                               require_email=False, crn=crn,
+                               payments=[(x['date'][:10], _amt2(x['amount'])) for x in dons])
     if not ok:
         return None, str(res)
     docnum = str(res.get('docnum') or '')
