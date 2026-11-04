@@ -19358,95 +19358,147 @@ const BRC_MODES=[['annual','קבלה שנתית אחת','בסוף השנה, על
   ['done','כבר יצאה קבלה','רק לרשום את התרומות בכרטיס'],['anon','תורם מזדמן','קבלה בלי שם, בלי כרטיס'],['skip','לא להוציא','לא תרומה / לא צריך']];
 const brcDt=d=>{const [y,m,dd]=String(d).split('-');return dd+'/'+m+'/'+String(y).slice(2);};
 async function brcLoad(){const r=await api('GET','/api/bankrc');BRC=r&&r.ok?r:{rows:[],error:(r&&r.error)||'שגיאה'};}
-async function brcOpen(){const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');rs.innerHTML='<button class="x" id="rx">✕</button><h2>🏦 העברות בנק 2026 → קבלות</h2><div class="hintxt">⏳ טוען…</div>';
-  document.getElementById('rx').onclick=()=>remov.classList.remove('show');remov.classList.add('show');await brcLoad();
-  if(!brcCur){const o=BRC.rows.find(x=>!x.state);brcCur=o?o.id:'';}brcRender();}
+// מאיר: "אני אוהב מפה… כאן זה מסודר מאוד" — אותו מראה כמו הדף שאהב: כרטיס אחד בפוקוס, התקדמות למעלה,
+// ורשימה למטה. מסך מלא מעל המערכת, והכל מהמערכת עצמה (תורמים, טלפונים, מיילים).
+const BK_CSS=`#bkov{position:fixed;inset:0;z-index:9000;overflow:auto;background:var(--bk-bg);color:var(--bk-ink);direction:rtl;
+  --bk-bg:#eef1f0;--bk-paper:#fff;--bk-ink:#16302b;--bk-muted:#5b6f6a;--bk-line:#cfd9d6;--bk-acc:#0f5c4d;--bk-accfg:#fff;--bk-soft:#e3ece9;--bk-ok:#1d6b3a;--bk-okbg:#e2f2e7;--bk-warn:#8a4b08;--bk-warnbg:#fcefdc;
+  font-family:"Assistant",Arial,sans-serif;font-size:16px;line-height:1.5;padding:16px max(16px,env(safe-area-inset-right,0px)) 48px max(16px,env(safe-area-inset-left,0px))}
+@media (prefers-color-scheme:dark){#bkov{--bk-bg:#101917;--bk-paper:#18241f;--bk-ink:#e4efeb;--bk-muted:#9fb3ad;--bk-line:#2f413b;--bk-acc:#7fd1bd;--bk-accfg:#0d1513;--bk-soft:#20302b;--bk-ok:#9fd8b0;--bk-okbg:#1c3326;--bk-warn:#f2c48a;--bk-warnbg:#3a2b17}}
+#bkov *{box-sizing:border-box}#bkov .w{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+#bkov .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+#bkov h1{font-family:"Frank Ruhl Libre",Georgia,serif;font-weight:900;font-size:26px;margin:0}
+#bkov .sub,#bkov .hint{color:var(--bk-muted);font-size:14px;margin:0}
+#bkov .prog{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--bk-muted)}#bkov .bar{flex:1;height:8px;background:var(--bk-line);border-radius:6px;overflow:hidden}#bkov .bar i{display:block;height:100%;background:var(--bk-acc)}
+#bkov .card{background:var(--bk-paper);border:1px solid var(--bk-line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 8px 28px rgba(10,40,30,.08)}
+#bkov .bank{font-family:"Frank Ruhl Libre",Georgia,serif;font-weight:700;font-size:22px;margin:0}
+#bkov .meta{color:var(--bk-muted);font-size:13.5px}#bkov .tot{font-weight:800}
+#bkov .box{background:var(--bk-soft);border-radius:10px;padding:9px 12px;font-size:14px}
+#bkov .okbox{background:var(--bk-okbg);color:var(--bk-ok);border-radius:10px;padding:9px 12px;font-size:14px;font-weight:700}
+#bkov .rows{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+#bkov .rows button{font:inherit;font-size:14px;border:1px solid var(--bk-line);background:var(--bk-soft);color:var(--bk-ink);border-radius:8px;padding:4px 10px;cursor:pointer}
+#bkov .rows button.got{background:var(--bk-okbg);border-color:var(--bk-ok);color:var(--bk-ok);font-weight:700}
+#bkov .who{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;border:2px solid var(--bk-acc);border-radius:12px;padding:10px 12px}
+#bkov .sug{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px dashed var(--bk-line);border-radius:10px;padding:8px 10px;flex-wrap:wrap}
+#bkov .fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media (max-width:520px){#bkov .fields,#bkov .modes{grid-template-columns:1fr}}
+#bkov label.f{display:flex;flex-direction:column;gap:4px;font-size:13.5px;font-weight:700;color:var(--bk-muted);min-width:0}
+#bkov input,#bkov textarea{font:inherit;font-size:16px;color:var(--bk-ink);background:var(--bk-paper);border:1px solid var(--bk-line);border-radius:9px;padding:8px 10px;width:100%}
+#bkov .full{grid-column:1/-1}#bkov .mh{font-weight:800;font-size:15px;margin:0}
+#bkov .modes{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#bkov .modes button{font:inherit;text-align:right;border:1.5px solid var(--bk-line);background:var(--bk-paper);color:var(--bk-ink);border-radius:11px;padding:9px 12px;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+#bkov .modes button small{color:var(--bk-muted);font-size:12.5px}#bkov .modes button.on{border-color:var(--bk-acc);background:var(--bk-soft);box-shadow:inset 0 0 0 1px var(--bk-acc)}
+#bkov .act{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#bkov .b{font:inherit;font-weight:800;border-radius:10px;padding:9px 16px;cursor:pointer;border:1.5px solid var(--bk-acc);background:var(--bk-acc);color:var(--bk-accfg)}
+#bkov .b.gh{background:transparent;color:var(--bk-acc)}#bkov .b.sm{padding:5px 11px;font-size:14px;font-weight:700}#bkov .b:disabled{opacity:.5}
+#bkov .tabs{display:flex;gap:6px;flex-wrap:wrap}#bkov .tabs button{font:inherit;font-size:14px;border:1px solid var(--bk-line);background:var(--bk-paper);color:var(--bk-ink);border-radius:20px;padding:4px 12px;cursor:pointer}
+#bkov .tabs button.on{background:var(--bk-acc);color:var(--bk-accfg);border-color:var(--bk-acc)}
+#bkov .list{display:flex;flex-direction:column;gap:6px}
+#bkov .list button{font:inherit;text-align:right;display:grid;grid-template-columns:1fr auto;gap:2px 10px;background:var(--bk-paper);border:1px solid var(--bk-line);border-radius:10px;padding:8px 12px;cursor:pointer;color:var(--bk-ink)}
+#bkov .list button.cur{border-color:var(--bk-acc);box-shadow:inset 0 0 0 1px var(--bk-acc)}#bkov .list .s{grid-column:1/-1;font-size:12.5px;color:var(--bk-muted)}
+#bkov .pill{display:inline-block;font-size:12px;font-weight:700;border-radius:6px;padding:0 7px}#bkov .pill.ok{background:var(--bk-okbg);color:var(--bk-ok)}#bkov .pill.no{background:var(--bk-soft);color:var(--bk-muted)}
+#bkov .x{font:inherit;font-size:20px;border:1px solid var(--bk-line);background:var(--bk-paper);color:var(--bk-ink);border-radius:10px;width:40px;height:40px;cursor:pointer;flex:none}`;
+const BK_MODES=[['annual','קבלה שנתית אחת','בסוף השנה (12.26), על כל ההעברות, עם התאריכים'],['one','קבלה אחת עכשיו','על כל ההעברות עד היום, בקבלה אחת'],['each','קבלה על כל העברה','קבלה נפרדת לכל תאריך'],
+  ['done','כבר יצאה קבלה','רק לרשום את התרומות בכרטיס'],['anon','תורם מזדמן','לא יודעים מי זה, קבלה בשם "תורם מזדמן"'],['skip','לא להוציא קבלה','לא תרומה, או לא רוצים קבלה']];
+async function brcOpen(){
+  if(!document.getElementById('bkcss')){const st=document.createElement('style');st.id='bkcss';st.textContent=BK_CSS;document.head.appendChild(st);}
+  let ov=document.getElementById('bkov');if(!ov){ov=document.createElement('div');ov.id='bkov';document.body.appendChild(ov);}
+  ov.innerHTML='<div class="w"><p class="sub">טוען…</p></div>';document.body.style.overflow='hidden';
+  await brcLoad();if(!brcCur||!BRC.rows.find(x=>x.id===brcCur)){const o=BRC.rows.find(x=>!x.state);brcCur=o?o.id:(BRC.rows[0]||{}).id||'';}
+  brcRender();}
+function brcClose(){const ov=document.getElementById('bkov');if(ov)ov.remove();document.body.style.overflow='';}
 function brcRender(){
-  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
-  const R=BRC.rows||[], nDone=R.filter(x=>x.state).length;
+  const ov=document.getElementById('bkov');if(!ov)return;
+  const R=BRC.rows||[], nDone=R.filter(x=>x.state).length, r=R.find(x=>x.id===brcCur);
   const L=R.filter(x=>brcF==='all'||(brcF==='open'?!x.state:!!x.state));
-  const r=R.find(x=>x.id===brcCur);
-  const st=x=>x.state==='done'?'<span class="mktag ok">✓ בוצע</span>':x.state==='annual'?'<span class="mktag ok">🗓 שנתית בסוף השנה</span>':x.state==='skipped'?'<span class="mktag mu">לא להוציא</span>':'<span class="mktag mu">פתוח</span>';
+  const ML=Object.fromEntries(BK_MODES.map(m=>[m[0],m[1]]));
+  const stTxt=x=>x.state==='done'?'✓ בוצע':x.state==='annual'?'🗓 שנתית בדצמבר':x.state==='skipped'?'לא להוציא':'';
+  const money=n=>'₪'+Number(n).toLocaleString('he-IL');
   let card='';
   if(r){
     const inC=Object.fromEntries((r.in_card||[]).map(x=>[x.date,x]));
-    const dn=r.donor;
+    const dn=r.donor, many=r.rows.length>2;
     const hits=!dn&&brcQ.trim().length>=2?DB.filter(x=>matchStr([x.last,x.first,x.english,x.business,x.email,x.phone].join(' '),brcQ)).slice(0,8):[];
-    const pickRow=(id,nm,em,ph)=>`<div class="dpr" data-pick="${id}"><b>${esc(nm)}</b>${em?` <small>✉️ ${esc(em)}</small>`:' <small style="color:var(--no)">בלי מייל</small>'}${ph?` <small dir="ltr">${esc(ph)}</small>`:''}</div>`;
-    card=`<div class="sec" style="border:2px solid #0f5c4d;border-radius:12px;padding:12px;margin:8px 0">
-      <div class="rbtitle" style="text-align:right">${esc(r.bank)} <small>אסמכתא ${esc(r.ref)}</small> ${st(r)}</div>
-      <div class="hintxt">${r.rows.length>1?r.rows.length+' העברות · ':''}סה״כ <b>₪${r.total.toLocaleString('he-IL')}</b></div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">${r.rows.map(([d,a])=>{const g=r.got.includes(d),c=inC[d];
-        return `<button class="chip${g?' on':''}" data-got="${d}" title="לחיצה: כבר יצאה קבלה על ההעברה הזו">${brcDt(d)} · ₪${a}${g?' ✓ יצאה':''}${c?' · <b style="color:#1d6b3a">בכרטיס'+(c.receipt?' · קבלה '+esc(c.receipt):'')+'</b>':''}</button>`;}).join('')}</div>
-      <div class="hintxt">"בכרטיס" = התרומה כבר רשומה אצלו (אותו סכום, עד שבוע מהתאריך) ולא תירשם שוב. לחיצה על תאריך = כבר יצאה עליו קבלה.</div>
-      <div class="gvlbl" style="margin-top:10px">👤 התורם במערכת</div>
-      ${dn?`<div class="rcsug" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${esc(dn.name)}</b> <small>כרטיס ${dn.id}</small>${dn.email?` <small>✉️ ${esc(dn.email)}</small>`:' <small style="color:var(--no)">בלי מייל</small>'}${dn.phone?` <small dir="ltr">${esc(dn.phone)}</small>`:''}
-          <button class="btn sm ghost" id="brc_open" data-id="${dn.id}">לפתוח כרטיס</button><button class="btn sm ghost" id="brc_unpick">✕ להחליף</button></div>`
-        :`${(r.sugg||[]).length?`<div class="hintxt">אולי אחד מאלה (מהמערכת):</div><div class="dpres">${r.sugg.map(x=>pickRow(x.id,x.name,x.email,x.phone)).join('')}</div>`:''}
-          <input id="brc_q" autocomplete="off" placeholder="🔍 חיפוש תורם במערכת — שם / טלפון / מייל" value="${esc(brcQ)}" style="width:100%;margin-top:6px">
-          <div class="dpres">${hits.map(x=>pickRow(x.id,((x.last||'')+' '+(x.first||'')).trim()||x.business||x.english||'',splitEmails(x.email)[0]||'',x.phone||'')).join('')}</div>
-          <details ${(r.new_last||r.new_first)?'open':''} style="margin-top:6px"><summary><b>➕ תורם חדש</b> (לא קיים במערכת)</summary>
-            <div class="two"><label class="fld"><span>שם משפחה</span><input id="brc_last" value="${esc(r.new_last||'')}"></label><label class="fld"><span>שם פרטי</span><input id="brc_first" value="${esc(r.new_first||'')}"></label></div></details>`}
-      <div class="two"><label class="fld"><span>📱 טלפון ${dn&&dn.phone&&!r.phone?'<small>(מהכרטיס שלו)</small>':''}</span><input id="brc_phone" dir="ltr" value="${esc(r.phone||(dn&&dn.phone)||'')}"></label>
-        <label class="fld"><span>✉️ מייל ${dn&&dn.email&&!r.email?'<small>(מהכרטיס שלו)</small>':''}</span><input id="brc_email" dir="ltr" value="${esc(r.email||(dn&&dn.email)||'')}"></label></div>
-      <label class="fld"><span>🎯 מה לכתוב על הקבלה</span><input id="brc_pur" value="${esc(r.purpose||'')}" placeholder="למשל: תרומה להזנה"></label>
-      <div class="gvlbl" style="margin-top:8px">מה לעשות</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px">${BRC_MODES.map(([k,t,d])=>`<button class="btn sm ${r.mode===k?'':'ghost'}" data-mode="${k}" style="text-align:right;display:flex;flex-direction:column;align-items:flex-start"><b>${t}</b><small style="font-weight:400">${d}</small></button>`).join('')}</div>
-      <label class="fld"><span>📝 הערה</span><input id="brc_note" value="${esc(r.note||'')}"></label>
-      <label class="gvall"><input type="checkbox" id="brc_send" ${r.send?'checked':''}> 📧 לשלוח את הקבלה במייל לתורם</label>
-      ${r.result?`<div class="hintxt" style="color:#1d6b3a;font-weight:700">${esc(r.result)}</div>`:''}
-      <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm ghost" id="brc_save">💾 שמור</button>
-        ${r.state!=='done'?`<button class="btn sm" id="brc_go" style="background:#0f5c4d;color:#fff">✅ לבצע — לרשום בכרטיס${['annual','one','each','anon'].includes(r.mode)?' ולהפיק קבלה':''}</button>`:''}
-        ${r.state==='annual'?'<button class="btn sm" id="brc_annual">🧾 להפיק עכשיו את הקבלה השנתית</button>':''}
-        <button class="btn sm ghost" id="brc_next">הבא ←</button></div>
+    const pr=(id,nm,em,ph,tag)=>`<div class="sug"><span><b>${esc(nm)}</b> <span class="hint" style="display:inline">כרטיס ${id}</span>${em?` · <span dir="ltr">${esc(em)}</span>`:''}${ph?` · <span dir="ltr">${esc(ph)}</span>`:''}${tag?` <span class="hint" style="display:inline">(${tag})</span>`:''}</span><button class="b gh sm" data-pick="${id}">✓ זה הוא</button></div>`;
+    const dnm=x=>((x.last||'')+' '+(x.first||'')).trim()||x.business||x.english||'';
+    card=`<div class="card">
+      <div><p class="bank">${esc(r.bank)}</p><div class="meta">אסמכתא ${esc(r.ref)} · ${r.rows.length} ${r.rows.length>1?'העברות':'העברה'} · סה״כ <span class="tot">${money(r.total)}</span>${stTxt(r)?' · <b>'+stTxt(r)+'</b>':''}</div></div>
+      ${r.result?`<div class="okbox">${esc(r.result)}</div>`:''}
+      ${many?`<div class="box"><b>תשלום חוזר:</b> ${r.rows.length} העברות מ-${brcDt(r.rows[0][0])} עד ${brcDt(r.rows[r.rows.length-1][0])}, סה״כ ${money(r.total)}. יוצאת קבלה אחת על כל השנה, עם כל התאריכים.</div>`:''}
+      <details ${many?'':'open'}><summary class="hint" style="cursor:pointer">${many?'לראות את כל התאריכים':'התאריך'}</summary>
+        <div class="rows">${r.rows.map(([d,a])=>{const g=r.got.includes(d),c=inC[d];return `<button data-got="${d}" class="${g?'got':''}">${brcDt(d)} · ${money(a)}${g?' ✓ יצאה':''}${c?' · בכרטיס'+(c.receipt?' · קבלה '+esc(c.receipt):''):''}</button>`;}).join('')}</div>
+        <p class="hint">"בכרטיס" = כבר רשום אצלו ולא יירשם שוב. אם על תאריך כבר יצאה קבלה באיזיקאונט, לחץ עליו והוא יסומן ב-✓.</p></details>
+      <p class="mh">👤 התורם במערכת</p>
+      ${dn?`<div class="who"><span><b>${esc(dn.name)}</b> <span class="hint" style="display:inline">כרטיס ${dn.id}</span>${dn.phone?` · <span dir="ltr">${esc(dn.phone)}</span>`:''}${dn.email?` · <span dir="ltr">${esc(dn.email)}</span>`:' · <span style="color:var(--bk-warn)">בלי מייל</span>'}</span>
+          <span class="act"><button class="b gh sm" id="bk_open">לפתוח כרטיס</button><button class="b gh sm" id="bk_unpick">להחליף</button></span></div>`
+        :`${(r.sugg||[]).length?`<div style="display:flex;flex-direction:column;gap:6px">${r.sugg.map(x=>pr(x.id,x.name,x.email,x.phone,'מהמערכת')).join('')}</div>`:''}
+          <label class="f">🔍 לחפש תורם במערכת (שם / טלפון / מייל)<input id="bk_q" autocomplete="off" value="${esc(brcQ)}" placeholder="למשל: קירשבאום"></label>
+          ${hits.length?`<div style="display:flex;flex-direction:column;gap:6px">${hits.map(x=>pr(x.id,dnm(x),splitEmails(x.email)[0]||'',x.phone||'')).join('')}</div>`:brcQ.trim().length>=2?'<p class="hint">לא נמצא במערכת</p>':''}
+          <details ${(r.new_last||r.new_first)?'open':''}><summary class="mh" style="cursor:pointer">➕ תורם חדש (לא קיים במערכת)</summary>
+            <div class="fields" style="margin-top:8px"><label class="f">שם משפחה<input id="bk_last" value="${esc(r.new_last||'')}"></label><label class="f">שם פרטי<input id="bk_first" value="${esc(r.new_first||'')}"></label></div></details>`}
+      <div class="fields">
+        <label class="f">📱 טלפון${dn&&dn.phone&&!r.phone?' (מהכרטיס)':''}<input id="bk_phone" dir="ltr" value="${esc(r.phone||(dn&&dn.phone)||'')}"></label>
+        <label class="f">✉️ אימייל${dn&&dn.email&&!r.email?' (מהכרטיס)':''}<input id="bk_email" dir="ltr" value="${esc(r.email||(dn&&dn.email)||'')}"></label>
+        <label class="f full">מה לכתוב על הקבלה<input id="bk_pur" value="${esc(r.purpose||'')}" placeholder="למשל: תרומה להזנה"></label>
+      </div>
+      <p class="mh">מה לעשות</p>
+      <div class="modes">${BK_MODES.map(([k,t,d])=>`<button data-mode="${k}" class="${r.mode===k?'on':''}"><b>${t}</b><small>${d}</small></button>`).join('')}</div>
+      <label class="f">הערה (לא חובה)<textarea id="bk_note" rows="2">${esc(r.note||'')}</textarea></label>
+      <label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="bk_send" style="width:auto" ${r.send?'checked':''}> 📧 לשלוח את הקבלה במייל לתורם</label>
+      <div class="act"><button class="b gh" id="bk_save">שמור והבא</button>
+        ${r.state!=='done'?`<button class="b" id="bk_go">✅ לבצע${['one','each','anon'].includes(r.mode)?' — לרשום ולהפיק קבלה':' — לרשום בכרטיס'}</button>`:''}
+        ${r.state==='annual'?'<button class="b" id="bk_annual">🧾 להפיק עכשיו את הקבלה השנתית</button>':''}
+        <button class="b gh" id="bk_skip">דלג בינתיים</button></div>
     </div>`;
   }
-  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🏦 העברות בנק 2026 → קבלות</h2>
-    <div class="addrow" style="gap:6px"><button class="btn sm ghost" id="brc_rep">📄 דוח לרואת החשבון (אקסל)</button></div>
-    <div class="hintxt">רשימת רואת החשבון: העברות לבנק הישראלי ינואר–אוקטובר 2026. ${nDone} מתוך ${R.length} טופלו.${BRC.ez===false?' <b style="color:var(--no)">⚠️ איזיקאונט לא מחובר</b>':''}</div>
-    ${card}
-    <div class="bqseg" style="margin-top:8px"><button class="${brcF==='open'?'on':''}" data-f="open">פתוחים</button><button class="${brcF==='all'?'on':''}" data-f="all">הכל</button><button class="${brcF==='done'?'on':''}" data-f="done">טופלו</button></div>
-    <div>${L.map(x=>`<div class="dpr${x.id===brcCur?' on':''}" data-row="${x.id}" style="${x.id===brcCur?'outline:2px solid #0f5c4d;':''}"><b>${esc(x.donor?x.donor.name:x.bank)}</b> <small>₪${x.total.toLocaleString('he-IL')}${x.rows.length>1?' · '+x.rows.length+' העברות':' · '+brcDt(x.rows[0][0])}</small> ${st(x)}${x.donor?` <small>${esc(x.bank)}</small>`:''}</div>`).join('')||'<div class="hintxt">אין כאן כלום</div>'}</div>`;
+  ov.innerHTML=`<div class="w">
+    <div class="top"><div><h1>קבלות על העברות בנק 2026</h1><p class="sub">רשימת רואת החשבון: העברות לבנק הישראלי מינואר עד סוף אוקטובר 2026. מחובר למערכת: התורמים, הטלפונים והמיילים מהכרטיסים.</p></div><button class="x" id="bk_x" title="סגור">✕</button></div>
+    <div class="prog"><span>${nDone} מתוך ${R.length} טופלו</span><div class="bar"><i style="width:${R.length?100*nDone/R.length:0}%"></i></div><button class="b gh sm" id="bk_rep">📄 דוח לרואת החשבון</button></div>
+    ${BRC.ez===false?'<div class="box" style="color:var(--bk-warn)">⚠️ איזיקאונט לא מחובר — אפשר לרשום בכרטיסים, אבל לא להפיק קבלות</div>':''}
+    ${card||'<div class="okbox">✓ אין כאן מה לטפל</div>'}
+    <div class="tabs"><button data-f="open" class="${brcF==='open'?'on':''}">עוד לא טופלו</button><button data-f="all" class="${brcF==='all'?'on':''}">הכל</button><button data-f="done" class="${brcF==='done'?'on':''}">טופלו</button></div>
+    <div class="list">${L.map(x=>`<button data-row="${x.id}" class="${x.id===brcCur?'cur':''}"><span><b>${esc(x.donor?x.donor.name:(x.new_last||x.new_first?((x.new_last||'')+' '+(x.new_first||'')).trim():x.bank))}</b></span><span>${money(x.total)}</span>
+      <span class="s">${x.rows.length>1?x.rows.length+' העברות · ':brcDt(x.rows[0][0])+' · '}${x.state?`<span class="pill ok">${stTxt(x)}</span>`:x.mode?`<span class="pill no">${ML[x.mode]}</span>`:'<span class="pill no">עוד לא</span>'}${x.donor||x.new_last?' · '+esc(x.bank):''}</span></button>`).join('')||'<p class="hint">אין כאן כלום</p>'}</div>
+  </div>`;
   const g=id=>document.getElementById(id);
-  g('rx').onclick=()=>remov.classList.remove('show');
-  g('brc_rep').onclick=async()=>{const x=await api('GET','/api/bankrc/report');if(!x||!x.ok){uiAlert('הדוח לא נטען');return;}
+  g('bk_x').onclick=brcClose;
+  g('bk_rep').onclick=async()=>{const x=await api('GET','/api/bankrc/report');if(!x||!x.ok){uiAlert('הדוח לא נטען');return;}
     const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
     const head=['תאריך העברה','אסמכתא','פרטים בבנק','סכום ₪','תורם','מה נעשה','מספר קבלה','הערה'];
     const csv=[head.map(q).join(','),...x.rows.map(r=>[brcDt(r.date),r.ref,r.bank,r.amount,r.donor,r.what,r.receipt,r.note].map(q).join(','))].join('\r\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='העברות בנק 2026 - קבלות.csv';document.body.appendChild(a);a.click();a.remove();
     toast('📄 הדוח ירד — '+x.rows.length+' העברות');};
-  rs.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{brcF=b.dataset.f;brcRender();});
-  rs.querySelectorAll('[data-row]').forEach(b=>b.onclick=()=>{brcCur=b.dataset.row;brcQ='';brcRender();rs.scrollTop=0;});
+  ov.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{brcF=b.dataset.f;brcRender();});
+  ov.querySelectorAll('[data-row]').forEach(b=>b.onclick=()=>{brcCur=b.dataset.row;brcQ='';brcRender();ov.scrollTop=0;});
   if(!r)return;
-  const vals=()=>{const o={};[['brc_last','new_last'],['brc_first','new_first'],['brc_phone','phone'],['brc_email','email'],['brc_pur','purpose'],['brc_note','note']].forEach(([i,k])=>{if(g(i))o[k]=g(i).value.trim();});o.send=g('brc_send').checked?1:0;return o;};
+  const vals=()=>{const o={};[['bk_last','new_last'],['bk_first','new_first'],['bk_phone','phone'],['bk_email','email'],['bk_pur','purpose'],['bk_note','note']].forEach(([i,k])=>{if(g(i))o[k]=g(i).value.trim();});
+    if(r.donor){if(o.phone===(r.donor.phone||''))o.phone=r.phone||'';if(o.email===(r.donor.email||''))o.email=r.email||'';}o.send=g('bk_send').checked?1:0;return o;};
   const save=async(extra)=>{const x=await api('POST','/api/bankrc/'+r.id,Object.assign(vals(),extra||{}));if(!x||!x.ok){uiAlert((x&&x.error)||'לא נשמר');return null;}
     const i=BRC.rows.findIndex(y=>y.id===r.id);BRC.rows[i]=x.row;return x.row;};
-  rs.querySelectorAll('[data-got]').forEach(b=>b.onclick=async()=>{const d=b.dataset.got,gl=r.got.includes(d)?r.got.filter(x=>x!==d):[...r.got,d];if(await save({got:gl}))brcRender();});
-  rs.querySelectorAll('[data-mode]').forEach(b=>b.onclick=async()=>{if(await save({mode:b.dataset.mode}))brcRender();});
-  rs.querySelectorAll('[data-pick]').forEach(b=>b.onclick=async()=>{brcQ='';if(await save({donor_id:+b.dataset.pick}))brcRender();});
-  if(g('brc_unpick'))g('brc_unpick').onclick=async()=>{if(await save({donor_id:0}))brcRender();};
-  if(g('brc_open'))g('brc_open').onclick=()=>{remov.classList.remove('show');{const dd=DB.find(x=>x.id==g('brc_open').dataset.id);if(dd)openDonor(dd,'details');}};
-  const qi=g('brc_q');if(qi){let t;qi.oninput=()=>{clearTimeout(t);t=setTimeout(()=>{brcQ=qi.value;brcRender();const e=g('brc_q');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},200);};}
-  g('brc_save').onclick=async()=>{if(await save()){toast('💾 נשמר');brcRender();}};
-  g('brc_next').onclick=async()=>{await save();const o=BRC.rows.filter(x=>!x.state&&x.id!==r.id);const i=BRC.rows.findIndex(x=>x.id===r.id);
-    const n=BRC.rows.slice(i+1).find(x=>!x.state)||o[0];if(n){brcCur=n.id;brcQ='';}brcRender();rs.scrollTop=0;};
+  const next=()=>{const i=BRC.rows.findIndex(x=>x.id===r.id);const n=BRC.rows.slice(i+1).find(x=>!x.state)||BRC.rows.find(x=>!x.state&&x.id!==r.id);if(n)brcCur=n.id;brcQ='';brcRender();ov.scrollTop=0;};
+  ov.querySelectorAll('[data-got]').forEach(b=>b.onclick=async()=>{const d=b.dataset.got,gl=r.got.includes(d)?r.got.filter(x=>x!==d):[...r.got,d];if(await save({got:gl}))brcRender();});
+  ov.querySelectorAll('[data-mode]').forEach(b=>b.onclick=async()=>{if(await save({mode:b.dataset.mode}))brcRender();});
+  ov.querySelectorAll('[data-pick]').forEach(b=>b.onclick=async()=>{brcQ='';if(await save({donor_id:+b.dataset.pick,phone:'',email:''}))brcRender();});
+  if(g('bk_unpick'))g('bk_unpick').onclick=async()=>{if(await save({donor_id:0,phone:'',email:''}))brcRender();};
+  if(g('bk_open'))g('bk_open').onclick=()=>{const dd=DB.find(x=>x.id==r.donor.id);if(dd){brcClose();openDonor(dd,'details');}};
+  const qi=g('bk_q');if(qi){let t;qi.oninput=()=>{clearTimeout(t);t=setTimeout(()=>{brcQ=qi.value;brcRender();const e=g('bk_q');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},200);};}
+  g('bk_save').onclick=async()=>{if(await save()){toast('💾 נשמר');next();}};
+  g('bk_skip').onclick=next;
   const run=async(path,q)=>{const row=await save();if(!row)return;
     if(!row.mode){uiAlert('צריך לבחור מה לעשות');return;}
     const em=row.email||(row.donor&&row.donor.email)||'';
     const who=row.donor?row.donor.name:((row.new_last||'')+' '+(row.new_first||'')).trim();
     if(!['skip','anon'].includes(row.mode)&&!who){uiAlert('צריך לבחור תורם מהמערכת או לכתוב שם לתורם חדש');return;}
-    const rc=['annual','one','each','anon'].includes(row.mode)&&(path!=='/apply'||row.mode!=='annual');
-    if(!await uiConfirm(q(who,em,rc,row),'✅ כן','לא'))return;
-    if(window._brcBusy)return;window._brcBusy=1;rs.querySelectorAll('#brc_go,#brc_annual').forEach(b=>b.disabled=true);
+    if(!await uiConfirm(q(who,em,row),'✅ כן','לא'))return;
+    if(window._brcBusy)return;window._brcBusy=1;ov.querySelectorAll('#bk_go,#bk_annual').forEach(b=>b.disabled=true);
     toast('מבצע…');let x;try{x=await api('POST','/api/bankrc/'+row.id+path,{});}finally{window._brcBusy=0;}
     if(x&&x.row){const i=BRC.rows.findIndex(y=>y.id===row.id);BRC.rows[i]=x.row;}
     if(!x||!x.ok){uiAlert((x&&x.error)||'שגיאה');brcRender();return;}
     toast('✓ '+x.msg);load();brcRender();};
-  const qtxt=(who,em,rc,row)=>(row.mode==='skip'?'לסמן "לא להוציא קבלה"?':
-    row.mode==='anon'?'להפיק קבלות לתורם מזדמן (בלי שם) על ההעברות?':
-    'לרשום את התרומות בכרטיס של '+who+(row.donor?'':' (תורם חדש)')+'?'+(rc?'\n\nולהפיק '+(row.mode==='each'?'קבלה לכל העברה':'קבלה אחת על כל ההעברות')+' באיזיקאונט'+(row.send&&em?' ולשלוח אל '+em:' (בלי שליחה במייל)'):row.mode==='annual'?'\n\nהקבלה השנתית תופק בסוף השנה (תיפתח משימה).':''));
-  if(g('brc_go'))g('brc_go').onclick=()=>run('/apply',qtxt);
-  if(g('brc_annual'))g('brc_annual').onclick=()=>run('/annual_now',(who,em,rc,row)=>'להפיק עכשיו קבלה שנתית אחת ל'+who+' על כל ההעברות'+(row.send&&em?' ולשלוח אל '+em:' (בלי שליחה במייל)')+'?');
+  const qtxt=(who,em,row)=>(row.mode==='skip'?'לסמן "לא להוציא קבלה"?':
+    row.mode==='anon'?'להפיק קבלות בשם "תורם מזדמן" על ההעברות?':
+    'לרשום את התרומות בכרטיס של '+who+(row.donor?'':' (תורם חדש)')+'?'+
+    (['one','each'].includes(row.mode)?'\n\nולהפיק '+(row.mode==='each'?'קבלה לכל העברה':'קבלה אחת על כל ההעברות')+' באיזיקאונט'+(row.send&&em?' ולשלוח אל '+em:' (בלי שליחה במייל)'):row.mode==='annual'?'\n\nהקבלה השנתית תופק בסוף השנה (תיפתח משימה ל-27.12).':''));
+  if(g('bk_go'))g('bk_go').onclick=()=>run('/apply',qtxt);
+  if(g('bk_annual'))g('bk_annual').onclick=()=>run('/annual_now',(who,em,row)=>'להפיק עכשיו קבלה שנתית אחת ל'+who+' על כל ההעברות, עם פירוט התאריכים'+(row.send&&em?', ולשלוח אל '+em:' (בלי שליחה במייל)')+'?');
 }
 function renderReceipts(){
   if(RCPTS===null){
