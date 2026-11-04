@@ -19387,8 +19387,8 @@ function brcRender(){
           <div class="dpres">${hits.map(x=>pickRow(x.id,((x.last||'')+' '+(x.first||'')).trim()||x.business||x.english||'',splitEmails(x.email)[0]||'',x.phone||'')).join('')}</div>
           <details ${(r.new_last||r.new_first)?'open':''} style="margin-top:6px"><summary><b>➕ תורם חדש</b> (לא קיים במערכת)</summary>
             <div class="two"><label class="fld"><span>שם משפחה</span><input id="brc_last" value="${esc(r.new_last||'')}"></label><label class="fld"><span>שם פרטי</span><input id="brc_first" value="${esc(r.new_first||'')}"></label></div></details>`}
-      <div class="two"><label class="fld"><span>📱 טלפון ${dn&&dn.phone?'(יש בכרטיס)':''}</span><input id="brc_phone" dir="ltr" value="${esc(r.phone||'')}" placeholder="${esc(dn&&dn.phone||'')}"></label>
-        <label class="fld"><span>✉️ מייל ${dn&&dn.email?'(ריק = מהכרטיס)':''}</span><input id="brc_email" dir="ltr" value="${esc(r.email||'')}" placeholder="${esc(dn&&dn.email||'')}"></label></div>
+      <div class="two"><label class="fld"><span>📱 טלפון ${dn&&dn.phone&&!r.phone?'<small>(מהכרטיס שלו)</small>':''}</span><input id="brc_phone" dir="ltr" value="${esc(r.phone||(dn&&dn.phone)||'')}"></label>
+        <label class="fld"><span>✉️ מייל ${dn&&dn.email&&!r.email?'<small>(מהכרטיס שלו)</small>':''}</span><input id="brc_email" dir="ltr" value="${esc(r.email||(dn&&dn.email)||'')}"></label></div>
       <label class="fld"><span>🎯 מה לכתוב על הקבלה</span><input id="brc_pur" value="${esc(r.purpose||'')}" placeholder="למשל: תרומה להזנה"></label>
       <div class="gvlbl" style="margin-top:8px">מה לעשות</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px">${BRC_MODES.map(([k,t,d])=>`<button class="btn sm ${r.mode===k?'':'ghost'}" data-mode="${k}" style="text-align:right;display:flex;flex-direction:column;align-items:flex-start"><b>${t}</b><small style="font-weight:400">${d}</small></button>`).join('')}</div>
