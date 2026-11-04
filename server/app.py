@@ -24434,6 +24434,42 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             return self._send(200, {'ok': True, 'texts': [{'key': k, 'ext': w, 'label': l, 'def': d, 'val': cur.get(k, '')}
                                                           for k, w, l, d in MK_TEXTS]})
+        if self.path.split('?')[0] == '/api/mikveh/pricelist.docx':
+            # 📄 מאיר: "צריך להכין מסמך עם כל הקבוצות והמחירים" — Word על הבלאנק של המקווה, מהמחירים החיים.
+            # scope=phone — רק הקבוצות שאפשר לעבור אליהן בשלוחה; אחרת כל הקבוצות (בלי המוסתרות)
+            import mikveh as _mk, mk_docs as _md
+            from urllib.parse import quote as _q
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            con = db()
+            try:
+                cfg = mkg_cfg(con)
+            finally:
+                con.close()
+            try:
+                gs = _mk.groups(fresh=True)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            if (qs.get('scope') or [''])[0] == 'phone':
+                allow = set(cfg.get('groups') or [])
+                gs = [g for g in gs if g['id'] in allow]
+            mem = set(cfg.get('member_groups') or [])
+            days = int(cfg.get('days') or 30)
+            mx = int(cfg.get('max') or 0)
+            rule = ('אפשר להחליף קבוצה %s ב-%d יום. ' % ('פעם אחת' if mx == 1 else '%d פעמים' % mx, days) if mx else '') + \
+                'במעבר באמצע החודש משלמים או מקבלים זיכוי על ההפרש, לפי הימים שנשארו במנוי.'
+            data = _md.pricelist(gs, member_ids=mem, erech=lambda g: mkg_is_erech(cfg, g['id'], g['name']),
+                                 date_line='%s · %s' % (greg_to_heb_full(), il_now().strftime('%d/%m/%Y')),
+                                 min_keva=float(cfg.get('min_keva') or 0) if mem else 0, keva_cats=cfg.get('keva_cats') or [],
+                                 phone=str((qs.get('phone') or ['077-3412906'])[0])[:20], change_rule=rule)
+            fname = 'מחירון המקווה %s.docx' % il_now().strftime('%d-%m-%Y')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Content-Disposition', "attachment; filename=\"pricelist.docx\"; filename*=UTF-8''%s" % _q(fname))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/api/mikveh/series':
             # 📈 כניסות והכנסות לפי יום (לגרף באתר המקווה החדש)
             import mikveh as _mk

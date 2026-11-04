@@ -1909,6 +1909,14 @@ async function mkPendLoad(){const r=await api('GET','/api/mikveh/pending').catch
   el.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff4e5;border:1px solid #f5c26b;border-radius:12px;padding:10px 14px;margin-bottom:12px">
     <b style="color:#b9770e">🔔 ממתין לטיפול:</b>${it.map(x=>`<button class="btn sm" data-pg="${x[2]}" style="background:#fff;color:#333;border:1px solid #f5c26b"><b style="color:#c0392b">${x[0]}</b> ${x[1]}</button>`).join('')}</div>`;
   el.querySelectorAll('[data-pg]').forEach(b=>b.onclick=()=>{const k=b.dataset.pg;if(k==='mkpreq'){MKRQ_F='open';mkReqOpen();}else if(k==='mkpgrp')mkSgReqOpen();else mkVmOpen();});}
+// 📄 מאיר: "מסמך עם כל הקבוצות והמחירים" — Word על הבלאנק של המקווה, מהמחירים החיים במקווה
+async function mkPriceDoc(scope,btn){const t0=btn&&btn.innerHTML;if(btn){btn.disabled=true;btn.innerHTML='⏳ מכין…';}
+  try{const r=await fetch('/api/mikveh/pricelist.docx'+(scope?'?scope='+scope:''));
+    if((r.headers.get('Content-Type')||'').includes('json')||!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'לא נוצר');}
+    const b=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(b);
+    a.download='מחירון המקווה '+new Date().toLocaleDateString('he-IL').replace(/\./g,'-')+'.docx';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);}
+  catch(e){(typeof uiAlert==='function'?uiAlert:alertBox)('⚠️ המחירון לא נוצר: '+e.message);}
+  finally{if(btn){btn.disabled=false;btn.innerHTML=t0;}}}
 // 📥 מאיר: "לבדוק פניות מנדרים פלוס — לא צריך במייל, אפשר עם ה-API" — טופס הפניות ישירות מנדרים פלוס
 async function mkReqApiSetup(sample){
   const rs=document.getElementById('remsheet');
@@ -2197,6 +2205,7 @@ function renderMikveh(){
       <button class="mkibtn" id="mkvmb" title="הודעות שהשאירו בשלוחת המקווה בטלפון — להאזין, לקרוא את התמלול, לסמן שטופל">📥 הודעות מוקלטות<b id="mkvmn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button></div></div>
         <div class="mkhg"><span>📊 דוחות ובדיקות</span><div><button class="mkibtn" id="mkentday" title="כמה נכנסו למקווה ביום מסוים — לפי קבוצה (ערך צבור, מזדמן וכו')">📊 כניסות ליום</button>
           <button class="mkibtn" id="mkdebtsb" title="כל החובות הפתוחים במקווה — מי חייב, כמה ועל מה">🧾 חובות פתוחים</button>
+      <button class="mkibtn" id="mkprice" title="מסמך Word על הבלאנק של המקווה — כל הקבוצות והמחירים, מהמקווה עכשיו">📄 מחירון הקבוצות</button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי או הרישיון שלו הסתיים, ולמה (חידוש אוטומטי כבוי / אין אמצעי תשלום / חיוב נכשל)">🔍 בדיקת פג תוקף</button></div></div>
         <div class="mkhg"><span>💬 פניות והודעות</span><div><button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📨 פניות מנדרים${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
           <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
@@ -2226,6 +2235,7 @@ function renderMikveh(){
   const _mc=document.getElementById('mkcredit'); if(_mc)_mc.onclick=()=>mkCreditOpen('bal');
   const _mz=document.getElementById('mkzklist'); if(_mz)_mz.onclick=()=>mkCreditOpen('zk');
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
+  document.getElementById('mkprice').onclick=e=>mkPriceDoc('',e.currentTarget);
   document.getElementById('mkselfg').onclick=()=>mkSelfGroupOpen();
   document.getElementById('mkvmb').onclick=()=>mkVmOpen();
   document.getElementById('mkrqb').onclick=()=>mkSgReqOpen();
@@ -3127,6 +3137,7 @@ async function mkSelfGroupOpen(){
       <div class="mksub">0 פעמים = בלי הגבלה. הספירה מתגלגלת: החלפה יוצאת מהחשבון אחרי שעברו הימים.</div>
       <div style="display:flex;gap:10px;align-items:center;margin:12px 0"><input type="checkbox" id="sgreq" style="width:22px;height:22px;flex:none" ${C.req_on?'checked':''}><label for="sgreq" style="cursor:pointer"><b>מי שעבר את המקסימום — יוכל לשלוח בקשה למשרד</b> (בוחר קבוצה בטלפון, בלי להקליט; הבקשה מופיעה במסך המקווה בכפתור "📨 בקשות החלפה")</label></div>
       <button class="mkbtn" id="sgsave" style="margin-top:8px">💾 לשמור</button>
+      <button class="btn ghost" id="sgprice" style="margin-top:8px">📄 מחירון של הקבוצות שבשלוחה (Word)</button>
       <div class="mksec" style="margin-top:18px">⚙️ הגדרה בימות המשיח <small>שלוחה חדשה (ext.ini)</small></div>
       <pre dir="ltr" style="background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-all;user-select:all">${esc(ini)}</pre>
       <button class="btn sm ghost" id="sgcopy">📋 להעתיק</button></div>
@@ -3169,6 +3180,7 @@ async function mkSelfGroupOpen(){
     document.getElementById('pcex').innerHTML='דוגמה: מנוי ב-₪190 שעובר לקבוצה ב-₪230, ונשארו לו 15 ימים — הפרש לתשלום <b>₪'+a+'</b>. בכיוון ההפוך — זיכוי של ₪'+a+'.';};
   document.getElementById('pcdiv').oninput=ex;ex();
   document.getElementById('pcsave').onclick=()=>document.getElementById('sgsave').click();
+  document.getElementById('sgprice').onclick=e=>mkPriceDoc('phone',e.currentTarget);
   document.getElementById('sgsave').onclick=async()=>{const say={};rs.querySelectorAll('[data-say]').forEach(i=>{if(i.value.trim())say[i.dataset.say]=i.value.trim();});
     const body={enabled:document.getElementById('sgon').checked,groups:[...rs.querySelectorAll('[data-sg]')].filter(x=>x.checked).map(x=>x.dataset.sg),
       locked_groups:[...rs.querySelectorAll('[data-lg]')].filter(x=>x.checked).map(x=>x.dataset.lg),say,
