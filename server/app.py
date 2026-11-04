@@ -24434,33 +24434,58 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             return self._send(200, {'ok': True, 'texts': [{'key': k, 'ext': w, 'label': l, 'def': d, 'val': cur.get(k, '')}
                                                           for k, w, l, d in MK_TEXTS]})
-        if self.path.split('?')[0] == '/api/mikveh/pricelist.docx':
-            # 📄 מאיר: "צריך להכין מסמך עם כל הקבוצות והמחירים" — Word על הבלאנק של המקווה, מהמחירים החיים.
-            # scope=phone — רק הקבוצות שאפשר לעבור אליהן בשלוחה; אחרת כל הקבוצות (בלי המוסתרות)
-            import mikveh as _mk, mk_docs as _md
-            from urllib.parse import quote as _q
-            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        if self.path.split('?')[0] == '/api/mikveh/price_groups':
+            # 📄 אילו קבוצות נכנסות למחירון (נשמר — אותה בחירה בשני האתרים). בלי בחירה שמורה: קבוצות מנוי
+            # עם מחיר, בלי ערך צבור ובלי קבוצות הקהילה — רק הצעה ראשונה, מאיר בוחר
+            import mikveh as _mk
             con = db()
             try:
                 cfg = mkg_cfg(con)
+                try:
+                    saved = json.loads(kv_get(con, 'mk_price_groups', '') or 'null')
+                except Exception:
+                    saved = None
             finally:
                 con.close()
             try:
                 gs = _mk.groups(fresh=True)
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
-            if (qs.get('scope') or [''])[0] == 'phone':
-                allow = set(cfg.get('groups') or [])
-                gs = [g for g in gs if g['id'] in allow]
             mem = set(cfg.get('member_groups') or [])
-            days = int(cfg.get('days') or 30)
-            mx = int(cfg.get('max') or 0)
-            rule = ('אפשר להחליף קבוצה %s ב-%d יום. ' % ('פעם אחת' if mx == 1 else '%d פעמים' % mx, days) if mx else '') + \
-                'במעבר באמצע החודש משלמים או מקבלים זיכוי על ההפרש, לפי הימים שנשארו במנוי.'
-            data = _md.pricelist(gs, member_ids=mem, erech=lambda g: mkg_is_erech(cfg, g['id'], g['name']),
-                                 date_line='%s · %s' % (greg_to_heb_full(), il_now().strftime('%d/%m/%Y')),
-                                 min_keva=float(cfg.get('min_keva') or 0) if mem else 0, keva_cats=cfg.get('keva_cats') or [],
-                                 phone=str((qs.get('phone') or ['077-3412906'])[0])[:20], change_rule=rule)
+            out = []
+            for g in gs:
+                er = mkg_is_erech(cfg, g['id'], g['name'])
+                dflt = bool(g.get('price') and g['price'] > 1 and not er and g['id'] not in mem and 'קהיל' not in g['name'])
+                out.append({'id': g['id'], 'name': g['name'], 'price': g.get('price'), 'erech': er,
+                            'on': (g['id'] in saved) if isinstance(saved, list) else dflt})
+            return self._send(200, {'ok': True, 'groups': out, 'saved': isinstance(saved, list)})
+        if self.path.split('?')[0] == '/api/mikveh/pricelist.docx':
+            # 📄 מאיר: "צריך להכין מסמך עם כל הקבוצות והמחירים" — Word על הבלאנק של המקווה, מהמחירים החיים.
+            # ids=… — הקבוצות שנבחרו (נשמרות לפעם הבאה); בלי ids — הבחירה השמורה
+            import mikveh as _mk, mk_docs as _md
+            from urllib.parse import quote as _q
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            con = db()
+            try:
+                if 'ids' in qs:
+                    ids = [x for x in (qs.get('ids') or [''])[0].split(',') if re.fullmatch(r'[0-9a-fA-F-]{36}', x)]
+                    kv_set(con, 'mk_price_groups', json.dumps(ids))
+                    con.commit()
+                else:
+                    try:
+                        ids = json.loads(kv_get(con, 'mk_price_groups', '') or '[]') or []
+                    except Exception:
+                        ids = []
+            finally:
+                con.close()
+            try:
+                byid = {g['id']: g for g in _mk.groups(fresh=True)}
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            gs = [byid[x] for x in ids if x in byid]
+            if not gs:
+                return self._send(200, {'ok': False, 'error': 'לא נבחרה אף קבוצה למחירון'})
+            data = _md.pricelist(gs, date_line='%s · %s' % (greg_to_heb_full(), il_now().strftime('%d/%m/%Y')))
             fname = 'מחירון המקווה %s.docx' % il_now().strftime('%d-%m-%Y')
             self.send_response(200)
             self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')

@@ -35,7 +35,7 @@ def _p(runs, jc='right', before=0, after=80, line=276, border=False, keep=False)
             '<w:jc w:val="%s"/></w:pPr>%s</w:p>') % (kn, bd, before, after, line, jcv, runs)
 
 
-def _heading(text):
+def _heading(text):  # לא בשימוש כרגע — לכותרות משנה במסמכים הבאים
     return _p('<w:r><w:rPr><w:color w:val="%s"/><w:rtl/></w:rPr><w:t xml:space="preserve">❖  </w:t></w:r>' % GOLD +
               _run(text, 34, RED, True), before=280, after=100, keep=True)
 
@@ -82,43 +82,17 @@ def clean_name(name):
     return re.sub(r'^\s*\d+\s*[.\-)]\s*', '', str(name or '')).strip() or str(name or '')
 
 
-def pricelist(groups, *, member_ids=(), erech=lambda g: False, title='מחירון קבוצות המקווה', date_line='',
-              min_keva=0, keva_cats=(), phone='', change_rule='', note=''):
-    """groups — [{'id','name','price','entry'}] (מחיר חודשי ומחיר כניסה בשקלים). מחזיר bytes של קובץ docx"""
+def pricelist(groups, *, title='מחירון קבוצות המקווה', date_line=''):
+    """groups — [{'name','price'}] (מחיר לחודש בשקלים), בסדר שבו יופיעו. מחזיר bytes של קובץ docx.
+    מאיר: "לא צריך לכתוב כניסה בודדת ולא על קבוצה ערך צבור… ולא על הקהילה, אני יביא לך את הפרטים אל תמציא"
+    — רק הקבוצות שנבחרו והמחיר לחודש. בלי טקסטים נוספים."""
     W = [4600, 2000]             # רוחב הגוף בבלאנק: 11907 − 1134 − 2268 = 8505
-    # מאיר: "לא צריך לכתוב כניסה בודדת ולא על קבוצה ערך צבור" — רק קבוצות מנוי, ומחיר לחודש
-    groups = [g for g in groups if not erech(g)]
-    reg = [g for g in groups if g['id'] not in member_ids]
-    mem = [g for g in groups if g['id'] in member_ids]
-
-    def row(g):
-        return [clean_name(g['name']), _nis(g.get('price'))]
-
     body = _p(_run(title, 44, RED, True), jc='center', after=40)
     if date_line:
         body += _p(_run(date_line, 22, GOLD), jc='center', after=60)
     body += _dia()
-    head = ['קבוצה', 'מחיר לחודש']
-    if reg:
-        body += _heading('הקבוצות')
-        body += _table(head, [row(g) for g in reg], W)
-    if mem:
-        body += _heading('קבוצות בהנחת חבר קהילה')
-        cond = 'לחברי הקהילה עם הוראת קבע פעילה'
-        if min_keva:
-            cond += ' של ₪%g לפחות בחודש' % min_keva
-        if keva_cats:
-            cond += ' (בקטגוריה: %s)' % ' / '.join(keva_cats)
-        body += _p(_run(cond + '.', 24, INK), after=100)
-        body += _table(head, [row(g) for g in mem], W)
-    if change_rule:
-        body += _p(_run(change_rule, 22, INK), before=160, after=40)
-    if note:
-        body += _p(_run(note, 22, INK), after=40)
-    if phone:
-        body += _dia()
-        body += _p(_run('טעינה, תשלום והחלפת קבוצה בטלפון: ', 26, INK) + _run(phone, 32, BLUE, True), jc='center', after=40)
-    body += _p(_run('הנהלת המקווה', 28, RED, True), jc='center', before=300, after=0)
+    body += _table(['קבוצה', 'מחיר לחודש'], [[clean_name(g['name']), _nis(g.get('price'))] for g in groups], W)
+    body += _p(_run('הנהלת המקווה', 28, RED, True), jc='center', before=400, after=0)
     return _fill(body)
 
 
