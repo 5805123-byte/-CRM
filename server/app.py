@@ -33701,6 +33701,27 @@ def _nd_tx_matches(t, keys):
     return (('phone:' + (t['phone'] or '-')) in keys) or (kv and ('keva:' + kv) in keys) or (('name:' + nm) in keys)
 
 
+def nd_donor_autolink(con):
+    """מאיר (4.11.2026): "היא תורמת דרך נדרים פלוס כל חודש 150 שקל, למה זה לא מסונכרן אצלנו בכרטיס שלה?" —
+    קישור אוטומטי לפי טלפון: משלם בנדרים פלוס (החשבון של הכולל) שהטלפון שלו שייך לתורם אחד בלבד, והתשלומים
+    שלו לא משויכים לחבר קהילה ולא לתורם אחר. שם בלבד לא מספיק לקישור אוטומטי (רק מהכרטיס)."""
+    owner = {}
+    for d in con.execute("SELECT id, phone FROM donors WHERE COALESCE(TRIM(phone),'')<>''").fetchall():
+        for ph in _phones_of(d['phone']):
+            owner.setdefault(ph, set()).add(d['id'])
+    linked = {r['key'] for r in con.execute("SELECT key FROM nd_dlink")}
+    n = 0
+    for t in con.execute("SELECT phone, MAX(member_id) m, MAX(donor_id) dn, COUNT(*) c FROM nd_tx WHERE COALESCE(mosad,'')='' AND amount>0 "
+                         "AND COALESCE(phone,'')<>'' GROUP BY phone").fetchall():
+        ids = owner.get(t['phone']) or set()
+        if len(ids) != 1 or t['m'] or t['dn'] or ('phone:' + t['phone']) in linked:
+            continue
+        con.execute("INSERT OR IGNORE INTO nd_dlink(key, donor_id, label, at) VALUES(?,?,?,?)",
+                    ('phone:' + t['phone'], next(iter(ids)), 'אוטומטי — אותו טלפון', now_iso()))
+        n += 1
+    return n
+
+
 def nd_donor_import(con, did=None):
     """התשלומים בנדרים פלוס (החשבון של הכולל) של התורמים המקושרים → תרומות ב-₪ בכרטיס. בלי כפילויות."""
     links = {}
@@ -33960,6 +33981,10 @@ def nd_history_sync(con):
     try:
         nd_donor_seed(con)
         nd_donor_seed2(con)
+        try:
+            nd_donor_autolink(con)
+        except Exception as e:
+            print('  nd autolink error:', e)
         if nd_donor_import(con):
             con.commit()
     except Exception as e:
