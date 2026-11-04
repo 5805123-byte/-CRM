@@ -19105,10 +19105,24 @@ def bankrc_apply(con, rid, annual_now=False):
         last, first = (r['new_last'] or '').strip(), (r['new_first'] or '').strip()
         if not (last or first):
             return False, 'לא נבחר תורם — בחר תורם קיים או כתוב שם לתורם חדש'
-        con.execute("INSERT INTO donors(last,first,phone,email,category,region,created,source) VALUES(?,?,?,?,'מזדמן','il',?,'העברות בנק 2026')",
-                    (last, first, (r['phone'] or '').strip(), (r['email'] or '').strip(), today_iso()))
-        did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
-        con.execute("UPDATE bankrc SET donor_id=? WHERE id=?", (did, rid))
+        # בלי כפילויות: אם כבר יש כרטיס באותו שם או באותו טלפון — רושמים אצלו ולא פותחים חדש
+        ph9 = re.sub(r'\D', '', r['phone'] or '')[-9:]
+        same = set()
+        for x in con.execute("SELECT id,last,first,phone FROM donors").fetchall():
+            if (x['last'] or '').strip() == last and (x['first'] or '').strip() == first:
+                same.add(x['id'])
+            elif len(ph9) == 9 and any(re.sub(r'\D', '', p)[-9:] == ph9 for p in re.split(r'[/,;]', x['phone'] or '') if p.strip()):
+                same.add(x['id'])
+        if len(same) > 1:
+            return False, 'יש כמה כרטיסים בשם / בטלפון הזה (%s) — בחר את התורם הנכון מהרשימה' % ', '.join(str(i) for i in sorted(same))
+        if same:
+            did = same.pop()
+            con.execute("UPDATE bankrc SET donor_id=? WHERE id=?", (did, rid))
+        if not did:
+            con.execute("INSERT INTO donors(last,first,phone,email,category,region,created,source) VALUES(?,?,?,?,'מזדמן','il',?,'העברות בנק 2026')",
+                        (last, first, (r['phone'] or '').strip(), (r['email'] or '').strip(), today_iso()))
+            did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+            con.execute("UPDATE bankrc SET donor_id=? WHERE id=?", (did, rid))
     if (r['email'] or '').strip():
         con.execute("UPDATE donors SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", (r['email'].strip(), did))
     if (r['phone'] or '').strip():

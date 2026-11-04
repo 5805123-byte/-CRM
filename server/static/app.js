@@ -19430,7 +19430,8 @@ function brcRender(){
     if(!['skip','anon'].includes(row.mode)&&!who){uiAlert('צריך לבחור תורם מהמערכת או לכתוב שם לתורם חדש');return;}
     const rc=['annual','one','each','anon'].includes(row.mode)&&(path!=='/apply'||row.mode!=='annual');
     if(!await uiConfirm(q(who,em,rc,row),'✅ כן','לא'))return;
-    toast('מבצע…');const x=await api('POST','/api/bankrc/'+row.id+path,{});
+    if(window._brcBusy)return;window._brcBusy=1;rs.querySelectorAll('#brc_go,#brc_annual').forEach(b=>b.disabled=true);
+    toast('מבצע…');let x;try{x=await api('POST','/api/bankrc/'+row.id+path,{});}finally{window._brcBusy=0;}
     if(x&&x.row){const i=BRC.rows.findIndex(y=>y.id===row.id);BRC.rows[i]=x.row;}
     if(!x||!x.ok){uiAlert((x&&x.error)||'שגיאה');brcRender();return;}
     toast('✓ '+x.msg);load();brcRender();};
