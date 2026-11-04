@@ -19437,6 +19437,7 @@ function brcRender(){
       <div class="fields">
         <label class="f">📱 טלפון${dn&&dn.phone&&!r.phone?' (מהכרטיס)':''}<input id="bk_phone" dir="ltr" value="${esc(r.phone||(dn&&dn.phone)||'')}"></label>
         <label class="f">✉️ אימייל${dn&&dn.email&&!r.email?' (מהכרטיס)':''}<input id="bk_email" dir="ltr" value="${esc(r.email||(dn&&dn.email)||'')}"></label>
+        <label class="f full">🧾 השם על הקבלה <span style="font-weight:400">— אם שונה מהכרטיס (למשל התרומה נרשמת אצל שפרה גוזף, והקבלה על שם לוי בן ציון)</span><input id="bk_rcname" value="${esc(r.rc_name||'')}" placeholder="${esc(dn?'ריק = '+dn.name:'ריק = שם התורם')}"></label>
         <label class="f full">מה לכתוב על הקבלה<input id="bk_pur" value="${esc(r.purpose||'')}" placeholder="למשל: תרומה להזנה"></label>
       </div>
       <p class="mh">מה לעשות</p>
@@ -19469,7 +19470,7 @@ function brcRender(){
   ov.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{brcF=b.dataset.f;brcRender();});
   ov.querySelectorAll('[data-row]').forEach(b=>b.onclick=()=>{brcCur=b.dataset.row;brcQ='';brcRender();ov.scrollTop=0;});
   if(!r)return;
-  const vals=()=>{const o={};[['bk_last','new_last'],['bk_first','new_first'],['bk_phone','phone'],['bk_email','email'],['bk_pur','purpose'],['bk_note','note']].forEach(([i,k])=>{if(g(i))o[k]=g(i).value.trim();});
+  const vals=()=>{const o={};[['bk_last','new_last'],['bk_first','new_first'],['bk_phone','phone'],['bk_email','email'],['bk_pur','purpose'],['bk_note','note'],['bk_rcname','rc_name']].forEach(([i,k])=>{if(g(i))o[k]=g(i).value.trim();});
     if(r.donor){if(o.phone===(r.donor.phone||''))o.phone=r.phone||'';if(o.email===(r.donor.email||''))o.email=r.email||'';}o.send=g('bk_send').checked?1:0;return o;};
   const save=async(extra)=>{const x=await api('POST','/api/bankrc/'+r.id,Object.assign(vals(),extra||{}));if(!x||!x.ok){uiAlert((x&&x.error)||'לא נשמר');return null;}
     const i=BRC.rows.findIndex(y=>y.id===r.id);BRC.rows[i]=x.row;return x.row;};
@@ -19495,7 +19496,7 @@ function brcRender(){
     toast('✓ '+x.msg);load();brcRender();};
   const qtxt=(who,em,row)=>(row.mode==='skip'?'לסמן "לא להוציא קבלה"?':
     row.mode==='anon'?'להפיק קבלות בשם "תורם מזדמן" על ההעברות?':
-    'לרשום את התרומות בכרטיס של '+who+(row.donor?'':' (תורם חדש)')+'?'+
+    'לרשום את התרומות בכרטיס של '+who+(row.donor?'':' (תורם חדש)')+'?'+(row.rc_name?'\nעל הקבלה ייכתב: '+row.rc_name:'')+
     (['one','each'].includes(row.mode)?'\n\nולהפיק '+(row.mode==='each'?'קבלה לכל העברה':'קבלה אחת על כל ההעברות')+' באיזיקאונט'+(row.send&&em?' ולשלוח אל '+em:' (בלי שליחה במייל)'):row.mode==='annual'?'\n\nהקבלה השנתית תופק בסוף השנה (תיפתח משימה ל-27.12).':''));
   if(g('bk_go'))g('bk_go').onclick=()=>run('/apply',qtxt);
   if(g('bk_annual'))g('bk_annual').onclick=()=>run('/annual_now',(who,em,row)=>'להפיק עכשיו קבלה שנתית אחת ל'+who+' על כל ההעברות, עם פירוט התאריכים'+(row.send&&em?', ולשלוח אל '+em:' (בלי שליחה במייל)')+'?');

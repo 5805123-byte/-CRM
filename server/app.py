@@ -16749,7 +16749,7 @@ def ez_ready():
         return False
 
 
-def receipt_issue_ez(con, don_id, email='', address='', phone='', send=True):
+def receipt_issue_ez(con, don_id, email='', address='', phone='', send=True, name_override=''):
     """קבלה ישראלית דרך EZcount — מאיר: "אני מעדיף שקבלות ישראליות יעברו דרך איזיקאונט".
     מופקת בחשבון EZcount של הכולל; אם יש מייל — EZcount שולח אותה לתורם; ה-PDF נשמר אצלנו."""
     import ezcount as _ez
@@ -16758,6 +16758,7 @@ def receipt_issue_ez(con, don_id, email='', address='', phone='', send=True):
         return None, 'התרומה לא נמצאה'
     d = con.execute("SELECT * FROM donors WHERE id=?", (row['donor_id'],)).fetchone()
     name = ((d['business'] or '').strip() or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()) if d else 'תורם'
+    name = (name_override or '').strip() or name
     # מאיר: "שהמערכת תשאל אותי לפני שליחת אימייל" — בלי send הקבלה רק מופקת ונשמרת
     email = ((email or '').strip() or ((emails_of(d['email'])[0] if d and d['email'] else ''))) if send else ''
     address = (address or '').strip() or (', '.join(x for x in (str(d['addr'] or '').strip(), str(d['city'] or '').strip()) if x) if d else '')
@@ -18999,6 +19000,10 @@ def bankrc_schema(con):
     con.execute("CREATE TABLE IF NOT EXISTS bankrc(id TEXT PRIMARY KEY, ord INTEGER, q TEXT, bank TEXT, ref TEXT, rows TEXT, "
                 "mode TEXT DEFAULT '', donor_id INTEGER, new_last TEXT, new_first TEXT, email TEXT, phone TEXT, purpose TEXT, "
                 "got TEXT DEFAULT '[]', note TEXT, send INTEGER DEFAULT 1, state TEXT DEFAULT '', result TEXT, updated TEXT)")
+    # מאיר: "אם אני מקשר תרומה של לוי בן ציון לשפרה ג'וזף ואני רוצה שעל הקבלה יהיה רשום לוי בן ציון" —
+    # השם על הקבלה יכול להיות שונה מהכרטיס שהתרומה נרשמת בו
+    try: con.execute("ALTER TABLE bankrc ADD COLUMN rc_name TEXT")
+    except Exception: pass
     for i, (gid, q, bank, ref, rows) in enumerate(BANKRC_SEED):
         con.execute("INSERT OR IGNORE INTO bankrc(id,ord,q,bank,ref,rows,mode) VALUES(?,?,?,?,?,?,?)",
                     (gid, i, q, bank, ref, json.dumps([[bankrc_iso(d), a] for d, a in rows]),
@@ -19041,6 +19046,7 @@ def bankrc_receipt_combined(con, r, did, dons, send):
     import ezcount as _ez
     d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
     name = ((d['business'] or '').strip() or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()) if d else 'תורם'
+    name = (r['rc_name'] or '').strip() or name
     email = ((r['email'] or '').strip() or (emails_of(d['email'])[0] if d and d['email'] else '')) if send else ''
     total = round(sum(_amt2(x['amount']) for x in dons), 2)
     lines = ' · '.join('%s ₪%s' % (datetime.date.fromisoformat(x['date'][:10]).strftime('%d/%m/%Y'), ('%g' % _amt2(x['amount']))) for x in dons)
@@ -19109,7 +19115,7 @@ def bankrc_report(con):
                 else:
                     what = 'טרם טופל'
             out.append({'date': dt, 'ref': r['ref'], 'bank': r['bank'], 'amount': a,
-                        'donor': 'תורם מזדמן' if r['mode'] == 'anon' else who, 'what': what, 'receipt': num,
+                        'donor': 'תורם מזדמן' if r['mode'] == 'anon' else (who + ((' · על הקבלה: ' + r['rc_name'].strip()) if (r['rc_name'] or '').strip() else '')), 'what': what, 'receipt': num,
                         'note': (r['note'] or '').strip()})
     for d, ref, bank, a, who, note in BANKRC_PRE:
         out.append({'date': bankrc_iso(d), 'ref': ref, 'bank': bank, 'amount': a, 'donor': who,
@@ -19207,7 +19213,7 @@ def bankrc_apply(con, rid, annual_now=False):
     if mode == 'each':
         nums = []
         for x in dons:
-            doc, err = receipt_issue_ez(con, x['id'], email=(r['email'] or '').strip(), send=send)
+            doc, err = receipt_issue_ez(con, x['id'], email=(r['email'] or '').strip(), send=send, name_override=(r['rc_name'] or ''))
             if not doc:
                 return False, 'איזיקאונט: ' + err
             nums.append(str(doc.get('num') or ''))
@@ -26973,7 +26979,7 @@ class H(BaseHTTPRequestHandler):
                     return self._send(404, {'ok': False, 'error': 'לא נמצא'})
                 if not m.group(2):
                     sets, vals = [], []
-                    for k in ('mode', 'new_last', 'new_first', 'email', 'phone', 'purpose', 'note'):
+                    for k in ('mode', 'new_last', 'new_first', 'email', 'phone', 'purpose', 'note', 'rc_name'):
                         if k in b:
                             sets.append(k + '=?'); vals.append(str(b.get(k) or '').strip()[:300])
                     if 'donor_id' in b:
