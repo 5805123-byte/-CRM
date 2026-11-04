@@ -1928,12 +1928,13 @@ async function mkPriceDoc(scope,btn){
   const nis=v=>v==null?'—':'₪'+(+v).toLocaleString('he-IL');
   B.innerHTML='<div style="color:#666;font-size:.88rem;margin-bottom:8px">מסמנים אילו קבוצות ייכנסו למחירון. במסמך יופיעו רק שם הקבוצה והמחיר לחודש. הבחירה נשמרת לפעם הבאה.</div>'+
     '<div style="display:flex;gap:6px;margin-bottom:8px"><button data-all="1" style="border:1px solid #ddd;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">לסמן הכל</button><button data-all="0" style="border:1px solid #ddd;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">לנקות</button></div>'+
+    '<label style="display:block;margin:4px 0 12px"><b style="font-size:.9rem">הודעה בראש המחירון (לא חובה)</b><div style="color:#888;font-size:.8rem">השורה הראשונה תהיה הכותרת של ההודעה. ריק = בלי הודעה.</div><textarea id="mkplnote" rows="4" style="width:100%;box-sizing:border-box;margin-top:4px;border:1px solid #ddd;border-radius:8px;padding:8px;font:inherit">'+esc_(r.notice||'')+'</textarea></label>'+
     r.groups.map(g=>'<label style="display:flex;gap:10px;align-items:center;padding:8px 4px;border-bottom:1px solid #f1f1f1;cursor:pointer"><input type="checkbox" data-pg="'+esc_(g.id)+'" '+(g.on?'checked':'')+' style="width:18px;height:18px;flex:none"><span style="flex:1">'+esc_(g.name)+(g.erech?' <small style="color:#999">(ערך צבור)</small>':'')+'</span><b style="white-space:nowrap">'+nis(g.price)+'</b></label>').join('');
   const go=document.getElementById('mkplgo'),M=document.getElementById('mkplm');
   const cnt=()=>{const n=B.querySelectorAll('[data-pg]:checked').length;go.disabled=!n;M.textContent=n?n+' קבוצות נבחרו':'לא נבחרה קבוצה';};
   B.onchange=cnt;B.querySelectorAll('[data-all]').forEach(b=>b.onclick=()=>{B.querySelectorAll('[data-pg]').forEach(i=>i.checked=b.dataset.all==='1');cnt();});cnt();
   go.onclick=async()=>{const ids=[...B.querySelectorAll('[data-pg]:checked')].map(i=>i.dataset.pg);go.disabled=true;M.textContent='⏳ מכין את המסמך…';
-    try{const x=await fetch('/api/mikveh/pricelist.docx?ids='+ids.join(','));
+    try{const x=await fetch('/api/mikveh/pricelist.docx?ids='+ids.join(',')+'&notice='+encodeURIComponent(document.getElementById('mkplnote').value));
       if((x.headers.get('Content-Type')||'').includes('json')||!x.ok){const j=await x.json().catch(()=>({}));throw new Error(j.error||'לא נוצר');}
       const b=await x.blob(),a=document.createElement('a');a.href=URL.createObjectURL(b);
       a.download='מחירון המקווה '+new Date().toLocaleDateString('he-IL').replace(/\./g,'-')+'.docx';document.body.appendChild(a);a.click();a.remove();

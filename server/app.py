@@ -24458,24 +24458,33 @@ class H(BaseHTTPRequestHandler):
                 dflt = bool(g.get('price') and g['price'] > 1 and not er and g['id'] not in mem and 'קהיל' not in g['name'])
                 out.append({'id': g['id'], 'name': g['name'], 'price': g.get('price'), 'erech': er,
                             'on': (g['id'] in saved) if isinstance(saved, list) else dflt})
-            return self._send(200, {'ok': True, 'groups': out, 'saved': isinstance(saved, list)})
+            con = db()
+            try:
+                notice = kv_get(con, 'mk_price_notice', '') or ''
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'groups': out, 'saved': isinstance(saved, list), 'notice': notice})
         if self.path.split('?')[0] == '/api/mikveh/pricelist.docx':
             # 📄 מאיר: "צריך להכין מסמך עם כל הקבוצות והמחירים" — Word על הבלאנק של המקווה, מהמחירים החיים.
             # ids=… — הקבוצות שנבחרו (נשמרות לפעם הבאה); בלי ids — הבחירה השמורה
             import mikveh as _mk, mk_docs as _md
             from urllib.parse import quote as _q
-            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query, keep_blank_values=True)
             con = db()
             try:
+                if 'notice' in qs:
+                    # הודעה בראש המחירון (למשל: "מראש חודש כסלו מנוי המגבות ביחד עם מנוי הקבוצה") — נשמרת
+                    kv_set(con, 'mk_price_notice', (qs.get('notice') or [''])[0][:1500])
+                notice = kv_get(con, 'mk_price_notice', '') or ''
                 if 'ids' in qs:
                     ids = [x for x in (qs.get('ids') or [''])[0].split(',') if re.fullmatch(r'[0-9a-fA-F-]{36}', x)]
                     kv_set(con, 'mk_price_groups', json.dumps(ids))
-                    con.commit()
                 else:
                     try:
                         ids = json.loads(kv_get(con, 'mk_price_groups', '') or '[]') or []
                     except Exception:
                         ids = []
+                con.commit()
             finally:
                 con.close()
             try:
@@ -24485,7 +24494,7 @@ class H(BaseHTTPRequestHandler):
             gs = [byid[x] for x in ids if x in byid]
             if not gs:
                 return self._send(200, {'ok': False, 'error': 'לא נבחרה אף קבוצה למחירון'})
-            data = _md.pricelist(gs, date_line='%s · %s' % (greg_to_heb_full(), il_now().strftime('%d/%m/%Y')))
+            data = _md.pricelist(gs, date_line='%s · %s' % (greg_to_heb_full(), il_now().strftime('%d/%m/%Y')), notice=notice)
             fname = 'מחירון המקווה %s.docx' % il_now().strftime('%d-%m-%Y')
             self.send_response(200)
             self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')

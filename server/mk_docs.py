@@ -71,6 +71,23 @@ def _table(head, rows, widths):
     return x + '</w:tbl>'
 
 
+def _notice(text):
+    """מסגרת הודעה (כמו המסגרת של מספר הטלפון בבלאנק: קו זהוב כפול ורקע קרם). שורה ראשונה מודגשת"""
+    lines = [x.strip() for x in str(text).strip().splitlines() if x.strip()]
+    paras = ''
+    for k, ln in enumerate(lines):
+        first = k == 0 and len(lines) > 1
+        paras += ('<w:p><w:pPr><w:bidi/><w:spacing w:before="0" w:after="%d" w:line="300" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr>%s</w:p>'
+                  % (100 if first else 40, _run(ln, 30 if first else 26, RED if first else INK, first)))
+    d = '<w:%s w:val="double" w:sz="6" w:space="0" w:color="%s"/>'
+    return ('<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w="6600" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/></w:tblPr>'
+            '<w:tblGrid><w:gridCol w:w="6600"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:tcW w:w="6600" w:type="dxa"/>'
+            '<w:tcBorders>%s</w:tcBorders><w:shd w:val="clear" w:color="auto" w:fill="%s"/><w:tcMar><w:top w:w="160" w:type="dxa"/>'
+            '<w:left w:w="227" w:type="dxa"/><w:bottom w:w="120" w:type="dxa"/><w:right w:w="227" w:type="dxa"/></w:tcMar></w:tcPr>%s</w:tc></w:tr></w:tbl>'
+            % (''.join(d % (k, GOLD) for k in ('top', 'left', 'bottom', 'right')), CREAM, paras)) + \
+        _p(_run('', 10), after=200)
+
+
 def _nis(v):
     if v is None:
         return '—'
@@ -82,7 +99,7 @@ def clean_name(name):
     return re.sub(r'^\s*\d+\s*[.\-)]\s*', '', str(name or '')).strip() or str(name or '')
 
 
-def pricelist(groups, *, title='מחירון קבוצות המקווה', date_line=''):
+def pricelist(groups, *, title='מחירון קבוצות המקווה', date_line='', notice=''):
     """groups — [{'name','price'}] (מחיר לחודש בשקלים), בסדר שבו יופיעו. מחזיר bytes של קובץ docx.
     מאיר: "לא צריך לכתוב כניסה בודדת ולא על קבוצה ערך צבור… ולא על הקהילה, אני יביא לך את הפרטים אל תמציא"
     — רק הקבוצות שנבחרו והמחיר לחודש. בלי טקסטים נוספים."""
@@ -91,6 +108,8 @@ def pricelist(groups, *, title='מחירון קבוצות המקווה', date_li
     if date_line:
         body += _p(_run(date_line, 22, GOLD), jc='center', after=60)
     body += _dia()
+    if str(notice or '').strip():
+        body += _notice(notice)
     body += _table(['קבוצה', 'מחיר לחודש'], [[clean_name(g['name']), _nis(g.get('price'))] for g in groups], W)
     body += _p(_run('הנהלת המקווה', 28, RED, True), jc='center', before=400, after=0)
     return _fill(body)
