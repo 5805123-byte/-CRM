@@ -19477,14 +19477,15 @@ function brcRender(){
       <div class="modes">${BK_MODES.map(([k,t,d])=>`<button data-mode="${k}" class="${r.mode===k?'on':''}"><b>${t}</b><small>${d}</small></button>`).join('')}</div>
       <label class="f">הערה (לא חובה)<textarea id="bk_note" rows="2">${esc(r.note||'')}</textarea></label>
       <label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="bk_send" style="width:auto" ${r.send?'checked':''}> 📧 לשלוח את הקבלה במייל לתורם</label>
-      <div class="act"><button class="b gh" id="bk_save">שמור והבא</button>
-        ${r.state!=='done'?`<button class="b" id="bk_go">✅ לבצע${['one','each','anon'].includes(r.mode)?' — לרשום ולהפיק קבלה':' — לרשום בכרטיס'}</button>`:''}
+      <div class="act">${r.state!=='done'&&r.state!=='annual'&&r.state!=='skipped'?`<button class="b" id="bk_go">✅ שמור ובצע ← הבא</button>`:''}
         ${r.state==='annual'?'<button class="b" id="bk_annual">🧾 להפיק עכשיו את הקבלה השנתית</button>':''}
-        <button class="b gh" id="bk_skip">דלג בינתיים</button></div>
+        <button class="b gh" id="bk_skip">דלג בינתיים</button><button class="b gh sm" id="bk_save" title="לשמור בלי לבצע עכשיו">💾 רק לשמור</button></div>
+      <p class="hint">"שמור ובצע" — התרומות נרשמות בכרטיס, והקבלה מופקת ונשלחת (לפי מה שנבחר). אחרי זה הוא יוצא מהרשימה.</p>
     </div>`;
   }
   ov.innerHTML=`<div class="w">
     <div class="top"><div><h1>קבלות על העברות בנק 2026</h1><p class="sub">רשימת רואת החשבון: העברות לבנק הישראלי מינואר עד סוף אוקטובר 2026. מחובר למערכת: התורמים, הטלפונים והמיילים מהכרטיסים.</p></div><button class="x" id="bk_x" title="סגור">✕</button></div>
+    ${(()=>{const n=R.filter(x=>x.mode&&!x.state).length;return n?`<div class="box" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span>יש <b>${n}</b> ששמרת ועוד לא בוצעו</span><button class="b sm" id="bk_runall">✅ לבצע את כולם עכשיו</button></div>`:'';})()}
     <div class="prog"><span>${nDone} מתוך ${R.length} טופלו</span><div class="bar"><i style="width:${R.length?100*nDone/R.length:0}%"></i></div><button class="b gh sm" id="bk_rep">📄 דוח לרואת החשבון</button></div>
     ${BRC.ez===false?'<div class="box" style="color:var(--bk-warn)">⚠️ איזיקאונט לא מחובר — אפשר לרשום בכרטיסים, אבל לא להפיק קבלות</div>':''}
     ${card||'<div class="okbox">✓ אין כאן מה לטפל</div>'}
@@ -19494,6 +19495,11 @@ function brcRender(){
   </div>`;
   const g=id=>document.getElementById(id);
   g('bk_x').onclick=brcClose;
+  if(g('bk_runall'))g('bk_runall').onclick=async()=>{const bt=g('bk_runall');bt.disabled=true;bt.textContent='⏳ מבצע… (עד כמה דקות)';
+    const x=await api('POST','/api/bankrc/run_saved',{});await brcLoad();
+    if(!x||!x.ok){uiAlert((x&&x.error)||'שגיאה');brcRender();return;}
+    toast('✓ בוצעו '+x.done+(x.failed&&x.failed.length?' · '+x.failed.length+' לא בוצעו — הסיבה כתובה אצלם':''));load();
+    const o=BRC.rows.find(y=>!y.state);if(o)brcCur=o.id;brcRender();};
   g('bk_rep').onclick=async()=>{const x=await api('GET','/api/bankrc/report');if(!x||!x.ok){uiAlert('הדוח לא נטען');return;}
     const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
     const head=['תאריך העברה','אסמכתא','פרטים בבנק','סכום ₪','תורם','מה נעשה','מספר קבלה','הערה'];
@@ -19515,6 +19521,7 @@ function brcRender(){
   if(g('bk_open'))g('bk_open').onclick=()=>{const dd=DB.find(x=>x.id==r.donor.id);if(dd){brcClose();openDonor(dd,'details');}};
   const qi=g('bk_q');if(qi){let t;qi.oninput=()=>{clearTimeout(t);t=setTimeout(()=>{brcQ=qi.value;brcRender();const e=g('bk_q');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},200);};}
   g('bk_save').onclick=async()=>{if(await save()){toast('💾 נשמר');next();}};
+  const busy=on=>ov.querySelectorAll('.b').forEach(b=>b.disabled=on);
   g('bk_skip').onclick=next;
   const run=async(path,q)=>{const row=await save();if(!row)return;
     if(!row.mode){uiAlert('צריך לבחור מה לעשות');return;}
@@ -19531,7 +19538,17 @@ function brcRender(){
     row.mode==='anon'?'להפיק קבלות בשם "תורם מזדמן" על ההעברות?':
     'לרשום את התרומות בכרטיס של '+who+(row.donor?'':' (תורם חדש)')+'?'+(row.rc_name?'\nעל הקבלה ייכתב: '+row.rc_name:'')+
     (['one','each'].includes(row.mode)?'\n\nולהפיק '+(row.mode==='each'?'קבלה לכל העברה':'קבלה אחת על כל ההעברות')+' באיזיקאונט'+(row.send&&em?' ולשלוח אל '+em:' (בלי שליחה במייל)'):row.mode==='annual'?'\n\nהקבלה השנתית תופק בסוף השנה (תיפתח משימה ל-27.12).':''));
-  if(g('bk_go'))g('bk_go').onclick=()=>run('/apply',qtxt);
+  // מאיר: "מה שעשיתי שמור — תשלח להם ותפיק ושלא אראה את זה שוב" — לחיצה אחת: שומר, מבצע ועובר לבא
+  if(g('bk_go'))g('bk_go').onclick=async()=>{if(window._brcBusy)return;window._brcBusy=1;busy(true);const b0=g('bk_go');if(b0)b0.textContent='⏳ מבצע…';
+    try{const row=await save();if(!row)return;
+      if(!row.mode){uiAlert('צריך לבחור מה לעשות');return;}
+      const who=row.donor?row.donor.name:((row.new_last||'')+' '+(row.new_first||'')).trim();
+      if(!['skip','anon'].includes(row.mode)&&!who){uiAlert('צריך לבחור תורם מהמערכת או לכתוב שם לתורם חדש');return;}
+      const x=await api('POST','/api/bankrc/'+row.id+'/apply',{});
+      if(x&&x.row){const i=BRC.rows.findIndex(y=>y.id===row.id);BRC.rows[i]=x.row;}
+      if(!x||!x.ok){uiAlert((x&&x.error)||'שגיאה');return;}
+      toast('✓ '+x.msg);load();next();
+    }finally{window._brcBusy=0;busy(false);const b1=g('bk_go');if(b1&&b1.textContent.startsWith('⏳'))b1.textContent='✅ שמור ובצע ← הבא';}};
   if(g('bk_annual'))g('bk_annual').onclick=()=>run('/annual_now',(who,em,row)=>'להפיק עכשיו קבלה שנתית אחת ל'+who+' על כל ההעברות, עם פירוט התאריכים'+(row.send&&em?', ולשלוח אל '+em:' (בלי שליחה במייל)')+'?');
 }
 function renderReceipts(){

@@ -19080,6 +19080,43 @@ def bankrc_receipt_combined(con, r, did, dons, send):
     return docnum, ''
 
 
+BANKRC_RUN = {'running': False, 'last': None}
+
+
+def bankrc_run_saved():
+    """מאיר (4.11.2026): "מה שעשיתי שמור — תשלח להם ותפיק, ושלא אראה את זה שוב". מבצע כל שורה שנבחר
+    לה מה לעשות ועוד לא בוצעה. אחת-אחת, כל אחת בחיבור משלה; שורה שנכשלה נשארת פתוחה עם הסיבה."""
+    if BANKRC_RUN['running']:
+        return None
+    BANKRC_RUN['running'] = True
+    out = []
+    try:
+        con = db()
+        try:
+            bankrc_schema(con)
+            ids = [r['id'] for r in con.execute("SELECT id FROM bankrc WHERE COALESCE(mode,'')<>'' AND COALESCE(state,'')='' ORDER BY ord")]
+        finally:
+            con.close()
+        for rid in ids:
+            con = db()
+            try:
+                try:
+                    ok, msg = bankrc_apply(con, rid)
+                except Exception as e:
+                    ok, msg = False, '%s: %s' % (type(e).__name__, str(e)[:160])
+                if not ok:
+                    con.execute("UPDATE bankrc SET result=?, updated=? WHERE id=?", ('⚠️ לא בוצע: ' + msg, now_iso(), rid))
+                con.commit()
+                out.append({'id': rid, 'ok': ok, 'msg': msg})
+            finally:
+                con.close()
+        bump_data()
+    finally:
+        BANKRC_RUN['running'] = False
+        BANKRC_RUN['last'] = out
+    return out
+
+
 def bankrc_report(con):
     """דוח לרואת החשבון: לכל העברה — מה נעשה בדיוק (מספר קבלה / שנתית / כבר יצאה / מזדמן / לא תרומה)."""
     out = []
@@ -27039,6 +27076,11 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'next_run': nxt})
+        if self.path == '/api/bankrc/run_saved':
+            res = bankrc_run_saved()
+            if res is None:
+                return self._send(200, {'ok': False, 'error': 'כבר רץ — נסה שוב בעוד דקה'})
+            return self._send(200, {'ok': True, 'done': sum(1 for x in res if x['ok']), 'failed': [x for x in res if not x['ok']]})
         m = re.match(r'/api/bankrc/([a-z0-9]+)(/apply|/annual_now)?$', self.path)
         if m:
             con = db()
@@ -36643,6 +36685,22 @@ def serve():
     threading.Thread(target=_intake_daily_loop, daemon=True).start()
     threading.Thread(target=_authnet_loop, daemon=True).start()
     threading.Thread(target=_bq_loop, daemon=True).start()
+    # מאיר: "מה שעשיתי שמור — תשלח להם ותפיק" — פעם אחת, דקה אחרי העלייה: כל מה שנשמר במסך העברות הבנק מבוצע
+    def _bankrc_once():
+        import time as _t
+        _t.sleep(90)
+        try:
+            con = db()
+            done = con.execute("SELECT 1 FROM seed_flags WHERE name='bankrc_run_saved_v1'").fetchone()
+            if not done:
+                con.execute("INSERT INTO seed_flags(name) VALUES('bankrc_run_saved_v1')"); con.commit()
+            con.close()
+            if not done:
+                r = bankrc_run_saved() or []
+                print('  העברות בנק: בוצעו %d, נכשלו %d' % (sum(1 for x in r if x['ok']), sum(1 for x in r if not x['ok'])))
+        except Exception as e:
+            print('  bankrc run saved error:', e)
+    threading.Thread(target=_bankrc_once, daemon=True).start()
     threading.Thread(target=_nd_loop, daemon=True).start()
     threading.Thread(target=_vm_loop, daemon=True).start()
     threading.Thread(target=_ym_retry_loop, daemon=True).start()
