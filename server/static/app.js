@@ -19402,12 +19402,19 @@ function brcRender(){
     </div>`;
   }
   rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🏦 העברות בנק 2026 → קבלות</h2>
+    <div class="addrow" style="gap:6px"><button class="btn sm ghost" id="brc_rep">📄 דוח לרואת החשבון (אקסל)</button></div>
     <div class="hintxt">רשימת רואת החשבון: העברות לבנק הישראלי ינואר–אוקטובר 2026. ${nDone} מתוך ${R.length} טופלו.${BRC.ez===false?' <b style="color:var(--no)">⚠️ איזיקאונט לא מחובר</b>':''}</div>
     ${card}
     <div class="bqseg" style="margin-top:8px"><button class="${brcF==='open'?'on':''}" data-f="open">פתוחים</button><button class="${brcF==='all'?'on':''}" data-f="all">הכל</button><button class="${brcF==='done'?'on':''}" data-f="done">טופלו</button></div>
     <div>${L.map(x=>`<div class="dpr${x.id===brcCur?' on':''}" data-row="${x.id}" style="${x.id===brcCur?'outline:2px solid #0f5c4d;':''}"><b>${esc(x.donor?x.donor.name:x.bank)}</b> <small>₪${x.total.toLocaleString('he-IL')}${x.rows.length>1?' · '+x.rows.length+' העברות':' · '+brcDt(x.rows[0][0])}</small> ${st(x)}${x.donor?` <small>${esc(x.bank)}</small>`:''}</div>`).join('')||'<div class="hintxt">אין כאן כלום</div>'}</div>`;
   const g=id=>document.getElementById(id);
   g('rx').onclick=()=>remov.classList.remove('show');
+  g('brc_rep').onclick=async()=>{const x=await api('GET','/api/bankrc/report');if(!x||!x.ok){uiAlert('הדוח לא נטען');return;}
+    const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const head=['תאריך העברה','אסמכתא','פרטים בבנק','סכום ₪','תורם','מה נעשה','מספר קבלה','הערה'];
+    const csv=[head.map(q).join(','),...x.rows.map(r=>[brcDt(r.date),r.ref,r.bank,r.amount,r.donor,r.what,r.receipt,r.note].map(q).join(','))].join('\r\n');
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='העברות בנק 2026 - קבלות.csv';document.body.appendChild(a);a.click();a.remove();
+    toast('📄 הדוח ירד — '+x.rows.length+' העברות');};
   rs.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{brcF=b.dataset.f;brcRender();});
   rs.querySelectorAll('[data-row]').forEach(b=>b.onclick=()=>{brcCur=b.dataset.row;brcQ='';brcRender();rs.scrollTop=0;});
   if(!r)return;

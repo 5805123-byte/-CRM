@@ -18979,6 +18979,15 @@ BANKRC_SEED = [
     ('im3108', '', 'זיכוי מיידי (בלי מספר)', '99293', [('31/08/26', 1520)]),
 ]
 BANKRC_MODES = ('annual', 'one', 'each', 'done', 'anon', 'skip')
+# העברות מהרשימה של רואת החשבון שכבר היו להן קבלות באיזיקאונט — לא במסך, אבל כן בדוח
+BANKRC_PRE = [
+    ('22/09/26', '989012', 'זיכוי מב.פועלים ממיוזיק', 306, 'מוזיק שמעון יהושע', 'קבלה 167047'),
+    ('06/07/26', '989020', 'זיכוי מב.המזרחי מטוקצינסקי', 330, 'טוקצינסקי', ''),
+    ('01/09/26', '989020', 'זיכוי מב.המזרחי מטוקצינסקי', 1760, 'טוקצינסקי', ''),
+    ('19/10/26', '989010', 'זיכוי מבל"ל מגדליהו נתן', 7500, 'גדליהו נתן', ''),
+    ('23/10/26', '989012', 'זיכוי מב.פועלים ממשכנות', 93300, 'משכנות', 'הופקה באיזיקאונט 3.11.2026'),
+] + [(d, '989010', 'זיכוי מבל"ל מהרשל פסטג', 228, 'פסטג', '') for d in
+     ('27/02/26', '29/03/26', '28/04/26', '28/05/26', '28/06/26', '28/07/26', '28/08/26', '28/10/26')]
 
 
 def bankrc_iso(d):
@@ -19063,6 +19072,51 @@ def bankrc_receipt_combined(con, r, did, dons, send):
         con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,'מייל',?,'')",
                     (did, today_iso(), '🧾 נשלחה קבלה %s (איזיקאונט) על ₪%g — העברות בנק אל %s' % (docnum, total, email)))
     return docnum, ''
+
+
+def bankrc_report(con):
+    """דוח לרואת החשבון: לכל העברה — מה נעשה בדיוק (מספר קבלה / שנתית / כבר יצאה / מזדמן / לא תרומה)."""
+    out = []
+    for r in con.execute("SELECT * FROM bankrc ORDER BY ord"):
+        rows = json.loads(r['rows'] or '[]')
+        got = set(json.loads(r['got'] or '[]'))
+        dn = con.execute("SELECT last,first,business FROM donors WHERE id=?", (r['donor_id'],)).fetchone() if r['donor_id'] else None
+        who = (((dn['last'] or '') + ' ' + (dn['first'] or '')).strip() or (dn['business'] or '')) if dn else ''
+        anon = {}
+        if r['mode'] == 'anon':
+            for x in con.execute("SELECT num,date,amount FROM receipt_docs WHERE note LIKE ?", ('%bankrc:' + r['id'] + '%',)):
+                anon[(x['date'], round(float(x['amount'] or 0), 2))] = x['num']
+        for dt, a in rows:
+            num, what = '', ''
+            if r['mode'] == 'skip' and r['state']:
+                what = 'לא תרומה / לא הוצאה קבלה'
+            elif dt in got:
+                what = 'קבלה כבר יצאה קודם'
+            elif r['mode'] == 'anon':
+                num = str(anon.get((dt, round(float(a), 2)), '') or '')
+                what, who_ = ('קבלה לתורם מזדמן' if num else 'טרם טופל'), 'תורם מזדמן'
+            else:
+                ex = bankrc_find_don(con, r['donor_id'], dt, a) if r['donor_id'] else None
+                num = (ex['receipt_num'] or '').strip() if ex else ''
+                if num:
+                    what = 'הוצאה קבלה'
+                elif r['state'] == 'annual':
+                    what = 'נרשם בכרטיס התורם · קבלה שנתית תופק בדצמבר 2026'
+                elif r['state'] == 'done' and r['mode'] == 'done':
+                    what = 'נרשם בכרטיס התורם · קבלה כבר יצאה קודם'
+                elif r['state']:
+                    what = 'נרשם בכרטיס התורם'
+                else:
+                    what = 'טרם טופל'
+            out.append({'date': dt, 'ref': r['ref'], 'bank': r['bank'], 'amount': a,
+                        'donor': 'תורם מזדמן' if r['mode'] == 'anon' else who, 'what': what, 'receipt': num,
+                        'note': (r['note'] or '').strip()})
+    for d, ref, bank, a, who, note in BANKRC_PRE:
+        out.append({'date': bankrc_iso(d), 'ref': ref, 'bank': bank, 'amount': a, 'donor': who,
+                    'what': 'קבלה כבר יצאה קודם (נבדק באיזיקאונט)', 'receipt': note.replace('קבלה ', '') if note.startswith('קבלה ') else '',
+                    'note': '' if note.startswith('קבלה ') else note})
+    out.sort(key=lambda x: x['date'])
+    return out
 
 
 def bankrc_apply(con, rid, annual_now=False):
@@ -23639,6 +23693,14 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'on': bool(c.get('on')), 'phone': c.get('phone') or '', 'phone_env': bool(c.get('phone_env')) and not c.get('phone'),
                                     'phone_show': ph[:3] + '…' + ph[-3:] if ph and not c.get('phone') else ph,
                                     'morning': c.get('morning'), 'lead': int(c.get('lead') or 120), 'preview': prev})
+        if self.path.split('?')[0] == '/api/bankrc/report':
+            con = db()
+            try:
+                bankrc_schema(con)
+                rep = bankrc_report(con)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rep})
         if self.path.split('?')[0] == '/api/bankrc':
             con = db()
             try:
