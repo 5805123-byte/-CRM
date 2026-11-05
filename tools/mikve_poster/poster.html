@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>התקנון והמחירון של המקווה</title>
+<style>
+@font-face{font-family:Heebo;font-weight:400;src:url(heebo-hebrew-400-normal.woff2) format('woff2');unicode-range:U+0590-05FF,U+200C-2010,U+20AA,U+25CC,U+FB1D-FB4F}
+@font-face{font-family:Heebo;font-weight:400;src:url(heebo-latin-400-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F,U+2190-21FF,U+2212}
+@font-face{font-family:Heebo;font-weight:700;src:url(heebo-hebrew-700-normal.woff2) format('woff2');unicode-range:U+0590-05FF,U+200C-2010,U+20AA,U+25CC,U+FB1D-FB4F}
+@font-face{font-family:Heebo;font-weight:700;src:url(heebo-latin-700-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F,U+2190-21FF,U+2212}
+@font-face{font-family:Heebo;font-weight:800;src:url(heebo-hebrew-800-normal.woff2) format('woff2');unicode-range:U+0590-05FF,U+200C-2010,U+20AA,U+25CC,U+FB1D-FB4F}
+@font-face{font-family:Heebo;font-weight:800;src:url(heebo-latin-800-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F,U+2190-21FF,U+2212}
+@font-face{font-family:Frank;font-weight:700;src:url(frank-ruhl-libre-hebrew-700-normal.woff2) format('woff2');unicode-range:U+0590-05FF,U+20AA,U+FB1D-FB4F}
+@font-face{font-family:Frank;font-weight:700;src:url(frank-ruhl-libre-latin-700-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F}
+@font-face{font-family:Frank;font-weight:900;src:url(frank-ruhl-libre-hebrew-900-normal.woff2) format('woff2');unicode-range:U+0590-05FF,U+20AA,U+FB1D-FB4F}
+@font-face{font-family:Frank;font-weight:900;src:url(frank-ruhl-libre-latin-900-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F}
+@page{size:210mm 297mm;margin:0}
+:root{--ink:#22262e;--muted:#5f6673;--red:#6e1b1b;--gold:#a8823a;--cream:#fbf6ea;
+  --blue:#1f5fd6;--blueL:#eef3fd;--orange:#d98a0b;--orangeL:#fef6e4;--teal:#0e8f7e;--tealL:#eaf7f4;
+  --purple:#6b4bc4;--purpleL:#f1edfb;--navy:#1e2a5a;--navyL:#eef1f8;--alert:#c62828;--alertL:#fdecec;--green:#0e7a55;--grey:#f3f5f8;--line:#e3e7ee}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#fff}
+body{font-family:Heebo,sans-serif;color:var(--ink);font-size:2.35mm;line-height:1.38;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.page{position:relative;width:210mm;height:297mm;background:url(image1.png) center/100% 100% no-repeat;overflow:hidden}
+.c{position:absolute;top:53mm;right:14.5mm;left:39mm;bottom:14mm;overflow:hidden}
+.in{display:flex;flex-direction:column;gap:2.2mm;min-height:100%}
+h1{font-family:Frank;font-weight:900;color:var(--red);font-size:7.6mm;line-height:1.05;text-align:center}
+.sub{text-align:center;color:var(--gold);font-weight:800;font-size:2.7mm;margin-top:.6mm;letter-spacing:.2mm}
+.notice{border:.6mm double var(--gold);background:var(--cream);border-radius:1.6mm;padding:1.6mm 3mm;text-align:center;font-size:2.45mm}
+.notice b.h{color:var(--red);font-size:2.9mm;font-family:Frank;font-weight:900;margin-left:1.5mm}
+.notice .ph{color:var(--blue);font-weight:800;direction:ltr;unicode-bidi:embed}
+.phone{display:grid;grid-template-columns:auto 1fr;grid-template-areas:"num what" "imp imp";gap:.6mm 3mm;align-items:center;background:linear-gradient(135deg,#eaf3ff,#f6faff);border:.5mm solid var(--blue);border-radius:2mm;padding:1.6mm 2.6mm}
+.phone .num{grid-area:num;text-align:center;border-left:.3mm solid #bcd0f2;padding-left:3mm}
+.phone .num small{display:block;color:var(--navy);font-weight:800;font-size:2mm}
+.phone .num span{display:block;direction:ltr;color:var(--blue);font-weight:800;font-size:7.4mm;line-height:1.05;letter-spacing:.2mm}
+.phone .what{grid-area:what;--k:var(--blue)}
+.phone .what li{font-size:2.1mm;margin:.15mm 0}
+.phone .imp{grid-area:imp;background:#fff;border-radius:1mm;padding:.5mm 1.6mm;font-size:2mm;color:var(--navy)}
+.sec{display:flex;align-items:baseline;gap:2mm;color:var(--navy);font-weight:800;font-size:3.3mm;border-bottom:.5mm solid var(--teal);padding-bottom:.6mm;margin-bottom:1.4mm}
+.sec small{color:var(--muted);font-weight:400;font-size:2.1mm}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:1.8mm}
+.card{border:.25mm solid var(--k);border-top:1.1mm solid var(--k);background:var(--kl);border-radius:1.6mm;padding:1.4mm 1.8mm 1.5mm}
+.card .n{text-align:center;font-weight:800;font-size:2.75mm}
+.card .p{text-align:center;color:var(--k);font-weight:800;font-size:6.2mm;line-height:1.1;border-bottom:.25mm solid var(--k);padding-bottom:.6mm;margin-bottom:.8mm}
+ul{list-style:none}
+li{position:relative;padding-right:2.4mm;margin:.35mm 0;font-size:2.15mm;line-height:1.32}
+li:before{content:"";position:absolute;right:.2mm;top:1.05mm;width:1mm;height:1mm;border-radius:50%;background:var(--k,var(--teal))}
+.hot{color:var(--alert);font-weight:800}
+.k-purple{--k:var(--purple);--kl:var(--purpleL)}.k-blue{--k:var(--blue);--kl:var(--blueL)}.k-orange{--k:var(--orange);--kl:var(--orangeL)}.k-teal{--k:var(--teal);--kl:var(--tealL)}
+table{border-collapse:collapse;width:100%}
+.tw th{background:var(--navy);color:#fff;font-weight:800;font-size:2.3mm;padding:.9mm 2mm}
+.tw th:first-child{text-align:right}
+.tw td{border-bottom:.25mm solid var(--line);padding:.75mm 2mm;text-align:center;font-weight:800;font-size:2.9mm}
+.tw td:first-child{text-align:right;font-size:2.4mm;background:var(--kl);border-right:1mm solid var(--k)}
+.tw td.na{color:#b0b6c0;font-weight:400}
+.tw td{color:var(--k)}.tw td:first-child{color:var(--ink)}
+.tw tr.vip td{background:var(--cream);color:#9a6a12}.tw tr.vip td:first-child{border-right-color:var(--gold)}
+.same{text-align:center;color:var(--teal);font-weight:800;font-size:2.4mm;margin-top:.9mm}
+.cols{display:grid;grid-template-columns:1.12fr 1fr;gap:2.4mm;align-items:start}
+.col{display:flex;flex-direction:column;gap:2.2mm}
+.box{border:.25mm solid var(--line);border-radius:1.6mm;padding:1.6mm 2mm;background:#fff}
+.box h3{color:var(--navy);font-weight:800;font-size:2.95mm;border-bottom:.45mm solid var(--teal);padding-bottom:.5mm;margin-bottom:1mm;display:flex;align-items:baseline;gap:1.5mm}
+.box h3 small{color:var(--muted);font-weight:400;font-size:1.95mm}
+.pl td{padding:.55mm 1.4mm;font-size:2.25mm;border-bottom:.2mm solid #eef0f4}
+.pl td.v{text-align:left;font-weight:800;font-size:2.55mm;white-space:nowrap;width:12mm}
+.pl tr.alt td{background:var(--grey)}
+.pl tr.hn td{background:#fff7e0;color:#9a5b00;font-weight:700}
+.pl tr.r td{background:var(--alertL);color:var(--alert);font-weight:800}
+.pl tr.g td{color:var(--green);font-weight:800}
+.pl tr.sh td{font-weight:800;color:var(--navy);font-size:2.35mm;padding-top:1.1mm;border-bottom:.3mm solid var(--line)}
+.pl small{color:var(--muted);font-weight:400;font-size:1.85mm}
+.mini{background:var(--grey);border-radius:1mm;padding:.8mm 1.4mm;font-size:1.95mm;color:var(--muted);margin-top:1mm}
+.mini b{color:var(--ink)}
+.erech{background:linear-gradient(135deg,#1e2a5a,#2b3d7c);color:#fff;border-radius:1.6mm 1.6mm 0 0;padding:1.6mm 2mm}
+.erech .t{display:flex;justify-content:space-between;align-items:center}
+.erech .t b{font-size:2.95mm}
+.erech .badge{border:.25mm solid #c9d1ea;border-radius:3mm;padding:0 1.6mm;font-size:1.95mm;color:#f7c948;font-weight:700}
+.erech .min{font-size:2.05mm;color:#dde3f5}
+.erech .disc{display:flex;align-items:center;gap:1.8mm;background:rgba(255,255,255,.08);border-radius:1.2mm;padding:.8mm 1.6mm;margin-top:1mm}
+.erech .disc .pc{color:#f7c948;font-weight:800;font-size:5.2mm;line-height:1}
+.erech .disc small{display:block;color:#c9d1ea;font-size:1.8mm}
+.erechb{border:.25mm solid #c9d1ea;border-top:0;border-radius:0 0 1.6mm 1.6mm;padding:1mm 2mm 1.2mm;background:#fff}
+.erechb .row{display:flex;justify-content:space-between;padding:.45mm 0;border-bottom:.2mm solid #eef0f4;font-size:2.2mm}
+.erechb .row b{color:var(--blue)}.erechb .row.late{font-weight:800}.erechb .row.late b{color:#b26a00}
+.towel{border-top:1mm solid var(--teal)}
+.towel .inc{background:var(--tealL);color:var(--teal);font-weight:800;font-size:2.1mm;border-radius:1mm;padding:.7mm 1.4mm;margin-bottom:.8mm}
+.towel .row{display:flex;justify-content:space-between;font-size:2.25mm;padding:.35mm 0;border-bottom:.2mm dashed #e3e7ee}
+.towel .row b{font-weight:800}
+.note-red{color:var(--alert);font-weight:800;font-size:2.05mm;margin-top:.8mm}
+.ot{display:grid;grid-template-columns:1fr 1fr;gap:1.6mm}
+.ot .d{background:var(--grey);border-radius:1.2mm;padding:1mm 1.4mm}
+.ot .d b.h{display:block;color:var(--navy);font-size:2.4mm;border-bottom:.25mm solid var(--line);margin-bottom:.6mm}
+.ot .d b.h small{color:var(--muted);font-weight:400;font-size:1.75mm}
+.ot .row{display:flex;justify-content:space-between;font-size:2.1mm;padding:.3mm .6mm}
+.ot .row b{background:#fff;border:.2mm solid var(--line);border-radius:2mm;padding:0 1.2mm;font-size:2.1mm}
+.ot .row.r{background:var(--alertL);color:var(--alert);font-weight:800;border-radius:.8mm}.ot .row.r b{color:var(--alert);border-color:#f3c4c4}
+.ot .hn{font-size:1.9mm;color:#9a5b00;margin-top:.6mm}
+.rules{border:.25mm solid #f0b4b4;border-right:1.2mm solid var(--alert);border-radius:1.6mm;padding:1.6mm 2.2mm;background:#fff}
+.rules h3{color:var(--red);font-weight:800;font-size:3mm;border-bottom:.3mm solid #f3c4c4;padding-bottom:.5mm;margin-bottom:1mm}
+.fine{background:var(--alertL);border-radius:1.2mm;padding:.9mm 1.6mm;margin-bottom:1.1mm}
+.fine .t{color:var(--red);font-weight:800;font-size:2.1mm;border-bottom:.2mm solid #f3c4c4;padding-bottom:.3mm;margin-bottom:.3mm}
+.fine .row{display:flex;justify-content:space-between;font-size:2.2mm}
+.fine .row b{font-weight:800}
+.fine .bar{background:var(--alert);color:#fff;text-align:center;font-weight:800;font-size:2mm;border-radius:2mm;margin-top:.5mm}
+.rules p{font-size:2.12mm;margin:.45mm 0;line-height:1.36}
+.rules .join{background:var(--tealL);border-right:.9mm solid var(--teal);border-radius:1mm;padding:.8mm 1.6mm;margin:.9mm 0}
+.rules .join b{color:var(--teal)}
+.rules ul{margin-top:.6mm}
+.rules li{--k:var(--alert);font-size:1.95mm;color:var(--muted)}
+.rules li.s{color:var(--ink);font-weight:800}.rules li.a{color:var(--alert);font-weight:800}
+.legal{display:grid;grid-template-columns:repeat(3,1fr);gap:0;background:var(--navyL);border-radius:1.6mm;padding:1.4mm 1mm}
+.legal div{padding:0 1.8mm;font-size:1.85mm;color:#4b5563;line-height:1.38;text-align:justify}
+.legal div+div{border-right:.3mm solid #c9d1ea}
+.legal b{display:block;color:var(--navy);font-size:2.15mm;margin-bottom:.3mm}
+.sign{text-align:center;font-family:Frank;font-weight:900;color:var(--red);font-size:3.6mm;margin-top:auto}
+</style>
+</head>
+<body>
+<div class="page"><div class="c" id="c"><div class="in" id="in">
+
+  <div>
+    <h1>להלן התקנון והמחירון של המקווה</h1>
+    <div class="sub">בתוקף מראש חודש כסלו תשפ"ז</div>
+  </div>
+
+  <div class="phone">
+    <div class="num"><small>מערכת טלפונית אוטומטית — 24 שעות</small><span>077-3412906</span></div>
+    <ul class="what">
+      <li><b>חידוש מנוי חודשי</b> במספר אשראי, דרך נדרים פלוס — המנוי מתעדכן מיד.</li>
+      <li><b>טעינת ערך צבור</b> במספר אשראי — מתעדכן מיד.</li>
+      <li><b>החלפת סוג המנוי</b> בעצמכם (פעם ב-30 יום). אם יש הפרש — משלמים אותו בטלפון.</li>
+      <li><b>הודעה למשרד:</b> לכל בקשה או שאלה — הודעה קולית בשלוחה 3.</li>
+    </ul>
+    <div class="imp"><b>חשוב:</b> יש להתקשר מהמספר הרשום במקווה — לפיו המערכת מזהה אתכם.</div>
+  </div>
+  <div class="notice"><b class="h">הודעה חשובה:</b>החל מראש חודש כסלו תשפ"ז, מנוי המגבות יהיה ביחד עם המנוי החודשי — בוחרים מנוי שכולל את המגבת, ומשלמים מנוי אחד לחודש.</div>
+
+  <div>
+    <div class="sec">מנויים חודשיים</div>
+    <div class="cards">
+      <div class="card k-blue"><div class="n">מנוי רגיל</div><div class="p">₪140</div>
+        <ul><li>כניסה אחת ביום עד השעה 13:05.</li><li><b>ימי שישי וערבי חג:</b> 2 כניסות ללא הגבלת זמן.</li><li>המנוי לא כולל מגבת.</li></ul></div>
+      <div class="card k-orange"><div class="n">מנוי מורחב</div><div class="p">₪180</div>
+        <ul><li><b>2 כניסות ביום.</b></li><li>עם שהייה של שעתיים לפחות בין כניסה לכניסה.</li><li><b>המנוי לא כולל מגבת.</b></li></ul></div>
+      <div class="card k-teal"><div class="n">מנוי בחורים</div><div class="p">₪70</div>
+        <ul><li>ימים רגילים - 04:30 - 07:15.</li><li><b>בימי שישי וערבי חג:</b> 2 כניסות עד השעה 14:00.</li><li class="hot">ימי שישי בשעון חורף: עד השעה 13:30 בלבד!</li><li>המנוי לא כולל מגבת.</li></ul></div>
+      <div class="card k-purple"><div class="n">מנוי אשמורת הבוקר</div><div class="p">₪70</div>
+        <ul><li>כניסה מ-00:00 בלילה עד 06:00 בבוקר.</li><li>המנוי לא כולל מגבת.</li></ul></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="sec">מנויים חודשיים הכוללים מגבת</div>
+    <table class="tw">
+      <tr><th>סוג המנוי</th><th>+ מגבת קטנה</th><th>+ מגבת גדולה</th></tr>
+      <tr class="k-blue"><td>מנוי רגיל</td><td>₪170</td><td>₪190</td></tr>
+      <tr class="k-orange"><td>מנוי מורחב</td><td class="na">—</td><td>₪230</td></tr>
+      <tr class="k-teal"><td>מנוי בחורים</td><td>₪100</td><td>₪120</td></tr>
+      <tr class="k-purple"><td>מנוי אשמורת הבוקר</td><td>₪100</td><td>₪120</td></tr>
+      <tr class="vip"><td>מנוי VIP מורחב</td><td colspan="2">מגבת גדולה + מגבת קטנה &nbsp; ₪250</td></tr>
+    </table>
+    <div class="same">השעות והכניסות זהות למנוי עצמו — ההבדל היחיד הוא המגבת.</div>
+  </div>
+
+  <div class="cols">
+    <div class="col">
+      <div class="box">
+        <h3>כניסה חד-פעמית (מזדמן)</h3>
+        <table class="pl">
+          <tr class="sh"><td colspan="2">יום חול רגיל <small>(כולל מגבת)</small></td></tr>
+          <tr class="alt"><td>03:30 - 12:00</td><td class="v">₪15</td></tr>
+          <tr><td>12:00 - 17:00</td><td class="v">₪20</td></tr>
+          <tr class="alt"><td>17:00 - 03:30</td><td class="v">₪30</td></tr>
+          <tr class="hn"><td>ימי חנוכה (16:00-18:00) <small>(ללא הנחת ערך צבור)</small></td><td class="v">₪15</td></tr>
+          <tr class="sh"><td colspan="2">ימי שישי, שבת וחגים</td></tr>
+          <tr><td>ימי שישי (עד שעה וחצי לפני הדלקת נרות)</td><td class="v">₪20</td></tr>
+          <tr class="r"><td>ימי שישי (שעה וחצי לפני הדלקת נרות)</td><td class="v">₪30</td></tr>
+          <tr><td>ערבי חג (עד שעה וחצי לפני הדלקת נרות)</td><td class="v">₪30</td></tr>
+          <tr class="r"><td>ערבי חג (בשעה וחצי לפני הדלקת נרות)</td><td class="v">₪40</td></tr>
+          <tr class="g"><td>שבת וחג (ללא מגבת)</td><td class="v">₪10</td></tr>
+        </table>
+        <div class="mini"><b>כניסה בשבת למזדמנים:</b> למעט אנשים ששילמו כניסה בערב שבת, מותרת כניסה אחת ללא מגבת.</div>
+      </div>
+
+      <div class="box">
+        <h3>תעריפי כניסה למנויים מעבר לשעות המנוי <small>(בחיוב ערך צבור)</small></h3>
+        <div class="ot">
+          <div class="d"><b class="h">ימי חול</b>
+            <div class="row"><span>חצי שעה ראשונה</span><b>₪2</b></div>
+            <div class="row"><span>עד השעה 13:00</span><b>₪4</b></div>
+            <div class="row"><span>13:00 - 17:00</span><b>₪8</b></div>
+            <div class="row r"><span>החל מ-17:00</span><b>₪16</b></div>
+            <div class="hn"><b>ימי חנוכה:</b> (16:00-18:00 למנויים ללא מורחב) - ₪8</div></div>
+          <div class="d"><b class="h">ימי שישי <small>(למוגבלים ל-14:00)</small></b>
+            <div class="row"><span>14:00 - 14:30</span><b>₪4</b></div>
+            <div class="row"><span>החל משעה 14:30</span><b>₪8</b></div>
+            <div class="row r"><span>שעה לפני הדלקת הנרות</span><b>₪16</b></div></div>
+        </div>
+      </div>
+
+      <div class="box towel">
+        <h3>שירות מגבות</h3>
+        <div class="inc">מראש חודש כסלו מנוי המגבות כלול במנוי החודשי</div>
+        <div class="row"><span>מגבת גדולה – שימוש חד-פעמי</span><b>₪5</b></div>
+        <div class="row"><span>מגבת קטנה – שימוש חד-פעמי</span><b>₪2</b></div>
+        <div class="row"><span>מגבת נוספת למנוי</span><b>₪3</b></div>
+        <div class="mini"><b>שימו לב:</b> בשבת, חג, פורים, חוה"מ ותשעת הימים: אין התחייבות לאספקת מגבות. הנהלת המקווה תעשה מאמץ להביא מגבת קטנה יותר שיהיה לשימוש גם בזמנים המיוחדים.</div>
+        <div class="note-red">אין להניח מגבות על הרצפה - הדבר גורם נזק למגבת.</div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div>
+        <div class="erech">
+          <div class="t"><b>ערך צבור (פעימות)</b><span class="badge">כולל מגבת</span></div>
+          <div class="min">מינימום הטענה: <b>₪200</b></div>
+          <div class="disc"><span class="pc">20%</span><span><b>הנחה קבועה</b><small>(למעט שעות אחה"צ בחנוכה)</small></span></div>
+        </div>
+        <div class="erechb">
+          <div style="font-weight:800;font-size:2.2mm;margin-bottom:.3mm">מחיר לאחר הנחה:</div>
+          <div class="row"><span>בוקר</span><b>₪12</b></div>
+          <div class="row"><span>צהריים / ערשב"ק מוקדם</span><b>₪16</b></div>
+          <div class="row late"><span>ערב / ערשב"ק מאוחר</span><b>₪24</b></div>
+        </div>
+      </div>
+
+      <div class="rules">
+        <h3>⚖ תקנון, הרשמה וקנסות</h3>
+        <div class="fine"><div class="t">קנס כספי (הכנסת אדם אחר ע"י מנוי / עישון / מזון):</div>
+          <div class="row"><span>קנס בסיס</span><b>₪50</b></div>
+          <div class="row"><span>הפרה שנייה</span><b>₪100</b></div>
+          <div class="bar">הפרה חוזרת: ביטול מנוי</div></div>
+        <p><b>הרשמה ופניות:</b> קיימים ב'נדרים פלוס' 2 טפסים נפרדים: להרשמה של מנוי חדש, ולפניות שוטפות/ עדכון סוגי מנוי וכו'.</p>
+        <p style="color:var(--alert)"><b>חשוב:</b> הרשמה במכונה ללא בחירת מנוי תחויב ככניסה מזדמנת.</p>
+        <div class="join"><p><b>הצטרפות למנוי בחורים:</b> רק בחודשים חשון, אלול ואייר.</p><p class="hot">אין אפשרות להצטרף בתשרי וניסן כלל.</p></div>
+        <p class="hot">מעבר בין סוגי המנוי: ניתן לעבור מנוי פעם אחת ב-30 יום בלבד. לא ניתן לעבור מנוי מט"ו אלול עד א' חשון.</p>
+        <p>פניות מטופלות עד 2 ימי עסקים.</p>
+        <p>פעם בשנה תידרשו לחדש רישיון שנתי על סך ₪10.</p>
+        <ul>
+          <li>הכניסה והשימוש במקווה הינה בהתאם לתקנון המקווה.</li>
+          <li>כל זיכוי כספי או תביעה יוכרע לפי התקנון.</li>
+          <li>מעשנים ומפרי חוק מוותרים מראש על כל טענה.</li>
+          <li>התקנון המלא ב'נדרים פלוס' ובמשרדי העמותה.</li>
+          <li class="s">אין לבצע מגביות או להדביק מודעות ללא אישור ראש הכולל!</li>
+          <li class="a">איסור חמור לטבול כלים במקווה!</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="legal">
+    <div><b>הצהרה משפטית:</b>המקווה הינו מוסד פרטי (לא ציבורי). השימוש מותר לאנשים פרטיים בכפוף לתקנון. הכניסה מהווה ויתור מוחלט על כל תביעת נזיקין (גוף/רכוש) מכל סיבה שהיא.</div>
+    <div><b>מצלמות אבטחה:</b>המקום מצולם לצרכי אבטחה. הכניסה מהווה הסכמה לצילום וויתור מוחלט ובלתי חוזר על כל טענה בדבר פגיעה בפרטיות.</div>
+    <div><b>חפצים אישיים:</b>הנכנס למקווה מפקיר מראש כל חפץ שהוא ישכח. הנהלת המקווה רשאית לעשות בזה כטוב בעיניה. מתקיים פינוי חפצים כמה פעמים ביום.</div>
+  </div>
+  <div class="sign">הנהלת המקווה</div>
+</div></div></div>
+<script>
+// מכווץ את התוכן כך שייכנס בדיוק לדף אחד, וממלא את הגובה
+(function(){const c=document.getElementById('c'),n=document.getElementById('in');const H=c.clientHeight;
+  let z=1;n.style.zoom=1;n.style.minHeight='0';
+  while(z>0.5&&n.getBoundingClientRect().height>H){z-=0.005;n.style.zoom=z;}
+  n.style.minHeight=(H/z)+'px';document.body.dataset.zoom=z.toFixed(3);})();
+</script>
+</body>
+</html>
