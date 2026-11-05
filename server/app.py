@@ -36108,7 +36108,6 @@ MK_TEXTS = [
     ('back_opt', 'grp', 'סוף רשימת המנויים — חזרה לקטגוריות', 'לחזרה לבחירת סוג מנוי הקישו כוכבית'),
     ('other_opt', 'grp', 'אין הרשאה — בחירת מנוי אחר (המספר נאמר אחרי)', 'לבחירת מנוי אחר הקישו'),
     ('choose_hash', 'grp', 'לפני רשימת המנויים (10 ומעלה — עם סולמית)', 'בחרו מנוי והקישו סולמית בסיום'),
-    ('option_entry', 'grp', 'אפשרות בתפריט — ערך צבור, מחיר לכניסה (המספר נאמר אחרי)', 'ל{group}, {price} שקלים לכניסה, הקישו'),
     ('option', 'grp', 'אפשרות בתפריט (המספר נאמר אחרי)', 'ל{group} הקישו'),
     ('option_price', 'grp', 'אפשרות בתפריט עם מחיר (המספר נאמר אחרי)', 'ל{group}, {price} שקלים לחודש, הקישו'),
     ('quote_pay', 'grp', 'הצעת מחיר — יש הפרש לתשלום', 'המעבר ל{group} עולה {price} שקלים לחודש. נשארו לכם {days} ימים במנוי, ולכן ההפרש לתשלום הוא {amount} שקלים. להמשך הקישו 1, לבחירת מנוי אחר הקישו 2'),
@@ -36506,7 +36505,7 @@ def mkg_ivr(P):
             if 'Grp' not in P:
                 parts = [choose(len(opts_))]
                 for i, g in enumerate(opts_, 1):
-                    pr_ = gr[g].get('price') or gr[g].get('entry')
+                    pr_ = None if mkg_is_erech(cfg, g, gr[g]['name']) else gr[g].get('price')
                     parts += [S('req_option', group=SAY(g, gr[g]['name']) + ((', %g שקלים' % pr_) if pr_ else '')), N(i)]
                 return ask(parts + [S('end_opt')], 'Grp', 1 if len(opts_) <= 9 else 2)
             try:
@@ -36551,13 +36550,10 @@ def mkg_ivr(P):
         say_cat = lambda cn: (cfg.get('cat_say') or {}).get(cn) or cn
 
         def option(g, i):
-            # מאיר: "תמיד שהוא מקריא מנוי הוא גם צריך להקריא את המחיר" — לחודש, ובערך צבור — לכניסה
-            pr, en = gr[g].get('price'), gr[g].get('entry')
+            # מאיר: "תמיד שהוא מקריא מנוי הוא גם צריך להקריא את המחיר" — המחיר לחודש.
+            # מאיר: "למה בערך צבור הוא אומר שזה 30 שקל לכניסה? … לא להגיד משהו בקשר למחיר בערך צבור" — ערך צבור: בלי מחיר
+            pr = gr[g].get('price')
             if pr and not mkg_is_erech(cfg, g, gr[g]['name']):
-                return [S('option_price', group=SAY(g, gr[g]['name']), price='%g' % pr), N(i)]
-            if en:
-                return [S('option_entry', group=SAY(g, gr[g]['name']), price='%g' % en), N(i)]
-            if pr:
                 return [S('option_price', group=SAY(g, gr[g]['name']), price='%g' % pr), N(i)]
             return [S('option', group=SAY(g, gr[g]['name'])), N(i)]
 
@@ -36582,7 +36578,9 @@ def mkg_ivr(P):
                 if not (0 <= ci < len(cat_opts)):
                     return msg('bye')
             opts = cat_opts[ci][1]
-            gv = P.get('G' + sx)
+            # מאיר: "בקטגוריה שיש רק סוג מנוי אחד — שלא יעשה תפריט": ישר להצעת המחיר; "חזרה" = לתפריט הקטגוריות
+            single = len(opts) == 1
+            gv = '1' if single else P.get('G' + sx)
             if gv is None:
                 parts = ([hello] if (rnd == 1 and not multi) else []) + [choose(len(opts))]
                 for i, g in enumerate(opts, 1):
@@ -36615,6 +36613,10 @@ def mkg_ivr(P):
                     if rv == '1' and can_req:
                         return make_req(tgt, blk[2])
                     if rv == '2':
+                        if single:
+                            if not multi:
+                                return msg('bye')
+                            ci = None  # ← אין עוד מנויים בקטגוריה — חזרה לקטגוריות
                         continue       # ← אותה קטגוריה, בחירה מחדש
                     return msg('bye')
             tname = SAY(tgt, gr[tgt]['name'])
@@ -36630,9 +36632,14 @@ def mkg_ivr(P):
                     t = T('quote_credit', group=tname, price=price, days=q['days'], amount=A)
                 else:
                     t = T('confirm', group=tname)
-                return 'read=t-' + _ivr_t(t) + '=O%s,no,1,1,10,NO,yes,yes,,12,2,,,,no' % sx
+                lead_q = [hello] if (single and rnd == 1 and not multi) else []
+                return 'read=' + '.'.join(lead_q + ['t-' + _ivr_t(t)]) + '=O%s,no,1,1,10,NO,yes,yes,,12,2,,,,no' % sx
             if ov == '1':
                 break
+            if single:
+                if not multi:
+                    return msg('bye')
+                ci = None              # ← אין עוד מנויים בקטגוריה — חזרה לקטגוריות
             continue                   # 2 = ביטול ← חזרה לרשימת המנויים באותה קטגוריה
         if amt <= 0:
             ok, err, _d = mkg_apply(con, cid, c, gr, cur, tgt, q, 'credit' if amt < 0 else 'free', call_id, phone)
