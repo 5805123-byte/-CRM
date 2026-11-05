@@ -1909,6 +1909,44 @@ async function mkPendLoad(){const r=await api('GET','/api/mikveh/pending').catch
   el.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff4e5;border:1px solid #f5c26b;border-radius:12px;padding:10px 14px;margin-bottom:12px">
     <b style="color:#b9770e">🔔 ממתין לטיפול:</b>${it.map(x=>`<button class="btn sm" data-pg="${x[2]}" style="background:#fff;color:#333;border:1px solid #f5c26b"><b style="color:#c0392b">${x[0]}</b> ${x[1]}</button>`).join('')}</div>`;
   el.querySelectorAll('[data-pg]').forEach(b=>b.onclick=()=>{const k=b.dataset.pg;if(k==='mkpreq'){MKRQ_F='open';mkReqOpen();}else if(k==='mkpgrp')mkSgReqOpen();else mkVmOpen();});}
+// 📋 מאיר: "תעשה בממשק אפשרות להעתיק" — סוגי המנוי במקווה, והעתקה של מנוי עם כל ההגדרות והשעות שלו
+// (שם ומחיר חדשים). חלון שנסגר רק ב-X
+async function mkGroupsWin(){
+  const esc_=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const old=document.getElementById('mkgw');if(old)old.remove();
+  const ov=document.createElement('div');ov.id='mkgw';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:620px;width:100%;max-height:90vh;display:flex;flex-direction:column;direction:rtl;box-shadow:0 20px 60px rgba(0,0,0,.25);font-family:inherit">'+
+    '<div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;border-radius:16px 16px 0 0"><b style="font-size:1.1rem;flex:1">📋 סוגי המנוי במקווה</b><button id="mkgwx" title="סגירה" style="border:0;background:#f1f4f9;border-radius:50%;width:34px;height:34px;cursor:pointer;font-size:1rem">✕</button></div>'+
+    '<div id="mkgwm" style="padding:0 18px"></div><div id="mkgwb" style="padding:14px 18px;overflow:auto">⏳ טוען מהמקווה…</div></div>';
+  document.body.appendChild(ov);
+  document.getElementById('mkgwx').onclick=()=>ov.remove();
+  const B=document.getElementById('mkgwb'),M=document.getElementById('mkgwm');
+  const msg=(h,c)=>{M.innerHTML=h?'<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:'+(c||'#eef7ee')+'">'+h+'</div>':'';};
+  const load=async()=>{const r=await fetch('/api/mikveh/price_groups').then(x=>x.json()).catch(()=>null);if(!document.getElementById('mkgwb'))return;
+    if(!r||!r.ok){B.innerHTML='⚠️ '+esc_((r&&r.error)||'אין חיבור למקווה');return;}
+    const nis=v=>v==null?'—':'₪'+(+v).toLocaleString('he-IL');
+    B.innerHTML='<div style="color:#666;font-size:.88rem;margin-bottom:8px">"העתקה" יוצרת במקווה מנוי חדש עם <b>כל ההגדרות והשעות</b> של המנוי שבחרתם — רק השם והמחיר החדשים. אחרי ההעתקה המערכת בודקת במקווה שהשעות זהות.</div>'+
+      r.groups.map(g=>'<div data-row="'+esc_(g.id)+'" style="border-bottom:1px solid #f1f1f1;padding:8px 4px"><div style="display:flex;gap:10px;align-items:center"><span style="flex:1">'+esc_(g.name)+'</span><b style="white-space:nowrap">'+nis(g.price)+'</b>'+
+        '<button data-cp="'+esc_(g.id)+'" style="border:1px solid #cdd6e6;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">📋 העתקה</button></div><div data-form="'+esc_(g.id)+'"></div></div>').join('');
+    B.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>{const id=b.dataset.cp,g=r.groups.find(x=>x.id===id),F=B.querySelector('[data-form="'+id+'"]');
+      if(F.innerHTML){F.innerHTML='';return;}
+      const base=String(g.name).replace(/^\s*\d+\s*[.\-)]\s*/,'').trim();
+      F.innerHTML='<div style="background:#f6f8fc;border-radius:10px;padding:10px;margin-top:8px;display:grid;gap:8px">'+
+        '<label style="display:grid;gap:3px"><span style="font-size:.85rem;color:#555">שם המנוי החדש</span><input data-n value="'+esc_(base+' + מגבת ')+'" style="border:1px solid #ccd;border-radius:8px;padding:7px;font:inherit"></label>'+
+        '<label style="display:grid;gap:3px"><span style="font-size:.85rem;color:#555">מחיר לחודש (₪)</span><input data-p type="number" min="0" value="'+esc_(g.price==null?'':g.price)+'" style="border:1px solid #ccd;border-radius:8px;padding:7px;font:inherit;width:140px"></label>'+
+        '<div style="display:flex;gap:8px;align-items:center"><button data-go style="background:#2f6fb0;color:#fff;border:0;border-radius:10px;padding:8px 16px;font:inherit;font-weight:700;cursor:pointer">ליצור במקווה</button><span data-st style="color:#777;font-size:.88rem">יועתקו כל השעות וההגדרות של "'+esc_(g.name)+'"</span></div></div>';
+      const go=F.querySelector('[data-go]'),st=F.querySelector('[data-st]');F.querySelector('[data-n]').focus();
+      go.onclick=async()=>{const name=F.querySelector('[data-n]').value.trim(),price=F.querySelector('[data-p]').value;
+        if(!name){st.textContent='צריך לכתוב שם';return;}if(price===''){st.textContent='צריך לכתוב מחיר';return;}
+        go.disabled=true;st.textContent='⏳ יוצר במקווה ומעתיק שעות…';
+        const x=await fetch('/api/mikveh/group_copy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({src:id,name,price})}).then(y=>y.json()).catch(()=>null);
+        go.disabled=false;
+        if(!x||!x.ok){st.innerHTML='<b style="color:#c0392b">⚠️ '+esc_((x&&x.error)||'לא נוצר')+'</b>';return;}
+        msg(x.same?'✓ נוצר במקווה: <b>'+esc_(x.name)+'</b> — ₪'+esc_(x.price)+' · הועתקו '+x.hours+' שעות, זהות למנוי המקורי.'
+          :'⚠️ נוצר במקווה: <b>'+esc_(x.name)+'</b>, אבל השעות שנשמרו ('+x.hours+') לא זהות למקור ('+x.src_hours+'). כדאי לבדוק אותו במסך הניהול של המקווה.', x.same?'#eef7ee':'#fff4e5');
+        load();};});};
+  load();}
 // 📄 מאיר: "מסמך עם כל הקבוצות והמחירים" — Word על הבלאנק של המקווה. בוחרים אילו קבוצות נכנסות (נשמר),
 // ובמסמך רק שם הקבוצה והמחיר לחודש ("אל תמציא"). חלון שנסגר רק ב-X
 async function mkPriceDoc(scope,btn){
@@ -2229,6 +2267,7 @@ function renderMikveh(){
         <div class="mkhg"><span>📊 דוחות ובדיקות</span><div><button class="mkibtn" id="mkentday" title="כמה נכנסו למקווה ביום מסוים — לפי קבוצה (ערך צבור, מזדמן וכו')">📊 כניסות ליום</button>
           <button class="mkibtn" id="mkdebtsb" title="כל החובות הפתוחים במקווה — מי חייב, כמה ועל מה">🧾 חובות פתוחים</button>
       <button class="mkibtn" id="mkprice" title="מסמך Word על הבלאנק של המקווה — כל המנויים והמחירים, מהמקווה עכשיו">📄 מחירון המנויים</button>
+      <button class="mkibtn" id="mkgrpw" title="סוגי המנוי במקווה — והעתקה של מנוי עם כל השעות וההגדרות">📋 סוגי מנוי</button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי או הרישיון שלו הסתיים, ולמה (חידוש אוטומטי כבוי / אין אמצעי תשלום / חיוב נכשל)">🔍 בדיקת פג תוקף</button></div></div>
         <div class="mkhg"><span>💬 פניות והודעות</span><div><button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📨 פניות מנדרים${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
           <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
@@ -2259,6 +2298,7 @@ function renderMikveh(){
   const _mz=document.getElementById('mkzklist'); if(_mz)_mz.onclick=()=>mkCreditOpen('zk');
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mkprice').onclick=e=>mkPriceDoc('',e.currentTarget);
+  document.getElementById('mkgrpw').onclick=()=>mkGroupsWin();
   document.getElementById('mkselfg').onclick=()=>mkSelfGroupOpen();
   document.getElementById('mkvmb').onclick=()=>mkVmOpen();
   document.getElementById('mkrqb').onclick=()=>mkSgReqOpen();

@@ -27636,6 +27636,29 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/group_copy':
+            # 📋 מאיר: "תעשה בממשק אפשרות להעתיק" — מנוי חדש במקווה עם כל ההגדרות והשעות של מנוי קיים
+            import mikveh as _mk
+            src = str(b.get('src') or '').strip()
+            name = re.sub(r'\s+', ' ', str(b.get('name') or '')).strip()[:80]
+            try:
+                price = round(float(str(b.get('price') or '').replace(',', '').replace('₪', '').strip()), 2)
+            except ValueError:
+                price = -1
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', src):
+                return self._send(200, {'ok': False, 'error': 'לא נבחר מנוי להעתקה'})
+            if not name:
+                return self._send(200, {'ok': False, 'error': 'צריך לכתוב שם למנוי החדש'})
+            if not (0 <= price <= 100000):
+                return self._send(200, {'ok': False, 'error': 'מחיר לא תקין'})
+            try:
+                if any(g['name'].strip() == name for g in _mk.groups(fresh=True)):
+                    return self._send(200, {'ok': False, 'error': 'כבר יש במקווה מנוי בשם הזה'})
+                r = _mk.copy_group(src, name, int(round(price * 100)))
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            print('  mikveh group copied:', src, '->', r)
+            return self._send(200, dict(r, ok=True, price=price))
         if self.path == '/api/mikveh/reqapi':
             # 📥 שמירת ההגדרות; sync=1 — למשוך עכשיו
             con = db()

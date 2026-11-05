@@ -989,9 +989,71 @@ def raw_group(gid):
 
 
 def group_schedules(gid):
-    """שעות הקבוצה (לוחות הזמנים) — GET Schedule/GetByGroupId/{id}, כמו במסך הניהול"""
-    s = get('Schedule/GetByGroupId/%s' % gid)
-    return s if isinstance(s, list) else []
+    """שעות הקבוצה (לוחות הזמנים) — GET Schedule/GetByGroupId/{id}, כמו במסך הניהול.
+    לקבוצה בלי שעות המקווה עונה 404 "No schedules found…" (הוקלט 5.11.2026) — זו רשימה ריקה, לא שגיאה."""
+    code, res = call('GET', 'Schedule/GetByGroupId/%s' % gid)
+    if code == 404 and 'no schedules' in json.dumps(res, ensure_ascii=False).lower():
+        return []
+    if code != 200:
+        raise RuntimeError('המקווה Schedule/GetByGroupId: %s' % (LAST.get('error') or code))
+    return res if isinstance(res, list) else []
+
+
+# 📋 מאיר: "תעשה בממשק אפשרות להעתיק… אל תנחש, רק אם יש לך את כל הפרטים" — הכל לפי ההקלטות של מסך הניהול:
+# יצירה = POST Group/ עם השדות האלה בלבד; הגדרות ושעות = PATCH Group/{id} (שעה חדשה = id: null)
+GROUP_CREATE_KEYS = ('basePrice', 'useMoney', 'useSubscription', 'subscriptionEndType', 'subscriptionDurationMonths')
+GROUP_COPY_KEYS = ('description', 'bonus', 'maxEntriesPerDay', 'maxEntriesPerMonth', 'delayBetweenEntries', 'checkDelayBetweenEntries',
+                   'minimumAmountToCharge', 'maximumAmountToCharge', 'stepAmountToCharge', 'daysToStretch', 'color',
+                   'renewalRestOfMonthMethod', 'lastDayForRenewThisMonth')
+SCHED_KEYS = ('state', 'newDayStartsOn', 'day1', 'day2', 'day3', 'day4', 'day5', 'day6', 'day7', 'beforeHoliday', 'onHoliday',
+              'dayType', 'price', 'price2', 'price3', 'price4', 'canPayByCash', 'isCreditOnlyEntry', 'maxEntriesPerDay',
+              'delayBetweenEntries', 'checkDelayBetweenEntries', 'fromTime', 'toTime', 'fromDate', 'toDate',
+              'recursYearlyByHebrewDate', 'hebrewFromMonth', 'hebrewFromDay', 'hebrewToMonth', 'hebrewToDay', 'priority',
+              'fromHalachaTimeType', 'useFromHalachaTime', 'useToHalachaTime', 'toHalachaTimeOffset', 'toHalachaTimeType',
+              'fromHalachaTimeOffset', 'isNewDay')
+
+
+def _sched_sig(x):
+    return tuple(json.dumps(x.get(k), sort_keys=True) for k in SCHED_KEYS)
+
+
+def copy_group(src_gid, name, price_agorot):
+    """מנוי חדש במקווה — העתק של מנוי קיים עם כל ההגדרות והשעות, בשם ובמחיר חדשים.
+    אחרי ההעתקה קוראים את השעות מהמקווה ומשווים לשעות של המקור. מחזיר dict עם id, hours, same"""
+    src = raw_group(src_gid)
+    sch = group_schedules(src_gid)
+    body = {k: src.get(k) for k in GROUP_CREATE_KEYS}
+    body.update(name=name, subscriptionPrice=int(price_agorot))
+    code, new = call('POST', 'Group/', body=body, timeout=30)
+    if not (200 <= code < 300) or not isinstance(new, dict) or not new.get('id'):
+        raise RuntimeError('יצירת המנוי במקווה נכשלה: %s' % (LAST.get('error') or code))
+    nid = new['id']
+    _GR.update(rows=None)
+    obj = dict(new)
+    for k in GROUP_COPY_KEYS:
+        obj[k] = src.get(k)
+    copies = []
+    for x in sch:
+        c = {k: v for k, v in x.items() if k not in ('createdAt', 'draggable')}
+        c['id'] = None
+        c['groupId'] = nid
+        c['clubId'] = None
+        try:
+            c['extraDataJson'] = json.loads(c.get('extraData') or '{}')
+        except (ValueError, TypeError):
+            c['extraDataJson'] = {}
+        copies.append(c)
+    obj['schedules'] = copies
+    obj['timeToCheckActiveSchedule'] = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+    obj['useTimeToCheckActiveSchedule'] = False
+    code, res = call('PATCH', 'Group/%s' % nid, body=obj, timeout=30)
+    if not (200 <= code < 300):
+        raise RuntimeError('המנוי "%s" נוצר במקווה, אבל ההגדרות והשעות לא הועתקו (%s). אפשר להשלים במסך הניהול של המקווה.'
+                           % (name, LAST.get('error') or code))
+    _GR.update(rows=None)
+    got = group_schedules(nid)
+    same = sorted(map(_sched_sig, got)) == sorted(map(_sched_sig, sch))
+    return {'id': nid, 'name': name, 'hours': len(got), 'src_hours': len(sch), 'same': same}
 
 
 def update_group(gid, changes):
