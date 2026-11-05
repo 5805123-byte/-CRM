@@ -971,6 +971,9 @@ def ensure_schema():
     # הקובץ שנשמע בשיחה נשמר 30 יום (ym_file — שם הקובץ בימות, לגיבוי)
     con.execute("CREATE TABLE IF NOT EXISTS ym_audio(msg_id INTEGER PRIMARY KEY, at TEXT, wav BLOB)")
     # 🧺 תשלום מנוי המגבות לכל חודש עברי — מה שסומן אצלנו (מזומן / נגבה), וההודעה שהוצגה במסך המקווה
+    # 💲 הפרש על שינוי מנוי מהכרטיס: החוב במקווה וההודעה שהוספנו למסך המכונה — עד שישולם
+    con.execute("CREATE TABLE IF NOT EXISTS mk_diff(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, at TEXT, from_name TEXT, to_name TEXT, "
+                "amount REAL, debt_id TEXT, reason TEXT, msg TEXT, status TEXT DEFAULT 'open', closed_at TEXT)")
     con.execute("CREATE TABLE IF NOT EXISTS mk_towel_pay(cid TEXT, hmonth TEXT, paid_at TEXT, method TEXT, amount REAL, msg_at TEXT, "
                 "PRIMARY KEY(cid, hmonth))")
     try:
@@ -18768,6 +18771,71 @@ def mk_req_sync(days=None):
     return r
 
 
+MK_DIFF_MSG = 'יש לך חוב של {amount} ש"ח — הפרש על שינוי המנוי. יש לשלם במכונה.'
+
+
+def mk_msg_add(cur, txt):
+    cur = (cur or '').strip()
+    return (cur + ' · ' + txt) if cur else txt
+
+
+def mk_msg_remove(cur, txt):
+    cur = (cur or '').strip()
+    if txt not in cur:
+        return cur
+    out = cur.replace(' · ' + txt, '').replace(txt + ' · ', '').replace(txt, '')
+    return re.sub(r'\s{2,}', ' ', out).strip(' ·')
+
+
+def mk_diff_check():
+    """💲 חובות הפרש שעוד פתוחים: אם שולם (או נמחק) במקווה — מוחקים מהמסך את ההודעה שהוספנו"""
+    import mikveh as _mk
+    con = db()
+    try:
+        rows = [dict(r) for r in con.execute("SELECT * FROM mk_diff WHERE status='open' ORDER BY id LIMIT 200")]
+    finally:
+        con.close()
+    done = 0
+    for r in rows:
+        try:
+            ds = _mk.debts(r['cid'], include_deleted=True)
+            d = next((x for x in ds if r['debt_id'] and str(x.get('id')) == r['debt_id']), None)
+            if d is None:
+                # בלי מזהה — לפי הסיבה והסכום
+                d = next((x for x in ds if (x.get('reason') or '') == r['reason'] and abs(float(x.get('amount') or 0) - float(r['amount'])) < 0.01), None)
+            if d is None or d.get('open'):
+                continue
+            st = 'paid' if d.get('paid_ok') else 'deleted'
+            if r['msg']:
+                full = _mk.client(r['cid'])
+                new = mk_msg_remove(full.get('message'), r['msg'])
+                if new != (full.get('message') or '').strip():
+                    _mk.update_client(r['cid'], {'message': new})
+            con = db()
+            try:
+                con.execute("UPDATE mk_diff SET status=?, closed_at=? WHERE id=?", (st, now_iso(), r['id']))
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (r['cid'], now_iso(), 'debt', ('✓ שולם' if st == 'paid' else '🗑️ נמחק') + ' חוב ההפרש ₪%g (%s → %s)%s' % (
+                                r['amount'], r['from_name'], r['to_name'], ' — ההודעה ירדה מהמסך' if r['msg'] else '')))
+                con.commit()
+            finally:
+                con.close()
+            done += 1
+        except Exception as e:
+            print('  mk diff check error:', r.get('cid'), e)
+    return done
+
+
+def _mk_diff_loop():
+    time.sleep(120)
+    while True:
+        try:
+            mk_diff_check()
+        except Exception as e:
+            print('  mk diff loop error:', e)
+        time.sleep(300)
+
+
 def _mk_req_loop():
     time.sleep(90)
     while True:
@@ -24308,6 +24376,41 @@ class H(BaseHTTPRequestHandler):
             txt = 'קבצים: %s\n\nנתיבים: %s\n\n' % (', '.join(r['files']), ', '.join(r['paths']) or '—')
             txt += '\n\n---\n\n'.join(r['hits'])
             return self._send(200, txt.encode('utf-8'), 'text/plain; charset=utf-8')
+        if self.path.split('?')[0] == '/api/mikveh/diff_check':
+            # 💲 בדיקה עכשיו: חובות הפרש ששולמו — מוריד את ההודעה מהמסך (רץ גם לבד כל 5 דקות)
+            try:
+                n = mk_diff_check()
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            con = db()
+            try:
+                op_ = [dict(r) for r in con.execute("SELECT cid,at,from_name,to_name,amount,status FROM mk_diff ORDER BY id DESC LIMIT 100")]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'closed': n, 'rows': op_})
+        if self.path.split('?')[0] == '/api/mikveh/group_quote':
+            # 💲 מאיר: "אם הוא עובר עכשיו מנוי, הוא צריך לשלם את ההפרש — המערכת מחשבת כמה" — כמו בשלוחה
+            import mikveh as _mk
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            cid, gid = (qs.get('id') or [''])[0], (qs.get('group') or [''])[0]
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid) or not re.fullmatch(r'[0-9a-fA-F-]{36}', gid):
+                return self._send(200, {'ok': False, 'error': 'חסר לקוח או מנוי'})
+            con = db()
+            try:
+                cfg = mkg_cfg(con)
+            finally:
+                con.close()
+            try:
+                gr = {g['id']: g for g in _mk.groups()}
+                c = _mk.client(cid, max_age=30)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            if gid not in gr:
+                return self._send(200, {'ok': False, 'error': 'המנוי לא נמצא'})
+            q = mkg_quote(cfg, c, gr, gid)
+            return self._send(200, dict(q, ok=True, end=str(c.get('subscriptionEndDate') or '')[:10],
+                                        from_name=(gr.get(c.get('groupId')) or {}).get('name', ''), to_name=gr[gid]['name'],
+                                        divisor=cfg.get('divisor') or 30, msg=MK_DIFF_MSG))
         if self.path.split('?')[0] == '/api/mikveh/towel_migrate':
             # 🧺 מאיר: "איך מעבירים את מי שיש להם מנוי מגבות?" — מי שבהערה שלו "כולל מגבות", והמנוי עם המגבת שמתאים לו
             import mikveh as _mk
@@ -27155,6 +27258,48 @@ class H(BaseHTTPRequestHandler):
             row = _mk.slim(res)
             if row['group'] != gid:
                 return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל הקבוצה לא השתנתה'})
+            # 💲 הפרש: חוב במקווה (+ הודעה במסך המכונה עד שישולם) או זיכוי — מה שנבחר בחלון האישור
+            diff = b.get('diff') if isinstance(b.get('diff'), dict) else {}
+            dmode = diff.get('mode')
+            try:
+                damt = round(abs(float(str(diff.get('amount') or 0).replace('₪', '').replace(',', ''))), 2)
+            except ValueError:
+                damt = 0
+            diff_res = {}
+            if dmode in ('debt', 'credit') and damt > 0:
+                from_name = str(diff.get('from_name') or '')[:80]
+                reason = 'הפרש שינוי סוג מנוי: %s → %s' % (from_name, gname)
+                try:
+                    if dmode == 'debt':
+                        dr = _mk.add_debt(cid, int(round(damt * 100)), reason)
+                        debt_id = str((dr or {}).get('id') or '') if isinstance(dr, dict) else ''
+                        mtxt = ''
+                        if diff.get('screen'):
+                            mtxt = MK_DIFF_MSG.format(amount='%g' % damt)
+                            full = _mk.client(cid)
+                            _mk.update_client(cid, {'message': mk_msg_add(full.get('message'), mtxt)})
+                        con = db()
+                        try:
+                            con.execute("INSERT INTO mk_diff(cid,at,from_name,to_name,amount,debt_id,reason,msg) VALUES(?,?,?,?,?,?,?,?)",
+                                        (cid, now_iso(), from_name, gname, damt, debt_id, reason, mtxt))
+                            con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                        (cid, now_iso(), 'debt', '💲 נרשם חוב הפרש ₪%g במקווה (%s → %s)%s' % (damt, from_name, gname, ' · 📺 הודעה במסך עד התשלום' if mtxt else '')))
+                            con.commit()
+                        finally:
+                            con.close()
+                        diff_res = {'debt': damt, 'screen': bool(mtxt)}
+                    else:
+                        _mk.add_credit(cid, int(round(damt * 100)), temp=True)
+                        con = db()
+                        try:
+                            con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                        (cid, now_iso(), 'credit', '💳 זיכוי ₪%g על שינוי המנוי (%s → %s)' % (damt, from_name, gname)))
+                            con.commit()
+                        finally:
+                            con.close()
+                        diff_res = {'credit': damt}
+                except Exception as e:
+                    diff_res = {'error': 'המנוי שונה, אבל %s לא נרשם במקווה: %s' % ('החוב' if dmode == 'debt' else 'הזיכוי', str(e)[:200])}
             # מאיר: "אם מישהו עשה ערך צבור ושילם 200 ₪ והעברתי אותו למנוי אחר — יש לו זיכוי יתרה של כסף, זה אמור
             # להיות במערכת" — היתרה נשארת לזכותו במקווה; כאן היא נרשמת במפורש כזיכוי ביומן ומוחזרת למסך
             bal = row.get('balance') if row.get('balance') is not None else row.get('last_balance')
@@ -27179,7 +27324,7 @@ class H(BaseHTTPRequestHandler):
                     print('  mikveh log error:', e)
             import threading as _thr
             _thr.Thread(target=_log, daemon=True).start()
-            return self._send(200, {'ok': True, 'client': row, 'group_name': gname, 'credit': credit, 'ms': dict(_mk.TIMES)})
+            return self._send(200, {'ok': True, 'client': row, 'group_name': gname, 'credit': credit, 'ms': dict(_mk.TIMES), 'diff': diff_res})
         if self.path == '/api/mikveh/link':
             # 🔗 מאיר: "אני רוצה להיכנס לכרטיס שלו במקווה כשאני לוחץ על שמו" — כתובת כרטיס לקוח באתר המקווה,
             # עם {id} (המזהה הארוך) או {code} (מספר הלקוח) במקום הלקוח
@@ -37145,6 +37290,7 @@ def serve():
     threading.Thread(target=_ym_retry_loop, daemon=True).start()
     threading.Thread(target=_ym_sched_loop, daemon=True).start()
     threading.Thread(target=_mk_req_loop, daemon=True).start()
+    threading.Thread(target=_mk_diff_loop, daemon=True).start()
     threading.Thread(target=_nd_err_loop, daemon=True).start()
     threading.Thread(target=_push_loop, daemon=True).start()
     threading.Thread(target=_weekly_report_loop, daemon=True).start()

@@ -2530,7 +2530,39 @@ const mkGName=g=>(g&&g.name||'').replace(/^\s*\d+\.\s*/,'').trim();
 const mkMoney=a=>a==null?'':'₪'+(a/100).toLocaleString('he-IL',{maximumFractionDigits:2});
 // מאיר: "לוקח זמן עד שהשרת עונה ולא רואים כלום במסך… ספינר שמראה שזה מעדכן". ההעברה עצמה —
 // עם מצב חי (on): 'busy' (כמה שניות עברו), 'ok', 'err'. גם השורה ברשימה מראה "מעביר…"
-async function mkSetGroup(c,g,on){
+// 💲 מאיר: "אם הוא עובר עכשיו מנוי, הוא צריך לשלם את ההפרש… ופעם הבאה שהוא רוצה להיכנס יהיה כתוב לו שהוא צריך
+// לשלם את ההפרש" — לפני שינוי מנוי מהכרטיס: חישוב ההפרש (כמו בשלוחה), ובחירה: חוב במקווה + הודעה במסך / זיכוי / בלי.
+// מחזיר {mode,amount,screen,from_name} או null (ביטול). חלון שנסגר רק ב-X / ביטול
+function mkDiffAsk(cid,gid){return new Promise(async resolve=>{
+  const esc_=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const q=await fetch('/api/mikveh/group_quote?id='+encodeURIComponent(cid)+'&group='+encodeURIComponent(gid)).then(x=>x.json()).catch(()=>null);
+  if(q&&q.ok&&!q.amount)return resolve({mode:'none'});            // אין הפרש (אין ימים שנשארו / אותו מחיר)
+  const old=document.getElementById('mkdf');if(old)old.remove();
+  const ov=document.createElement('div');ov.id='mkdf';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:10050;display:flex;align-items:center;justify-content:center;padding:16px';
+  const up=q&&q.ok&&q.amount>0,amt=q&&q.ok?Math.abs(q.amount):0,dmy=s=>s?s.slice(8,10)+'.'+s.slice(5,7)+'.'+s.slice(0,4):'';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:520px;width:100%;direction:rtl;box-shadow:0 20px 60px rgba(0,0,0,.3);font-family:inherit">'+
+    '<div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid #eee"><b style="font-size:1.05rem;flex:1">💲 הפרש על שינוי המנוי</b><button data-x title="סגירה" style="border:0;background:#f1f4f9;border-radius:50%;width:32px;height:32px;cursor:pointer">✕</button></div>'+
+    '<div style="padding:14px 18px;display:grid;gap:10px">'+
+    (!q||!q.ok?'<div style="background:#fff4e5;border-radius:10px;padding:10px">⚠️ לא הצלחתי לחשב את ההפרש: '+esc_((q&&q.error)||'אין תשובה')+'</div>':
+      '<div style="line-height:1.7">מ<b>'+esc_(q.from_name)+'</b> (₪'+q.old_price+') ל<b>'+esc_(q.to_name)+'</b> (₪'+q.new_price+').<br>נשארו לו <b>'+q.days+'</b> ימים במנוי'+(q.end?' (עד '+dmy(q.end)+')':'')+'.<br>'+
+      '<span style="color:#666;font-size:.88rem">('+q.new_price+' − '+q.old_price+') × '+q.days+' ÷ '+q.divisor+' = ₪'+amt+'</span></div>'+
+      '<label style="display:flex;gap:8px;align-items:center"><b>'+(up?'הפרש לתשלום':'זיכוי')+' (₪):</b><input data-a type="number" min="0" step="1" value="'+amt+'" style="border:1px solid #ccd;border-radius:8px;padding:6px;font:inherit;width:110px"></label>'+
+      (up?'<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="dfm" value="debt" checked> לרשום <b>חוב במקווה</b> — משלם במכונה</label>'+
+          '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-inline-start:24px"><input type="checkbox" data-s checked style="margin-top:4px"> <span>להציג לו <b>הודעה במסך המכונה</b> עד שישלם:<br><small style="color:#555">"'+esc_(String(q.msg||'').replace('{amount}',amt))+'"</small></span></label>'
+         :'<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="dfm" value="credit" checked> לתת <b>זיכוי</b> ביתרה הזמנית</label>')+
+      '<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="dfm" value="none"> בלי '+(up?'הפרש':'זיכוי')+' — רק להעביר</label>')+
+    '</div><div style="padding:12px 18px;border-top:1px solid #eee;display:flex;gap:8px"><button data-ok style="background:#2f6fb0;color:#fff;border:0;border-radius:10px;padding:9px 18px;font:inherit;font-weight:700;cursor:pointer">להעביר</button>'+
+    '<button data-x style="border:1px solid #ddd;background:#fff;border-radius:10px;padding:9px 14px;font:inherit;cursor:pointer">ביטול</button></div></div>';
+  document.body.appendChild(ov);
+  const done=v=>{ov.remove();resolve(v);};
+  ov.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>done(null));
+  const sAmt=ov.querySelector('[data-a]'),sChk=ov.querySelector('[data-s]');
+  if(sAmt&&sChk)sAmt.oninput=()=>{const sm=sChk.parentNode.querySelector('small');if(sm)sm.textContent='"'+String(q.msg||'').replace('{amount}',sAmt.value||0)+'"';};
+  ov.querySelector('[data-ok]').onclick=()=>{if(!q||!q.ok)return done({mode:'none'});
+    const m=(ov.querySelector('[name=dfm]:checked')||{}).value||'none',a=Math.abs(parseFloat(sAmt&&sAmt.value)||0);
+    done({mode:a>0?m:'none',amount:a,screen:!!(sChk&&sChk.checked),from_name:q.from_name});};});}
+async function mkSetGroup(c,g,on,diff){
   on=on||(()=>{});
   const t0=Date.now(); let tick=null;
   c._busy='מעביר ל'+mkGName(g)+'…'; mkRowRefresh(c);
@@ -2542,7 +2574,7 @@ async function mkSetGroup(c,g,on){
         if(!done&&v&&v.ok&&v.client&&v.client.group===g.id)return res({ok:true,checked:true});}catch(e){}
       if(!done)setTimeout(tryIt,3000);};
     setTimeout(tryIt,4000);});
-  const viaPost=api('POST','/api/mikveh/group',{id:c.id,group:g.id}).catch(()=>null);   // 502 / ניתוק — תשובה שאינה JSON
+  const viaPost=api('POST','/api/mikveh/group',{id:c.id,group:g.id,diff:diff||{}}).catch(()=>null);   // 502 / ניתוק — תשובה שאינה JSON
   r=await Promise.race([viaPost,viaCheck]); done=true;
   if(!r||!r.ok){
     // מאיר: "באתר של המקווה אני רואה שהוא כן עדכן… פשוט השרת לא קורא שזה הצליח" — לפני שמודיעים
@@ -2683,7 +2715,10 @@ function mkOpen(c){
     const no=document.getElementById('mkno'); if(no)no.onclick=()=>{pick=null;state='';draw();};
     const go=document.getElementById('mkgo');
     if(go)go.onclick=async()=>{const target=pick;
-      const ok=await mkSetGroup(c,target,(st,v)=>{state=st;info=v;draw();});
+      const d=await mkDiffAsk(c.id,target.id);if(d===null)return;
+      const ok=await mkSetGroup(c,target,(st,v)=>{state=st;info=v;draw();},d);
+      if(ok&&d.mode==='debt')toast('💲 נרשם חוב הפרש ₪'+d.amount+' במקווה'+(d.screen?' · הודעה במסך עד התשלום':''));
+      if(ok&&d.mode==='credit')toast('💳 זיכוי ₪'+d.amount+' ביתרה הזמנית');
       if(ok){pick=target;if(c.phone)setTimeout(()=>{if(state==='ok'&&document.getElementById('mkafter'))mkNotify(c,'group',{group:target.id});},700);}};
     const af=document.getElementById('mkafter'); if(af)af.onclick=()=>mkNotify(c,'group',{group:c.group});
   };
