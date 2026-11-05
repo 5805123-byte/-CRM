@@ -1909,45 +1909,60 @@ async function mkPendLoad(){const r=await api('GET','/api/mikveh/pending').catch
   el.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff4e5;border:1px solid #f5c26b;border-radius:12px;padding:10px 14px;margin-bottom:12px">
     <b style="color:#b9770e">🔔 ממתין לטיפול:</b>${it.map(x=>`<button class="btn sm" data-pg="${x[2]}" style="background:#fff;color:#333;border:1px solid #f5c26b"><b style="color:#c0392b">${x[0]}</b> ${x[1]}</button>`).join('')}</div>`;
   el.querySelectorAll('[data-pg]').forEach(b=>b.onclick=()=>{const k=b.dataset.pg;if(k==='mkpreq'){MKRQ_F='open';mkReqOpen();}else if(k==='mkpgrp')mkSgReqOpen();else mkVmOpen();});}
-// 🧺 מאיר: "איך מעבירים את מי שיש להם מנוי מגבות?" — מראש חודש כסלו המגבת כלולה במנוי. רשימה לבדיקה (מי, מאיזה מנוי,
-// לאיזה מנוי עם מגבת, המחיר לפני ואחרי), ומעבירים רק את המסומנים. חלון שנסגר רק ב-X
+// 🧺 מאיר: "איך מעבירים את מי שיש להם מנוי מגבות?" — מראש חודש כסלו המגבת כלולה במנוי. אותו זיהוי כמו מסך "מנויי מגבות"
+// (הערה, ואם לא — הודעה). גודל המגבת: מה שכתוב; אם לא כתוב — בוחרים (לא מנחשים). מעבירים רק את המסומנים. נסגר רק ב-X
 async function mkTowelMigrate(){
   const esc_=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const nis=v=>v==null?'—':'₪'+(+v).toLocaleString('he-IL');
+  const dmy=s=>s?String(s).slice(8,10)+'.'+String(s).slice(5,7)+'.'+String(s).slice(0,4):'';
   const old=document.getElementById('mktw');if(old)old.remove();
   const ov=document.createElement('div');ov.id='mktw';
   ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:980px;width:100%;max-height:92vh;display:flex;flex-direction:column;direction:rtl;box-shadow:0 20px 60px rgba(0,0,0,.25);font-family:inherit">'+
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:1060px;width:100%;max-height:92vh;display:flex;flex-direction:column;direction:rtl;box-shadow:0 20px 60px rgba(0,0,0,.25);font-family:inherit">'+
     '<div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid #eee"><b style="font-size:1.1rem;flex:1">🧺 העברת מנויי המגבות למנוי הכולל מגבת</b><button id="mktwx" title="סגירה" style="border:0;background:#f1f4f9;border-radius:50%;width:34px;height:34px;cursor:pointer;font-size:1rem">✕</button></div>'+
     '<div id="mktwm" style="padding:0 18px"></div><div id="mktwb" style="padding:12px 18px;overflow:auto">⏳ בודק במקווה מי עם מנוי מגבות…</div>'+
     '<div style="padding:12px 18px;border-top:1px solid #eee;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button id="mktwgo" disabled style="background:#2f6fb0;color:#fff;border:0;border-radius:10px;padding:9px 16px;font:inherit;font-weight:700;cursor:pointer">להעביר את המסומנים</button><span id="mktwst" style="color:#777;font-size:.88rem"></span></div></div>';
   document.body.appendChild(ov);
   document.getElementById('mktwx').onclick=()=>ov.remove();
   const B=document.getElementById('mktwb'),M=document.getElementById('mktwm'),go=document.getElementById('mktwgo'),st=document.getElementById('mktwst');
-  let R=null;
+  let R=null,F='active';const SZ={};   // הגודל שנבחר לכל לקוח (למי שלא כתוב)
+  const sizeOf=x=>x.size||SZ[x.id]||'';
+  const tgt=x=>{const z=sizeOf(x);return z?x.to[z]:null;};
+  const can=x=>!x.in_towel&&!!tgt(x);
+  const paint=()=>{const rows=(R.rows||[]).filter(x=>F==='all'||(F==='active'?x.active:!x.active));
+    const nA=R.rows.filter(x=>x.active).length,nE=R.rows.length-nA,noSz=R.rows.filter(x=>!x.size&&!x.in_towel).length;
+    B.innerHTML='<div style="color:#555;font-size:.88rem;margin-bottom:8px;line-height:1.6">נמצאו <b>'+R.rows.length+'</b> לקוחות עם מנוי מגבות (כמו במסך "מנויי מגבות" — לפי ההערה או ההודעה במקווה). '+
+      'במעבר <b>המנוי משתנה במקווה</b>; אם בהערה כתוב "כולל מגבות" — זה נמחק ממנה (שלא יחויב פעמיים). <b>ההודעה</b> (מה שמוצג במכונה) לא משתנה.</div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'+
+      [['active','מנוי בתוקף ('+nA+')'],['ended','המנוי הסתיים ('+nE+')'],['all','הכל']].map(([k,t])=>'<button data-f="'+k+'" style="border:1px solid '+(F===k?'#2f6fb0':'#ddd')+';background:'+(F===k?'#2f6fb0':'#fff')+';color:'+(F===k?'#fff':'#333')+';border-radius:20px;padding:4px 12px;cursor:pointer;font:inherit">'+t+'</button>').join('')+
+      (noSz?'<span style="flex:1"></span><span style="font-size:.88rem">לכל מי שלא כתוב אצלו גודל ('+noSz+'):</span><button data-allsz="small" style="border:1px solid #9ec3ea;background:#f4f9ff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">מגבת קטנה</button><button data-allsz="large" style="border:1px solid #9ec3ea;background:#f4f9ff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">מגבת גדולה</button>':'')+'</div>'+
+      '<div style="display:flex;gap:6px;margin-bottom:6px"><button data-all="1" style="border:1px solid #ddd;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">לסמן את כל המוכנים</button><button data-all="0" style="border:1px solid #ddd;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">לנקות</button></div>'+
+      '<table style="border-collapse:collapse;width:100%;font-size:.86rem"><tr style="background:#f3f5f8"><th style="padding:6px"></th><th style="text-align:right;padding:6px">לקוח</th><th style="text-align:right;padding:6px">המנוי עכשיו</th><th style="padding:6px">גודל המגבת</th><th style="text-align:right;padding:6px">← המנוי החדש</th><th style="padding:6px">לחודש: לפני ← אחרי</th></tr>'+
+      rows.map(x=>{const z=sizeOf(x),t=tgt(x),before=(x.from_price||0)+(z?x.towel[z]:0),after=z?x.to_price[z]:null;
+        const sz=x.size?'<b>'+(x.size==='large'?'גדולה':'קטנה')+'</b>':(x.in_towel?'—':'<select data-sz="'+esc_(x.id)+'" style="border:1px solid '+(z?'#ccd':'#e0a84a')+';border-radius:8px;padding:3px 6px;font:inherit;background:'+(z?'#fff':'#fff7e6')+'"><option value="">לבחור…</option><option value="small"'+(z==='small'?' selected':'')+'>קטנה</option><option value="large"'+(z==='large'?' selected':'')+'>גדולה</option></select>');
+        const cmp=x.in_towel||!t?'—':nis(before)+' ← '+nis(after)+(after!=null&&Math.abs(after-before)>0.01?' <b style="color:'+(after>before?'#c0392b':'#1e7a3c')+'">('+(after>before?'+':'')+(after-before)+')</b>':'');
+        return '<tr style="border-top:1px solid #eef0f4;'+(x.in_towel||(!t&&z)?'background:#fff8ec':'')+'"><td style="padding:6px;text-align:center">'+(can(x)?'<input type="checkbox" data-c="'+esc_(x.id)+'" '+(x.chk?'checked':'')+' style="width:18px;height:18px">':'')+'</td>'+
+          '<td style="padding:6px">'+esc_(x.name)+' <small style="color:#888">#'+esc_(x.code)+'</small> <small style="color:'+(x.active?'#1e7a3c':'#c0392b')+'">'+(x.active?'עד':'הסתיים')+' '+dmy(x.end)+'</small>'+
+            (x.note?'<div style="color:#b9770e;font-size:.8rem">'+esc_(x.note)+'</div>':'')+'<div style="color:#999;font-size:.75rem">'+(x.src==='message'?'הודעה':'הערה')+': '+esc_(x.text)+'</div></td>'+
+          '<td style="padding:6px">'+esc_(x.from_name)+' <small>'+nis(x.from_price)+'</small></td><td style="padding:6px;text-align:center">'+sz+'</td>'+
+          '<td style="padding:6px">'+(x.in_towel?'<span style="color:#888">(כבר במנוי עם מגבת)</span>':t?'<b>'+esc_(x.to_name[z])+'</b> <small>'+nis(x.to_price[z])+'</small>':(z?'<span style="color:#b9770e">אין מנוי מתאים</span>':'<span style="color:#999">בוחרים גודל</span>'))+'</td>'+
+          '<td style="padding:6px;text-align:center;white-space:nowrap">'+cmp+'</td></tr>';}).join('')+'</table>';
+    B.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{F=b.dataset.f;paint();});
+    B.querySelectorAll('[data-allsz]').forEach(b=>b.onclick=()=>{R.rows.forEach(x=>{if(!x.size&&!x.in_towel){SZ[x.id]=b.dataset.allsz;if(x.active&&tgt(x)&&!x.fix)x.chk=true;}});paint();});
+    B.querySelectorAll('[data-sz]').forEach(s=>s.onchange=()=>{const x=R.rows.find(z=>z.id===s.dataset.sz);SZ[x.id]=s.value;x.chk=!!(s.value&&tgt(x)&&!x.fix);paint();});
+    B.querySelectorAll('[data-c]').forEach(c=>c.onchange=()=>{R.rows.find(z=>z.id===c.dataset.c).chk=c.checked;cnt();});
+    B.querySelectorAll('[data-all]').forEach(b=>b.onclick=()=>{rows.forEach(x=>{if(can(x))x.chk=b.dataset.all==='1'&&!x.fix;});paint();});
+    cnt();};
+  const cnt=()=>{const n=R.rows.filter(x=>x.chk&&can(x)).length;go.disabled=!n;go.textContent='להעביר את המסומנים ('+n+')';go.dataset.sure='';go.style.background='#2f6fb0';st.textContent='';};
   const load=async()=>{R=await fetch('/api/mikveh/towel_migrate').then(x=>x.json()).catch(()=>null);if(!document.getElementById('mktwb'))return;
     if(!R||!R.ok){B.innerHTML='⚠️ '+esc_((R&&R.error)||'אין חיבור למקווה');return;}
-    const rows=R.rows||[];
-    if(!rows.length){B.innerHTML='<div style="padding:20px;text-align:center;color:#1e7a3c">✓ אין אף לקוח שבהערה שלו כתוב "כולל מגבות" — אין את מי להעביר.</div>';go.style.display='none';return;}
-    const can=x=>!!(x.to||x.only_remark);
-    B.innerHTML='<div style="color:#555;font-size:.88rem;margin-bottom:8px;line-height:1.6">נמצאו <b>'+rows.length+'</b> לקוחות שבהערה שלהם במקווה כתוב "כולל מגבות". לכל אחד — המנוי עם המגבת באותה קטגוריה ובאותו גודל. '+
-      'במעבר: <b>המנוי משתנה במקווה</b>, ו<b>"כולל מגבות" נמחק מההערה</b> (כדי שלא יחויב על המגבת פעמיים). מי שאין לו מנוי מתאים — לא מסומן, לטיפול ידני.</div>'+
-      '<div style="display:flex;gap:6px;margin-bottom:6px"><button data-all="1" style="border:1px solid #ddd;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">לסמן את כל המתאימים</button><button data-all="0" style="border:1px solid #ddd;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">לנקות</button></div>'+
-      '<table style="border-collapse:collapse;width:100%;font-size:.88rem"><tr style="background:#f3f5f8"><th style="padding:6px"></th><th style="text-align:right;padding:6px">לקוח</th><th style="text-align:right;padding:6px">המנוי עכשיו</th><th style="padding:6px">מגבות</th><th style="text-align:right;padding:6px">← המנוי החדש</th><th style="padding:6px">לחודש: לפני ← אחרי</th></tr>'+
-      rows.map((x,i)=>{const before=(x.from_price!=null?x.from_price:0)+(x.towel_price||0),after=x.to_price;
-        const cmp=x.only_remark?'—':(x.to?nis(before)+' ← '+nis(after)+(after!=null&&Math.abs(after-before)>0.01?' <b style="color:'+(after>before?'#c0392b':'#1e7a3c')+'">('+(after>before?'+':'')+(after-before)+')</b>':''):'—');
-        return '<tr data-i="'+i+'" style="border-top:1px solid #eef0f4;'+(can(x)?'':'background:#fff8ec')+'"><td style="padding:6px;text-align:center">'+(can(x)?'<input type="checkbox" data-c="'+i+'" '+(x.fix?'':'checked')+' style="width:18px;height:18px">':'')+'</td>'+
-          '<td style="padding:6px">'+esc_(x.name)+' <small style="color:#888">#'+esc_(x.code)+'</small>'+(x.note?'<div style="color:#b9770e;font-size:.8rem">'+esc_(x.note)+'</div>':'')+'<div style="color:#999;font-size:.75rem">'+esc_(x.remark)+'</div></td>'+
-          '<td style="padding:6px">'+esc_(x.from_name)+' <small>'+nis(x.from_price)+'</small></td><td style="padding:6px;text-align:center">'+(x.size==='large'?'גדולות':'קטנות')+' <small>'+nis(x.towel_price)+'</small></td>'+
-          '<td style="padding:6px">'+(x.only_remark?'<span style="color:#888">(כבר במנוי עם מגבת)</span>':x.to?'<b>'+esc_(x.to_name)+'</b> <small>'+nis(x.to_price)+'</small>':'<span style="color:#b9770e">אין מנוי מתאים</span>')+'</td>'+
-          '<td style="padding:6px;text-align:center;white-space:nowrap">'+cmp+'</td></tr><tr data-r="'+i+'"></tr>';}).join('')+'</table>';
-    const cnt=()=>{const n=B.querySelectorAll('[data-c]:checked').length;go.disabled=!n;go.textContent='להעביר את המסומנים ('+n+')';go.dataset.sure='';go.style.background='#2f6fb0';st.textContent='';};
-    B.onchange=cnt;B.querySelectorAll('[data-all]').forEach(b=>b.onclick=()=>{B.querySelectorAll('[data-c]').forEach(c=>c.checked=b.dataset.all==='1');cnt();});cnt();};
-  go.onclick=async()=>{const sel=[...B.querySelectorAll('[data-c]:checked')].map(c=>R.rows[+c.dataset.c]);if(!sel.length)return;
+    if(!(R.rows||[]).length){B.innerHTML='<div style="padding:20px;text-align:center;color:#1e7a3c">✓ לא נמצא אף לקוח עם מנוי מגבות — אין את מי להעביר.</div>';go.style.display='none';return;}
+    R.rows.forEach(x=>{x.chk=x.active&&can(x)&&!x.fix;});paint();};
+  go.onclick=async()=>{const sel=R.rows.filter(x=>x.chk&&can(x));if(!sel.length)return;
     if(go.dataset.sure!=='1'){go.dataset.sure='1';go.style.background='#c0392b';go.textContent='בטוח? '+sel.length+' לקוחות יועברו במקווה עכשיו';return;}
     go.disabled=true;let done=0,fail=0,errs=[];
     for(let k=0;k<sel.length;k+=10){const part=sel.slice(k,k+10);st.textContent='⏳ מעביר… '+Math.min(k+10,sel.length)+' מתוך '+sel.length;
-      const y=await fetch('/api/mikveh/towel_migrate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:part.map(x=>({id:x.id,to:x.only_remark?'':x.to}))})}).then(z=>z.json()).catch(()=>null);
+      const y=await fetch('/api/mikveh/towel_migrate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:part.map(x=>({id:x.id,to:tgt(x)}))})}).then(z=>z.json()).catch(()=>null);
       (y&&y.results||part.map(x=>({id:x.id,ok:false,error:'אין תשובה'}))).forEach(r=>{if(r.ok)done++;else{fail++;const x=R.rows.find(z=>z.id===r.id);errs.push((x?x.name:'')+': '+(r.error||''));}});}
     M.innerHTML='<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:'+(fail?'#fff4e5':'#eef7ee')+'">'+(done?'✓ הועברו '+done+' לקוחות.':'')+(fail?'<br>⚠️ לא הועברו '+fail+':<br>'+errs.map(esc_).join('<br>'):'')+'</div>';
     st.textContent='';go.disabled=false;load();};

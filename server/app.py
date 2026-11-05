@@ -18602,16 +18602,46 @@ def mkreq_pending(con):
     return r
 
 
+# 🧺 בדיוק כמו מסך "מנויי מגבות" באתר (mkTwlOf / mkTowelSrc): "כולל / מנוי / עם / + מגבת" — כן; "אינו / לא / ללא / בלי /
+# בטל / הפסיק … מגבת" — לא. קודם בהערה; אם לא שם — בהודעה (אצל מאיר כל ה-171 נמצאים ב"הודעה")
 _TW_NO = re.compile(r'(אינו|איננו|אינה|לא|ללא|בלי|בטל|ביטל|הפסיק)\s*[-:]?\s*(כולל\s*)?(ה)?מגב')
-_TW_YES = re.compile(r'(כולל|מנוי|עם|\+)\s*[-:]?\s*(ה)?מגב|^\s*(ה)?מגב')
+_TW_YES = re.compile(r'(כולל|מנוי|עם|\+)\s*[-:]?\s*(ה)?מגב|^\s*(ה)?מגב\S*\s*$')
+
+
+def mk_twl_of(t):
+    t = str(t or '')
+    if 'מגב' not in t:
+        return ''
+    if _TW_NO.search(t):
+        return 'no'
+    return 'yes' if _TW_YES.search(t) else 'unk'
+
+
+def mk_towel_src(c):
+    """'remark' / 'message' / '' — איפה כתוב שיש לו מנוי מגבות"""
+    if mk_twl_of(c.get('remark')) == 'yes':
+        return 'remark'
+    if mk_twl_of(c.get('message')) == 'yes' and mk_twl_of(c.get('remark')) != 'no':
+        return 'message'
+    return ''
+
+
+def mk_towel_size(*texts):
+    """'small' / 'large' / '' (לא כתוב) — לא מנחשים"""
+    for t in texts:
+        t = str(t or '')
+        if re.search(r'מגב\S*\s*(ה)?גדול', t):
+            return 'large'
+        if re.search(r'מגב\S*\s*(ה)?קטנ', t):
+            return 'small'
+    return ''
 
 
 def mk_towel_of(remark):
-    """מנוי המגבות מתוך ההערה במקווה: 'small' / 'large' / None"""
-    t = str(remark or '')
-    if 'מגב' not in t or _TW_NO.search(t) or not _TW_YES.search(t):
+    """תאימות לאחור (חיוב המגבות): 'small' / 'large' / None — לפי ההערה בלבד"""
+    if mk_twl_of(remark) != 'yes':
         return None
-    return 'large' if re.search(r'מגב\S*\s*(ה)?גדול', t) else 'small'
+    return mk_towel_size(remark) or 'small'
 
 
 def mk_towel_target(gr, cmap, gid, size):
@@ -24293,31 +24323,37 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             rows = []
+            today = il_now().strftime('%Y-%m-%d')
             for c in cl:
-                size = mk_towel_of(c.get('remark'))
-                if not size:
+                src = mk_towel_src(c)
+                if not src:
                     continue
+                txt = (c.get('remark') if src == 'remark' else c.get('message')) or ''
+                size = mk_towel_size(txt, c.get('remark'), c.get('message'))
                 gid = c.get('groupId')
-                tgt = mk_towel_target(gr, cmap, gid, size)
                 fix = c.get('subscriptionFixPrice')
-                cur_p = (gr.get(gid) or {}).get('price')
-                tw_p = float(tcfg.get(size) or 0)
+                in_tw = bool(gid in gr and re.search(r'מגב', gr[gid]['name']))
+                ts, tl = mk_towel_target(gr, cmap, gid, 'small'), mk_towel_target(gr, cmap, gid, 'large')
                 note = ''
                 if gid not in gr:
                     note = 'המנוי שלו לא נמצא ברשימה'
-                elif re.search(r'מגב', gr[gid]['name']):
-                    note = 'כבר במנוי עם מגבת — רק לנקות את ההערה'
-                elif not tgt:
-                    note = 'אין מנוי עם מגבת %s בקטגוריה "%s"' % ('קטנה' if size == 'small' else 'גדולה', cmap.get(gid) or '')
+                elif in_tw:
+                    note = 'כבר במנוי עם מגבת'
+                elif not ts and not tl:
+                    note = 'אין מנוי עם מגבת בקטגוריה "%s"' % (cmap.get(gid) or '')
                 if isinstance(fix, (int, float)) and fix:
                     note = (note + ' · ' if note else '') + 'יש לו מחיר אישי ₪%g — הוא יישאר גם אחרי המעבר' % (fix / 100.0)
+                end = str(c.get('subscriptionEndDate') or '')[:10]
                 rows.append({'id': c.get('id'), 'name': ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip(),
-                             'code': c.get('clientCode'), 'size': size, 'remark': (c.get('remark') or '').strip(),
-                             'from': gid, 'from_name': (gr.get(gid) or {}).get('name', '—'), 'from_price': cur_p,
-                             'towel_price': tw_p, 'to': tgt, 'to_name': gr[tgt]['name'] if tgt else '',
-                             'to_price': gr[tgt].get('price') if tgt else None, 'fix': (fix / 100.0) if isinstance(fix, (int, float)) and fix else None,
-                             'only_remark': bool(gid in gr and re.search(r'מגב', gr[gid]['name'])), 'note': note})
-            rows.sort(key=lambda r: (not r['to'] and not r['only_remark'], r['from_name'], r['name']))
+                             'code': c.get('clientCode'), 'size': size, 'src': src, 'text': str(txt).strip()[:200],
+                             'from': gid, 'from_name': (gr.get(gid) or {}).get('name', '—'), 'from_price': (gr.get(gid) or {}).get('price'),
+                             'towel': {'small': float(tcfg.get('small') or 0), 'large': float(tcfg.get('large') or 0)},
+                             'to': {'small': ts, 'large': tl},
+                             'to_name': {'small': gr[ts]['name'] if ts else '', 'large': gr[tl]['name'] if tl else ''},
+                             'to_price': {'small': gr[ts].get('price') if ts else None, 'large': gr[tl].get('price') if tl else None},
+                             'fix': (fix / 100.0) if isinstance(fix, (int, float)) and fix else None, 'in_towel': in_tw,
+                             'end': end, 'active': bool(end and end >= today), 'note': note})
+            rows.sort(key=lambda r: (not r['active'], r['in_towel'], r['from_name'], r['name']))
             return self._send(200, {'ok': True, 'rows': rows})
         if self.path.split('?')[0] == '/api/mikveh/towel_bill':
             # 🧺 מאיר: "לחשון זה מחיר מיוחד… הוא אמור לקבל הודעה במסך שעליו להוסיף 25 ש"ח למנוי מגבות קטנות, או 50
@@ -27463,12 +27499,13 @@ class H(BaseHTTPRequestHandler):
                             _mk.set_group(cid, to)
                             if str(_mk.client(cid).get('groupId')) != to:
                                 raise RuntimeError('המקווה לא עדכן את המנוי')
-                        rk = mk_towel_clean_remark(full.get('remark'))
-                        if rk != (full.get('remark') or '').strip():
-                            _mk.update_client(cid, {'remark': rk})
+                        if mk_twl_of(full.get('remark')) == 'yes':          # ההודעה (מה שמוצג במכונה) — לא נוגעים
+                            rk = mk_towel_clean_remark(full.get('remark'))
+                            if rk != (full.get('remark') or '').strip():
+                                _mk.update_client(cid, {'remark': rk})
                         con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                                     (cid, now_iso(), 'towel', ('🧺 מנוי המגבות אוחד עם המנוי: %s → %s' % ((gr.get(frm) or {}).get('name', '—'), gr[to]['name']))
-                                     if to and frm != to else '🧺 נוקתה ההערה "כולל מגבות" (המנוי כבר כולל מגבת)'))
+                                     if to and frm != to else '🧺 המנוי כבר כולל מגבת'))
                         con.commit()
                         res.append({'id': cid, 'ok': True})
                     except Exception as e:
