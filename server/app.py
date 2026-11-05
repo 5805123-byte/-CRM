@@ -36538,10 +36538,21 @@ def mkg_ivr(P):
             return msg('cancel_done', old=SAY(undo['from_gid'], undo['from_name']))
         if not cat_opts:
             return 'id_list_message=' + '.'.join([hello, S('no_target')]) + END
+        # 📨 מאיר: "בשליחת בקשה זה גם צריך תמיד להיות מסודר לפי קטגוריות" — מי שהגיע למקסימום: הצעה לשלוח בקשה,
+        # ואז אותו סדר כמו בשינוי רגיל (קטגוריה ← מנוי), ובסוף — בקשה למשרד במקום הצעת מחיר
+        req_mode = False
         if over:
-            flat = [g for _cn, gl in cat_opts for g in gl][:97]
-            return req_menu(flat, 'כבר שינה %d פעמים ב-%s ימים' % (used, cfg.get('days')),
-                            [hello, S('max', used=used, max=cfg.get('max'), days=cfg.get('days'), left=left)])
+            lead_r = [hello, S('max', used=used, max=cfg.get('max'), days=cfg.get('days'), left=left)]
+            if con.execute("SELECT 1 FROM mkg_req WHERE cid=? AND status='new'", (cid,)).fetchone():
+                return 'id_list_message=' + '.'.join(lead_r + [S('req_dup')]) + END
+            if not cfg.get('req_on'):
+                return 'id_list_message=' + '.'.join(lead_r) + END
+            if 'Req' not in P:
+                return ask(lead_r + [S('req_offer'), N(1), S('end_opt')], 'Req', 1)
+            if P.get('Req') != '1':
+                return msg('bye')
+            req_mode = True
+        req_reason = 'כבר שינה %d פעמים ב-%s ימים' % (used, cfg.get('days'))
 
         # 🔁 מאיר: "מי שבחר מנוי ואין לו הרשאה או מקיש 2 לביטול — יוכל בקלות לבחור סוג מנוי אחר באותה קטגוריה, או להקיש
         # כוכבית בקטגוריה כדי לחזור לבחירת קטגוריה אחרת". ימות שולחים את כל מה שהוקש בשיחה, אז כל סבב מקבל שמות משלו:
@@ -36553,7 +36564,10 @@ def mkg_ivr(P):
             # מאיר: "תמיד שהוא מקריא מנוי הוא גם צריך להקריא את המחיר" — המחיר לחודש.
             # מאיר: "למה בערך צבור הוא אומר שזה 30 שקל לכניסה? … לא להגיד משהו בקשר למחיר בערך צבור" — ערך צבור: בלי מחיר
             pr = gr[g].get('price')
-            if pr and not mkg_is_erech(cfg, g, gr[g]['name']):
+            erech = mkg_is_erech(cfg, g, gr[g]['name'])
+            if req_mode:
+                return [S('req_option', group=SAY(g, gr[g]['name']) + ((', %g שקלים' % pr) if pr and not erech else '')), N(i)]
+            if pr and not erech:
                 return [S('option_price', group=SAY(g, gr[g]['name']), price='%g' % pr), N(i)]
             return [S('option', group=SAY(g, gr[g]['name'])), N(i)]
 
@@ -36567,7 +36581,7 @@ def mkg_ivr(P):
             if ci is None:
                 cv = P.get('C' + sx)
                 if cv is None:
-                    parts = ([hello] if rnd == 1 else []) + [S('cat_choose')]
+                    parts = ([hello] if (rnd == 1 and not req_mode) else []) + [S('cat_choose')]
                     for i, (cn, _gl) in enumerate(cat_opts, 1):
                         parts += [S('cat_option', cat=say_cat(cn)), N(i)]
                     return ask(parts + [S('end_opt')], 'C' + sx, 1 if len(cat_opts) <= 9 else 2)
@@ -36582,7 +36596,7 @@ def mkg_ivr(P):
             single = len(opts) == 1
             gv = '1' if single else P.get('G' + sx)
             if gv is None:
-                parts = ([hello] if (rnd == 1 and not multi) else []) + [choose(len(opts))]
+                parts = ([hello] if (rnd == 1 and not multi and not req_mode) else []) + [choose(len(opts))]
                 for i, g in enumerate(opts, 1):
                     parts += option(g, i)
                 parts.append(S('back_opt' if multi else 'end_opt'))
@@ -36599,6 +36613,17 @@ def mkg_ivr(P):
             if not (1 <= v <= len(opts)):
                 return msg('bye')
             tgt = opts[v - 1]
+            if req_mode:
+                if single and 'G' + sx not in P and 'RQ' + sx not in P:
+                    # מנוי יחיד בקטגוריה — לא שואלים "בחרו מנוי", רק מאשרים את הבקשה
+                    return ask([S('req_option', group=SAY(tgt, gr[tgt]['name'])), N(1)] +
+                               ([S('back_opt')] if multi else [S('end_opt')]), 'RQ' + sx, 1)
+                if single and P.get('RQ' + sx) != '1':
+                    if P.get('RQ' + sx) == '*' and multi:
+                        ci = None
+                        continue
+                    return msg('bye')
+                return make_req(tgt, req_reason)
             # 👥 מנוי לקהילה בלבד — עדיין בודקים הוראת קבע / שימוש כפול; אם אין הרשאה: בקשה למשרד, או מנוי אחר (2)
             if tgt in mgs:
                 blk = mkg_disc_block(con, c, member, mgs, mine_all, cfg.get('min_keva') or 0, cfg.get('keva_cats') or [])
