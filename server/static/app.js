@@ -1926,9 +1926,21 @@ async function mkGroupsWin(){
   const load=async()=>{const r=await fetch('/api/mikveh/price_groups').then(x=>x.json()).catch(()=>null);if(!document.getElementById('mkgwb'))return;
     if(!r||!r.ok){B.innerHTML='⚠️ '+esc_((r&&r.error)||'אין חיבור למקווה');return;}
     const nis=v=>v==null?'—':'₪'+(+v).toLocaleString('he-IL');
-    B.innerHTML='<div style="color:#666;font-size:.88rem;margin-bottom:8px">"העתקה" יוצרת במקווה מנוי חדש עם <b>כל ההגדרות והשעות</b> של המנוי שבחרתם — רק השם והמחיר החדשים. אחרי ההעתקה המערכת בודקת במקווה שהשעות זהות.</div>'+
+    B.innerHTML='<div style="color:#666;font-size:.88rem;margin-bottom:8px">"העתקה" יוצרת במקווה מנוי חדש עם <b>כל ההגדרות והשעות</b> של המנוי שבחרתם — רק השם והמחיר החדשים. אחרי ההעתקה המערכת בודקת במקווה שהשעות זהות. 🗑️ מוחק מנוי — רק אם אין בו לקוחות.</div>'+
       r.groups.map(g=>'<div data-row="'+esc_(g.id)+'" style="border-bottom:1px solid #f1f1f1;padding:8px 4px"><div style="display:flex;gap:10px;align-items:center"><span style="flex:1">'+esc_(g.name)+'</span><b style="white-space:nowrap">'+nis(g.price)+'</b>'+
-        '<button data-cp="'+esc_(g.id)+'" style="border:1px solid #cdd6e6;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">📋 העתקה</button></div><div data-form="'+esc_(g.id)+'"></div></div>').join('');
+        (g.clients!=null?'<small style="color:#888;white-space:nowrap">'+g.clients+' לקוחות</small>':'')+
+        '<button data-cp="'+esc_(g.id)+'" style="border:1px solid #cdd6e6;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">📋 העתקה</button>'+
+        '<button data-del="'+esc_(g.id)+'" title="מחיקה מהמקווה" style="border:1px solid #f0c4c4;background:#fff;color:#c0392b;border-radius:8px;padding:4px 8px;cursor:pointer;font:inherit">🗑️</button></div><div data-form="'+esc_(g.id)+'"></div></div>').join('');
+    B.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const id=b.dataset.del,g=r.groups.find(x=>x.id===id),F=B.querySelector('[data-form="'+id+'"]');
+      if(F.innerHTML){F.innerHTML='';return;}
+      if(g.clients){F.innerHTML='<div style="background:#fdecec;border-radius:10px;padding:10px;margin-top:8px;color:#c0392b">יש '+g.clients+' לקוחות במנוי הזה — אי אפשר למחוק אותו. קודם מעבירים אותם למנוי אחר.</div>';return;}
+      F.innerHTML='<div style="background:#fdecec;border-radius:10px;padding:10px;margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1">למחוק את <b>'+esc_(g.name)+'</b> מהמקווה? אי אפשר לבטל.</span>'+
+        '<button data-yes style="background:#c0392b;color:#fff;border:0;border-radius:10px;padding:7px 14px;font:inherit;font-weight:700;cursor:pointer">כן, למחוק</button><span data-st style="color:#777;font-size:.88rem"></span></div>';
+      const y=F.querySelector('[data-yes]'),st=F.querySelector('[data-st]');
+      y.onclick=async()=>{y.disabled=true;st.textContent='⏳ מוחק…';
+        const x=await fetch('/api/mikveh/group_delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(z=>z.json()).catch(()=>null);
+        if(!x||!x.ok){y.disabled=false;st.innerHTML='<b style="color:#c0392b">⚠️ '+esc_((x&&x.error)||'לא נמחק')+'</b>';return;}
+        msg('🗑️ נמחק מהמקווה: <b>'+esc_(x.name)+'</b>','#fdf1f1');load();};});
     B.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>{const id=b.dataset.cp,g=r.groups.find(x=>x.id===id),F=B.querySelector('[data-form="'+id+'"]');
       if(F.innerHTML){F.innerHTML='';return;}
       const base=String(g.name).replace(/^\s*\d+\s*[.\-)]\s*/,'').trim();

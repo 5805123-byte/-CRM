@@ -1013,6 +1013,18 @@ SCHED_KEYS = ('state', 'newDayStartsOn', 'day1', 'day2', 'day3', 'day4', 'day5',
               'fromHalachaTimeOffset', 'isNewDay')
 
 
+def delete_group(gid):
+    """מחיקת מנוי במקווה — כמו כפתור המחיקה במסך הניהול (הוקלט 5.11.2026): DELETE Group/{id}.
+    אחרי המחיקה בודקים שהוא כבר לא ברשימת הקבוצות הפעילות."""
+    code, res = call('DELETE', 'Group/%s' % gid, timeout=30)
+    if not (200 <= code < 300):
+        raise RuntimeError('המחיקה במקווה נכשלה: %s' % (LAST.get('error') or code))
+    _GR.update(rows=None)
+    if any(g['id'] == gid for g in groups(fresh=True)):
+        raise RuntimeError('המקווה קיבל את בקשת המחיקה, אבל המנוי עדיין מופיע ברשימה')
+    return True
+
+
 def _sched_sig(x):
     return tuple(json.dumps(x.get(k), sort_keys=True) for k in SCHED_KEYS)
 

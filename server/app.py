@@ -24489,11 +24489,18 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
             mem = set(cfg.get('member_groups') or [])
+            try:
+                cnt = {}
+                for c in _mk.clients():
+                    cnt[c.get('groupId')] = cnt.get(c.get('groupId'), 0) + 1
+            except Exception:
+                cnt = None
             out = []
             for g in gs:
                 er = mkg_is_erech(cfg, g['id'], g['name'])
                 dflt = bool(g.get('price') and g['price'] > 1 and not er and g['id'] not in mem and 'קהיל' not in g['name'])
                 out.append({'id': g['id'], 'name': g['name'], 'price': g.get('price'), 'erech': er,
+                            'clients': (cnt or {}).get(g['id'], 0) if cnt is not None else None,
                             'on': (g['id'] in saved) if isinstance(saved, list) else dflt})
             con = db()
             try:
@@ -27636,6 +27643,24 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/group_delete':
+            # 🗑️ מחיקת מנוי במקווה (DELETE Group/{id}, כמו במסך הניהול). לא מוחקים מנוי שיש בו לקוחות
+            import mikveh as _mk
+            gid = str(b.get('id') or '').strip()
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', gid):
+                return self._send(200, {'ok': False, 'error': 'לא נבחר מנוי'})
+            try:
+                g = next((x for x in _mk.groups(fresh=True) if x['id'] == gid), None)
+                if not g:
+                    return self._send(200, {'ok': False, 'error': 'המנוי לא נמצא במקווה'})
+                n = sum(1 for c in _mk.clients(fresh=True) if c.get('groupId') == gid)
+                if n:
+                    return self._send(200, {'ok': False, 'error': 'יש %d לקוחות במנוי "%s" — קודם להעביר אותם למנוי אחר' % (n, g['name'])})
+                _mk.delete_group(gid)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            print('  mikveh group deleted:', gid, g['name'])
+            return self._send(200, {'ok': True, 'name': g['name']})
         if self.path == '/api/mikveh/group_copy':
             # 📋 מאיר: "תעשה בממשק אפשרות להעתיק" — מנוי חדש במקווה עם כל ההגדרות והשעות של מנוי קיים
             import mikveh as _mk
