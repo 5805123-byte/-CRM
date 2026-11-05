@@ -18602,6 +18602,39 @@ def mkreq_pending(con):
     return r
 
 
+_TW_NO = re.compile(r'(אינו|איננו|אינה|לא|ללא|בלי|בטל|ביטל|הפסיק)\s*[-:]?\s*(כולל\s*)?(ה)?מגב')
+_TW_YES = re.compile(r'(כולל|מנוי|עם|\+)\s*[-:]?\s*(ה)?מגב|^\s*(ה)?מגב')
+
+
+def mk_towel_of(remark):
+    """מנוי המגבות מתוך ההערה במקווה: 'small' / 'large' / None"""
+    t = str(remark or '')
+    if 'מגב' not in t or _TW_NO.search(t) or not _TW_YES.search(t):
+        return None
+    return 'large' if re.search(r'מגב\S*\s*(ה)?גדול', t) else 'small'
+
+
+def mk_towel_target(gr, cmap, gid, size):
+    """המנוי עם המגבת שמתאים למנוי gid: אותה קטגוריה, אותו גודל מגבת, ובלי VIP / שתי מגבות. None אם אין"""
+    if gid not in gr:
+        return None
+    cat = cmap.get(gid)
+    want = 'קטנ' if size == 'small' else 'גדול'
+    other = 'גדול' if size == 'small' else 'קטנ'
+    comm = 'קהיל' in gr[gid]['name']
+    hits = [g for g in gr if g != gid and cmap.get(g) == cat and re.search('מגב\\S*\\s*(ה)?' + want, gr[g]['name'])
+            and not re.search('מגב\\S*\\s*(ה)?' + other, gr[g]['name']) and 'VIP' not in gr[g]['name'].upper()
+            and ('קהיל' in gr[g]['name']) == comm]
+    return hits[0] if len(hits) == 1 else None
+
+
+def mk_towel_clean_remark(remark):
+    """ההערה בלי אזכור מנוי המגבות (כמו בכפתור הסרת מנוי המגבות)"""
+    old = (remark or '').strip()
+    b = re.sub(r'(המנוי\s*)?(אינו|איננו|לא|ללא|בלי)?\s*(כולל\s*)?(מנוי\s*)?(ה)?מגב\S*(\s*(ה)?(קטנ|גדול)\S*)?(\s*\(₪?\s*[\d.]+\s*₪?[^)]*\))?', '', old)
+    return re.sub(r'\s*[·,;|]\s*(?=[·,;|]|$)', '', re.sub(r'\s{2,}', ' ', b)).strip(' ·,;|')
+
+
 def mk_group_cat_map(con, groups):
     """{מזהה מנוי: קטגוריה} — מה שנשמר בחלון "סוגי מנוי", ואם לא — לפי השם"""
     try:
@@ -24245,6 +24278,47 @@ class H(BaseHTTPRequestHandler):
             txt = 'קבצים: %s\n\nנתיבים: %s\n\n' % (', '.join(r['files']), ', '.join(r['paths']) or '—')
             txt += '\n\n---\n\n'.join(r['hits'])
             return self._send(200, txt.encode('utf-8'), 'text/plain; charset=utf-8')
+        if self.path.split('?')[0] == '/api/mikveh/towel_migrate':
+            # 🧺 מאיר: "איך מעבירים את מי שיש להם מנוי מגבות?" — מי שבהערה שלו "כולל מגבות", והמנוי עם המגבת שמתאים לו
+            import mikveh as _mk
+            try:
+                gr = {g['id']: g for g in _mk.groups(fresh=True)}
+                cl = [c for c in _mk.clients(fresh=True) if _mk.visible(c)]
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            con = db()
+            try:
+                cmap = mk_group_cat_map(con, gr.values())
+                tcfg = mk_towel_cfg(con)
+            finally:
+                con.close()
+            rows = []
+            for c in cl:
+                size = mk_towel_of(c.get('remark'))
+                if not size:
+                    continue
+                gid = c.get('groupId')
+                tgt = mk_towel_target(gr, cmap, gid, size)
+                fix = c.get('subscriptionFixPrice')
+                cur_p = (gr.get(gid) or {}).get('price')
+                tw_p = float(tcfg.get(size) or 0)
+                note = ''
+                if gid not in gr:
+                    note = 'המנוי שלו לא נמצא ברשימה'
+                elif re.search(r'מגב', gr[gid]['name']):
+                    note = 'כבר במנוי עם מגבת — רק לנקות את ההערה'
+                elif not tgt:
+                    note = 'אין מנוי עם מגבת %s בקטגוריה "%s"' % ('קטנה' if size == 'small' else 'גדולה', cmap.get(gid) or '')
+                if isinstance(fix, (int, float)) and fix:
+                    note = (note + ' · ' if note else '') + 'יש לו מחיר אישי ₪%g — הוא יישאר גם אחרי המעבר' % (fix / 100.0)
+                rows.append({'id': c.get('id'), 'name': ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip(),
+                             'code': c.get('clientCode'), 'size': size, 'remark': (c.get('remark') or '').strip(),
+                             'from': gid, 'from_name': (gr.get(gid) or {}).get('name', '—'), 'from_price': cur_p,
+                             'towel_price': tw_p, 'to': tgt, 'to_name': gr[tgt]['name'] if tgt else '',
+                             'to_price': gr[tgt].get('price') if tgt else None, 'fix': (fix / 100.0) if isinstance(fix, (int, float)) and fix else None,
+                             'only_remark': bool(gid in gr and re.search(r'מגב', gr[gid]['name'])), 'note': note})
+            rows.sort(key=lambda r: (not r['to'] and not r['only_remark'], r['from_name'], r['name']))
+            return self._send(200, {'ok': True, 'rows': rows})
         if self.path.split('?')[0] == '/api/mikveh/towel_bill':
             # 🧺 מאיר: "לחשון זה מחיר מיוחד… הוא אמור לקבל הודעה במסך שעליו להוסיף 25 ש"ח למנוי מגבות קטנות, או 50
             # למגבות גדולות — אם הוא מעודכן למנוי מגבות ולא נגבה ממנו אוטומטית או לא שילם במזומן"
@@ -24262,11 +24336,14 @@ class H(BaseHTTPRequestHandler):
                 paid = {r['cid']: dict(r) for r in con.execute("SELECT * FROM mk_towel_pay WHERE hmonth=?", (hm,))}
             finally:
                 con.close()
+            gname = {g['id']: g['name'] for g in _mk.groups()}
             rows = []
             for c in cl:
                 rk = str(c.get('remark') or '')
                 if 'מגב' not in rk or re.search(r'(אינו|איננו|לא|ללא|בלי)\s*(כולל\s*)?(ה)?מגב', rk):
                     continue
+                if 'מגב' in gname.get(c.get('groupId'), ''):
+                    continue          # 🧺 מראש חודש כסלו המגבת כלולה במנוי — לא מחייבים עליה בנפרד
                 if not re.search(r'(כולל|מנוי|עם|\+)\s*(ה)?מגב|^\s*(ה)?מגב', rk):
                     continue
                 size = 'large' if re.search(r'מגב\S*\s*(ה)?גדול', rk) else 'small'
@@ -27363,6 +27440,44 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'done': done, 'skipped': skip, 'failed': fail})
+        if self.path == '/api/mikveh/towel_migrate':
+            # 🧺 העברת מנויי המגבות: המנוי עם המגבת במקווה (בדיקה שנשמר) + הסרת "כולל מגבות" מההערה (שלא יחויב פעמיים)
+            import mikveh as _mk
+            items = [x for x in (b.get('items') or []) if isinstance(x, dict)][:400]
+            try:
+                gr = {g['id']: g for g in _mk.groups()}
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            res = []
+            con = db()
+            try:
+                for it in items:
+                    cid, to = str(it.get('id') or ''), str(it.get('to') or '')
+                    if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid) or (to and to not in gr):
+                        res.append({'id': cid, 'ok': False, 'error': 'נתונים לא תקינים'})
+                        continue
+                    try:
+                        full = _mk.client(cid)
+                        frm = full.get('groupId')
+                        if to and frm != to:
+                            _mk.set_group(cid, to)
+                            if str(_mk.client(cid).get('groupId')) != to:
+                                raise RuntimeError('המקווה לא עדכן את המנוי')
+                        rk = mk_towel_clean_remark(full.get('remark'))
+                        if rk != (full.get('remark') or '').strip():
+                            _mk.update_client(cid, {'remark': rk})
+                        con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                    (cid, now_iso(), 'towel', ('🧺 מנוי המגבות אוחד עם המנוי: %s → %s' % ((gr.get(frm) or {}).get('name', '—'), gr[to]['name']))
+                                     if to and frm != to else '🧺 נוקתה ההערה "כולל מגבות" (המנוי כבר כולל מגבת)'))
+                        con.commit()
+                        res.append({'id': cid, 'ok': True})
+                    except Exception as e:
+                        res.append({'id': cid, 'ok': False, 'error': str(e)[:200]})
+            finally:
+                con.close()
+            _mk._CL.update(rows=None)
+            return self._send(200, {'ok': all(r['ok'] for r in res), 'results': res,
+                                    'done': sum(1 for r in res if r['ok']), 'failed': sum(1 for r in res if not r['ok'])})
         if self.path == '/api/mikveh/towel':
             # 🧺 מאיר: "אפשרות להוסיף מנוי מגבות למישהו בכרטיס שלו במקווה — ושזה יעודכן גם במערכת של המקווה, במחיר".
             # במקווה מנוי המגבות רשום בהערה של הלקוח ("כולל מגבות" / "המנוי אינו כולל מגבת") — מעדכנים שם, ובודקים שנשמר
