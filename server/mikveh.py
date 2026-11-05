@@ -981,23 +981,41 @@ def dashboard(d0, d1):
 
 
 def raw_group(gid):
-    for g in _items(get('Group')):
-        if str(g.get('id')) == str(gid):
-            return dict(g)
-    raise RuntimeError('הקבוצה לא נמצאה במקווה')
+    """הקבוצה כמו שמסך הניהול של המקווה טוען אותה: GET Group/{id}"""
+    g = get('Group/%s' % gid)
+    if not isinstance(g, dict) or str(g.get('id')) != str(gid):
+        raise RuntimeError('הקבוצה לא נמצאה במקווה')
+    return dict(g)
+
+
+def group_schedules(gid):
+    """שעות הקבוצה (לוחות הזמנים) — GET Schedule/GetByGroupId/{id}, כמו במסך הניהול"""
+    s = get('Schedule/GetByGroupId/%s' % gid)
+    return s if isinstance(s, list) else []
 
 
 def update_group(gid, changes):
-    """עדכון קבוצה במקווה — כמו עדכון לקוח: כל הקבוצה, עם השינוי בלבד."""
+    """עדכון קבוצה במקווה — בדיוק כמו כפתור השמירה במסך הניהול של המקווה (הוקלט 5.11.2026):
+    PATCH Group/{id} עם כל הקבוצה + כל השעות שלה (schedules). בלי השעות — המקווה עלול למחוק אותן,
+    ולכן אם אי אפשר לטעון את השעות — לא שומרים בכלל."""
     obj = raw_group(gid)
+    sch = group_schedules(gid)
+    for x in sch:
+        x = x if isinstance(x, dict) else {}
+        try:
+            x['extraDataJson'] = json.loads(x.get('extraData') or '{}')
+        except (ValueError, TypeError):
+            x['extraDataJson'] = {}
+    obj['schedules'] = sch
+    obj['timeToCheckActiveSchedule'] = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+    obj['useTimeToCheckActiveSchedule'] = False
     obj.update(changes)
     code, res = call('PATCH', 'Group/%s' % gid, body=obj, timeout=30)
-    if code in (404, 405):
-        code, res = call('PUT', 'Group/%s' % gid, body=obj, timeout=30)
-    if code in (404, 405):
-        code, res = call('PUT', 'Group', body=obj, timeout=30)
     if not (200 <= code < 300):
         raise RuntimeError('העדכון במקווה נכשל: %s' % (LAST.get('error') or code))
+    if isinstance(res, dict) and len(res.get('schedules') or []) != len(sch):
+        raise RuntimeError('אזהרה: אחרי השמירה במקווה מספר השעות השתנה (%d → %d) — לבדוק את הקבוצה במסך הניהול'
+                           % (len(sch), len(res.get('schedules') or [])))
     _GR.update(rows=None)
     return res if isinstance(res, dict) else obj
 
