@@ -35920,12 +35920,14 @@ MK_TEXTS = [
     ('cat_choose', 'grp', 'לפני רשימת הקטגוריות', 'בחרו סוג מנוי'),
     ('cat_option', 'grp', 'קטגוריה בתפריט (המספר נאמר אחרי)', 'ל{cat} הקישו'),
     ('choose', 'grp', 'לפני רשימת המנויים (עד 9)', 'בחרו מנוי'),
+    ('back_opt', 'grp', 'סוף רשימת המנויים — חזרה לקטגוריות', 'לחזרה לבחירת סוג מנוי הקישו כוכבית'),
+    ('other_opt', 'grp', 'אין הרשאה — בחירת מנוי אחר (המספר נאמר אחרי)', 'לבחירת מנוי אחר הקישו'),
     ('choose_hash', 'grp', 'לפני רשימת המנויים (10 ומעלה — עם סולמית)', 'בחרו מנוי והקישו סולמית בסיום'),
     ('option_entry', 'grp', 'אפשרות בתפריט — ערך צבור, מחיר לכניסה (המספר נאמר אחרי)', 'ל{group}, {price} שקלים לכניסה, הקישו'),
     ('option', 'grp', 'אפשרות בתפריט (המספר נאמר אחרי)', 'ל{group} הקישו'),
     ('option_price', 'grp', 'אפשרות בתפריט עם מחיר (המספר נאמר אחרי)', 'ל{group}, {price} שקלים לחודש, הקישו'),
-    ('quote_pay', 'grp', 'הצעת מחיר — יש הפרש לתשלום', 'המעבר ל{group} עולה {price} שקלים לחודש. נשארו לכם {days} ימים במנוי, ולכן ההפרש לתשלום הוא {amount} שקלים. להמשך הקישו 1, לביטול הקישו 2'),
-    ('quote_credit', 'grp', 'הצעת מחיר — מגיע זיכוי', 'במעבר ל{group} תקבלו זיכוי של {amount} שקלים ביתרה הזמנית, על {days} הימים שנשארו לכם במנוי. לאישור הקישו 1, לביטול הקישו 2'),
+    ('quote_pay', 'grp', 'הצעת מחיר — יש הפרש לתשלום', 'המעבר ל{group} עולה {price} שקלים לחודש. נשארו לכם {days} ימים במנוי, ולכן ההפרש לתשלום הוא {amount} שקלים. להמשך הקישו 1, לבחירת מנוי אחר הקישו 2'),
+    ('quote_credit', 'grp', 'הצעת מחיר — מגיע זיכוי', 'במעבר ל{group} תקבלו זיכוי של {amount} שקלים ביתרה הזמנית, על {days} הימים שנשארו לכם במנוי. לאישור הקישו 1, לבחירת מנוי אחר הקישו 2'),
     ('pay_keva', 'grp', 'תשלום — הוראת קבע', 'לתשלום מהוראת הקבע בכרטיס המסתיים בספרות {last4} הקישו {n}'),
     ('pay_card', 'grp', 'תשלום — כרטיס אשראי', 'לתשלום בכרטיס אשראי הקישו {n}'),
     ('pay_debt', 'grp', 'תשלום — חוב במקווה', 'לרישום חוב במקווה ותשלום במכונה של המקווה הקישו {n}'),
@@ -35939,7 +35941,7 @@ MK_TEXTS = [
     ('cancel_done', 'grp', 'השינוי בוטל', 'השינוי בוטל. חזרתם ל{old} והחוב נמחק. תודה רבה'),
     ('paid_fail', 'grp', 'שולם אבל השינוי נכשל', 'התשלום התקבל, אבל המנוי לא שונה. המשרד יטפל בזה בהקדם'),
     ('end_opt', 'grp', 'יציאה', 'ליציאה הקישו כוכבית'),
-    ('confirm', 'grp', 'אישור שינוי (בלי הפרש)', 'לאישור מעבר ל{group} הקישו 1. לביטול הקישו 2'),
+    ('confirm', 'grp', 'אישור שינוי (בלי הפרש)', 'לאישור מעבר ל{group} הקישו 1, לבחירת מנוי אחר הקישו 2'),
     ('done', 'grp', 'השינוי בוצע (בלי הפרש)', 'המנוי שלכם שונה ל{group}. תודה רבה'),
     ('cancel', 'grp', 'המתקשר ביטל', 'השינוי בוטל, המנוי לא שונה'),
     ('bye', 'grp', 'סיום בלי בחירה', 'תודה, המנוי לא שונה'),
@@ -36252,7 +36254,7 @@ def mkg_ivr(P):
         # מאיר: "כוכבית יהיה יציאה, ורק כשיש יותר מ-9 בחירות יצטרכו להקיש סולמית בסיום" — כוכבית מותרת (BlockAsterisk=no)
         ask = lambda parts, var, maxd=1: 'read=' + '.'.join(parts) + '=%s,no,%d,1,15,NO,no,no,,,2,,,,no' % (var, maxd)
         choose = lambda count: S('choose_hash' if count > 9 else 'choose')
-        if '*' in (P.get('Who'), P.get('Cat'), P.get('Req'), P.get('Grp'), P.get('Ok'), P.get('Pay'), P.get('Pay2')):
+        if '*' in (P.get('Who'), P.get('Pay'), P.get('Pay2')):
             return msg('bye')
         # 🗂️ מאיר: "בוחרים לפי קטגוריות שסימנו שמושמעים בטלפון, ואז בוחר מתוך קטגוריה… מספר שלא רשום בקהילה לא מושמע לו
         # בכלל מנוי קהילה… שנכנסים הוא יגיד שלום (כולל משפחה) חבר קהילה"
@@ -36314,86 +36316,123 @@ def mkg_ivr(P):
                 return msg('bye')
             return make_req(opts_[v_ - 1], reason)
 
-        lead = [hello]
+        # ↩️ שינוי אחרון בחוב שעוד לא שולם — רק ביטול (1) או יציאה
         if undo:
-            opts = []          # שינוי שעוד לא שולם — קודם לבטל או לשלם
-        else:
-            if not cat_opts:
-                return 'id_list_message=' + '.'.join([hello, S('no_target')]) + END
-            if over:
-                flat = [g for _cn, gl in cat_opts for g in gl][:97]
-                return req_menu(flat, 'כבר שינה %d פעמים ב-%s ימים' % (used, cfg.get('days')),
-                                [hello, S('max', used=used, max=cfg.get('max'), days=cfg.get('days'), left=left)])
-            if len(cat_opts) > 1:
-                if 'Cat' not in P:
-                    parts = [hello, S('cat_choose')]
+            if 'Grp' not in P:
+                return ask([hello, S('cancel_offer', group=mkg_say(cfg, cur, gr[cur]['name']), old=mkg_say(cfg, undo['from_gid'], undo['from_name'])),
+                            N(1), S('end_opt')], 'Grp', 1)
+            if P.get('Grp') != '1':
+                return msg('bye')
+            try:
+                _mk.set_group(cid, undo['from_gid'])
+                if str(_mk.client(cid).get('groupId')) != str(undo['from_gid']):
+                    raise RuntimeError('המקווה לא עדכן את המנוי')
+                _mk.delete_debt(undo['debt_id'])
+            except Exception as e:
+                print('  mkg undo error:', e)
+                return msg('error')
+            con.execute("UPDATE mkg_log SET ok=0, status='cancelled' WHERE id=?", (undo['id'],))
+            con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                        (cid, now_iso(), 'group', '↩️ ביטל בטלפון את השינוי: חזר ל%s, והחוב ₪%g נמחק' % (undo['from_name'], undo['amount'] or 0)))
+            con.commit()
+            return msg('cancel_done', old=mkg_say(cfg, undo['from_gid'], undo['from_name']))
+        if not cat_opts:
+            return 'id_list_message=' + '.'.join([hello, S('no_target')]) + END
+        if over:
+            flat = [g for _cn, gl in cat_opts for g in gl][:97]
+            return req_menu(flat, 'כבר שינה %d פעמים ב-%s ימים' % (used, cfg.get('days')),
+                            [hello, S('max', used=used, max=cfg.get('max'), days=cfg.get('days'), left=left)])
+
+        # 🔁 מאיר: "מי שבחר מנוי ואין לו הרשאה או מקיש 2 לביטול — יוכל בקלות לבחור סוג מנוי אחר באותה קטגוריה, או להקיש
+        # כוכבית בקטגוריה כדי לחזור לבחירת קטגוריה אחרת". ימות שולחים את כל מה שהוקש בשיחה, אז כל סבב מקבל שמות משלו:
+        # C1/G1/O1/R1, ואחרי חזרה — C2/G2/O2/R2… השרת עובר על הסבבים לפי הסדר ויודע איפה המתקשר נמצא.
+        multi = len(cat_opts) > 1
+        say_cat = lambda cn: (cfg.get('cat_say') or {}).get(cn) or cn
+
+        def option(g, i):
+            # מאיר: "תמיד שהוא מקריא מנוי הוא גם צריך להקריא את המחיר" — לחודש, ובערך צבור — לכניסה
+            pr, en = gr[g].get('price'), gr[g].get('entry')
+            if pr and not mkg_is_erech(cfg, g, gr[g]['name']):
+                return [S('option_price', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % pr), N(i)]
+            if en:
+                return [S('option_entry', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % en), N(i)]
+            if pr:
+                return [S('option_price', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % pr), N(i)]
+            return [S('option', group=mkg_say(cfg, g, gr[g]['name'])), N(i)]
+
+        ci = None if multi else 0
+        rnd, tgt = 0, None
+        while True:
+            rnd += 1
+            if rnd > 30:
+                return msg('bye')
+            sx = str(rnd)
+            if ci is None:
+                cv = P.get('C' + sx)
+                if cv is None:
+                    parts = ([hello] if rnd == 1 else []) + [S('cat_choose')]
                     for i, (cn, _gl) in enumerate(cat_opts, 1):
-                        parts += [S('cat_option', cat=(cfg.get('cat_say') or {}).get(cn) or cn), N(i)]
-                    return ask(parts + [S('end_opt')], 'Cat', 1 if len(cat_opts) <= 9 else 2)
+                        parts += [S('cat_option', cat=say_cat(cn)), N(i)]
+                    return ask(parts + [S('end_opt')], 'C' + sx, 1 if len(cat_opts) <= 9 else 2)
                 try:
-                    ci = int(P.get('Cat') or 0)
+                    ci = int(cv) - 1
                 except ValueError:
-                    ci = 0
-                if not (1 <= ci <= len(cat_opts)):
                     return msg('bye')
-                opts = cat_opts[ci - 1][1]
-                lead = []          # הפתיחה כבר נאמרה בתפריט הקטגוריות
-            else:
-                opts = cat_opts[0][1]
-            # 👥 מנוי לקהילה בלבד (רק חבר קהילה שומע אותו) — עדיין בודקים הוראת קבע / שימוש כפול; אם לא — בקשה למשרד
-            if 'Grp' in P:
-                try:
-                    vv = int(P.get('Grp') or 0)
-                except ValueError:
-                    vv = 0
-                if 1 <= vv <= len(opts) and opts[vv - 1] in mgs:
-                    blk = mkg_disc_block(con, c, member, mgs, mine_all, cfg.get('min_keva') or 0, cfg.get('keva_cats') or [])
-                    if blk:
-                        return req_menu(opts, blk[2], [S(blk[0], **blk[1])])
-        if 'Grp' not in P:
-            # עד 2 ספרות + סולמית ("בחרו מנוי והקישו סולמית")
-            parts = list(lead)
-            count = len(opts) + (1 if undo else 0)
-            if opts:
-                parts.append(choose(count))
-            for i, g in enumerate(opts, 1):
-                # מאיר: "תמיד שהוא מקריא קבוצה הוא גם צריך להקריא את המחיר" — לחודש, ובערך צבור — לכניסה
-                pr, en = gr[g].get('price'), gr[g].get('entry')
-                if pr and not mkg_is_erech(cfg, g, gr[g]['name']):
-                    parts += [S('option_price', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % pr), N(i)]
-                elif en:
-                    parts += [S('option_entry', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % en), N(i)]
-                elif pr:
-                    parts += [S('option_price', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % pr), N(i)]
+                if not (0 <= ci < len(cat_opts)):
+                    return msg('bye')
+            opts = cat_opts[ci][1]
+            gv = P.get('G' + sx)
+            if gv is None:
+                parts = ([hello] if (rnd == 1 and not multi) else []) + [choose(len(opts))]
+                for i, g in enumerate(opts, 1):
+                    parts += option(g, i)
+                parts.append(S('back_opt' if multi else 'end_opt'))
+                return ask(parts, 'G' + sx, 1 if len(opts) <= 9 else 2)
+            if gv == '*':
+                if multi:
+                    ci = None          # ← חזרה לבחירת קטגוריה
+                    continue
+                return msg('bye')
+            try:
+                v = int(gv)
+            except ValueError:
+                v = 0
+            if not (1 <= v <= len(opts)):
+                return msg('bye')
+            tgt = opts[v - 1]
+            # 👥 מנוי לקהילה בלבד — עדיין בודקים הוראת קבע / שימוש כפול; אם אין הרשאה: בקשה למשרד, או מנוי אחר (2)
+            if tgt in mgs:
+                blk = mkg_disc_block(con, c, member, mgs, mine_all, cfg.get('min_keva') or 0, cfg.get('keva_cats') or [])
+                if blk:
+                    dup = con.execute("SELECT 1 FROM mkg_req WHERE cid=? AND status='new'", (cid,)).fetchone()
+                    can_req = bool(cfg.get('req_on')) and not dup
+                    rv = P.get('R' + sx)
+                    if rv is None:
+                        parts = [S(blk[0], **blk[1])] + ([S('req_dup')] if dup else []) + \
+                            ([S('req_offer'), N(1)] if can_req else []) + [S('other_opt'), N(2), S('end_opt')]
+                        return ask(parts, 'R' + sx, 1)
+                    if rv == '1' and can_req:
+                        return make_req(tgt, blk[2])
+                    if rv == '2':
+                        continue       # ← אותה קטגוריה, בחירה מחדש
+                    return msg('bye')
+            tname = mkg_say(cfg, tgt, gr[tgt]['name'])
+            q = mkg_quote(cfg, c, gr, tgt)
+            amt = q['amount']
+            A = '%g' % abs(amt)
+            price = '%g' % q['new_price']
+            ov = P.get('O' + sx)
+            if ov is None:
+                if amt > 0:
+                    t = T('quote_pay', group=tname, price=price, days=q['days'], amount=A)
+                elif amt < 0:
+                    t = T('quote_credit', group=tname, price=price, days=q['days'], amount=A)
                 else:
-                    parts += [S('option', group=mkg_say(cfg, g, gr[g]['name'])), N(i)]
-            if undo:
-                parts += [S('cancel_offer', group=mkg_say(cfg, cur, gr[cur]['name']), old=mkg_say(cfg, undo['from_gid'], undo['from_name'])),
-                          N(len(opts) + 1)]
-            parts.append(S('end_opt'))
-            return ask(parts, 'Grp', 1 if count <= 9 else 2)
-        try:
-            v = int(P.get('Grp') or 0)
-        except ValueError:
-            v = 0
-        if not (1 <= v <= len(opts)):
-            return msg('bye')
-        tgt = opts[v - 1]
-        tname = mkg_say(cfg, tgt, gr[tgt]['name'])
-        q = mkg_quote(cfg, c, gr, tgt)
-        amt = q['amount']
-        A = '%g' % abs(amt)
-        price = '%g' % q['new_price']
-        if 'Ok' not in P:
-            if amt > 0:
-                t = T('quote_pay', group=tname, price=price, days=q['days'], amount=A)
-            elif amt < 0:
-                t = T('quote_credit', group=tname, price=price, days=q['days'], amount=A)
-            else:
-                t = T('confirm', group=tname)
-            return 'read=t-' + _ivr_t(t) + '=Ok,no,1,1,10,NO,yes,yes,,12,2,,,,no'
-        if P.get('Ok') != '1':
-            return msg('cancel')
+                    t = T('confirm', group=tname)
+                return 'read=t-' + _ivr_t(t) + '=O%s,no,1,1,10,NO,yes,yes,,12,2,,,,no' % sx
+            if ov == '1':
+                break
+            continue                   # 2 = ביטול ← חזרה לרשימת המנויים באותה קטגוריה
         if amt <= 0:
             ok, err, _d = mkg_apply(con, cid, c, gr, cur, tgt, q, 'credit' if amt < 0 else 'free', call_id, phone)
             if not ok:
