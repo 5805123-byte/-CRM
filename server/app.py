@@ -34817,7 +34817,7 @@ ND_SOON = {'t': 0}
 
 def nd_sync_soon(delay=90):
     """הוראה חדשה הוקמה (Webhook) — סנכרון מלא בעוד דקה וחצי, לא יותר מפעם ב-10 דקות."""
-    if time.time() - ND_SOON['t'] < 600:
+    if time.time() - ND_SOON['t'] < 180:
         return
     ND_SOON['t'] = time.time()
     def go():
@@ -34853,9 +34853,13 @@ def nd_hook(con, d):
         cutoff = (il_now() - datetime.timedelta(days=45)).strftime('%Y-%m-%d')
         n, _m = _nd_hist_rows(con, [t], mos, cutoff, midx, nidx)
         con.commit()
+        # מאיר: "למה שחבר קהילה מקים הוראת קבע זה לא מתעדכן מיד אצלו?" — נדרים שולחים קאלבק על החיוב הראשון של
+        # ההוראה ולא על ההקמה עצמה. הוראה שעוד לא מוכרת אצלנו → סנכרון מלא בעוד חצי דקה, כדי שתופיע בכרטיס
+        if keva and not keva.startswith('-') and not con.execute("SELECT 1 FROM nd_keva WHERE id=?", (kid,)).fetchone():
+            nd_sync_soon(30)
         return 'payment %s' % ('new' if n else 'known')
-    if kid and not tid and str(d.get('NextDate') or '').strip() and not err:
-        nd_sync_soon()
+    if kid and not tid and not err:
+        nd_sync_soon(30)
         return 'new keva'
     if err:
         ph = _ym.norm_phone(str(d.get('Phone') or ''))
