@@ -34993,7 +34993,14 @@ def nd_hook(con, d):
             cm_debts_from_keva(con)
         con.commit()
         return 'refusal'
-    return 'ignored'
+    # מאיר: הקאלבק "הקמת הוראת קבע" מוגדר בנדרים — כל עדכון אחר (גם בשמות שדות אחרים) → סנכרון מלא בעוד חצי דקה.
+    # השדות שהגיעו נשמרים (בלי ערכים), כדי לדעת מה נדרים שולחים
+    try:
+        kv_set(con, 'nd_hook_keys', ','.join(sorted(str(k) for k in d.keys()))[:400])
+    except Exception:
+        pass
+    nd_sync_soon(30)
+    return 'update → sync'
 
 
 CM_TEAM = ['ראש הכולל', 'שמעון ברלב', 'אברהם רובינפלד', 'יוסף אורדנטליך']   # מאיר: "תוסיף עוד גבאי יוסף אורדנטליך"
