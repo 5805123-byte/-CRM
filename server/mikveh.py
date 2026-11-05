@@ -263,6 +263,18 @@ def ident(c):
     return ''
 
 
+def group_client_counts(gid):
+    """כמה לקוחות משויכים למנוי: (פעילים, שנמחקו) — מהרשימה המלאה של המקווה"""
+    a = d = 0
+    for c in _items(get('Client')):
+        if c.get('groupId') == gid:
+            if c.get('isDeleted'):
+                d += 1
+            else:
+                a += 1
+    return a, d
+
+
 def clients(fresh=False):
     """כל הלקוחות (GET /Client). זיכרון של 2 דקות בלבד — לא נשמר בבסיס הנתונים."""
     if not fresh and _CL['rows'] is not None and time.time() - _CL['at'] < 120:
@@ -1018,11 +1030,111 @@ def delete_group(gid):
     אחרי המחיקה בודקים שהוא כבר לא ברשימת הקבוצות הפעילות."""
     code, res = call('DELETE', 'Group/%s' % gid, timeout=30)
     if not (200 <= code < 300):
-        raise RuntimeError('המחיקה במקווה נכשלה: %s' % (LAST.get('error') or code))
+        err = str(LAST.get('error') or code)
+        if 'ThereIsClientsInGroup' in err or 'ThereIsClientsInGroup' in json.dumps(res, ensure_ascii=False):
+            # הוחזר מהמקווה האמיתי (5.11.2026) על "לא פעיל" — גם כשאין בו לקוחות פעילים
+            raise RuntimeError('המקווה לא מאפשר למחוק: יש לקוחות שמשויכים למנוי הזה (גם לקוחות שנמחקו נספרים). '
+                               'קודם להעביר אותם למנוי אחר.')
+        raise RuntimeError('המחיקה במקווה נכשלה: %s' % err)
     _GR.update(rows=None)
     if any(g['id'] == gid for g in groups(fresh=True)):
         raise RuntimeError('המקווה קיבל את בקשת המחיקה, אבל המנוי עדיין מופיע ברשימה')
     return True
+
+
+# 🗂️ מאיר: "שיהיה קטגוריות… יוכלו לערוך הכל ביחד… בדיקה שכל הקבוצות בקטגוריה שווים (חוץ מהמחיר)".
+# מה שמשווים ומעתיקים בתוך קטגוריה — כל הגדרות המנוי חוץ מהשם, המחיר החודשי, הצבע והתיאור. ובנוסף כל השעות.
+COMPARE_KEYS = ('basePrice', 'useMoney', 'useSubscription', 'subscriptionEndType', 'subscriptionDurationMonths', 'bonus',
+                'maxEntriesPerDay', 'maxEntriesPerMonth', 'delayBetweenEntries', 'checkDelayBetweenEntries',
+                'minimumAmountToCharge', 'maximumAmountToCharge', 'stepAmountToCharge', 'daysToStretch',
+                'renewalRestOfMonthMethod', 'lastDayForRenewThisMonth')
+COMPARE_LABELS = {'basePrice': 'מחיר כניסה', 'useMoney': 'שימוש בערך צבור', 'useSubscription': 'שימוש במנוי',
+                  'subscriptionEndType': 'סוג סיום המנוי', 'subscriptionDurationMonths': 'משך המנוי בחודשים', 'bonus': 'בונוס',
+                  'maxEntriesPerDay': 'כניסות ביום', 'maxEntriesPerMonth': 'כניסות בחודש', 'delayBetweenEntries': 'זמן בין כניסות',
+                  'checkDelayBetweenEntries': 'בדיקת זמן בין כניסות', 'minimumAmountToCharge': 'מינימום טעינה',
+                  'maximumAmountToCharge': 'מקסימום טעינה', 'stepAmountToCharge': 'קפיצת טעינה', 'daysToStretch': 'daysToStretch',
+                  'renewalRestOfMonthMethod': 'שיטת חידוש לשאר החודש', 'lastDayForRenewThisMonth': 'יום אחרון לחידוש בחודש'}
+_DAYN = ('א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש')   # day1 = ראשון … day6 = שישי, day7 = שבת (כך בשעות של המקווה)
+
+
+def _hm(m):
+    if m is None:
+        return '?'
+    m = int(m)
+    return '%02d:%02d' % (m // 60 % 24, m % 60)
+
+
+def sched_text(x):
+    """תיאור קצר של זמן אחד — לתצוגה בלבד"""
+    days = ''.join(d for i, d in enumerate(_DAYN, 1) if x.get('day%d' % i))
+    parts = [("ימים " + ','.join(days)) if days else 'בלי ימים']
+    if x.get('beforeHoliday'):
+        parts.append('ערבי חג')
+    if x.get('onHoliday'):
+        parts.append('חג')
+    fr = 'זמן הלכתי' if x.get('useFromHalachaTime') else _hm(x.get('fromTime'))
+    to = 'זמן הלכתי' if x.get('useToHalachaTime') else _hm(x.get('toTime'))
+    parts.append('%s–%s' % (fr, to))
+    if x.get('maxEntriesPerDay') is not None:
+        parts.append('%s כניסות' % x.get('maxEntriesPerDay'))
+    if x.get('price'):
+        parts.append('₪%g' % (x['price'] / 100.0))
+    parts.append('מצב %s' % x.get('state'))
+    return ' · '.join(parts)
+
+
+def group_full(gid):
+    g = raw_group(gid)
+    g['_sch'] = group_schedules(gid)
+    return g
+
+
+def compare_groups(gids):
+    """משווה מנויים (חוץ מהשם, המחיר החודשי, הצבע והתיאור). מחזיר dict: same, diffs, sched_same, groups"""
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(6) as ex:
+        full = list(ex.map(group_full, gids))
+    diffs = []
+    for k in COMPARE_KEYS:
+        vals = {g['id']: g.get(k) for g in full}
+        if len({json.dumps(v, sort_keys=True) for v in vals.values()}) > 1:
+            diffs.append({'field': k, 'label': COMPARE_LABELS.get(k, k), 'values': vals})
+    sigs = {g['id']: sorted(map(_sched_sig, g['_sch'])) for g in full}
+    sched_same = len({json.dumps(v) for v in sigs.values()}) <= 1
+    out = [{'id': g['id'], 'name': (g.get('name') or '').strip(), 'price': (g.get('subscriptionPrice') or 0) / 100.0,
+            'hours': [sched_text(x) for x in sorted(g['_sch'], key=lambda x: (-(x.get('priority') or 0), x.get('fromTime') or 0))]}
+           for g in full]
+    return {'same': not diffs and sched_same, 'diffs': diffs, 'sched_same': sched_same, 'groups': out}
+
+
+def sync_group(master, tgid):
+    """מעתיק למנוי tgid את ההגדרות (COMPARE_KEYS) ואת כל השעות של master (group_full). השם, המחיר, הצבע — נשארים.
+    PATCH עם רשימת שעות מחליף את השעות הקיימות (הוקלט: מנוי יום שישי, 5.11.2026). אחרי השמירה — בדיקה."""
+    t = raw_group(tgid)
+    for k in COMPARE_KEYS:
+        t[k] = master.get(k)
+    copies = []
+    for x in master['_sch']:
+        c = {k: v for k, v in x.items() if k not in ('createdAt', 'draggable')}
+        c['id'] = None
+        c['groupId'] = tgid
+        c['clubId'] = None
+        try:
+            c['extraDataJson'] = json.loads(c.get('extraData') or '{}')
+        except (ValueError, TypeError):
+            c['extraDataJson'] = {}
+        copies.append(c)
+    t['schedules'] = copies
+    t['timeToCheckActiveSchedule'] = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+    t['useTimeToCheckActiveSchedule'] = False
+    code, res = call('PATCH', 'Group/%s' % tgid, body=t, timeout=30)
+    if not (200 <= code < 300):
+        raise RuntimeError('השמירה במקווה נכשלה: %s' % (LAST.get('error') or code))
+    _GR.update(rows=None)
+    after = group_full(tgid)
+    ok = (sorted(map(_sched_sig, after['_sch'])) == sorted(map(_sched_sig, master['_sch'])) and
+          all(json.dumps(after.get(k), sort_keys=True) == json.dumps(master.get(k), sort_keys=True) for k in COMPARE_KEYS))
+    return {'id': tgid, 'name': (t.get('name') or '').strip(), 'ok': ok, 'hours': len(after['_sch'])}
 
 
 def _sched_sig(x):

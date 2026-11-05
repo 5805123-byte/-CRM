@@ -1909,52 +1909,99 @@ async function mkPendLoad(){const r=await api('GET','/api/mikveh/pending').catch
   el.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff4e5;border:1px solid #f5c26b;border-radius:12px;padding:10px 14px;margin-bottom:12px">
     <b style="color:#b9770e">🔔 ממתין לטיפול:</b>${it.map(x=>`<button class="btn sm" data-pg="${x[2]}" style="background:#fff;color:#333;border:1px solid #f5c26b"><b style="color:#c0392b">${x[0]}</b> ${x[1]}</button>`).join('')}</div>`;
   el.querySelectorAll('[data-pg]').forEach(b=>b.onclick=()=>{const k=b.dataset.pg;if(k==='mkpreq'){MKRQ_F='open';mkReqOpen();}else if(k==='mkpgrp')mkSgReqOpen();else mkVmOpen();});}
-// 📋 מאיר: "תעשה בממשק אפשרות להעתיק" — סוגי המנוי במקווה, והעתקה של מנוי עם כל ההגדרות והשעות שלו
-// (שם ומחיר חדשים). חלון שנסגר רק ב-X
+// 📋 מאיר: "תעשה בממשק אפשרות להעתיק" + "שיהיה קטגוריות, ולא יראו הכל ביחד, וככה יוכלו לערוך הכל ביחד, וגם בדיקה
+// שכל הקבוצות בקטגוריה שווים (חוץ מהמחיר)". חלון שנסגר רק ב-X
+let MKGW_CAT=null;
 async function mkGroupsWin(){
   const esc_=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const post=(u,b)=>fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(y=>y.json()).catch(()=>null);
+  const nis=v=>v==null?'—':'₪'+(+v).toLocaleString('he-IL');
+  const btn='border:1px solid #cdd6e6;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit';
   const old=document.getElementById('mkgw');if(old)old.remove();
   const ov=document.createElement('div');ov.id='mkgw';
   ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:620px;width:100%;max-height:90vh;display:flex;flex-direction:column;direction:rtl;box-shadow:0 20px 60px rgba(0,0,0,.25);font-family:inherit">'+
-    '<div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;border-radius:16px 16px 0 0"><b style="font-size:1.1rem;flex:1">📋 סוגי המנוי במקווה</b><button id="mkgwx" title="סגירה" style="border:0;background:#f1f4f9;border-radius:50%;width:34px;height:34px;cursor:pointer;font-size:1rem">✕</button></div>'+
-    '<div id="mkgwm" style="padding:0 18px"></div><div id="mkgwb" style="padding:14px 18px;overflow:auto">⏳ טוען מהמקווה…</div></div>';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:760px;width:100%;max-height:92vh;display:flex;flex-direction:column;direction:rtl;box-shadow:0 20px 60px rgba(0,0,0,.25);font-family:inherit">'+
+    '<div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid #eee;background:#fff;border-radius:16px 16px 0 0"><b style="font-size:1.1rem;flex:1">📋 סוגי המנוי במקווה</b><button id="mkgwx" title="סגירה" style="border:0;background:#f1f4f9;border-radius:50%;width:34px;height:34px;cursor:pointer;font-size:1rem">✕</button></div>'+
+    '<div id="mkgwc" style="padding:10px 18px 0;display:flex;gap:6px;flex-wrap:wrap"></div><div id="mkgwm" style="padding:0 18px"></div><div id="mkgwb" style="padding:12px 18px 18px;overflow:auto">⏳ טוען מהמקווה…</div></div>';
   document.body.appendChild(ov);
   document.getElementById('mkgwx').onclick=()=>ov.remove();
-  const B=document.getElementById('mkgwb'),M=document.getElementById('mkgwm');
-  const msg=(h,c)=>{M.innerHTML=h?'<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:'+(c||'#eef7ee')+'">'+h+'</div>':'';};
-  const load=async()=>{const r=await fetch('/api/mikveh/price_groups').then(x=>x.json()).catch(()=>null);if(!document.getElementById('mkgwb'))return;
-    if(!r||!r.ok){B.innerHTML='⚠️ '+esc_((r&&r.error)||'אין חיבור למקווה');return;}
-    const nis=v=>v==null?'—':'₪'+(+v).toLocaleString('he-IL');
-    B.innerHTML='<div style="color:#666;font-size:.88rem;margin-bottom:8px">"העתקה" יוצרת במקווה מנוי חדש עם <b>כל ההגדרות והשעות</b> של המנוי שבחרתם — רק השם והמחיר החדשים. אחרי ההעתקה המערכת בודקת במקווה שהשעות זהות. 🗑️ מוחק מנוי — רק אם אין בו לקוחות.</div>'+
-      r.groups.map(g=>'<div data-row="'+esc_(g.id)+'" style="border-bottom:1px solid #f1f1f1;padding:8px 4px"><div style="display:flex;gap:10px;align-items:center"><span style="flex:1">'+esc_(g.name)+'</span><b style="white-space:nowrap">'+nis(g.price)+'</b>'+
+  const B=document.getElementById('mkgwb'),M=document.getElementById('mkgwm'),CB=document.getElementById('mkgwc');
+  const msg=(h,c)=>{M.innerHTML=h?'<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:'+(c||'#eef7ee')+'">'+h+'</div>':'';};
+  let R=null;
+  const load=async()=>{R=await fetch('/api/mikveh/price_groups').then(x=>x.json()).catch(()=>null);if(!document.getElementById('mkgwb'))return;
+    if(!R||!R.ok){B.innerHTML='⚠️ '+esc_((R&&R.error)||'אין חיבור למקווה');return;}
+    paint();};
+  const cats=()=>{const m={};R.groups.forEach(g=>{(m[g.cat]=m[g.cat]||[]).push(g);});return m;};
+  const paint=()=>{const C=cats(),names=Object.keys(C).sort((a,b)=>C[b].length-C[a].length||a.localeCompare(b,'he'));
+    if(!MKGW_CAT||!C[MKGW_CAT])MKGW_CAT=names[0];
+    CB.innerHTML=names.map(n=>'<button data-cat="'+esc_(n)+'" style="border:1px solid '+(n===MKGW_CAT?'#2f6fb0':'#dde3ee')+';background:'+(n===MKGW_CAT?'#2f6fb0':'#fff')+';color:'+(n===MKGW_CAT?'#fff':'#333')+';border-radius:20px;padding:5px 12px;cursor:pointer;font:inherit;font-size:.9rem">'+esc_(n)+' <small style="opacity:.75">'+C[n].length+'</small></button>').join('');
+    CB.querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>{MKGW_CAT=b.dataset.cat;msg('');paint();});
+    const G=C[MKGW_CAT];
+    B.innerHTML='<div id="mkgcmp" style="margin-bottom:10px"></div>'+
+      G.map(g=>'<div data-row="'+esc_(g.id)+'" style="border-bottom:1px solid #f1f1f1;padding:8px 4px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:160px">'+esc_(g.name)+(g.erech?' <small style="color:#999">(ערך צבור)</small>':'')+'</span><b style="white-space:nowrap">'+nis(g.price)+'</b>'+
         (g.clients!=null?'<small style="color:#888;white-space:nowrap">'+g.clients+' לקוחות</small>':'')+
-        '<button data-cp="'+esc_(g.id)+'" style="border:1px solid #cdd6e6;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">📋 העתקה</button>'+
-        '<button data-del="'+esc_(g.id)+'" title="מחיקה מהמקווה" style="border:1px solid #f0c4c4;background:#fff;color:#c0392b;border-radius:8px;padding:4px 8px;cursor:pointer;font:inherit">🗑️</button></div><div data-form="'+esc_(g.id)+'"></div></div>').join('');
-    B.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const id=b.dataset.del,g=r.groups.find(x=>x.id===id),F=B.querySelector('[data-form="'+id+'"]');
+        '<button data-mv="'+esc_(g.id)+'" title="העברה לקטגוריה אחרת" style="'+btn+'">🗂️</button>'+
+        '<button data-cp="'+esc_(g.id)+'" style="'+btn+'">📋 העתקה</button>'+
+        '<button data-del="'+esc_(g.id)+'" title="מחיקה מהמקווה" style="border:1px solid #f0c4c4;background:#fff;color:#c0392b;border-radius:8px;padding:4px 8px;cursor:pointer;font:inherit">🗑️</button></div><div data-form="'+esc_(g.id)+'"></div></div>').join('')+
+      '<div style="color:#888;font-size:.82rem;margin-top:10px">הקטגוריות נשמרות אצלנו בלבד ולא משנות כלום במקווה. "העתקה" יוצרת מנוי חדש עם כל ההגדרות והשעות; 🗑️ מוחק מנוי שאין בו לקוחות.</div>';
+    wire(G);compare(G);};
+  // 🔍 בדיקה: כל המנויים בקטגוריה זהים (חוץ מהשם, המחיר והצבע)
+  const compare=async G=>{const el=document.getElementById('mkgcmp');if(!el)return;
+    if(G.length<2){el.innerHTML='<div style="background:#f6f8fc;border-radius:10px;padding:10px;color:#666">יש מנוי אחד בקטגוריה — אין מה להשוות.</div>';return;}
+    el.innerHTML='<div style="background:#f6f8fc;border-radius:10px;padding:10px">⏳ בודק במקווה את ההגדרות והשעות של '+G.length+' המנויים…</div>';
+    const cat=MKGW_CAT,x=await fetch('/api/mikveh/group_compare?ids='+G.map(g=>g.id).join(',')).then(y=>y.json()).catch(()=>null);
+    if(MKGW_CAT!==cat||!document.getElementById('mkgcmp'))return;
+    if(!x||!x.ok){el.innerHTML='<div style="background:#fdecec;border-radius:10px;padding:10px">⚠️ '+esc_((x&&x.error)||'הבדיקה נכשלה')+'</div>';return;}
+    const nm=id=>(x.groups.find(g=>g.id===id)||{}).name||'';
+    let h=x.same?'<div style="background:#eef7ee;border-radius:10px;padding:10px;color:#1e7a3c"><b>✓ כל המנויים בקטגוריה זהים</b> — אותן הגדרות ואותן שעות (חוץ מהמחיר).</div>'
+      :'<div style="background:#fff4e5;border-radius:10px;padding:10px"><b style="color:#b9770e">⚠️ המנויים בקטגוריה לא זהים</b>'+
+        (x.diffs.length?'<div style="overflow:auto;margin-top:6px"><table style="border-collapse:collapse;font-size:.85rem;width:100%"><tr><th style="text-align:right;padding:3px 6px">הגדרה</th>'+x.groups.map(g=>'<th style="padding:3px 6px">'+esc_(g.name)+'</th>').join('')+'</tr>'+
+          x.diffs.map(d=>'<tr style="border-top:1px solid #f0e2c8"><td style="padding:3px 6px">'+esc_(d.label)+'</td>'+x.groups.map(g=>'<td style="padding:3px 6px;text-align:center">'+esc_((v=>v===null||v===undefined?'—':v===true?'כן':v===false?'לא':v)(d.values[g.id]))+'</td>').join('')+'</tr>').join('')+'</table></div>':'')+
+        (x.sched_same?'':'<div style="margin-top:6px"><b>השעות שונות:</b>'+x.groups.map(g=>'<details style="margin-top:4px"><summary style="cursor:pointer">'+esc_(g.name)+' — '+g.hours.length+' זמנים</summary><div style="font-size:.82rem;color:#555;padding:4px 10px">'+(g.hours.map(t=>'<div>'+esc_(t)+'</div>').join('')||'אין זמנים')+'</div></details>').join('')+'</div>')+'</div>';
+    h+='<div style="background:#f6f8fc;border-radius:10px;padding:10px;margin-top:8px;display:grid;gap:8px"><b>✏️ לערוך הכל ביחד</b>'+
+      '<div style="font-size:.88rem;color:#555">עורכים מנוי אחד (במסך הניהול של המקווה), ואז מעתיקים ממנו את <b>כל ההגדרות והשעות</b> לשאר המנויים בקטגוריה. כל מנוי נשאר עם השם והמחיר שלו.</div>'+
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>להעתיק מ:</span><select id="mkgmaster" style="border:1px solid #ccd;border-radius:8px;padding:6px;font:inherit">'+x.groups.map(g=>'<option value="'+esc_(g.id)+'">'+esc_(g.name)+'</option>').join('')+'</select>'+
+      '<button id="mkgsync" style="background:#2f6fb0;color:#fff;border:0;border-radius:10px;padding:7px 14px;font:inherit;font-weight:700;cursor:pointer">להחיל על כל הקטגוריה</button><span id="mkgsst" style="color:#777;font-size:.88rem"></span></div></div>';
+    el.innerHTML=h;
+    const sb=document.getElementById('mkgsync'),st=document.getElementById('mkgsst');
+    sb.onclick=async()=>{const master=document.getElementById('mkgmaster').value,targets=G.map(g=>g.id).filter(id=>id!==master);
+      if(sb.dataset.sure!=='1'){sb.dataset.sure='1';sb.textContent='בטוח? ההגדרות והשעות של '+targets.length+' מנויים יוחלפו';sb.style.background='#c0392b';return;}
+      sb.disabled=true;st.textContent='⏳ מעדכן במקווה…';
+      const y=await post('/api/mikveh/group_sync',{master,targets});sb.disabled=false;
+      if(!y||!y.results){st.innerHTML='<b style="color:#c0392b">⚠️ '+esc_((y&&y.error)||'לא עודכן')+'</b>';return;}
+      msg((y.ok?'✓ ':'⚠️ ')+'הועתקו ההגדרות והשעות של <b>'+esc_(y.master)+'</b>:<br>'+y.results.map(r=>(r.ok?'✓ ':'⚠️ ')+esc_(r.name||nm(r.id))+(r.ok?' — '+r.hours+' זמנים, זהה':' — '+esc_(r.error||'אחרי השמירה לא זהה למקור, כדאי לבדוק במסך הניהול'))).join('<br>'),y.ok?'#eef7ee':'#fff4e5');
+      compare(G);};};
+  const wire=G=>{
+    B.querySelectorAll('[data-mv]').forEach(b=>b.onclick=()=>{const id=b.dataset.mv,g=R.groups.find(x=>x.id===id),F=B.querySelector('[data-form="'+id+'"]');
+      if(F.innerHTML){F.innerHTML='';return;}
+      const names=[...new Set(R.groups.map(x=>x.cat))];
+      F.innerHTML='<div style="background:#f6f8fc;border-radius:10px;padding:10px;margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>קטגוריה:</span><input data-c list="mkgcl" value="'+esc_(g.cat)+'" style="border:1px solid #ccd;border-radius:8px;padding:6px;font:inherit"><datalist id="mkgcl">'+names.map(n=>'<option value="'+esc_(n)+'">').join('')+'</datalist>'+
+        '<button data-s style="'+btn+'">שמירה</button><span style="color:#888;font-size:.82rem">אפשר לבחור קטגוריה קיימת או לכתוב חדשה</span></div>';
+      F.querySelector('[data-s]').onclick=async()=>{const c=F.querySelector('[data-c]').value.trim();const y=await post('/api/mikveh/group_cat',{id,cat:c});
+        if(!y||!y.ok){F.querySelector('[data-s]').textContent='⚠️ לא נשמר';return;}g.cat=c||g.cat;MKGW_CAT=g.cat;msg('🗂️ "'+esc_(g.name)+'" עבר לקטגוריה "'+esc_(g.cat)+'"');paint();};});
+    B.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const id=b.dataset.del,g=R.groups.find(x=>x.id===id),F=B.querySelector('[data-form="'+id+'"]');
       if(F.innerHTML){F.innerHTML='';return;}
       if(g.clients){F.innerHTML='<div style="background:#fdecec;border-radius:10px;padding:10px;margin-top:8px;color:#c0392b">יש '+g.clients+' לקוחות במנוי הזה — אי אפשר למחוק אותו. קודם מעבירים אותם למנוי אחר.</div>';return;}
       F.innerHTML='<div style="background:#fdecec;border-radius:10px;padding:10px;margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1">למחוק את <b>'+esc_(g.name)+'</b> מהמקווה? אי אפשר לבטל.</span>'+
         '<button data-yes style="background:#c0392b;color:#fff;border:0;border-radius:10px;padding:7px 14px;font:inherit;font-weight:700;cursor:pointer">כן, למחוק</button><span data-st style="color:#777;font-size:.88rem"></span></div>';
       const y=F.querySelector('[data-yes]'),st=F.querySelector('[data-st]');
-      y.onclick=async()=>{y.disabled=true;st.textContent='⏳ מוחק…';
-        const x=await fetch('/api/mikveh/group_delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(z=>z.json()).catch(()=>null);
+      y.onclick=async()=>{y.disabled=true;st.textContent='⏳ מוחק…';const x=await post('/api/mikveh/group_delete',{id});
         if(!x||!x.ok){y.disabled=false;st.innerHTML='<b style="color:#c0392b">⚠️ '+esc_((x&&x.error)||'לא נמחק')+'</b>';return;}
         msg('🗑️ נמחק מהמקווה: <b>'+esc_(x.name)+'</b>','#fdf1f1');load();};});
-    B.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>{const id=b.dataset.cp,g=r.groups.find(x=>x.id===id),F=B.querySelector('[data-form="'+id+'"]');
+    B.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>{const id=b.dataset.cp,g=R.groups.find(x=>x.id===id),F=B.querySelector('[data-form="'+id+'"]');
       if(F.innerHTML){F.innerHTML='';return;}
       const base=String(g.name).replace(/^\s*\d+\s*[.\-)]\s*/,'').trim();
       F.innerHTML='<div style="background:#f6f8fc;border-radius:10px;padding:10px;margin-top:8px;display:grid;gap:8px">'+
         '<label style="display:grid;gap:3px"><span style="font-size:.85rem;color:#555">שם המנוי החדש</span><input data-n value="'+esc_(base+' + מגבת ')+'" style="border:1px solid #ccd;border-radius:8px;padding:7px;font:inherit"></label>'+
         '<label style="display:grid;gap:3px"><span style="font-size:.85rem;color:#555">מחיר לחודש (₪)</span><input data-p type="number" min="0" value="'+esc_(g.price==null?'':g.price)+'" style="border:1px solid #ccd;border-radius:8px;padding:7px;font:inherit;width:140px"></label>'+
-        '<div style="display:flex;gap:8px;align-items:center"><button data-go style="background:#2f6fb0;color:#fff;border:0;border-radius:10px;padding:8px 16px;font:inherit;font-weight:700;cursor:pointer">ליצור במקווה</button><span data-st style="color:#777;font-size:.88rem">יועתקו כל השעות וההגדרות של "'+esc_(g.name)+'"</span></div></div>';
+        '<div style="display:flex;gap:8px;align-items:center"><button data-go style="background:#2f6fb0;color:#fff;border:0;border-radius:10px;padding:8px 16px;font:inherit;font-weight:700;cursor:pointer">ליצור במקווה</button><span data-st style="color:#777;font-size:.88rem">יועתקו כל השעות וההגדרות של "'+esc_(g.name)+'"; המנוי החדש ייכנס לקטגוריה "'+esc_(g.cat)+'"</span></div></div>';
       const go=F.querySelector('[data-go]'),st=F.querySelector('[data-st]');F.querySelector('[data-n]').focus();
       go.onclick=async()=>{const name=F.querySelector('[data-n]').value.trim(),price=F.querySelector('[data-p]').value;
         if(!name){st.textContent='צריך לכתוב שם';return;}if(price===''){st.textContent='צריך לכתוב מחיר';return;}
         go.disabled=true;st.textContent='⏳ יוצר במקווה ומעתיק שעות…';
-        const x=await fetch('/api/mikveh/group_copy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({src:id,name,price})}).then(y=>y.json()).catch(()=>null);
-        go.disabled=false;
+        const x=await post('/api/mikveh/group_copy',{src:id,name,price});go.disabled=false;
         if(!x||!x.ok){st.innerHTML='<b style="color:#c0392b">⚠️ '+esc_((x&&x.error)||'לא נוצר')+'</b>';return;}
+        await post('/api/mikveh/group_cat',{id:x.id,cat:g.cat});
         msg(x.same?'✓ נוצר במקווה: <b>'+esc_(x.name)+'</b> — ₪'+esc_(x.price)+' · הועתקו '+x.hours+' שעות, זהות למנוי המקורי.'
           :'⚠️ נוצר במקווה: <b>'+esc_(x.name)+'</b>, אבל השעות שנשמרו ('+x.hours+') לא זהות למקור ('+x.src_hours+'). כדאי לבדוק אותו במסך הניהול של המקווה.', x.same?'#eef7ee':'#fff4e5');
         load();};});};

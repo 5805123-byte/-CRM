@@ -18602,6 +18602,13 @@ def mkreq_pending(con):
     return r
 
 
+def mk_group_cat_guess(name):
+    """קטגוריה מוצעת לפי השם: בלי המספור שבהתחלה ובלי מה שאחרי ה-"+" ("מנוי רגיל+מנוי מגבת קטנה" → "מנוי רגיל")"""
+    n = re.sub(r'^\s*\d+\s*[.\-)]\s*', '', str(name or '')).strip()
+    n = n.split('+')[0].strip()
+    return re.sub(r'\s+', ' ', n) or 'אחר'
+
+
 def mkreq_api_on(c):
     return bool(c.get('mosad') and c.get('tofes') and any((c.get('map') or {}).get(k) for k in MKREQ_API_KEYS))
 
@@ -24489,6 +24496,14 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
             mem = set(cfg.get('member_groups') or [])
+            con = db()
+            try:
+                try:
+                    cats = json.loads(kv_get(con, 'mk_group_cats', '') or '{}') or {}
+                except Exception:
+                    cats = {}
+            finally:
+                con.close()
             try:
                 cnt = {}
                 for c in _mk.clients():
@@ -24501,6 +24516,7 @@ class H(BaseHTTPRequestHandler):
                 dflt = bool(g.get('price') and g['price'] > 1 and not er and g['id'] not in mem and 'קהיל' not in g['name'])
                 out.append({'id': g['id'], 'name': g['name'], 'price': g.get('price'), 'erech': er,
                             'clients': (cnt or {}).get(g['id'], 0) if cnt is not None else None,
+                            'cat': cats.get(g['id']) or mk_group_cat_guess(g['name']), 'cat_saved': g['id'] in cats,
                             'on': (g['id'] in saved) if isinstance(saved, list) else dflt})
             con = db()
             try:
@@ -24508,6 +24524,17 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'groups': out, 'saved': isinstance(saved, list), 'notice': notice})
+        if self.path.split('?')[0] == '/api/mikveh/group_compare':
+            # 🗂️ בדיקה שכל המנויים בקטגוריה זהים (חוץ מהשם, המחיר החודשי והצבע) — כולל כל השעות
+            import mikveh as _mk
+            ids = [x for x in (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('ids') or [''])[0].split(',')
+                   if re.fullmatch(r'[0-9a-fA-F-]{36}', x)][:30]
+            if not ids:
+                return self._send(200, {'ok': False, 'error': 'לא נבחרו מנויים'})
+            try:
+                return self._send(200, dict(_mk.compare_groups(ids), ok=True))
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
         if self.path.split('?')[0] == '/api/mikveh/pricelist.docx':
             # 📄 מאיר: "צריך להכין מסמך עם כל הקבוצות והמחירים" — Word על הבלאנק של המקווה, מהמחירים החיים.
             # ids=… — הקבוצות שנבחרו (נשמרות לפעם הבאה); בלי ids — הבחירה השמורה
@@ -27643,6 +27670,48 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/group_cat':
+            # 🗂️ שיוך מנוי לקטגוריה (נשמר אצלנו בלבד — לא משנה כלום במקווה)
+            gid, cat = str(b.get('id') or '').strip(), re.sub(r'\s+', ' ', str(b.get('cat') or '')).strip()[:60]
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', gid):
+                return self._send(200, {'ok': False, 'error': 'לא נבחר מנוי'})
+            con = db()
+            try:
+                try:
+                    cats = json.loads(kv_get(con, 'mk_group_cats', '') or '{}') or {}
+                except Exception:
+                    cats = {}
+                if cat:
+                    cats[gid] = cat
+                else:
+                    cats.pop(gid, None)
+                kv_set(con, 'mk_group_cats', json.dumps(cats, ensure_ascii=False))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/group_sync':
+            # 🗂️ "לערוך הכל ביחד": ההגדרות והשעות של מנוי אחד → לכל המנויים שנבחרו (כל אחד נשאר עם השם והמחיר שלו)
+            import mikveh as _mk
+            master = str(b.get('master') or '').strip()
+            tg = [str(x) for x in (b.get('targets') or []) if re.fullmatch(r'[0-9a-fA-F-]{36}', str(x)) and str(x) != master][:20]
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', master) or not tg:
+                return self._send(200, {'ok': False, 'error': 'צריך לבחור מנוי מקור ומנויים לעדכון'})
+            try:
+                m = _mk.group_full(master)
+                if not m['_sch'] and any(_mk.group_schedules(t) for t in tg):
+                    return self._send(200, {'ok': False, 'error': 'למנוי "%s" אין שעות בכלל — העתקה ממנו הייתה מוחקת את השעות של השאר. '
+                                                               'בחרו מנוי מקור שיש לו שעות.' % (m.get('name') or '').strip()})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            res = []
+            for t in tg:
+                try:
+                    res.append(_mk.sync_group(m, t))
+                except Exception as e:
+                    res.append({'id': t, 'ok': False, 'error': str(e)[:200]})
+            print('  mikveh group sync from', master, '->', res)
+            return self._send(200, {'ok': all(r.get('ok') for r in res), 'results': res, 'master': (m.get('name') or '').strip()})
         if self.path == '/api/mikveh/group_delete':
             # 🗑️ מחיקת מנוי במקווה (DELETE Group/{id}, כמו במסך הניהול). לא מוחקים מנוי שיש בו לקוחות
             import mikveh as _mk
@@ -27653,9 +27722,12 @@ class H(BaseHTTPRequestHandler):
                 g = next((x for x in _mk.groups(fresh=True) if x['id'] == gid), None)
                 if not g:
                     return self._send(200, {'ok': False, 'error': 'המנוי לא נמצא במקווה'})
-                n = sum(1 for c in _mk.clients(fresh=True) if c.get('groupId') == gid)
+                n, nd = _mk.group_client_counts(gid)
                 if n:
                     return self._send(200, {'ok': False, 'error': 'יש %d לקוחות במנוי "%s" — קודם להעביר אותם למנוי אחר' % (n, g['name'])})
+                if nd:
+                    return self._send(200, {'ok': False, 'error': 'במנוי "%s" אין לקוחות פעילים, אבל יש %d לקוחות שנמחקו שעדיין משויכים אליו — '
+                                                               'המקווה לא מאפשר למחוק אותו. אפשר לשנות לו את השם (למשל "לא בשימוש") במקום.' % (g['name'], nd)})
                 _mk.delete_group(gid)
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:300]})
