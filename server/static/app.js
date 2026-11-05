@@ -1904,7 +1904,7 @@ async function mkReqOpen(sync=true){
       :(s2&&s2.new?'✓ נוספו '+s2.new+' פניות חדשות':s2&&!s2.busy?'✓ נבדק — אין פניות חדשות':''));mkPendLoad();}}
 // 🔔 מאיר: "אמור להופיע בתחילת הממשק שיש פניות לטיפול או בקשות" — פס בראש מסך המקווה
 async function mkPendLoad(){const r=await api('GET','/api/mikveh/pending').catch(()=>null);const el=document.getElementById('mkpend');if(!el||!r||!r.ok)return;
-  const it=[[r.req_new,'פניות חדשות מנדרים','mkpreq'],[r.req_wip,'פניות בטיפול','mkpreq'],[r.grp_new,'בקשות להחלפת קבוצה','mkpgrp'],[r.vm_new,'הודעות מוקלטות שלא נשמעו','mkpvm']].filter(x=>x[0]);
+  const it=[[r.req_new,'פניות חדשות מנדרים','mkpreq'],[r.req_wip,'פניות בטיפול','mkpreq'],[r.grp_new,'בקשות לשינוי סוג מנוי','mkpgrp'],[r.vm_new,'הודעות מוקלטות שלא נשמעו','mkpvm']].filter(x=>x[0]);
   if(!it.length){el.innerHTML='';return;}
   el.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff4e5;border:1px solid #f5c26b;border-radius:12px;padding:10px 14px;margin-bottom:12px">
     <b style="color:#b9770e">🔔 ממתין לטיפול:</b>${it.map(x=>`<button class="btn sm" data-pg="${x[2]}" style="background:#fff;color:#333;border:1px solid #f5c26b"><b style="color:#c0392b">${x[0]}</b> ${x[1]}</button>`).join('')}</div>`;
@@ -2320,8 +2320,8 @@ function renderMikveh(){
       <button class="mkstat" id="mkzklist" style="cursor:pointer;border:0;font:inherit" title="לקוחות עם זיכוי (יתרה זמנית) — לחיצה פותחת את הרשימה"><b>${MK.clients.filter(c=>(c.temp_balance||0)>0).length}</b><span>💳 זיכויים</span></button>
       <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button></div>
       <div class="mkhgroups">
-        <div class="mkhg"><span>📞 שלוחות בטלפון</span><div><button class="mkibtn" id="mkselfg" title="שלוחה בטלפון שבה כל מנוי מחליף לעצמו קבוצה — הגדרות, קנס ויומן">🔄 שלוחת החלפת קבוצה</button>
-          <button class="mkibtn" id="mkrqb" title="בקשות להחלפת קבוצה שנשלחו מהטלפון — לאשר ולהעביר, או לדחות">📨 בקשות החלפה<b id="mksgn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button>
+        <div class="mkhg"><span>📞 שלוחות בטלפון</span><div><button class="mkibtn" id="mkselfg" title="שלוחה בטלפון שבה כל מנוי משנה לעצמו את סוג המנוי — קטגוריות, מחירים ויומן">🔄 שלוחת שינוי סוג מנוי</button>
+          <button class="mkibtn" id="mkrqb" title="בקשות לשינוי סוג מנוי שנשלחו מהטלפון — לאשר ולהעביר, או לדחות">📨 בקשות שינוי מנוי<b id="mksgn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button>
       <button class="mkibtn" id="mkvmb" title="הודעות שהשאירו בשלוחת המקווה בטלפון — להאזין, לקרוא את התמלול, לסמן שטופל">📥 הודעות מוקלטות<b id="mkvmn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button></div></div>
         <div class="mkhg"><span>📊 דוחות ובדיקות</span><div><button class="mkibtn" id="mkentday" title="כמה נכנסו למקווה ביום מסוים — לפי קבוצה (ערך צבור, מזדמן וכו')">📊 כניסות ליום</button>
           <button class="mkibtn" id="mkdebtsb" title="כל החובות הפתוחים במקווה — מי חייב, כמה ועל מה">🧾 חובות פתוחים</button>
@@ -3176,7 +3176,7 @@ async function mkSgReqOpen(){
           :`<b style="color:${x.status==='done'?'#2e7d32':'#c0392b'}">${x.status==='done'?'✓ אושרה והועבר':'✗ נדחתה'}${x.handled_at?' · '+esc(dt(x.handled_at)):''}</b>
             ${x.status==='done'&&c&&(c.phone||mkHasMail(c))?`<button class="btn sm" data-rqmsg="${x.id}">💬 לשלוח לו הודעה</button>`:''}
             <button class="btn sm ghost" data-rqdel="${x.id}" title="למחוק מהרשימה">🗑️</button>`}</div></div></div>`;};
-  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📨</div><div><h2>בקשות להחלפת קבוצה</h2>
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📨</div><div><h2>בקשות לשינוי סוג מנוי</h2>
       <div class="mksub">בקשות שנשלחו מהטלפון (מי שכבר הגיע למספר ההחלפות המרבי). ${newR.length?'<b>'+newR.length+' מחכות לטיפול</b>':'אין בקשות שמחכות'}</div></div></div>
     <div class="mklist">${newR.map(card).join('')||'<div class="mksub">אין בקשות שמחכות 👍</div>'}</div>
     ${oldR.length?`<div class="mksec" style="margin-top:16px">בקשות שטופלו (${oldR.length})</div><div class="mklist">${oldR.map(card).join('')}</div>`:''}`;
@@ -3218,6 +3218,35 @@ function mkTextsWire(root,ext,after){
     const t={};root.querySelectorAll('[data-tx]').forEach(x=>t[x.dataset.tx]='');await api('POST','/api/mikveh/ivr_texts',{texts:t});toast('✓ הוחזר');after&&after();};}
 // 📞 מאיר: "שלוחת API שכל משתמש יוכל לעדכן את הקבוצה שלו, רק לקבוצות שהשארתי… כמה פעמים… שיחייב בקנס"
 let MKSG_TAB='set';
+// 🗂️ מאיר: "בוחרים לפי קטגוריות שסימנו שמושמעים בטלפון, ואז בוחר מתוך קטגוריה, בתוך הקטגוריה אני יסמן איזה לקהילה
+// בלבד" — עורך הקטגוריות של שלוחת שינוי סוג מנוי (משותף לשני האתרים)
+function mkPcHTML(r){
+  const esc_=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const C=r.cfg||{},on=C.phone_cats||[],mem=new Set(C.member_groups||[]),lk=new Set(C.locked_groups||[]),cs=C.cat_say||{};
+  const by={};(r.groups||[]).forEach(g=>{(by[g.cat||'אחר']=by[g.cat||'אחר']||[]).push(g);});
+  const names=[...on.filter(n=>by[n]),...Object.keys(by).filter(n=>!on.includes(n)).sort((a,b)=>a.localeCompare(b,'he'))];
+  const nis=v=>v==null?'—':'₪'+(+v).toLocaleString('he-IL');
+  const card=n=>{const isOn=on.includes(n),G=(by[n]||[]).slice().sort((a,b)=>((a.price==null?1e9:a.price)-(b.price==null?1e9:b.price))||a.name.localeCompare(b.name,'he'));
+    return '<div data-pc="'+esc_(n)+'" style="border:1px solid '+(isOn?'#9ec3ea':'#e3e7ee')+';background:'+(isOn?'#f4f9ff':'#fafbfc')+';border-radius:12px;padding:10px 12px;margin:8px 0">'+
+      '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label style="display:flex;gap:6px;align-items:center;font-weight:800;cursor:pointer"><input type="checkbox" data-pcon '+(isOn?'checked':'')+' style="width:20px;height:20px"> 🔊 '+esc_(n)+'</label>'+
+      '<small style="color:#888">'+G.length+' מנויים</small><span style="flex:1"></span>'+
+      '<input data-pcsay value="'+esc_(cs[n]||'')+'" placeholder="איך יוקרא בטלפון (ריק = השם)" style="border:1px solid #ccd;border-radius:8px;padding:5px 8px;font:inherit;min-width:170px">'+
+      '<button type="button" data-up title="למעלה" style="border:1px solid #ccd;background:#fff;border-radius:8px;padding:3px 9px;cursor:pointer">▲</button><button type="button" data-dn title="למטה" style="border:1px solid #ccd;background:#fff;border-radius:8px;padding:3px 9px;cursor:pointer">▼</button></div>'+
+      '<div data-pcb style="'+(isOn?'':'display:none;')+'margin-top:8px">'+G.map(g=>'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid #e8edf4;padding:6px 0">'+
+        '<span style="flex:1;min-width:150px">'+esc_(g.name)+' <b style="color:#555">'+nis(g.price)+'</b></span>'+
+        '<input data-say="'+esc_(g.id)+'" value="'+esc_(g.say||'')+'" title="איך השם יוקרא בטלפון" placeholder="השם בטלפון" style="border:1px solid #ccd;border-radius:8px;padding:4px 8px;font:inherit;width:170px">'+
+        '<label style="display:flex;gap:5px;align-items:center;color:#2f6fb0;white-space:nowrap"><input type="checkbox" data-mg="'+esc_(g.id)+'" '+(mem.has(g.id)?'checked':'')+' style="width:18px;height:18px"> 👥 לקהילה בלבד</label>'+
+        '<label style="display:flex;gap:5px;align-items:center;color:#c0392b;white-space:nowrap" title="מי שבמנוי הזה לא יכול לשנות אותו בטלפון"><input type="checkbox" data-lg="'+esc_(g.id)+'" '+(lk.has(g.id)?'checked':'')+' style="width:18px;height:18px"> 🔒 נעול</label></div>').join('')+'</div></div>';};
+  return '<div style="color:#555;font-size:.9rem;line-height:1.7;margin:4px 0 6px">מסמנים 🔊 את הקטגוריות שנשמעות בטלפון (בסדר הזה — ▲▼). המתקשר בוחר קודם קטגוריה ואז מנוי מתוכה (עם המחיר לחודש). '+
+    'קטגוריה אחת בלבד — עוברים ישר למנויים. <b>👥 לקהילה בלבד</b> — רק מי שהטלפון שלו רשום בקהילה שומע את המנוי הזה; ומי שבקהילה שומע בפתיחה "שלום [שם ומשפחה], חבר קהילה". '+
+    'את הקטגוריות עצמן קובעים בחלון "📋 סוגי מנוי".</div><div data-pcl>'+names.map(card).join('')+'</div>';}
+function mkPcWire(root){root.querySelectorAll('[data-pc]').forEach(el=>{
+  el.querySelector('[data-pcon]').onchange=e=>{el.querySelector('[data-pcb]').style.display=e.target.checked?'':'none';el.style.background=e.target.checked?'#f4f9ff':'#fafbfc';el.style.borderColor=e.target.checked?'#9ec3ea':'#e3e7ee';};
+  el.querySelector('[data-up]').onclick=()=>{const p=el.previousElementSibling;if(p)el.parentNode.insertBefore(el,p);};
+  el.querySelector('[data-dn]').onclick=()=>{const n=el.nextElementSibling;if(n)el.parentNode.insertBefore(n,el);};});}
+function mkPcRead(root){const cats=[...root.querySelectorAll('[data-pc]')],cat_say={};
+  cats.forEach(el=>{const v=el.querySelector('[data-pcsay]').value.trim();if(v)cat_say[el.dataset.pc]=v;});
+  return {phone_cats:cats.filter(el=>el.querySelector('[data-pcon]').checked).map(el=>el.dataset.pc),cat_say};}
 async function mkSelfGroupOpen(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   if(!remov.classList.contains('show')){rs.innerHTML='<button class="x" id="rx">✕</button><div class="mksub">⏳ טוען…</div>';remov.classList.add('show');
@@ -3231,24 +3260,17 @@ async function mkSelfGroupOpen(){
   const TABS=[['set','⚙️ הגדרות'],['price','💰 מחירים ותשלום'],['lock','🔒 לקוחות נעולים'],['txt','🗣️ טקסטים'],['log','📜 יומן']];
   const PM=new Set(C.pay_methods||['debt']), EG=Array.isArray(C.erech_groups)?new Set(C.erech_groups):null;
   if(!TABS.some(t=>t[0]===MKSG_TAB))MKSG_TAB='set';
-  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📞</div><div><h2>שלוחת החלפת קבוצה</h2>
-      <div class="mksub">כל מנוי מתקשר, מזוהה לפי הטלפון שרשום לו במקווה, ובוחר קבוצה חדשה. ההחלפה נעשית במקווה מיד.</div></div></div>
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📞</div><div><h2>שלוחת שינוי סוג מנוי</h2>
+      <div class="mksub">כל מנוי מתקשר, מזוהה לפי הטלפון שרשום לו במקווה, בוחר קטגוריה ואז סוג מנוי חדש. השינוי נעשה במקווה מיד.</div></div></div>
     <div class="mktiles"><div class="mktile ${C.enabled?'ok':'bad'}"><span>מצב</span><b>${C.enabled?'פתוחה':'סגורה'}</b></div>
       <div class="mktile"><span>החלפות החודש</span><b>${r.month.n}</b></div>
       <div class="mktile ${newR.length?'bad':''}"><span>בקשות שמחכות</span><b>${newR.length}</b></div></div>
     <div class="mkseg" id="sgtabs" style="margin:10px 0;flex-wrap:wrap">${TABS.map(([k,l])=>`<button data-t="${k}" class="${MKSG_TAB===k?'on':''}">${l}</button>`).join('')}</div>
     <div data-tp="set">
       <div style="display:flex;gap:10px;align-items:center;margin:8px 0;font-weight:800;font-size:1.05rem"><input type="checkbox" id="sgon" style="width:22px;height:22px;flex:none" ${C.enabled?'checked':''}><label for="sgon" style="cursor:pointer">השלוחה פתוחה למתקשרים</label></div>
-      <div class="mksec">🔄 הקבוצות</div>
-      <div class="mksub" style="margin:-2px 2px 8px"><b>אפשר לעבור אליה</b> — מופיעה בתפריט בטלפון, בסדר הזה (1, 2, 3… — גם 10 ומעלה; מקישים את המספר וסולמית). <b>נעולה</b> — מי שנמצא בה לא יכול להחליף קבוצה בטלפון. בשדה — איך השם יוקרא.</div>
-      <div class="mklist">${r.groups.map(g=>`<div class="mkrow" style="grid-template-columns:1fr auto auto;cursor:default;gap:12px;align-items:center">
-          <div><b><span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g.name)}${g.price!=null?' <small style="color:#777">'+esc(mkNis(g.price))+'</small>':''}</b>
-            <input data-say="${esc(g.id)}" value="${esc(g.say)}" title="איך השם יוקרא בטלפון" placeholder="השם בטלפון" style="margin-top:6px"></div>
-          <label style="display:flex;gap:6px;align-items:center;white-space:nowrap"><input type="checkbox" data-sg="${esc(g.id)}" style="width:20px;height:20px" ${sel.has(g.id)?'checked':''}> אפשר לעבור אליה</label>
-          <div style="display:flex;flex-direction:column;gap:6px">
-          <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;color:#2f6fb0"><input type="checkbox" data-mg="${esc(g.id)}" style="width:20px;height:20px" ${memG.has(g.id)?'checked':''}> 👥 רק לחברי קהילה</label>
-          <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;color:#c0392b"><input type="checkbox" data-lg="${esc(g.id)}" style="width:20px;height:20px" ${lockG.has(g.id)?'checked':''}> 🔒 נעולה</label></div></div>`).join('')}</div>
-      <div class="mksub" style="margin:6px 2px;line-height:1.7">👥 <b>רק לחברי קהילה</b> — קבוצת הנחה. חבר קהילה (לפי הטלפון, ברשימת הקהילה) שומע בטלפון: 1 לקבוצות ההנחה, 2 לקבוצות הרגילות.
+      <div class="mksec">🗂️ סוגי המנוי בטלפון — לפי קטגוריות</div>
+      <div id="sgpc">${mkPcHTML(r)}</div>
+      <div class="mksub" style="margin:6px 2px;line-height:1.7">👥 <b>לקהילה בלבד</b> — רק מי שהטלפון שלו רשום בקהילה שומע את המנוי הזה.
         ההנחה ניתנת לבד רק אם יש לו <b>הוראת קבע פעילה לקהילה של לפחות ₪<input type="number" id="sgminkeva" min="0" value="${esc(C.min_keva!=null?C.min_keva:100)}" style="width:80px;display:inline-block;padding:2px 6px"></b>, ורק אם <b>אין לקוח אחר במקווה עם אותו טלפון או ת.ז.</b> שכבר בקבוצת הנחה. אחרת הוא שומע בדיוק למה, ויכול לשלוח בקשה למשרד.</div>
       <div class="mksub" style="margin:6px 2px;line-height:1.7"><b>📂 רק הוראות קבע מהקטגוריות האלה בנדרים פלוס נחשבות</b> (הוראת קבע בקטגוריה אחרת לא נחשבת. אם לא מסמנים כלום — כל הוראת קבע לקהילה נחשבת):
         <div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:4px">${[...new Set([...(r.keva_cats||[]),...(C.keva_cats||[])])].map(k=>`<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-kc="${esc(k)}" style="width:18px;height:18px" ${(C.keva_cats||[]).includes(k)?'checked':''}> ${esc(k)}</label>`).join('')||'<span style="color:#999">אין עדיין קטגוריות בהוראות הקבע שנמשכו מנדרים</span>'}</div></div>
@@ -3257,7 +3279,7 @@ async function mkSelfGroupOpen(){
         <input type="number" id="sgmax" min="0" value="${esc(C.max)}" style="width:80px"> פעמים בתוך
         <input type="number" id="sgdays" min="1" value="${esc(C.days)}" style="width:80px"> ימים</div>
       <div class="mksub">0 פעמים = בלי הגבלה. הספירה מתגלגלת: החלפה יוצאת מהחשבון אחרי שעברו הימים.</div>
-      <div style="display:flex;gap:10px;align-items:center;margin:12px 0"><input type="checkbox" id="sgreq" style="width:22px;height:22px;flex:none" ${C.req_on?'checked':''}><label for="sgreq" style="cursor:pointer"><b>מי שעבר את המקסימום — יוכל לשלוח בקשה למשרד</b> (בוחר קבוצה בטלפון, בלי להקליט; הבקשה מופיעה במסך המקווה בכפתור "📨 בקשות החלפה")</label></div>
+      <div style="display:flex;gap:10px;align-items:center;margin:12px 0"><input type="checkbox" id="sgreq" style="width:22px;height:22px;flex:none" ${C.req_on?'checked':''}><label for="sgreq" style="cursor:pointer"><b>מי שעבר את המקסימום — יוכל לשלוח בקשה למשרד</b> (בוחר קבוצה בטלפון, בלי להקליט; הבקשה מופיעה במסך המקווה בכפתור "📨 בקשות שינוי מנוי")</label></div>
       <button class="mkbtn" id="sgsave" style="margin-top:8px">💾 לשמור</button>
       <div class="mksec" style="margin-top:18px">⚙️ הגדרה בימות המשיח <small>שלוחה חדשה (ext.ini)</small></div>
       <pre dir="ltr" style="background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-all;user-select:all">${esc(ini)}</pre>
@@ -3301,8 +3323,9 @@ async function mkSelfGroupOpen(){
     document.getElementById('pcex').innerHTML='דוגמה: מנוי ב-₪190 שעובר לקבוצה ב-₪230, ונשארו לו 15 ימים — הפרש לתשלום <b>₪'+a+'</b>. בכיוון ההפוך — זיכוי של ₪'+a+'.';};
   document.getElementById('pcdiv').oninput=ex;ex();
   document.getElementById('pcsave').onclick=()=>document.getElementById('sgsave').click();
+  mkPcWire(document.getElementById('sgpc'));
   document.getElementById('sgsave').onclick=async()=>{const say={};rs.querySelectorAll('[data-say]').forEach(i=>{if(i.value.trim())say[i.dataset.say]=i.value.trim();});
-    const body={enabled:document.getElementById('sgon').checked,groups:[...rs.querySelectorAll('[data-sg]')].filter(x=>x.checked).map(x=>x.dataset.sg),
+    const body={enabled:document.getElementById('sgon').checked,groups:C.groups||[],...mkPcRead(document.getElementById('sgpc')),
       locked_groups:[...rs.querySelectorAll('[data-lg]')].filter(x=>x.checked).map(x=>x.dataset.lg),say,
       member_groups:[...rs.querySelectorAll('[data-mg]')].filter(x=>x.checked).map(x=>x.dataset.mg),req_on:document.getElementById('sgreq').checked,
       max:document.getElementById('sgmax').value,days:document.getElementById('sgdays').value,

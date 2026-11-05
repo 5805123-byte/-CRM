@@ -257,7 +257,7 @@ async function loadMk(fresh){const r=await api('GET','/api/mikveh/clients'+(fres
 // 🔔 מאיר: "אמור להופיע בתחילת הממשק שיש פניות לטיפול או בקשות" — פס קבוע מעל כל העמודים
 async function badges(){try{const r=await api('GET','/api/mikveh/pending');if(!r.ok)return;S.pend=r;
   S.badge=(r.req_new||0)+(r.grp_new||0);S.vmBadge=r.vm_new||0;navPaint();
-  const it=[[r.req_new,'פניות חדשות מנדרים','reqs','nd'],[r.req_wip,'פניות בטיפול','reqs','nd'],[r.grp_new,'בקשות להחלפת קבוצה','reqs','grp'],[r.vm_new,'הודעות מוקלטות שלא נשמעו','vm','']].filter(x=>x[0]);
+  const it=[[r.req_new,'פניות חדשות מנדרים','reqs','nd'],[r.req_wip,'פניות בטיפול','reqs','nd'],[r.grp_new,'בקשות לשינוי סוג מנוי','reqs','grp'],[r.vm_new,'הודעות מוקלטות שלא נשמעו','vm','']].filter(x=>x[0]);
   $('#pbar').innerHTML=it.length?`<div class="pbar"><b class="h">${ic('bell')}ממתין לטיפול:</b>${it.map(x=>`<button data-pv="${x[2]}" data-pt="${x[3]}"><i>${x[0]}</i>${x[1]}</button>`).join('')}</div>`:'';
   $$('#pbar [data-pv]').forEach(b=>b.onclick=()=>{if(b.dataset.pt){RTAB=b.dataset.pt;RQF='open';}go(b.dataset.pv);});}catch(e){}}
 
@@ -448,7 +448,7 @@ async function vDash(){
     $$('#dbg [data-c]').forEach(e=>e.onclick=()=>openClient(e.dataset.c));});
   api('GET','/api/mikveh/pending').then(r=>{if(!$('#pend')||!r.ok)return;
     const it=(t,n,v,tb)=>`<div class="it" style="cursor:pointer" data-go="${v}" data-tb="${tb}"><div class="m"><b>${t}</b></div><span class="tag ${n?'r':'g'}">${n||'✓'}</span></div>`;
-    $('#pend').innerHTML=`<div class="list">${it('פניות חדשות מנדרים פלוס',r.req_new,'reqs','nd')}${it('פניות בטיפול',r.req_wip,'reqs','nd')}${it('בקשות להחלפת קבוצה',r.grp_new,'reqs','grp')}${it('הודעות מוקלטות שלא נשמעו',r.vm_new,'vm','')}</div>`;
+    $('#pend').innerHTML=`<div class="list">${it('פניות חדשות מנדרים פלוס',r.req_new,'reqs','nd')}${it('פניות בטיפול',r.req_wip,'reqs','nd')}${it('בקשות לשינוי סוג מנוי',r.grp_new,'reqs','grp')}${it('הודעות מוקלטות שלא נשמעו',r.vm_new,'vm','')}</div>`;
     $$('#pend [data-go]').forEach(e=>e.onclick=()=>{if(e.dataset.tb){RTAB=e.dataset.tb;RQF='open';}go(e.dataset.go);});});
 }
 
@@ -510,7 +510,7 @@ function drawClient(keepTab){const c=CUR;if(!c)return;const g=S.G[c.group],pr=c.
         <div class="tile"><span>טביעת אצבע / אמצעי תשלום</span><b style="font-size:.95rem">${c.finger?'✓':'—'} / ${c.pay_method?'✓':'—'}</b></div>
       </div>
       <div class="acts">
-        <button class="btn p" data-a="grp">${ic('swap')}החלפת קבוצה</button>
+        <button class="btn p" data-a="grp">${ic('swap')}שינוי סוג מנוי</button>
         <button class="btn" data-a="msg">${ic('msg')}הודעה</button>
         <button class="btn" data-a="sub">${ic('cal')}תאריכי מנוי</button>
         <button class="btn" data-a="debt">${ic('plus')}חוב</button>
@@ -544,7 +544,7 @@ async function cTab(){const c=CUR,el=$('#ctab');if(!c)return;el.innerHTML='<div 
 async function cAction(a){const c=CUR;if(!c)return;
   const refresh=async(upd)=>{if(upd)Object.assign(c,upd);drawClient(true);cTab();};
   if(a==='grp'){const cur=c.group;
-    const v=await modal('החלפת קבוצה — '+esc(cName(c)),`<div class="hint">נוכחית: <b>${esc((S.G[cur]||{}).name||'—')}</b>. ההחלפה נעשית במקווה מיד.</div>
+    const v=await modal('שינוי סוג מנוי — '+esc(cName(c)),`<div class="hint">נוכחית: <b>${esc((S.G[cur]||{}).name||'—')}</b>. ההחלפה נעשית במקווה מיד.</div>
       <div class="list">${S.mk.groups.map(g=>`<label class="it" style="cursor:pointer"><input type="radio" name="gg" value="${esc(g.id)}" ${g.id===cur?'checked disabled':''}><span class="d" style="width:10px;height:10px;border-radius:50%;background:${gColor(g)}"></span><div class="m"><b>${esc(g.name)}</b></div><span class="mut num">${g.price!=null?nis(g.price):''}</span></label>`).join('')}</div>`,
       [{t:'להעביר',cls:'p',run:async b=>{const gid=(b.querySelector('[name=gg]:checked:not(:disabled)')||{}).value;if(!gid){toast('לבחור קבוצה');return false;}
         const r=await api('POST','/api/mikveh/group',{id:c.id,group:gid});if(!r.ok){alertBox('לא הועבר',r.error);return false;}return r;}},{t:'ביטול',v:null}]);
@@ -629,7 +629,7 @@ async function vDebts(all){
 // ---------- בקשות ופניות ----------
 let RTAB='grp',RQF='open';
 async function vReqs(){
-  $('#main').innerHTML=head('inbox','בקשות ופניות','')+`<div class="tabs" id="rtabs">${[['grp','בקשות החלפת קבוצה'],['nd','פניות מנדרים פלוס']].map(([k,t])=>`<button data-t="${k}" class="${RTAB===k?'on':''}">${t}</button>`).join('')}</div><div id="rb"><div class="skel" style="height:300px"></div></div>`;
+  $('#main').innerHTML=head('inbox','בקשות ופניות','')+`<div class="tabs" id="rtabs">${[['grp','בקשות שינוי סוג מנוי'],['nd','פניות מנדרים פלוס']].map(([k,t])=>`<button data-t="${k}" class="${RTAB===k?'on':''}">${t}</button>`).join('')}</div><div id="rb"><div class="skel" style="height:300px"></div></div>`;
   $('#rtabs').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;RTAB=b.dataset.t;vReqs();};
   if(RTAB==='grp'){const r=await api('GET','/api/mikveh/selfgroup');if(!$('#rb'))return;if(!r.ok){$('#rb').innerHTML='<div class="warn">'+esc(r.error||'')+'</div>';return;}
     const nw=(r.reqs||[]).filter(x=>x.status==='new'),old=(r.reqs||[]).filter(x=>x.status!=='new');
@@ -725,33 +725,61 @@ async function vSent(){
   $$('#sb [data-c]').forEach(e=>{if(e.dataset.c)e.onclick=()=>openClient(e.dataset.c);});}
 
 // ---------- שלוחות טלפון ----------
+// 🗂️ מאיר: "בוחרים לפי קטגוריות שסימנו שמושמעים בטלפון, ואז בוחר מתוך קטגוריה, בתוך הקטגוריה אני יסמן איזה לקהילה
+// בלבד" — עורך הקטגוריות של שלוחת שינוי סוג מנוי (משותף לשני האתרים)
+function mkPcHTML(r){
+  const esc_=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const C=r.cfg||{},on=C.phone_cats||[],mem=new Set(C.member_groups||[]),lk=new Set(C.locked_groups||[]),cs=C.cat_say||{};
+  const by={};(r.groups||[]).forEach(g=>{(by[g.cat||'אחר']=by[g.cat||'אחר']||[]).push(g);});
+  const names=[...on.filter(n=>by[n]),...Object.keys(by).filter(n=>!on.includes(n)).sort((a,b)=>a.localeCompare(b,'he'))];
+  const nis=v=>v==null?'—':'₪'+(+v).toLocaleString('he-IL');
+  const card=n=>{const isOn=on.includes(n),G=(by[n]||[]).slice().sort((a,b)=>((a.price==null?1e9:a.price)-(b.price==null?1e9:b.price))||a.name.localeCompare(b.name,'he'));
+    return '<div data-pc="'+esc_(n)+'" style="border:1px solid '+(isOn?'#9ec3ea':'#e3e7ee')+';background:'+(isOn?'#f4f9ff':'#fafbfc')+';border-radius:12px;padding:10px 12px;margin:8px 0">'+
+      '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label style="display:flex;gap:6px;align-items:center;font-weight:800;cursor:pointer"><input type="checkbox" data-pcon '+(isOn?'checked':'')+' style="width:20px;height:20px"> 🔊 '+esc_(n)+'</label>'+
+      '<small style="color:#888">'+G.length+' מנויים</small><span style="flex:1"></span>'+
+      '<input data-pcsay value="'+esc_(cs[n]||'')+'" placeholder="איך יוקרא בטלפון (ריק = השם)" style="border:1px solid #ccd;border-radius:8px;padding:5px 8px;font:inherit;min-width:170px">'+
+      '<button type="button" data-up title="למעלה" style="border:1px solid #ccd;background:#fff;border-radius:8px;padding:3px 9px;cursor:pointer">▲</button><button type="button" data-dn title="למטה" style="border:1px solid #ccd;background:#fff;border-radius:8px;padding:3px 9px;cursor:pointer">▼</button></div>'+
+      '<div data-pcb style="'+(isOn?'':'display:none;')+'margin-top:8px">'+G.map(g=>'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid #e8edf4;padding:6px 0">'+
+        '<span style="flex:1;min-width:150px">'+esc_(g.name)+' <b style="color:#555">'+nis(g.price)+'</b></span>'+
+        '<input data-say="'+esc_(g.id)+'" value="'+esc_(g.say||'')+'" title="איך השם יוקרא בטלפון" placeholder="השם בטלפון" style="border:1px solid #ccd;border-radius:8px;padding:4px 8px;font:inherit;width:170px">'+
+        '<label style="display:flex;gap:5px;align-items:center;color:#2f6fb0;white-space:nowrap"><input type="checkbox" data-mg="'+esc_(g.id)+'" '+(mem.has(g.id)?'checked':'')+' style="width:18px;height:18px"> 👥 לקהילה בלבד</label>'+
+        '<label style="display:flex;gap:5px;align-items:center;color:#c0392b;white-space:nowrap" title="מי שבמנוי הזה לא יכול לשנות אותו בטלפון"><input type="checkbox" data-lg="'+esc_(g.id)+'" '+(lk.has(g.id)?'checked':'')+' style="width:18px;height:18px"> 🔒 נעול</label></div>').join('')+'</div></div>';};
+  return '<div style="color:#555;font-size:.9rem;line-height:1.7;margin:4px 0 6px">מסמנים 🔊 את הקטגוריות שנשמעות בטלפון (בסדר הזה — ▲▼). המתקשר בוחר קודם קטגוריה ואז מנוי מתוכה (עם המחיר לחודש). '+
+    'קטגוריה אחת בלבד — עוברים ישר למנויים. <b>👥 לקהילה בלבד</b> — רק מי שהטלפון שלו רשום בקהילה שומע את המנוי הזה; ומי שבקהילה שומע בפתיחה "שלום [שם ומשפחה], חבר קהילה". '+
+    'את הקטגוריות עצמן קובעים בחלון "📋 סוגי מנוי".</div><div data-pcl>'+names.map(card).join('')+'</div>';}
+function mkPcWire(root){root.querySelectorAll('[data-pc]').forEach(el=>{
+  el.querySelector('[data-pcon]').onchange=e=>{el.querySelector('[data-pcb]').style.display=e.target.checked?'':'none';el.style.background=e.target.checked?'#f4f9ff':'#fafbfc';el.style.borderColor=e.target.checked?'#9ec3ea':'#e3e7ee';};
+  el.querySelector('[data-up]').onclick=()=>{const p=el.previousElementSibling;if(p)el.parentNode.insertBefore(el,p);};
+  el.querySelector('[data-dn]').onclick=()=>{const n=el.nextElementSibling;if(n)el.parentNode.insertBefore(n,el);};});}
+function mkPcRead(root){const cats=[...root.querySelectorAll('[data-pc]')],cat_say={};
+  cats.forEach(el=>{const v=el.querySelector('[data-pcsay]').value.trim();if(v)cat_say[el.dataset.pc]=v;});
+  return {phone_cats:cats.filter(el=>el.querySelector('[data-pcon]').checked).map(el=>el.dataset.pc),cat_say};}
 let ITAB='gen';
 async function vIvr(){
-  $('#main').innerHTML=head('phone','שלוחות טלפון','החלפת קבוצה והודעות מוקלטות בימות המשיח')+`<div class="tabs" id="itabs">${[['gen','החלפת קבוצה — כללי'],['price','מחירים ותשלום'],['lock','לקוחות נעולים'],['log','יומן החלפות'],['txt','טקסטים'],['vmset','שלוחת הודעות']].map(([k,t])=>`<button data-t="${k}" class="${ITAB===k?'on':''}">${t}</button>`).join('')}</div><div id="ib"><div class="skel" style="height:300px"></div></div>`;
+  $('#main').innerHTML=head('phone','שלוחות טלפון','שינוי סוג מנוי והודעות מוקלטות בימות המשיח')+`<div class="tabs" id="itabs">${[['gen','שינוי סוג מנוי — כללי'],['price','מחירים ותשלום'],['lock','לקוחות נעולים'],['log','יומן שינויים'],['txt','טקסטים'],['vmset','שלוחת הודעות']].map(([k,t])=>`<button data-t="${k}" class="${ITAB===k?'on':''}">${t}</button>`).join('')}</div><div id="ib"><div class="skel" style="height:300px"></div></div>`;
   $('#itabs').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;ITAB=b.dataset.t;vIvr();};
   if(ITAB==='txt'||ITAB==='vmset')return ivrTexts();
   const r=await api('GET','/api/mikveh/selfgroup');if(!$('#ib'))return;if(!r.ok){$('#ib').innerHTML='<div class="warn">'+esc(r.error||'')+'</div>';return;}
   const C=r.cfg,sel=new Set(C.groups||[]),lk=new Set(C.locked_groups||[]),mg=new Set(C.member_groups||[]),PM=new Set(C.pay_methods||['debt']);
   const save=async extra=>{const body={enabled:C.enabled,groups:C.groups,locked_groups:C.locked_groups,member_groups:C.member_groups,say:C.say,req_on:C.req_on,max:C.max,days:C.days,
       divisor:C.divisor,round:C.round,pay_methods:C.pay_methods,nd_mosad:C.nd_mosad,cancel_on:C.cancel_on,credit_down:C.credit_down,say_prices:true,
-      erech_groups:Array.isArray(C.erech_groups)?C.erech_groups:r.groups.filter(g=>g.erech).map(g=>g.id),min_keva:C.min_keva,keva_cats:C.keva_cats||[]};Object.assign(body,extra||{});
+      erech_groups:Array.isArray(C.erech_groups)?C.erech_groups:r.groups.filter(g=>g.erech).map(g=>g.id),min_keva:C.min_keva,keva_cats:C.keva_cats||[],phone_cats:C.phone_cats||[],cat_say:C.cat_say||{}};Object.assign(body,extra||{});
     const x=await api('POST','/api/mikveh/selfgroup',body);if(!x.ok){alertBox('לא נשמר',x.error);return;}toast('נשמר');vIvr();};
   if(ITAB==='gen'){
-    $('#ib').innerHTML=`<div class="grid two"><div class="card pad"><h3>${ic('swap')} הקבוצות בשלוחה</h3>
+    $('#ib').innerHTML=`<div class="grid two"><div class="card pad"><h3>${ic('swap')} סוגי המנוי בטלפון — לפי קטגוריות</h3>
         <label class="chk"><input type="checkbox" id="ion" ${C.enabled?'checked':''}><b>השלוחה פתוחה למתקשרים</b></label>
-        <div class="tw"><table class="t"><thead><tr><th>קבוצה</th><th>אפשר לעבור</th><th>👥 חברי קהילה</th><th>🔒 נעולה</th><th>השם בטלפון</th></tr></thead><tbody>${r.groups.map(g=>`<tr><td><span class="chip"><span class="d" style="background:${gColor(g)}"></span>${esc(g.name)}</span> <span class="mut num">${g.price!=null?nis(g.price):''}</span></td>
-          <td><input type="checkbox" data-sg="${esc(g.id)}" ${sel.has(g.id)?'checked':''}></td><td><input type="checkbox" data-mg="${esc(g.id)}" ${mg.has(g.id)?'checked':''}></td><td><input type="checkbox" data-lg="${esc(g.id)}" ${lk.has(g.id)?'checked':''}></td>
-          <td><input data-say="${esc(g.id)}" value="${esc(g.say)}" style="width:100%"></td></tr>`).join('')}</tbody></table></div></div>
+        <div id="ipc">${mkPcHTML(r)}</div></div>
       <div class="card pad"><h3>${ic('gear')} כללים</h3>
         <label class="fld"><span>אפשר להחליף</span><div style="display:flex;gap:8px;align-items:center"><input type="number" id="imax" value="${esc(C.max)}" style="width:80px"> פעמים בתוך <input type="number" id="idays" value="${esc(C.days)}" style="width:80px"> ימים</div></label>
         <label class="fld"><span>הנחת חבר קהילה — מינימום הוראת קבע (₪)</span><input type="number" id="imin" value="${esc(C.min_keva!=null?C.min_keva:100)}"></label>
         <div class="fld"><span>קטגוריית הוראת הקבע בנדרים שנחשבת להנחה</span><div class="kcs">${[...new Set([...(r.keva_cats||[]),...(C.keva_cats||[])])].map(k=>`<label class="chk"><input type="checkbox" data-kc="${esc(k)}" ${(C.keva_cats||[]).includes(k)?'checked':''}>${esc(k)}</label>`).join('')||'<span class="mut">אין עדיין קטגוריות בהוראות הקבע שנמשכו</span>'}</div><div class="hint">הוראת קבע בקטגוריה אחרת לא נחשבת. בלי סימון — כל הוראת קבע לקהילה נחשבת.</div></div>
-        <div class="hint">👥 חבר קהילה (לפי הטלפון ברשימת הקהילה) שומע: 1 לקבוצות ההנחה, 2 לרגילות. ההנחה ניתנת לבד רק עם הוראת קבע פעילה מהמינימום ומעלה, ורק אם אין לקוח אחר עם אותו טלפון / ת.ז. שכבר בהנחה. אחרת הוא שומע למה, ויכול לשלוח בקשה.</div>
+        <div class="hint">👥 מנוי "לקהילה בלבד" נשמע רק למי שהטלפון שלו רשום בקהילה. ההנחה ניתנת לבד רק עם הוראת קבע פעילה מהמינימום ומעלה, ורק אם אין לקוח אחר עם אותו טלפון / ת.ז. שכבר בהנחה. אחרת הוא שומע למה, ויכול לשלוח בקשה.</div>
         <label class="chk"><input type="checkbox" id="ireq" ${C.req_on?'checked':''}>מי שאין לו הרשאה / עבר את המקסימום — יכול לשלוח בקשה למשרד</label>
         <button class="btn p" id="isave" style="margin-top:10px">שמירה</button>
         <h3 style="margin-top:22px">הגדרה בימות המשיח</h3><pre class="code">type=api\napi_link=${esc(r.link)}\napi_hangup_send=no</pre></div></div>`;
+    mkPcWire($('#ipc'));
     $('#isave').onclick=()=>{const say={};$$('#ib [data-say]').forEach(i=>{if(i.value.trim())say[i.dataset.say]=i.value.trim();});
-      save({enabled:$('#ion').checked,groups:$$('#ib [data-sg]').filter(x=>x.checked).map(x=>x.dataset.sg),member_groups:$$('#ib [data-mg]').filter(x=>x.checked).map(x=>x.dataset.mg),
+      save({enabled:$('#ion').checked,groups:C.groups||[],...mkPcRead($('#ipc')),member_groups:$$('#ib [data-mg]').filter(x=>x.checked).map(x=>x.dataset.mg),
         locked_groups:$$('#ib [data-lg]').filter(x=>x.checked).map(x=>x.dataset.lg),say,max:$('#imax').value,days:$('#idays').value,min_keva:$('#imin').value,keva_cats:$$('#ib [data-kc]').filter(x=>x.checked).map(x=>x.dataset.kc),req_on:$('#ireq').checked});};}
   else if(ITAB==='price'){
     $('#ib').innerHTML=`<div class="grid two"><div class="card pad"><h3>${ic('cash')} חישוב ההפרש</h3>

@@ -18602,6 +18602,15 @@ def mkreq_pending(con):
     return r
 
 
+def mk_group_cat_map(con, groups):
+    """{מזהה מנוי: קטגוריה} — מה שנשמר בחלון "סוגי מנוי", ואם לא — לפי השם"""
+    try:
+        cats = json.loads(kv_get(con, 'mk_group_cats', '') or '{}') or {}
+    except Exception:
+        cats = {}
+    return {g['id']: cats.get(g['id']) or mk_group_cat_guess(g['name']) for g in groups}
+
+
 def mk_group_cat_guess(name):
     """קטגוריה מוצעת לפי השם: בלי המספור שבהתחלה ובלי מה שאחרי ה-"+" ("מנוי רגיל+מנוי מגבת קטנה" → "מנוי רגיל")"""
     n = re.sub(r'^\s*\d+\s*[.\-)]\s*', '', str(name or '')).strip()
@@ -24438,9 +24447,15 @@ class H(BaseHTTPRequestHandler):
                 byid = {str(c.get('id')): c for c in _mk.clients()}
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            con2 = db()
+            try:
+                _cm = mk_group_cat_map(con2, groups)
+            finally:
+                con2.close()
             for g in groups:
                 g['say'] = mkg_say(cfg, g['id'], g['name'])
                 g['erech'] = mkg_is_erech(cfg, g['id'], g['name'])
+                g['cat'] = _cm.get(g['id'])
             gr_ = {g['id']: g for g in groups}
             for rq in reqs:
                 cc = byid.get(str(rq['cid']))
@@ -27810,7 +27825,7 @@ class H(BaseHTTPRequestHandler):
                 if b.get('action') == 'reject':
                     con.execute("UPDATE mkg_req SET status='rejected', handled_at=?, note=? WHERE id=?", (now_iso(), note, r['id']))
                     con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                                (r['cid'], now_iso(), 'group', '✗ נדחתה הבקשה לעבור לקבוצה %s%s' % (r['to_name'], (' · ' + note) if note else '')))
+                                (r['cid'], now_iso(), 'group', '✗ נדחתה הבקשה לעבור ל%s%s' % (r['to_name'], (' · ' + note) if note else '')))
                     con.commit()
                     return self._send(200, {'ok': True})
                 try:
@@ -27882,9 +27897,19 @@ class H(BaseHTTPRequestHandler):
                    if isinstance(b.get('erech_groups'), list) else 'auto',
                    'member_groups': [str(x) for x in (b.get('member_groups') or []) if str(x) in known],
                    'member_keva': bool(b.get('member_keva')), 'min_keva': round(num('min_keva', 0, 100000, 100), 2),
-                   'keva_cats': [str(x).strip()[:80] for x in (b.get('keva_cats') or []) if str(x).strip()][:30]}
+                   'keva_cats': [str(x).strip()[:80] for x in (b.get('keva_cats') or []) if str(x).strip()][:30],
+                   'phone_cats': [re.sub(r'\s+', ' ', str(x)).strip()[:60] for x in (b.get('phone_cats') or []) if str(x).strip()][:30],
+                   'cat_say': {re.sub(r'\s+', ' ', str(k)).strip()[:60]: str(v).strip()[:60] for k, v in (b.get('cat_say') or {}).items() if str(v).strip()}}
+            if cfg['phone_cats']:
+                # המנויים בקטגוריות שנשמעות בטלפון — "אפשר לעבור אליהם" (גם בשביל המחירון והבקשות)
+                con2 = db()
+                try:
+                    _cm = mk_group_cat_map(con2, _mk.groups())
+                finally:
+                    con2.close()
+                cfg['groups'] = gs = [g for g in _cm if _cm[g] in set(cfg['phone_cats'])][:97]
             if cfg['enabled'] and len(gs) < 2:
-                return self._send(200, {'ok': False, 'error': 'צריך לבחור לפחות 2 קבוצות שאפשר לעבור ביניהן'})
+                return self._send(200, {'ok': False, 'error': 'צריך לפחות 2 מנויים שאפשר לעבור ביניהם (בקטגוריות שנשמעות בטלפון)'})
             con = db()
             try:
                 kv_set(con, 'mkg_cfg', json.dumps(cfg, ensure_ascii=False))
@@ -35882,55 +35907,57 @@ MKG_DEFAULT = {'enabled': False, 'groups': [], 'max': 1, 'days': 30, 'say': {}, 
                # שייך לחבר קהילה פעיל ומאושר ב-CRM (ואם member_keva — שיש לו גם הוראת קבע פעילה לקהילה)
                'member_groups': [], 'member_keva': False,
                # מאיר: "מינימום של הוראת קבע — רק מי שיש לו הוראת קבע של לפחות 100 שקל, שיהיה ניתן לשינוי"
-               'min_keva': 100, 'keva_cats': []}
+               'min_keva': 100, 'keva_cats': [],
+               # 🗂️ מאיר: "בוחרים לפי קטגוריות שסימנו שמושמעים בטלפון, ואז בוחר מתוך הקטגוריה" — הסדר כאן = הסדר בטלפון
+               'phone_cats': [], 'cat_say': {}}
 
 # 🗣️ מאיר: "אני רוצה אפשרות לשנות טקסטים בשלוחה API" — כל מה שהשלוחות של המקווה אומרות. בסוגריים מסולסלים —
 # מה שהמערכת ממלאת לבד (שם, קבוצה, סכום…). מה שלא שונה — ברירת המחדל. נשמר ב-app_kv (mk_ivr_texts).
 MK_TEXTS = [
-    # (מפתח, שלוחה, תיאור, ברירת מחדל)
-    ('hello', 'grp', 'פתיחה', 'שלום {name}, אתם בקבוצה {group}'),
-    ('choose', 'grp', 'לפני רשימת הקבוצות (עד 9)', 'בחרו קבוצה'),
-    ('choose_hash', 'grp', 'לפני רשימת הקבוצות (10 ומעלה — עם סולמית)', 'בחרו קבוצה והקישו סולמית בסיום'),
-    ('option_entry', 'grp', 'אפשרות בתפריט — ערך צבור, מחיר לכניסה (המספר נאמר אחרי)', 'לקבוצה {group}, {price} שקלים לכניסה, הקישו'),
-    ('option', 'grp', 'אפשרות בתפריט (המספר נאמר אחרי)', 'לקבוצה {group} הקישו'),
-    ('option_price', 'grp', 'אפשרות בתפריט עם מחיר (המספר נאמר אחרי)', 'לקבוצה {group}, {price} שקלים לחודש, הקישו'),
-    ('quote_pay', 'grp', 'הצעת מחיר — יש הפרש לתשלום', 'המעבר לקבוצה {group} עולה {price} שקלים לחודש. נשארו לכם {days} ימים במנוי, ולכן ההפרש לתשלום הוא {amount} שקלים. לאישור הקישו 1, לביטול הקישו 2'),
-    ('quote_credit', 'grp', 'הצעת מחיר — מגיע זיכוי', 'במעבר לקבוצה {group} תקבלו זיכוי של {amount} שקלים ביתרה הזמנית, על {days} הימים שנשארו לכם במנוי. שימו לב, את המעבר הזה אי אפשר לבטל. לאישור הקישו 1, לביטול הקישו 2'),
+    # (מפתח, שלוחה, תיאור, ברירת מחדל). מאיר: "שינוי קבוצה לשעבר — נקרא מהיום שינוי סוג מנוי"
+    ('hello', 'grp', 'פתיחה', 'שלום {name}, המנוי שלכם כעת: {group}'),
+    ('hello_member', 'grp', 'פתיחה — חבר קהילה', 'שלום {name}, חבר קהילה, המנוי שלכם כעת: {group}'),
+    ('cat_choose', 'grp', 'לפני רשימת הקטגוריות', 'בחרו סוג מנוי'),
+    ('cat_option', 'grp', 'קטגוריה בתפריט (המספר נאמר אחרי)', 'ל{cat} הקישו'),
+    ('choose', 'grp', 'לפני רשימת המנויים (עד 9)', 'בחרו מנוי'),
+    ('choose_hash', 'grp', 'לפני רשימת המנויים (10 ומעלה — עם סולמית)', 'בחרו מנוי והקישו סולמית בסיום'),
+    ('option_entry', 'grp', 'אפשרות בתפריט — ערך צבור, מחיר לכניסה (המספר נאמר אחרי)', 'ל{group}, {price} שקלים לכניסה, הקישו'),
+    ('option', 'grp', 'אפשרות בתפריט (המספר נאמר אחרי)', 'ל{group} הקישו'),
+    ('option_price', 'grp', 'אפשרות בתפריט עם מחיר (המספר נאמר אחרי)', 'ל{group}, {price} שקלים לחודש, הקישו'),
+    ('quote_pay', 'grp', 'הצעת מחיר — יש הפרש לתשלום', 'המעבר ל{group} עולה {price} שקלים לחודש. נשארו לכם {days} ימים במנוי, ולכן ההפרש לתשלום הוא {amount} שקלים. להמשך הקישו 1, לביטול הקישו 2'),
+    ('quote_credit', 'grp', 'הצעת מחיר — מגיע זיכוי', 'במעבר ל{group} תקבלו זיכוי של {amount} שקלים ביתרה הזמנית, על {days} הימים שנשארו לכם במנוי. לאישור הקישו 1, לביטול הקישו 2'),
     ('pay_keva', 'grp', 'תשלום — הוראת קבע', 'לתשלום מהוראת הקבע בכרטיס המסתיים בספרות {last4} הקישו {n}'),
     ('pay_card', 'grp', 'תשלום — כרטיס אשראי', 'לתשלום בכרטיס אשראי הקישו {n}'),
     ('pay_debt', 'grp', 'תשלום — חוב במקווה', 'לרישום חוב במקווה ותשלום במכונה של המקווה הקישו {n}'),
     ('pay_fail', 'grp', 'החיוב לא עבר', 'החיוב לא עבר'),
-    ('pay_cancel', 'grp', 'התשלום בוטל', 'התשלום בוטל, הקבוצה לא שונתה'),
-    ('done_paid', 'grp', 'שולם והועבר', 'התשלום של {amount} שקלים התקבל, והועברתם לקבוצה {group}. תודה רבה'),
-    ('done_debt', 'grp', 'הועבר עם חוב', 'הועברתם לקבוצה {group}. נרשם לכם חוב של {amount} שקלים, ואפשר לשלם אותו במכונה של המקווה באשראי או במזומן. כל עוד החוב לא שולם, אפשר לבטל את המעבר בשלוחה הזו'),
-    ('not_member', 'grp', 'הקבוצה רק לחברי קהילה', 'המעבר לקבוצות האלה מיועד לחברי הקהילה בלבד. לפרטים אנא פנו למשרד'),
-    ('done_credit', 'grp', 'הועבר עם זיכוי', 'הועברתם לקבוצה {group}. זיכינו אתכם על סך {amount} שקלים ביתרה הזמנית. תודה רבה'),
-    ('cancel_offer', 'grp', 'ביטול מעבר שלא שולם (המספר נאמר אחרי)', 'לביטול המעבר לקבוצה {group} שעוד לא שולם, וחזרה לקבוצה {old}, הקישו'),
-    ('cancel_done', 'grp', 'המעבר בוטל', 'המעבר בוטל. חזרתם לקבוצה {old} והחוב נמחק. תודה רבה'),
-    ('paid_fail', 'grp', 'שולם אבל המעבר נכשל', 'התשלום התקבל, אבל הקבוצה לא שונתה. המשרד יטפל בזה בהקדם'),
+    ('pay_cancel', 'grp', 'התשלום בוטל', 'התשלום בוטל, המנוי לא שונה'),
+    ('done_paid', 'grp', 'שולם והועבר', 'התשלום של {amount} שקלים התקבל, והמנוי שלכם שונה ל{group}. תודה רבה'),
+    ('done_debt', 'grp', 'הועבר עם חוב', 'המנוי שלכם שונה ל{group}. נרשם לכם חוב של {amount} שקלים, ואפשר לשלם אותו במכונה של המקווה באשראי או במזומן. תודה רבה'),
+    ('not_member', 'grp', 'המנוי רק לחברי קהילה', 'המנויים האלה מיועדים לחברי הקהילה בלבד. לפרטים אנא פנו למשרד'),
+    ('done_credit', 'grp', 'הועבר עם זיכוי', 'המנוי שלכם שונה ל{group}. זיכינו אתכם על סך {amount} שקלים ביתרה הזמנית. תודה רבה'),
+    ('cancel_offer', 'grp', 'ביטול שינוי שלא שולם (המספר נאמר אחרי)', 'לביטול השינוי ל{group} שעוד לא שולם, וחזרה ל{old}, הקישו'),
+    ('cancel_done', 'grp', 'השינוי בוטל', 'השינוי בוטל. חזרתם ל{old} והחוב נמחק. תודה רבה'),
+    ('paid_fail', 'grp', 'שולם אבל השינוי נכשל', 'התשלום התקבל, אבל המנוי לא שונה. המשרד יטפל בזה בהקדם'),
     ('end_opt', 'grp', 'יציאה', 'ליציאה הקישו כוכבית'),
-    ('confirm', 'grp', 'אישור החלפה (בחינם)', 'לאישור מעבר לקבוצה {group} הקישו 1. לביטול הקישו 2'),
-    ('done', 'grp', 'ההחלפה בוצעה (בחינם)', 'הועברתם לקבוצה {group}. תודה רבה'),
-    ('cancel', 'grp', 'המתקשר ביטל', 'ההחלפה בוטלה, הקבוצה לא שונתה'),
-    ('bye', 'grp', 'סיום בלי בחירה', 'תודה, הקבוצה לא שונתה'),
+    ('confirm', 'grp', 'אישור שינוי (בלי הפרש)', 'לאישור מעבר ל{group} הקישו 1. לביטול הקישו 2'),
+    ('done', 'grp', 'השינוי בוצע (בלי הפרש)', 'המנוי שלכם שונה ל{group}. תודה רבה'),
+    ('cancel', 'grp', 'המתקשר ביטל', 'השינוי בוטל, המנוי לא שונה'),
+    ('bye', 'grp', 'סיום בלי בחירה', 'תודה, המנוי לא שונה'),
     ('who', 'grp', 'כמה מנויים על אותו טלפון', 'שלום, על המספר הזה רשומים כמה מנויים'),
     ('who_item', 'grp', 'בחירת מנוי', 'ל{name} הקישו {n}'),
-    ('max', 'grp', 'הגיע למספר ההחלפות המרבי', 'הגעתם למספר ההחלפות המרבי. אפשר להחליף שוב בעוד {left} ימים'),
+    ('max', 'grp', 'הגיע למספר השינויים המרבי', 'הגעתם למספר השינויים המרבי. אפשר לשנות שוב בעוד {left} ימים'),
     ('req_offer', 'grp', 'הצעה לשלוח בקשה למשרד (המספר נאמר אחרי)', 'לשליחת בקשה למשרד הקישו'),
-    ('req_option', 'grp', 'אפשרות בתפריט הבקשה (המספר נאמר אחרי)', 'לבקשה לקבוצה {group} הקישו'),
+    ('req_option', 'grp', 'אפשרות בתפריט הבקשה (המספר נאמר אחרי)', 'לבקשה ל{group} הקישו'),
     ('req_done', 'grp', 'הבקשה נשלחה', 'הבקשה שלכם נשלחה למשרד המקווה ותטופל בהקדם, תודה רבה'),
     ('req_dup', 'grp', 'כבר יש בקשה פתוחה', 'כבר שלחתם בקשה שעדיין לא טופלה, היא תטופל בהקדם'),
-    ('locked', 'grp', 'קבוצה או לקוח נעולים', 'את הקבוצה שלכם אי אפשר להחליף בטלפון, אנא פנו למשרד המקווה'),
+    ('locked', 'grp', 'מנוי או לקוח נעולים', 'את המנוי שלכם אי אפשר לשנות בטלפון, אנא פנו למשרד המקווה'),
     ('blocked', 'grp', 'לקוח חסום במקווה', 'החשבון שלכם במקווה חסום, אנא פנו למשרד המקווה'),
     ('not_found', 'grp', 'הטלפון לא רשום במקווה', 'מספר הטלפון שלכם לא רשום במקווה, אנא פנו למשרד המקווה'),
     ('no_phone', 'grp', 'אין זיהוי מספר', 'לא זיהינו את מספר הטלפון שלכם, אנא התקשרו מהמספר שרשום במקווה'),
-    ('no_target', 'grp', 'אין לאן לעבור', 'אין קבוצה אחרת שאפשר לעבור אליה, תודה'),
+    ('no_target', 'grp', 'אין לאן לעבור', 'אין מנוי אחר שאפשר לעבור אליו, תודה'),
     ('closed', 'grp', 'השלוחה סגורה', 'השלוחה סגורה כרגע, אנא פנו למשרד המקווה'),
     ('no_conn', 'grp', 'אין חיבור למקווה', 'אין כרגע חיבור למערכת המקווה, אנא נסו שוב מאוחר יותר'),
-    ('error', 'grp', 'תקלה בהחלפה', 'אירעה תקלה, הקבוצה לא שונתה. אנא נסו שוב מאוחר יותר או פנו למשרד המקווה'),
-    ('cat_intro', 'grp', 'חבר קהילה — לפני הבחירה', 'אתם רשומים כחברי קהילה'),
-    ('cat_disc', 'grp', 'חבר קהילה — קבוצות ההנחה (המספר נאמר אחרי)', 'לקבוצות בהנחת חבר קהילה, בהוראת קבע פעילה, הקישו'),
-    ('cat_reg', 'grp', 'חבר קהילה — הקבוצות הרגילות (המספר נאמר אחרי)', 'לקבוצות הרגילות הקישו'),
+    ('error', 'grp', 'תקלה בשינוי', 'אירעה תקלה, המנוי לא שונה. אנא נסו שוב מאוחר יותר או פנו למשרד המקווה'),
     ('no_keva', 'grp', 'אין הוראת קבע פעילה', 'אין לכם הוראת קבע פעילה לקהילה, ולכן אין לכם עדיין הרשאה להנחה'),
     ('no_keva_cat', 'grp', 'אין הוראת קבע בקטגוריה שנבחרה', 'אין לכם הוראת קבע פעילה בקטגוריה {cat}, ולכן אין לכם עדיין הרשאה להנחה'),
     ('low_keva', 'grp', 'הוראת קבע נמוכה מהמינימום', 'הוראת הקבע שלכם לקהילה היא {amount} שקלים, וההנחה ניתנת רק מ {min} שקלים ומעלה'),
@@ -36136,7 +36163,7 @@ def mkg_apply(con, cid, c, gr, cur, tgt, q, method, call_id, phone, conf=''):
     how = {'debt': ' · נרשם חוב ₪%g במקווה' % amt, 'card': ' · שילם ₪%g באשראי' % amt, 'keva': ' · שילם ₪%g מהוראת הקבע' % amt,
            'credit': ' · זיכוי ₪%g ביתרה הזמנית' % -amt}.get(method, '') if amt else ''
     con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                (cid, now_iso(), 'group', ('📞 החליף קבוצה בטלפון: %s → %s' if call_id and not str(call_id).startswith('req:') else '✓ אושרה הבקשה מהטלפון: %s → %s')
+                (cid, now_iso(), 'group', ('📞 שינה סוג מנוי בטלפון: %s → %s' if call_id and not str(call_id).startswith('req:') else '✓ אושרה הבקשה מהטלפון: %s → %s')
                  % (gr[cur]['name'], gr[tgt]['name']) + how))
     con.commit()
     return True, err, debt_id
@@ -36177,7 +36204,11 @@ def mkg_ivr(P):
         except Exception as e:
             print('  mkg ivr mikveh error:', e)
             return msg('no_conn')
-        allowed = [g for g in (cfg.get('groups') or []) if g in gr]
+        if cfg.get('phone_cats'):
+            _cm = mk_group_cat_map(con, gr.values())
+            allowed = [g for g in gr if _cm.get(g) in set(cfg['phone_cats'])]
+        else:
+            allowed = [g for g in (cfg.get('groups') or []) if g in gr]
         if not allowed:
             return msg('closed')
         if not mine:
@@ -36223,11 +36254,30 @@ def mkg_ivr(P):
         choose = lambda count: S('choose_hash' if count > 9 else 'choose')
         if '*' in (P.get('Who'), P.get('Cat'), P.get('Req'), P.get('Grp'), P.get('Ok'), P.get('Pay'), P.get('Pay2')):
             return msg('bye')
+        # 🗂️ מאיר: "בוחרים לפי קטגוריות שסימנו שמושמעים בטלפון, ואז בוחר מתוך קטגוריה… מספר שלא רשום בקהילה לא מושמע לו
+        # בכלל מנוי קהילה… שנכנסים הוא יגיד שלום (כולל משפחה) חבר קהילה"
         mgs = set(cfg.get('member_groups') or [])
-        rest = [g for g in allowed if g != cur]
-        reg_opts = [g for g in rest if g not in mgs][:97]
-        disc_opts = [g for g in rest if g in mgs][:97]
-        member = mkg_member(con, c, cfg) if disc_opts else None
+        member = mkg_member(con, c, cfg)
+        lockg = set(cfg.get('locked_groups') or [])
+        hello = S('hello_member' if member else 'hello', name=name or first, group=mkg_say(cfg, cur, gr[cur]['name']))
+
+        def can_go(g):
+            return g != cur and g not in lockg and (member or g not in mgs)
+
+        def by_price(gl):
+            return sorted(gl, key=lambda g: (gr[g].get('price') if gr[g].get('price') is not None else 10 ** 6, gr[g]['name']))
+
+        pcats = [x for x in (cfg.get('phone_cats') or []) if x]
+        if pcats:
+            cmap = mk_group_cat_map(con, gr.values())
+            cat_opts = []
+            for cn in pcats:
+                gl = by_price([g for g in allowed if cmap.get(g) == cn and can_go(g)])[:97]
+                if gl:
+                    cat_opts.append((cn, gl))
+        else:
+            gl = [g for g in allowed if can_go(g)][:97]
+            cat_opts = [('', gl)] if gl else []
         used, left = mkg_used(con, cid, cfg.get('days') or 30)
         over = bool(int(cfg.get('max') or 0) and used >= int(cfg['max']))
 
@@ -36236,12 +36286,12 @@ def mkg_ivr(P):
                         "VALUES(?,?,?,?,?,?,?,?,?,?,'new',?)",
                         (now_iso(), cid, name, c.get('clientCode'), phone, cur, gr[cur]['name'], tgt, gr[tgt]['name'], reason, call_id))
             con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                        (cid, now_iso(), 'group', '📨 ביקש בטלפון לעבור לקבוצה %s (בקשה למשרד) · %s' % (gr[tgt]['name'], reason)))
+                        (cid, now_iso(), 'group', '📨 ביקש בטלפון לעבור ל%s (בקשה למשרד) · %s' % (gr[tgt]['name'], reason)))
             con.commit()
             return msg('req_done')
 
         def req_menu(opts_, reason, lead):
-            """הצעה לשלוח בקשה למשרד → בחירת קבוצה → בקשה (בלי הקלטה)"""
+            """הצעה לשלוח בקשה למשרד → בחירת מנוי (אם עוד לא נבחר) → בקשה (בלי הקלטה)"""
             if con.execute("SELECT 1 FROM mkg_req WHERE cid=? AND status='new'", (cid,)).fetchone():
                 return 'id_list_message=' + '.'.join(lead + [S('req_dup')]) + END
             if not cfg.get('req_on'):
@@ -36264,48 +36314,45 @@ def mkg_ivr(P):
                 return msg('bye')
             return make_req(opts_[v_ - 1], reason)
 
+        lead = [hello]
         if undo:
-            opts = []          # מעבר שעוד לא שולם — קודם לבטל או לשלם
+            opts = []          # שינוי שעוד לא שולם — קודם לבטל או לשלם
         else:
-            # 👥 חבר קהילה (גם בלי הוראת קבע) — קודם בוחר: קבוצות ההנחה (1) או הקבוצות הרגילות (2)
-            cat = '2'
-            if member and disc_opts:
-                cat = '1' if not reg_opts else P.get('Cat')
-                if cat not in ('1', '2'):
-                    if 'Cat' in P:
-                        return msg('bye')
-                    return ask([S('hello', name=first, group=mkg_say(cfg, cur, gr[cur]['name'])), S('cat_intro'),
-                                S('cat_disc'), N(1), S('cat_reg'), N(2), S('end_opt')], 'Cat', 1)
-            if cat == '1':
-                blk = mkg_disc_block(con, c, member, mgs, mine_all, cfg.get('min_keva') or 0, cfg.get('keva_cats') or [])
-                if blk:
-                    # מאיר: "שלא יתן באופן אוטומטי ויצטרכו לשלוח בקשה — יגיד בדיוק למה אין לו הרשאה"
-                    return req_menu(disc_opts, blk[2], [S(blk[0], **blk[1])])
-                opts = disc_opts
-            else:
-                opts = reg_opts
-                if not opts:
-                    return msg('not_member' if disc_opts else 'no_target')
+            if not cat_opts:
+                return 'id_list_message=' + '.'.join([hello, S('no_target')]) + END
             if over:
-                return req_menu(opts, 'כבר החליף %d פעמים ב-%s ימים' % (used, cfg.get('days')),
-                                [S('max', used=used, max=cfg.get('max'), days=cfg.get('days'), left=left)])
-        if undo and P.get('Grp') == str(len(opts) + 1):
-            try:
-                _mk.set_group(cid, undo['from_gid'])
-                if str(_mk.client(cid).get('groupId')) != str(undo['from_gid']):
-                    raise RuntimeError('המקווה לא עדכן את הקבוצה')
-                _mk.delete_debt(undo['debt_id'])
-            except Exception as e:
-                print('  mkg undo error:', e)
-                return msg('error')
-            con.execute("UPDATE mkg_log SET ok=0, status='cancelled' WHERE id=?", (undo['id'],))
-            con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                        (cid, now_iso(), 'group', '↩️ ביטל בטלפון את המעבר: חזר ל%s, והחוב ₪%g נמחק' % (undo['from_name'], undo['amount'] or 0)))
-            con.commit()
-            return msg('cancel_done', old=mkg_say(cfg, undo['from_gid'], undo['from_name']))
+                flat = [g for _cn, gl in cat_opts for g in gl][:97]
+                return req_menu(flat, 'כבר שינה %d פעמים ב-%s ימים' % (used, cfg.get('days')),
+                                [hello, S('max', used=used, max=cfg.get('max'), days=cfg.get('days'), left=left)])
+            if len(cat_opts) > 1:
+                if 'Cat' not in P:
+                    parts = [hello, S('cat_choose')]
+                    for i, (cn, _gl) in enumerate(cat_opts, 1):
+                        parts += [S('cat_option', cat=(cfg.get('cat_say') or {}).get(cn) or cn), N(i)]
+                    return ask(parts + [S('end_opt')], 'Cat', 1 if len(cat_opts) <= 9 else 2)
+                try:
+                    ci = int(P.get('Cat') or 0)
+                except ValueError:
+                    ci = 0
+                if not (1 <= ci <= len(cat_opts)):
+                    return msg('bye')
+                opts = cat_opts[ci - 1][1]
+                lead = []          # הפתיחה כבר נאמרה בתפריט הקטגוריות
+            else:
+                opts = cat_opts[0][1]
+            # 👥 מנוי לקהילה בלבד (רק חבר קהילה שומע אותו) — עדיין בודקים הוראת קבע / שימוש כפול; אם לא — בקשה למשרד
+            if 'Grp' in P:
+                try:
+                    vv = int(P.get('Grp') or 0)
+                except ValueError:
+                    vv = 0
+                if 1 <= vv <= len(opts) and opts[vv - 1] in mgs:
+                    blk = mkg_disc_block(con, c, member, mgs, mine_all, cfg.get('min_keva') or 0, cfg.get('keva_cats') or [])
+                    if blk:
+                        return req_menu(opts, blk[2], [S(blk[0], **blk[1])])
         if 'Grp' not in P:
-            # עד 2 ספרות + סולמית ("בחרו קבוצה והקישו סולמית")
-            parts = ([] if (member and disc_opts and reg_opts and not undo) else [S('hello', name=first, group=mkg_say(cfg, cur, gr[cur]['name']))])
+            # עד 2 ספרות + סולמית ("בחרו מנוי והקישו סולמית")
+            parts = list(lead)
             count = len(opts) + (1 if undo else 0)
             if opts:
                 parts.append(choose(count))
