@@ -1917,8 +1917,8 @@ async function mkPriceDoc(scope,btn){
   const ov=document.createElement('div');ov.id='mkpl';
   ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;direction:rtl;box-shadow:0 20px 60px rgba(0,0,0,.25);font-family:inherit">'+
-    '<div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;border-radius:16px 16px 0 0"><b style="font-size:1.1rem;flex:1">📄 מחירון הקבוצות</b><button id="mkplx" title="סגירה" style="border:0;background:#f1f4f9;border-radius:50%;width:34px;height:34px;cursor:pointer;font-size:1rem">✕</button></div>'+
-    '<div id="mkplb" style="padding:14px 18px;overflow:auto">⏳ טוען את הקבוצות מהמקווה…</div>'+
+    '<div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;border-radius:16px 16px 0 0"><b style="font-size:1.1rem;flex:1">📄 מחירון המנויים</b><button id="mkplx" title="סגירה" style="border:0;background:#f1f4f9;border-radius:50%;width:34px;height:34px;cursor:pointer;font-size:1rem">✕</button></div>'+
+    '<div id="mkplb" style="padding:14px 18px;overflow:auto">⏳ טוען את המנויים מהמקווה…</div>'+
     '<div style="padding:12px 18px;border-top:1px solid #eee;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button id="mkplgo" disabled style="background:#2f6fb0;color:#fff;border:0;border-radius:10px;padding:10px 18px;font:inherit;font-weight:700;cursor:pointer">⬇️ להוריד Word</button><span id="mkplm" style="color:#777;font-size:.88rem"></span></div></div>';
   document.body.appendChild(ov);
   document.getElementById('mkplx').onclick=()=>ov.remove();
@@ -1926,12 +1926,12 @@ async function mkPriceDoc(scope,btn){
   const B=document.getElementById('mkplb');if(!B)return;
   if(!r||!r.ok){B.innerHTML='⚠️ '+esc_((r&&r.error)||'אין חיבור למקווה');return;}
   const nis=v=>v==null?'—':'₪'+(+v).toLocaleString('he-IL');
-  B.innerHTML='<div style="color:#666;font-size:.88rem;margin-bottom:8px">מסמנים אילו קבוצות ייכנסו למחירון. במסמך יופיעו רק שם הקבוצה והמחיר לחודש. הבחירה נשמרת לפעם הבאה.</div>'+
+  B.innerHTML='<div style="color:#666;font-size:.88rem;margin-bottom:8px">מסמנים אילו מנויים ייכנסו למחירון. במסמך יופיעו רק שם המנוי והמחיר לחודש. הבחירה נשמרת לפעם הבאה.</div>'+
     '<div style="display:flex;gap:6px;margin-bottom:8px"><button data-all="1" style="border:1px solid #ddd;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">לסמן הכל</button><button data-all="0" style="border:1px solid #ddd;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit">לנקות</button></div>'+
     '<label style="display:block;margin:4px 0 12px"><b style="font-size:.9rem">הודעה בראש המחירון (לא חובה)</b><div style="color:#888;font-size:.8rem">השורה הראשונה תהיה הכותרת של ההודעה. ריק = בלי הודעה.</div><textarea id="mkplnote" rows="4" style="width:100%;box-sizing:border-box;margin-top:4px;border:1px solid #ddd;border-radius:8px;padding:8px;font:inherit">'+esc_(r.notice||'')+'</textarea></label>'+
     r.groups.map(g=>'<label style="display:flex;gap:10px;align-items:center;padding:8px 4px;border-bottom:1px solid #f1f1f1;cursor:pointer"><input type="checkbox" data-pg="'+esc_(g.id)+'" '+(g.on?'checked':'')+' style="width:18px;height:18px;flex:none"><span style="flex:1">'+esc_(g.name)+(g.erech?' <small style="color:#999">(ערך צבור)</small>':'')+'</span><b style="white-space:nowrap">'+nis(g.price)+'</b></label>').join('');
   const go=document.getElementById('mkplgo'),M=document.getElementById('mkplm');
-  const cnt=()=>{const n=B.querySelectorAll('[data-pg]:checked').length;go.disabled=!n;M.textContent=n?n+' קבוצות נבחרו':'לא נבחרה קבוצה';};
+  const cnt=()=>{const n=B.querySelectorAll('[data-pg]:checked').length;go.disabled=!n;M.textContent=n?n+' מנויים נבחרו':'לא נבחר מנוי';};
   B.onchange=cnt;B.querySelectorAll('[data-all]').forEach(b=>b.onclick=()=>{B.querySelectorAll('[data-pg]').forEach(i=>i.checked=b.dataset.all==='1');cnt();});cnt();
   go.onclick=async()=>{const ids=[...B.querySelectorAll('[data-pg]:checked')].map(i=>i.dataset.pg);go.disabled=true;M.textContent='⏳ מכין את המסמך…';
     try{const x=await fetch('/api/mikveh/pricelist.docx?ids='+ids.join(',')+'&notice='+encodeURIComponent(document.getElementById('mkplnote').value));
@@ -2228,7 +2228,7 @@ function renderMikveh(){
       <button class="mkibtn" id="mkvmb" title="הודעות שהשאירו בשלוחת המקווה בטלפון — להאזין, לקרוא את התמלול, לסמן שטופל">📥 הודעות מוקלטות<b id="mkvmn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button></div></div>
         <div class="mkhg"><span>📊 דוחות ובדיקות</span><div><button class="mkibtn" id="mkentday" title="כמה נכנסו למקווה ביום מסוים — לפי קבוצה (ערך צבור, מזדמן וכו')">📊 כניסות ליום</button>
           <button class="mkibtn" id="mkdebtsb" title="כל החובות הפתוחים במקווה — מי חייב, כמה ועל מה">🧾 חובות פתוחים</button>
-      <button class="mkibtn" id="mkprice" title="מסמך Word על הבלאנק של המקווה — כל הקבוצות והמחירים, מהמקווה עכשיו">📄 מחירון הקבוצות</button>
+      <button class="mkibtn" id="mkprice" title="מסמך Word על הבלאנק של המקווה — כל המנויים והמחירים, מהמקווה עכשיו">📄 מחירון המנויים</button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי או הרישיון שלו הסתיים, ולמה (חידוש אוטומטי כבוי / אין אמצעי תשלום / חיוב נכשל)">🔍 בדיקת פג תוקף</button></div></div>
         <div class="mkhg"><span>💬 פניות והודעות</span><div><button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📨 פניות מנדרים${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
           <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>

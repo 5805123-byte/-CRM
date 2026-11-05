@@ -99,7 +99,7 @@ def clean_name(name):
     return re.sub(r'^\s*\d+\s*[.\-)]\s*', '', str(name or '')).strip() or str(name or '')
 
 
-def pricelist(groups, *, title='מחירון קבוצות המקווה', date_line='', notice=''):
+def pricelist(groups, *, title='מחירון המנויים של המקווה', date_line='', notice=''):
     """groups — [{'name','price'}] (מחיר לחודש בשקלים), בסדר שבו יופיעו. מחזיר bytes של קובץ docx.
     מאיר: "לא צריך לכתוב כניסה בודדת ולא על קבוצה ערך צבור… ולא על הקהילה, אני יביא לך את הפרטים אל תמציא"
     — רק הקבוצות שנבחרו והמחיר לחודש. בלי טקסטים נוספים."""
@@ -110,7 +110,7 @@ def pricelist(groups, *, title='מחירון קבוצות המקווה', date_li
     body += _dia()
     if str(notice or '').strip():
         body += _notice(notice)
-    body += _table(['קבוצה', 'מחיר לחודש'], [[clean_name(g['name']), _nis(g.get('price'))] for g in groups], W)
+    body += _table(['סוג המנוי', 'מחיר לחודש'], [[clean_name(g['name']), _nis(g.get('price'))] for g in groups], W)
     body += _p(_run('הנהלת המקווה', 28, RED, True), jc='center', before=400, after=0)
     return _fill(body)
 

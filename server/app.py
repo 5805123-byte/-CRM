@@ -24530,7 +24530,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
             gs = [byid[x] for x in ids if x in byid]
             if not gs:
-                return self._send(200, {'ok': False, 'error': 'לא נבחרה אף קבוצה למחירון'})
+                return self._send(200, {'ok': False, 'error': 'לא נבחר אף מנוי למחירון'})
             data = _md.pricelist(gs, date_line='%s · %s' % (greg_to_heb_full(), il_now().strftime('%d/%m/%Y')), notice=notice)
             fname = 'מחירון המקווה %s.docx' % il_now().strftime('%d-%m-%Y')
             self.send_response(200)
