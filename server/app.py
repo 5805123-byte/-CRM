@@ -36026,6 +36026,18 @@ def mkg_say(cfg, gid, name):
     return s or re.sub(r'^\s*\d+\s*[.\-)]\s*', '', str(name or '')).strip() or 'קבוצה'
 
 
+def mkg_say_full(cfg, cmap, gid, name):
+    """שם המנוי להקראה = הקטגוריה + השם בתוך הקטגוריה ("מנוי רגיל" + "ללא מגבת"). אם השם כבר כולל את הקטגוריה — רק השם"""
+    sub = mkg_say(cfg, gid, name)
+    cn = (cmap or {}).get(gid)
+    if not cn:
+        return sub
+    cs = re.sub(r'\s+', ' ', str((cfg.get('cat_say') or {}).get(cn) or cn)).strip()
+    if not cs or cs in re.sub(r'\s+', ' ', sub):
+        return sub
+    return cs + ' ' + sub
+
+
 def mkg_month_start():
     return il_now().strftime('%Y-%m-01')
 
@@ -36261,7 +36273,11 @@ def mkg_ivr(P):
         mgs = set(cfg.get('member_groups') or [])
         member = mkg_member(con, c, cfg)
         lockg = set(cfg.get('locked_groups') or [])
-        hello = S('hello_member' if member else 'hello', name=name or first, group=mkg_say(cfg, cur, gr[cur]['name']))
+        # 🗣️ מאיר: "הוא צריך להקריא בטלפון את הקטגוריה + סוג המנוי… עכשיו הוא מקריא לי שיש לי מנוי 'ללא מגבת'" —
+        # בכל מקום שמקריאים מנוי: שם הקטגוריה (איך שהיא נקראת) + השם של המנוי
+        cmap_all = mk_group_cat_map(con, gr.values()) if cfg.get('phone_cats') else {}
+        SAY = lambda gid, nm: mkg_say_full(cfg, cmap_all, gid, nm)
+        hello = S('hello_member' if member else 'hello', name=name or first, group=SAY(cur, gr[cur]['name']))
 
         def can_go(g):
             return g != cur and g not in lockg and (member or g not in mgs)
@@ -36306,7 +36322,7 @@ def mkg_ivr(P):
                 parts = [choose(len(opts_))]
                 for i, g in enumerate(opts_, 1):
                     pr_ = gr[g].get('price') or gr[g].get('entry')
-                    parts += [S('req_option', group=mkg_say(cfg, g, gr[g]['name']) + ((', %g שקלים' % pr_) if pr_ else '')), N(i)]
+                    parts += [S('req_option', group=SAY(g, gr[g]['name']) + ((', %g שקלים' % pr_) if pr_ else '')), N(i)]
                 return ask(parts + [S('end_opt')], 'Grp', 1 if len(opts_) <= 9 else 2)
             try:
                 v_ = int(P.get('Grp') or 0)
@@ -36319,7 +36335,7 @@ def mkg_ivr(P):
         # ↩️ שינוי אחרון בחוב שעוד לא שולם — רק ביטול (1) או יציאה
         if undo:
             if 'Grp' not in P:
-                return ask([hello, S('cancel_offer', group=mkg_say(cfg, cur, gr[cur]['name']), old=mkg_say(cfg, undo['from_gid'], undo['from_name'])),
+                return ask([hello, S('cancel_offer', group=SAY(cur, gr[cur]['name']), old=SAY(undo['from_gid'], undo['from_name'])),
                             N(1), S('end_opt')], 'Grp', 1)
             if P.get('Grp') != '1':
                 return msg('bye')
@@ -36335,7 +36351,7 @@ def mkg_ivr(P):
             con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                         (cid, now_iso(), 'group', '↩️ ביטל בטלפון את השינוי: חזר ל%s, והחוב ₪%g נמחק' % (undo['from_name'], undo['amount'] or 0)))
             con.commit()
-            return msg('cancel_done', old=mkg_say(cfg, undo['from_gid'], undo['from_name']))
+            return msg('cancel_done', old=SAY(undo['from_gid'], undo['from_name']))
         if not cat_opts:
             return 'id_list_message=' + '.'.join([hello, S('no_target')]) + END
         if over:
@@ -36353,12 +36369,12 @@ def mkg_ivr(P):
             # מאיר: "תמיד שהוא מקריא מנוי הוא גם צריך להקריא את המחיר" — לחודש, ובערך צבור — לכניסה
             pr, en = gr[g].get('price'), gr[g].get('entry')
             if pr and not mkg_is_erech(cfg, g, gr[g]['name']):
-                return [S('option_price', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % pr), N(i)]
+                return [S('option_price', group=SAY(g, gr[g]['name']), price='%g' % pr), N(i)]
             if en:
-                return [S('option_entry', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % en), N(i)]
+                return [S('option_entry', group=SAY(g, gr[g]['name']), price='%g' % en), N(i)]
             if pr:
-                return [S('option_price', group=mkg_say(cfg, g, gr[g]['name']), price='%g' % pr), N(i)]
-            return [S('option', group=mkg_say(cfg, g, gr[g]['name'])), N(i)]
+                return [S('option_price', group=SAY(g, gr[g]['name']), price='%g' % pr), N(i)]
+            return [S('option', group=SAY(g, gr[g]['name'])), N(i)]
 
         ci = None if multi else 0
         rnd, tgt = 0, None
@@ -36416,7 +36432,7 @@ def mkg_ivr(P):
                     if rv == '2':
                         continue       # ← אותה קטגוריה, בחירה מחדש
                     return msg('bye')
-            tname = mkg_say(cfg, tgt, gr[tgt]['name'])
+            tname = SAY(tgt, gr[tgt]['name'])
             q = mkg_quote(cfg, c, gr, tgt)
             amt = q['amount']
             A = '%g' % abs(amt)

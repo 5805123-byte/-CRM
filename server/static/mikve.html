@@ -741,12 +741,12 @@ function mkPcHTML(r){
       '<button type="button" data-up title="למעלה" style="border:1px solid #ccd;background:#fff;border-radius:8px;padding:3px 9px;cursor:pointer">▲</button><button type="button" data-dn title="למטה" style="border:1px solid #ccd;background:#fff;border-radius:8px;padding:3px 9px;cursor:pointer">▼</button></div>'+
       '<div data-pcb style="'+(isOn?'':'display:none;')+'margin-top:8px">'+G.map(g=>'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid #e8edf4;padding:6px 0">'+
         '<span style="flex:1;min-width:150px">'+esc_(g.name)+' <b style="color:#555">'+nis(g.price)+'</b></span>'+
-        '<input data-say="'+esc_(g.id)+'" value="'+esc_(g.say||'')+'" title="איך השם יוקרא בטלפון" placeholder="השם בטלפון" style="border:1px solid #ccd;border-radius:8px;padding:4px 8px;font:inherit;width:170px">'+
+        '<input data-say="'+esc_(g.id)+'" value="'+esc_(g.say||'')+'" title="איך השם יוקרא בטלפון" placeholder="השם בתוך הקטגוריה" style="border:1px solid #ccd;border-radius:8px;padding:4px 8px;font:inherit;width:170px">'+
         '<label style="display:flex;gap:5px;align-items:center;color:#2f6fb0;white-space:nowrap"><input type="checkbox" data-mg="'+esc_(g.id)+'" '+(mem.has(g.id)?'checked':'')+' style="width:18px;height:18px"> 👥 לקהילה בלבד</label>'+
         '<label style="display:flex;gap:5px;align-items:center;color:#c0392b;white-space:nowrap" title="מי שבמנוי הזה לא יכול לשנות אותו בטלפון"><input type="checkbox" data-lg="'+esc_(g.id)+'" '+(lk.has(g.id)?'checked':'')+' style="width:18px;height:18px"> 🔒 נעול</label></div>').join('')+'</div></div>';};
   return '<div style="color:#555;font-size:.9rem;line-height:1.7;margin:4px 0 6px">מסמנים 🔊 את הקטגוריות שנשמעות בטלפון (בסדר הזה — ▲▼). המתקשר בוחר קודם קטגוריה ואז מנוי מתוכה (עם המחיר לחודש). '+
     'קטגוריה אחת בלבד — עוברים ישר למנויים. <b>👥 לקהילה בלבד</b> — רק מי שהטלפון שלו רשום בקהילה שומע את המנוי הזה; ומי שבקהילה שומע בפתיחה "שלום [שם ומשפחה], חבר קהילה". '+
-    'את הקטגוריות עצמן קובעים בחלון "📋 סוגי מנוי".</div><div data-pcl>'+names.map(card).join('')+'</div>';}
+    'את הקטגוריות עצמן קובעים בחלון "📋 סוגי מנוי". <br>🗣️ <b>בטלפון מקריאים: שם הקטגוריה + שם המנוי</b> — למשל "מנוי רגיל" + "ללא מגבת" = "מנוי רגיל ללא מגבת". אם שם המנוי כבר כולל את הקטגוריה, היא לא נאמרת פעמיים.</div><div data-pcl>'+names.map(card).join('')+'</div>';}
 function mkPcWire(root){root.querySelectorAll('[data-pc]').forEach(el=>{
   el.querySelector('[data-pcon]').onchange=e=>{el.querySelector('[data-pcb]').style.display=e.target.checked?'':'none';el.style.background=e.target.checked?'#f4f9ff':'#fafbfc';el.style.borderColor=e.target.checked?'#9ec3ea':'#e3e7ee';};
   el.querySelector('[data-up]').onclick=()=>{const p=el.previousElementSibling;if(p)el.parentNode.insertBefore(el,p);};
