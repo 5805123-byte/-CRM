@@ -34959,6 +34959,12 @@ def nd_hook(con, d):
     tid = str(d.get('TransactionId') or '').strip()
     kid = str(d.get('KevaId') or '').strip()
     err = str(d.get('ErrorText') or d.get('Error') or d.get('ErrorMessage') or '').strip()
+    # תיעוד נדרים: עדכון סירוב = Status "Error" + Message (עם <br/>), ErrorTime, Source (Transaction / Keva), IsFirstKevaTry
+    if str(d.get('Status') or '').strip().lower() == 'error':
+        err = re.sub(r'<br\s*/?>', ' · ', str(d.get('Message') or '').strip(), flags=re.I) or err or 'סירוב'
+        if str(d.get('IsFirstKevaTry') or '').strip() == '0':
+            return 'refusal retry (skipped)'      # ניסיון חוזר של הרובוט על אותה הוראה — כבר נרשם בניסיון הראשון
+        tid = ''
     if tid and str(d.get('Confirmation') or '').strip() and not err:
         typ = str(d.get('TransactionType') or '')
         keva = (kid if ('הו' in typ or 'קבע' in typ) else ('-' + kid)) if kid else ''
@@ -34968,13 +34974,31 @@ def nd_hook(con, d):
         cutoff = (il_now() - datetime.timedelta(days=45)).strftime('%Y-%m-%d')
         n, _m = _nd_hist_rows(con, [t], mos, cutoff, midx, nidx)
         con.commit()
-        # מאיר: "למה שחבר קהילה מקים הוראת קבע זה לא מתעדכן מיד אצלו?" — נדרים שולחים קאלבק על החיוב הראשון של
-        # ההוראה ולא על ההקמה עצמה. הוראה שעוד לא מוכרת אצלנו → סנכרון מלא בעוד חצי דקה, כדי שתופיע בכרטיס
-        if keva and not keva.startswith('-') and not con.execute("SELECT 1 FROM nd_keva WHERE id=?", (kid,)).fetchone():
-            nd_sync_soon(30)
         return 'payment %s' % ('new' if n else 'known')
     if kid and not tid and not err:
-        nd_sync_soon(30)
+        # ⚡ הקמת הוראת קבע אשראי (Webhook "הקמת הוראת קבע"): נכנסת מיד, ומקושרת לחבר הקהילה לפי טלפון / שם.
+        # מאיר: "מקור העדכון — ה-webhook; ביטולים ומחיקות — הסריקה כל 10 דקות"
+        amt = _nd._num(d.get('Amount'))
+        if not amt:
+            return 'keva without amount'
+        phs = _phones_of(str(d.get('Phone') or ''))
+        man = con.execute("SELECT member_id FROM nd_map WHERE keva_id=?", (kid,)).fetchone()
+        mid = (man['member_id'] if man else None) or next((list(midx[p])[0] for p in phs if p in midx and len(midx[p]) == 1), None) \
+            or nd_match_name(nidx, str(d.get('ClientName') or ''), family=True)
+        con.execute("""INSERT INTO nd_keva(id,torem_id,name,phone,mail,amount,groupe,itra,next_date,last4,city,member_id,active,synced,error,mosad)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,'',?,1,?,'',?)
+                       ON CONFLICT(id) DO UPDATE SET name=excluded.name, phone=excluded.phone, mail=excluded.mail, amount=excluded.amount,
+                         groupe=excluded.groupe, next_date=excluded.next_date, last4=excluded.last4,
+                         member_id=COALESCE(nd_keva.member_id, excluded.member_id), active=1, mosad=excluded.mosad""",
+                    (kid, str(d.get('ClientId') or ''), str(d.get('ClientName') or ''), ';'.join(phs), str(d.get('Mail') or ''), str(amt),
+                     str(d.get('Groupe') or ''), str(d.get('Tashloumim') or ''), str(d.get('NextDate') or ''), str(d.get('LastNum') or ''),
+                     mid, now_iso(), mos))
+        try:
+            cm_debts_from_keva(con)
+        except Exception:
+            pass
+        con.commit()
+        return 'new keva %s%s' % (kid, (' → חבר %s' % mid) if mid else ' (לא קושר)')
         return 'new keva'
     if err:
         ph = _ym.norm_phone(str(d.get('Phone') or ''))
@@ -34983,7 +35007,7 @@ def nd_hook(con, d):
         mid = (k['member_id'] if k else None) or (next(iter(ids)) if ids and len(ids) == 1 else None) or nd_match_name(nidx, str(d.get('ClientName') or ''))
         con.execute("INSERT OR IGNORE INTO nd_err(id,date,iso,error,amount,last4,name,phone,keva,groupe,member_id,mosad,done,src) "
                     "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0,'hook')",
-                    ('hook:%d' % int(time.time() * 1000), str(d.get('ErrorDate') or d.get('TransactionTime') or now_iso()), now_iso(), err[:300],
+                    ('hook:%d' % int(time.time() * 1000), str(d.get('ErrorTime') or d.get('ErrorDate') or d.get('TransactionTime') or now_iso()), now_iso(), err[:300],
                      _ivr_amt(d.get('Amount')), str(d.get('LastNum') or ''), str(d.get('ClientName') or ''), ph, kid, str(d.get('Groupe') or ''), mid, mos))
         if kid:
             con.execute("UPDATE nd_keva SET error=? WHERE id=?", (err[:200], kid))
@@ -34993,14 +35017,12 @@ def nd_hook(con, d):
             cm_debts_from_keva(con)
         con.commit()
         return 'refusal'
-    # מאיר: הקאלבק "הקמת הוראת קבע" מוגדר בנדרים — כל עדכון אחר (גם בשמות שדות אחרים) → סנכרון מלא בעוד חצי דקה.
-    # השדות שהגיעו נשמרים (בלי ערכים), כדי לדעת מה נדרים שולחים
+    # עדכון שלא זוהה — השדות שהגיעו נשמרים (בלי ערכים), כדי לדעת מה נדרים שולחים
     try:
         kv_set(con, 'nd_hook_keys', ','.join(sorted(str(k) for k in d.keys()))[:400])
     except Exception:
         pass
-    nd_sync_soon(30)
-    return 'update → sync'
+    return 'ignored'
 
 
 CM_TEAM = ['ראש הכולל', 'שמעון ברלב', 'אברהם רובינפלד', 'יוסף אורדנטליך']   # מאיר: "תוסיף עוד גבאי יוסף אורדנטליך"
@@ -35298,8 +35320,8 @@ def _nd_loop():
             nd_run()
         except Exception as e:
             print('  nedarim sync error:', e)
-        # מאיר: "צריך שתעשה סינכרון כל הזמן לנדרים פלוס" — כל חצי שעה (היה כל 3 שעות)
-        time.sleep(max(1800, int(os.environ.get('NEDARIM_SECONDS') or 1800)))
+        # מאיר (5.11.2026): "מספיק כל 10 דקות… מקור העדכון זה מה-webhook, ומקור מחיקות, ביטולים ועדכונים זה מהסריקה"
+        time.sleep(max(600, int(os.environ.get('NEDARIM_SECONDS') or 600)))
 
 
 # 📞 מאיר: "צריך לעשות גם לשיחה בטלפון את האופציות של עדכון פרטי אשראי" — הנוסח הקולי (הקשה 1 = SMS עם הקישור)
