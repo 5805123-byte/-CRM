@@ -27159,6 +27159,16 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 con.execute("CREATE TABLE IF NOT EXISTS nd_keva_class(keva_id TEXT PRIMARY KEY, cls TEXT, at TEXT)")
+                if b.get('all_open'):
+                    # מאיר: "כל מי שלא השארתי בתורמים — לקהילה"
+                    n = 0
+                    for x in nd_donor_keva_cands(con):
+                        if not x['cls']:
+                            con.execute("INSERT INTO nd_keva_class(keva_id,cls,at) VALUES(?,'comm',?) ON CONFLICT(keva_id) DO UPDATE SET cls='comm', at=excluded.at",
+                                        (x['id'], now_iso()))
+                            n += 1
+                    con.commit()
+                    return self._send(200, {'ok': True, 'n': n})
                 if cl in ('comm', 'donor'):
                     con.execute("INSERT INTO nd_keva_class(keva_id,cls,at) VALUES(?,?,?) ON CONFLICT(keva_id) DO UPDATE SET cls=excluded.cls, at=excluded.at",
                                 (kid, cl, now_iso()))

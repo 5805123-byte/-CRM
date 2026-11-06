@@ -8157,10 +8157,15 @@ async function ndKvDonors(){
   rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔁 תורמים בהוראת קבע בנדרים פלוס</h2>
     <div class="hintxt">כל הוראת קבע בנדרים פלוס (חוץ מהמקווה) שייכת או <b>לתורמים</b> או <b>לקהילה</b> (דמי חבר, מקום, חזקוני, אברכי הכולל). דמי חבר / מקום / חזקוני / אברכים — לקהילה לפי הקטגוריה.
       <br><b>${L.length}</b> עוד לא שויכו · <b>${done.length}</b> בתורמים · <b>${comm.length}</b> בקהילה</div>
+    ${L.length?`<div class="addrow" style="margin:6px 0"><button class="btn sm" id="ndk_allcomm">🕍 כל ה-${L.length} שנשארו — לקהילה</button></div>`:''}
     ${L.map(k=>card(k,NDKD.indexOf(k))).join('')||'<div class="hintxt">אין — כולם כבר ברשימה ✓</div>'}
     ${done.length?`<details style="margin-top:10px"><summary><b>✓ בתורמים (${done.length})</b></summary>${done.map(k=>card(k,NDKD.indexOf(k))).join('')}</details>`:''}
     ${comm.length?`<details style="margin-top:10px"><summary><b>🕍 בקהילה (${comm.length})</b></summary>${comm.map(k=>card(k,NDKD.indexOf(k))).join('')}</details>`:''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  {const ac=document.getElementById('ndk_allcomm');if(ac)ac.onclick=async()=>{
+    if(!await uiConfirm('לשייך לקהילה את כל '+L.length+' ההוראות שעוד לא שויכו? (מי שכבר בתורמים — נשאר בתורמים)','🕍 כן, לקהילה','ביטול'))return;
+    ac.disabled=true;const x=await api('POST','/api/nd/donor_kevas/class',{all_open:1});
+    if(!x||!x.ok){uiAlert('לא נשמר');ac.disabled=false;return;}toast('🕍 '+x.n+' שויכו לקהילה');NDKD=null;ndKvDonors();};}
   // 🔗 מאיר: "חסרה חלונית למזג אותו לתורם אחר — א.ל. שיווק זה אלחנן לרר"
   const wire=()=>rs.querySelectorAll('[data-ki]').forEach(b=>b.onclick=go);
   rs.querySelectorAll('.ndkq').forEach(inp=>{let t;inp.oninput=()=>{clearTimeout(t);t=setTimeout(()=>{const i=inp.dataset.q,q=inp.value.trim(),box=document.getElementById('ndkr'+i);
