@@ -34342,12 +34342,23 @@ def nd_donor_keva_cands(con):
     links = {r['key']: r['donor_id'] for r in con.execute("SELECT key, donor_id FROM nd_dlink")}
     con.execute("CREATE TABLE IF NOT EXISTS nd_keva_class(keva_id TEXT PRIMARY KEY, cls TEXT, at TEXT)")
     cls = {r['keva_id']: r['cls'] for r in con.execute("SELECT keva_id, cls FROM nd_keva_class")}
+    # מאיר: "אתה הראת לי את כל האברכים" — אברכי הכולל (לפי טלפון או שם) הם קהילה, לא מוצגים
+    av_ph, av_nm = set(), set()
+    for x in con.execute("SELECT last, first, name, phone FROM avreichim").fetchall():
+        av_ph.update(_phones_of(x['phone']))
+        for nm in (((x['last'] or '') + ' ' + (x['first'] or '')), ((x['first'] or '') + ' ' + (x['last'] or '')), x['name'] or ''):
+            nm = re.sub(r'\s+', ' ', nm).strip()
+            if nm.count(' ') >= 1:
+                av_nm.add(nm)
     for k in con.execute("SELECT k.*, m.last ml, m.first mf FROM nd_keva k LEFT JOIN members m ON m.id=k.member_id "
                          "WHERE k.active=1 ORDER BY k.name").fetchall():
         g = (k['groupe'] or '').strip()
         if (mk and str(k['mosad'] or '') == mk) or re.search(r'מקו?וה|מנוי|טביל', g):
             continue                                   # המקווה — נפרד לגמרי
-        auto_comm = bool(ND_COMM_RX.search(g))
+        auto_comm = bool(ND_COMM_RX.search(g)) or bool(set(_phones_of(k['phone'])) & av_ph) \
+            or re.sub(r'\s+', ' ', (k['name'] or '')).strip() in av_nm
+        if auto_comm:
+            continue                                   # חזקוני / דמי חבר / מקום / אברכים — קהילה, לא מוצגים בכלל
         if not _ivr_amt(k['amount']):
             continue
         keys = nd_keva_donor_keys(con, k['id'])
