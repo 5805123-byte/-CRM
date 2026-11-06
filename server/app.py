@@ -23787,6 +23787,13 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             return self._send(200, {'ok': True, 'last4': l4, 'amount': amt, 'months': months, 'rows': rows,
                                     'kupot': [x['name'] for x in _nd.accounts()], 'synced': ah})
+        if self.path.split('?')[0] == '/api/nd/donor_kevas':
+            con = db()
+            try:
+                rows = nd_donor_keva_cands(con)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows})
         m = re.match(r'/api/nddonor/(\d+)$', self.path.split('?')[0])
         if m:
             # 🔗 כרטיס תורם ↔ המשלם בנדרים פלוס (החשבון של הכולל)
@@ -23799,7 +23806,14 @@ class H(BaseHTTPRequestHandler):
                 seed = ' · '.join(x for x in (kv_get(con, 'nd_dlink_seed_1', ''), kv_get(con, 'nd_dlink_seed_2', '')) if x)
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'links': links, 'candidates': cands, 'n': n[0], 'sum': round(n[1] or 0, 2), 'seed': seed})
+            con = db()
+            try:
+                kk = [x['key'][5:] for x in links if x['key'].startswith('keva:')]
+                kev = [dict(r) for r in con.execute("SELECT id, name, amount, groupe, last4, next_date, kind, active FROM nd_keva WHERE active=1")
+                       if str(r['id']).split(':')[-1].lstrip('M') in kk]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'links': links, 'candidates': cands, 'n': n[0], 'sum': round(n[1] or 0, 2), 'seed': seed, 'kevas': kev})
         if self.path.split('?')[0] == '/api/zmanim':
             # 🕰️ לשונית זמני התפילות — השבתות והחגים הקרובים, ימי חול, תבניות, הגדרות
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -27139,6 +27153,18 @@ class H(BaseHTTPRequestHandler):
             con = db(); kv_set(con, 'ym_nikud', '1' if b.get('on') else '0'); con.commit(); con.close()
             _VOC_CACHE.clear()
             return self._send(200, {'ok': True, 'on': bool(b.get('on'))})
+        m = re.match(r'/api/nd/donor_kevas/add$', self.path)
+        if m:
+            con = db()
+            try:
+                did, n = nd_donor_keva_add(con, str(b.get('keva_id') or ''), b.get('donor_id') or 0, b.get('last') or '', b.get('first') or '')
+                if not did:
+                    return self._send(200, {'ok': False, 'error': n})
+                con.commit()
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': True, 'donor_id': did, 'imported': n})
         m = re.match(r'/api/nddonor/(\d+)/(link|unlink)$', self.path)
         if m:
             did, act = int(m.group(1)), m.group(2)
@@ -34261,6 +34287,88 @@ def _nd_tx_matches(t, keys):
     return (('phone:' + (t['phone'] or '-')) in keys) or (kv and ('keva:' + kv) in keys) or (('name:' + nm) in keys)
 
 
+# מאיר (6.11.2026): "יש תורמים בנדרים פלוס שתורמים כל חודש — זכות ושותפות בלימוד התורה — ולא נמצאים ברשימת
+# התורמים. כל מי שלא כתוב עליו דמי חבר או מקום, או מקווה". רשימה לבחירה, ובלחיצה — כרטיס תורם מקושר להוראה.
+ND_DONOR_EXCL_RX = re.compile(r'דמי\s*חבר|חברות|מקום|מושב|מקו?וה|מנוי|טביל')
+
+
+def nd_keva_donor_keys(con, kid):
+    """המפתחות שמקשרים הוראה לכרטיס תורם (nd_dlink): מזהה ההוראה כמו שהוא מופיע בעסקאות."""
+    return ['keva:' + str(kid).split(':')[-1].lstrip('M')]
+
+
+def nd_donor_keva_cands(con):
+    out = []
+    mk = ''
+    try:
+        mk = str(mk_mosad() or '')
+    except Exception:
+        pass
+    links = {r['key']: r['donor_id'] for r in con.execute("SELECT key, donor_id FROM nd_dlink")}
+    for k in con.execute("SELECT k.*, m.last ml, m.first mf FROM nd_keva k LEFT JOIN members m ON m.id=k.member_id "
+                         "WHERE k.active=1 ORDER BY k.name").fetchall():
+        g = (k['groupe'] or '').strip()
+        if ND_DONOR_EXCL_RX.search(g) or (mk and str(k['mosad'] or '') == mk):
+            continue
+        if not _ivr_amt(k['amount']):
+            continue
+        keys = nd_keva_donor_keys(con, k['id'])
+        dl = next((links[x] for x in keys if x in links), None)
+        dn = con.execute("SELECT id,last,first FROM donors WHERE id=?", (dl,)).fetchone() if dl else None
+        phs = _phones_of(k['phone'])
+        by_phone = []
+        if phs:
+            for d in con.execute("SELECT id,last,first,email,phone FROM donors WHERE COALESCE(TRIM(phone),'')<>''").fetchall():
+                if set(_phones_of(d['phone'])) & set(phs):
+                    by_phone.append({'id': d['id'], 'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(), 'email': d['email'] or '', 'phone': d['phone'] or '', 'by': 'טלפון'})
+        sug = by_phone + [dict(x, by='שם') for x in donor_suggest(con, k['name'] or '', 3) if x['id'] not in {y['id'] for y in by_phone}]
+        out.append({'id': k['id'], 'name': k['name'] or '', 'phone': (k['phone'] or '').split(';')[0], 'mail': k['mail'] or '',
+                    'amount': k['amount'], 'groupe': g, 'next': k['next_date'] or '', 'last4': k['last4'] or '',
+                    'kind': (k['kind'] if 'kind' in k.keys() else '') or 'card', 'mosad': k['mosad'] or '',
+                    'member': ((k['ml'] or '') + ' ' + (k['mf'] or '')).strip() if k['member_id'] else '',
+                    'donor': {'id': dn['id'], 'name': ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip()} if dn else None,
+                    'sugg': sug[:5]})
+    out.sort(key=lambda x: (bool(x['donor']), x['name']))
+    return out
+
+
+def nd_donor_keva_add(con, kid, donor_id=0, last='', first=''):
+    """מוסיף / מקשר: כרטיס תורם (קיים או חדש) ← ההוראה בנדרים. כל התשלומים שלה נכנסים לכרטיס, וכל חיוב חדש."""
+    k = con.execute("SELECT * FROM nd_keva WHERE id=?", (kid,)).fetchone()
+    if not k:
+        return None, 'ההוראה לא נמצאה'
+    did = int(donor_id or 0)
+    phone = (k['phone'] or '').split(';')[0]
+    if not did:
+        last, first = (last or '').strip(), (first or '').strip()
+        if not (last or first):
+            toks = (k['name'] or '').split()
+            last, first = (toks[-1], ' '.join(toks[:-1])) if len(toks) > 1 else ((toks[0] if toks else ''), '')
+        ex = con.execute("SELECT id FROM donors WHERE TRIM(last)=? AND TRIM(first)=?", (last, first)).fetchall()
+        if len(ex) == 1:
+            did = ex[0]['id']
+        elif len(ex) > 1:
+            return None, 'יש כמה כרטיסים בשם הזה — בחר את התורם מהרשימה'
+        else:
+            con.execute("INSERT INTO donors(last,first,phone,email,category,region,created,source,notes) VALUES(?,?,?,?,'קבוע','il',?,'נדרים פלוס',?)",
+                        (last, first, phone, (k['mail'] or '').strip(), today_iso(),
+                         'הוראת קבע בנדרים פלוס ₪%s לחודש%s' % (k['amount'], (' · ' + k['groupe']) if (k['groupe'] or '').strip() else '')))
+            did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+    if not con.execute("SELECT 1 FROM donors WHERE id=?", (did,)).fetchone():
+        return None, 'התורם לא נמצא'
+    if phone:
+        con.execute("UPDATE donors SET phone=? WHERE id=? AND COALESCE(TRIM(phone),'')=''", (phone, did))
+    if (k['mail'] or '').strip():
+        con.execute("UPDATE donors SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", (k['mail'].strip(), did))
+    for key in nd_keva_donor_keys(con, kid):
+        ow = con.execute("SELECT donor_id FROM nd_dlink WHERE key=?", (key,)).fetchone()
+        if ow and ow['donor_id'] != did:
+            return None, 'ההוראה כבר מקושרת לכרטיס #%s' % ow['donor_id']
+        con.execute("INSERT OR IGNORE INTO nd_dlink(key, donor_id, label, at) VALUES(?,?,?,?)", (key, did, (k['name'] or '')[:80], now_iso()))
+    n = nd_donor_import(con, did)
+    return did, n
+
+
 def nd_donor_autolink(con):
     """מאיר (4.11.2026): "היא תורמת דרך נדרים פלוס כל חודש 150 שקל, למה זה לא מסונכרן אצלנו בכרטיס שלה?" —
     קישור אוטומטי לפי טלפון: משלם בנדרים פלוס (החשבון של הכולל) שהטלפון שלו שייך לתורם אחד בלבד, והתשלומים
@@ -35155,6 +35263,11 @@ def nd_hook(con, d):
              'conf': str(d.get('Confirmation') or ''), 'last4': str(d.get('LastNum') or ''), 'type': typ}
         cutoff = (il_now() - datetime.timedelta(days=45)).strftime('%Y-%m-%d')
         n, _m = _nd_hist_rows(con, [t], mos, cutoff, midx, nidx)
+        if n and not mos:
+            try:
+                nd_donor_import(con)          # תורם מקושר (הוראת קבע / טלפון) — התשלום נכנס לכרטיס מיד
+            except Exception:
+                pass
         con.commit()
         return 'payment %s' % ('new' if n else 'known')
     if kid and not tid and not err:

@@ -3961,7 +3961,7 @@ function renderDonors(){
     <div class="avbar"><select id="doncat" class="avsortsel">
       <option value="">🎯 חיפוש לפי ייעוד — הכל</option>
       ${catUsage().map(([c,n,s])=>`<option value="${esc(c)}"${c===catFlt?' selected':''}>${esc(c)} — ${n} תרומות · $${s.toLocaleString('en-US')}</option>`).join('')}
-    </select><button class="btn sm ghost" id="catmgr" style="white-space:nowrap">🗑 ניהול ייעודים</button></div>
+    </select><button class="btn sm ghost" id="catmgr" style="white-space:nowrap">🗑 ניהול ייעודים</button><button class="btn sm ghost" id="ndkvdon" style="white-space:nowrap" title="הוראות קבע בנדרים פלוס של תורמים שלא ברשימה">🔁 מנדרים פלוס</button></div>
     ${catFlt?`<div class="cnt" style="color:var(--accent)">🎯 ${esc(catFlt)} — ${(()=>{const u=catUsage().find(x=>x[0]===catFlt);return u?(u[1]+' תרומות · $'+u[2].toLocaleString('en-US')):'';})()}</div>`:''}
     <div class="cnt">${list.length} תורמים</div><div class="list" id="donlist">${list.slice(0,DLIM).map(d=>`
     <div class="rowc" data-id="${d.id}">
@@ -3978,6 +3978,7 @@ function renderDonors(){
   wireMoreDonors(list);
   const ds=document.getElementById('donsort'); if(ds){ds.value=donSort;ds.onchange=()=>{donSort=ds.value;DLIM=60;render();};}
   const dc=document.getElementById('doncat'); if(dc)dc.onchange=()=>{catFlt=dc.value;DLIM=60;render();};
+  {const nk=document.getElementById('ndkvdon');if(nk)nk.onclick=()=>ndKvDonors();}
   const cm=document.getElementById('catmgr'); if(cm)cm.onclick=openCatManager;
   const fx=document.getElementById('fixbox');
   if(fx)fx.addEventListener('toggle',()=>{FIXOPEN=fx.open;});
@@ -8126,6 +8127,43 @@ function wireReconPend(d,body){
 // 🔗 מאיר: "מרדכי ליפשיץ ועדן בידני ואהוב האופק — תורמים של הכולל, והם נמצאים בנדרים פלוס… לסנכרן
 // את התרומות שלהם בשמות התורמים". מקשרים את המשלם בנדרים פלוס (החשבון של הכולל) לכרטיס — כל
 // התשלומים שלו נכנסים כתרומות ב-₪, וגם כל תשלום חדש בסנכרון. הם יוצאים מרשימת התרומות של הקהילה.
+
+// 🔁 מאיר: "יש תורמים בנדרים פלוס שתורמים כל חודש — זכות ושותפות בלימוד התורה — ולא נמצאים ברשימת התורמים.
+// תבנה לי רשימה ואני אגיד מה כן ומה לא". הוראות קבע פעילות (בלי דמי חבר / מקום / מקווה) — לקשר לתורם קיים או לפתוח חדש.
+let NDKD=null;
+async function ndKvDonors(){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  remov.classList.add('show');
+  if(!NDKD){rs.innerHTML='<button class="x" id="rx">✕</button><h2>🔁 תורמים בהוראת קבע בנדרים פלוס</h2><div class="hintxt">⏳ טוען…</div>';
+    document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+    const r=await api('GET','/api/nd/donor_kevas');NDKD=r&&r.ok?r.rows:[];}
+  const money=a=>'₪'+(+String(a||'').replace(/[^\d.]/g,'')||0).toLocaleString('he-IL');
+  const open=NDKD.filter(k=>!k.donor), done=NDKD.filter(k=>k.donor);
+  const card=(k,i)=>`<div class="sec" style="border:1px solid var(--line,#ddd);border-radius:12px;padding:10px;margin:8px 0">
+    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${esc(k.name||'—')}</b><b>${money(k.amount)} לחודש</b></div>
+    <div class="hintxt">${k.groupe?'🎯 '+esc(k.groupe)+' · ':''}${k.kind==='bank'?'🏦 בנק':'💳 אשראי'+(k.last4?' '+esc(k.last4):'')}${k.phone?' · <span dir="ltr">'+esc(k.phone)+'</span>':''}${k.next?' · חיוב הבא '+esc(k.next):''}${k.member?' · <b>חבר קהילה: '+esc(k.member)+'</b>':''}</div>
+    ${k.donor?`<div class="hintxt" style="color:#1d6b3a;font-weight:700">✓ בתורמים: ${esc(k.donor.name)} (כרטיס ${k.donor.id})</div>`:`
+    ${(k.sugg||[]).map(x=>`<div class="rf" style="align-items:center"><div class="k">אולי <b>${esc(x.name)}</b> <small>כרטיס ${x.id} · לפי ${esc(x.by||'שם')}${x.phone?' · <span dir="ltr">'+esc(x.phone)+'</span>':''}</small></div><div class="v"><button class="btn sm ghost" data-ki="${i}" data-did="${x.id}">✓ זה הוא — לקשר</button></div></div>`).join('')}
+    <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm" data-ki="${i}" data-new="1">➕ להכניס לתורמים (כרטיס חדש)</button><button class="btn sm ghost" data-ki="${i}" data-no="1">✕ לא תורם</button></div>`}
+  </div>`;
+  let hide=[];try{hide=JSON.parse(localStorage.getItem('kc_ndkd_no')||'[]');}catch(e){}
+  const L=open.filter(k=>!hide.includes(k.id));
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔁 תורמים בהוראת קבע בנדרים פלוס</h2>
+    <div class="hintxt">הוראות קבע פעילות בנדרים פלוס, בלי דמי חבר, מקום ומקווה. <b>${L.length}</b> עוד לא ברשימת התורמים${hide.length?' · '+hide.length+' סומנו "לא תורם"':''}. אחרי הקישור כל התשלומים שלהם נכנסים לכרטיס, וכל חיוב חודשי חדש — לבד.</div>
+    ${L.map(k=>card(k,NDKD.indexOf(k))).join('')||'<div class="hintxt">אין — כולם כבר ברשימה ✓</div>'}
+    ${done.length?`<details style="margin-top:10px"><summary><b>✓ כבר בתורמים (${done.length})</b></summary>${done.map(k=>card(k,NDKD.indexOf(k))).join('')}</details>`:''}`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('[data-ki]').forEach(b=>b.onclick=async()=>{const k=NDKD[+b.dataset.ki];
+    if(b.dataset.no){hide.push(k.id);try{localStorage.setItem('kc_ndkd_no',JSON.stringify(hide));}catch(e){}ndKvDonors();return;}
+    const body={keva_id:k.id};
+    if(b.dataset.did)body.donor_id=+b.dataset.did;
+    else{const toks=String(k.name||'').trim().split(/\s+/);const nm=await uiPrompt('שם התורם — משפחה ואז פרטי',toks.length>1?toks[toks.length-1]+' '+toks.slice(0,-1).join(' '):(k.name||''));if(!nm)return;
+      const t=nm.trim().split(/\s+/);body.last=t[0];body.first=t.slice(1).join(' ');}
+    b.disabled=true;b.textContent='⏳';
+    const x=await api('POST','/api/nd/donor_kevas/add',body);
+    if(!x||!x.ok){uiAlert((x&&x.error)||'שגיאה');ndKvDonors();return;}
+    toast('✓ בתורמים · '+(x.imported||0)+' תרומות נכנסו מנדרים פלוס');NDKD=null;await load();ndKvDonors();});
+}
 async function ndDonorBox(d){
   const box=document.getElementById('ndlinkbox'); if(!box)return;
   const r=await api('GET','/api/nddonor/'+d.id); if(!r||!r.ok){box.innerHTML='';return;}
@@ -8140,6 +8178,16 @@ async function ndDonorBox(d){
         <div class="v">${c.n} תשלומים · ${money(c.sum)} · אחרון ${esc(c.last)} · לפי ${esc(c.by.join(' + '))}${c.phones.length?' · <span dir="ltr">'+esc(c.phones.join(', '))+'</span>':''}${c.other_donor?' · <b>מקושר לכרטיס #'+c.other_donor+'</b>':''}</div></label>`).join('')}
       <button class="btn sm" id="ndlink" style="margin-top:6px">🔗 לקשר ולהכניס את התרומות</button>`
     :(r.links.length?'':'<div class="hintxt">לא נמצא בנדרים פלוס משלם עם אותו שם או טלפון. אפשר להוסיף לו טלפון או שם נוסף (כינוי) ולבדוק שוב.</div>')}`;
+  // ⚡ מאיר: "לחייב את האשראי שלו גם מכאן, כמו בקהילה" — חיוב חד-פעמי מהוראת הקבע שלו בנדרים פלוס
+  if((r.kevas||[]).length)box.insertAdjacentHTML('beforeend',`<div class="hintxt" style="margin-top:8px"><b>🔁 הוראות קבע שלו בנדרים פלוס</b></div>${r.kevas.map(k=>`<div class="rf" style="align-items:center"><div class="k">${money(k.amount)} לחודש${k.groupe?' · '+esc(k.groupe):''}${k.last4?' · '+(k.kind==='bank'?'🏦 ':'💳 ')+esc(k.last4):''}${k.next_date?' · הבא '+esc(k.next_date):''}</div><div class="v"><button class="btn sm" data-ndch="${esc(k.id)}">⚡ לחייב עכשיו</button></div></div>`).join('')}`);
+  box.querySelectorAll('[data-ndch]').forEach(b=>b.onclick=async()=>{const k=r.kevas.find(x=>String(x.id)===b.dataset.ndch);
+    const a=await uiPrompt('כמה לחייב עכשיו מההוראה ('+(k.kind==='bank'?'בנק':'אשראי '+(k.last4||''))+')? בשקלים',String(k.amount||''));if(!a)return;
+    const g=await uiPrompt('עבור מה (קטגוריה בנדרים)? אפשר להשאיר ריק',k.groupe||'');
+    b.disabled=true;b.textContent='⏳ מחייב…';
+    const x=await api('POST','/api/nd/keva/'+encodeURIComponent(k.id)+'/charge',{amount:a,groupe:g||''});
+    b.disabled=false;b.textContent='⚡ לחייב עכשיו';
+    if(!x||!x.ok){uiAlert('החיוב לא עבר: '+((x&&(x.error||x.message))||'שגיאה'));return;}
+    toast('✓ החיוב עבר'+(k.kind==='bank'?' — יישלח לבנק בשידור הקרוב':'')+' · ייכנס לכרטיס בסנכרון הקרוב');});
   const lk=document.getElementById('ndlink');
   if(lk)lk.onclick=async()=>{
     const pick=[...box.querySelectorAll('input[data-i]:checked')].map(x=>free[+x.dataset.i]);
