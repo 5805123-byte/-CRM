@@ -8136,9 +8136,13 @@ async function ndKvDonors(){
   remov.classList.add('show');
   if(!NDKD){rs.innerHTML='<button class="x" id="rx">✕</button><h2>🔁 תורמים בהוראת קבע בנדרים פלוס</h2><div class="hintxt">⏳ טוען…</div>';
     document.getElementById('rx').onclick=()=>remov.classList.remove('show');
-    const r=await api('GET','/api/nd/donor_kevas');NDKD=r&&r.ok?r.rows:[];}
+    const r=await api('GET','/api/nd/donor_kevas');NDKD=r&&r.ok?r.rows:[];
+    // מה שסומן קודם "לא תורם" (נשמר רק בדפדפן) → קהילה, בשרת — פעם אחת
+    let old=[];try{old=JSON.parse(localStorage.getItem('kc_ndkd_no')||'[]');}catch(e){}
+    if(old.length){for(const id of old){const k=NDKD.find(x=>x.id===id);if(k&&!k.cls){await api('POST','/api/nd/donor_kevas/class',{keva_id:id,cls:'comm'});k.cls='comm';}}
+      try{localStorage.removeItem('kc_ndkd_no');}catch(e){}}}
   const money=a=>'₪'+(+String(a||'').replace(/[^\d.]/g,'')||0).toLocaleString('he-IL');
-  const open=NDKD.filter(k=>!k.donor), done=NDKD.filter(k=>k.donor);
+  const open=NDKD.filter(k=>!k.cls), done=NDKD.filter(k=>k.cls==='donor'), comm=NDKD.filter(k=>k.cls==='comm');
   const card=(k,i)=>`<div class="sec" style="border:1px solid var(--line,#ddd);border-radius:12px;padding:10px;margin:8px 0">
     <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${esc(k.name||'—')}</b><b>${money(k.amount)} לחודש</b></div>
     <div class="hintxt">${k.groupe?'🎯 '+esc(k.groupe)+' · ':''}${k.kind==='bank'?'🏦 בנק':'💳 אשראי'+(k.last4?' '+esc(k.last4):'')}${k.phone?' · <span dir="ltr">'+esc(k.phone)+'</span>':''}${k.next?' · חיוב הבא '+esc(k.next):''}${k.member?' · <b>חבר קהילה: '+esc(k.member)+'</b>':''}</div>
@@ -8146,14 +8150,16 @@ async function ndKvDonors(){
     ${k.donor?`<div class="hintxt" style="color:#1d6b3a;font-weight:700">✓ בתורמים: ${esc(k.donor.name)} (כרטיס ${k.donor.id})</div>`:`
     ${(k.sugg||[]).map(x=>`<div class="rf" style="align-items:center"><div class="k">אולי <b>${esc(x.name)}</b> <small>כרטיס ${x.id} · לפי ${esc(x.by||'שם')}${x.phone?' · <span dir="ltr">'+esc(x.phone)+'</span>':''}</small></div><div class="v"><button class="btn sm ghost" data-ki="${i}" data-did="${x.id}">✓ זה הוא — לקשר</button></div></div>`).join('')}
     <div style="margin-top:6px"><input class="ndkq" data-q="${i}" autocomplete="off" placeholder="🔗 למזג לתורם אחר — לחפש שם / טלפון (למשל: לרר אלחנן)" style="width:100%"><div class="ndkr" id="ndkr${i}"></div></div>
-    <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm" data-ki="${i}" data-new="1">➕ להכניס לתורמים (כרטיס חדש)</button><button class="btn sm ghost" data-ki="${i}" data-no="1">✕ לא תורם</button></div>`}
+    <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm" data-ki="${i}" data-new="1">➕ להכניס לתורמים (כרטיס חדש)</button><button class="btn sm ghost" data-ki="${i}" data-no="1">🕍 שייך לקהילה</button></div>`}
+    ${k.cls==='comm'?(k.auto_comm?'<div class="hintxt">🕍 קהילה — לפי הקטגוריה</div>':`<div class="addrow"><span class="hintxt">🕍 סומן: קהילה</span><button class="btn sm ghost" data-ki="${i}" data-undo="1">↩︎ להחזיר לשיוך</button></div>`):''}
   </div>`;
-  let hide=[];try{hide=JSON.parse(localStorage.getItem('kc_ndkd_no')||'[]');}catch(e){}
-  const L=open.filter(k=>!hide.includes(k.id));
+  const L=open;
   rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔁 תורמים בהוראת קבע בנדרים פלוס</h2>
-    <div class="hintxt">הוראות קבע פעילות בנדרים פלוס, בלי דמי חבר, מקום ומקווה. <b>${L.length}</b> עוד לא ברשימת התורמים${hide.length?' · '+hide.length+' סומנו "לא תורם"':''}. אחרי הקישור כל התשלומים שלהם נכנסים לכרטיס, וכל חיוב חודשי חדש — לבד.</div>
+    <div class="hintxt">כל הוראת קבע בנדרים פלוס (חוץ מהמקווה) שייכת או <b>לתורמים</b> או <b>לקהילה</b> (דמי חבר, מקום, חזקוני, אברכי הכולל). דמי חבר / מקום / חזקוני / אברכים — לקהילה לפי הקטגוריה.
+      <br><b>${L.length}</b> עוד לא שויכו · <b>${done.length}</b> בתורמים · <b>${comm.length}</b> בקהילה</div>
     ${L.map(k=>card(k,NDKD.indexOf(k))).join('')||'<div class="hintxt">אין — כולם כבר ברשימה ✓</div>'}
-    ${done.length?`<details style="margin-top:10px"><summary><b>✓ כבר בתורמים (${done.length})</b></summary>${done.map(k=>card(k,NDKD.indexOf(k))).join('')}</details>`:''}`;
+    ${done.length?`<details style="margin-top:10px"><summary><b>✓ בתורמים (${done.length})</b></summary>${done.map(k=>card(k,NDKD.indexOf(k))).join('')}</details>`:''}
+    ${comm.length?`<details style="margin-top:10px"><summary><b>🕍 בקהילה (${comm.length})</b></summary>${comm.map(k=>card(k,NDKD.indexOf(k))).join('')}</details>`:''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   // 🔗 מאיר: "חסרה חלונית למזג אותו לתורם אחר — א.ל. שיווק זה אלחנן לרר"
   const wire=()=>rs.querySelectorAll('[data-ki]').forEach(b=>b.onclick=go);
@@ -8162,7 +8168,8 @@ async function ndKvDonors(){
     box.innerHTML=hits.map(x=>`<div class="rf" style="align-items:center"><div class="k"><b>${esc(((x.last||'')+' '+(x.first||'')).trim()||x.business||x.english||'')}</b> <small>כרטיס ${x.id}${x.phone?' · <span dir="ltr">'+esc(String(x.phone).split('/')[0])+'</span>':''}</small></div><div class="v"><button class="btn sm" data-ki="${i}" data-did="${x.id}">🔗 למזג לכאן</button></div></div>`).join('')||(q.length>=2?'<div class="hintxt">לא נמצא בתורמים</div>':'');
     wire();},200);};});
   async function go(){const b=this;const k=NDKD[+b.dataset.ki];
-    if(b.dataset.no){hide.push(k.id);try{localStorage.setItem('kc_ndkd_no',JSON.stringify(hide));}catch(e){}ndKvDonors();return;}
+    if(b.dataset.no||b.dataset.undo){b.disabled=true;const x=await api('POST','/api/nd/donor_kevas/class',{keva_id:k.id,cls:b.dataset.no?'comm':''});
+      if(!x||!x.ok){uiAlert('לא נשמר');b.disabled=false;return;}k.cls=b.dataset.no?'comm':'';toast(b.dataset.no?'🕍 שויך לקהילה':'↩︎ הוחזר לשיוך');ndKvDonors();return;}
     const body={keva_id:k.id};
     if(b.dataset.did)body.donor_id=+b.dataset.did;
     else{const toks=String(k.name||'').trim().split(/\s+/);const nm=await uiPrompt('שם התורם — משפחה ואז פרטי',toks.length>1?toks[toks.length-1]+' '+toks.slice(0,-1).join(' '):(k.name||''));if(!nm)return;

@@ -27153,6 +27153,21 @@ class H(BaseHTTPRequestHandler):
             con = db(); kv_set(con, 'ym_nikud', '1' if b.get('on') else '0'); con.commit(); con.close()
             _VOC_CACHE.clear()
             return self._send(200, {'ok': True, 'on': bool(b.get('on'))})
+        if self.path == '/api/nd/donor_kevas/class':
+            # 🕍 לקהילה / ↩︎ ביטול — שיוך הוראה שאינה של תורם
+            kid, cl = str(b.get('keva_id') or ''), str(b.get('cls') or '')
+            con = db()
+            try:
+                con.execute("CREATE TABLE IF NOT EXISTS nd_keva_class(keva_id TEXT PRIMARY KEY, cls TEXT, at TEXT)")
+                if cl in ('comm', 'donor'):
+                    con.execute("INSERT INTO nd_keva_class(keva_id,cls,at) VALUES(?,?,?) ON CONFLICT(keva_id) DO UPDATE SET cls=excluded.cls, at=excluded.at",
+                                (kid, cl, now_iso()))
+                else:
+                    con.execute("DELETE FROM nd_keva_class WHERE keva_id=?", (kid,))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/nd/donor_kevas/add$', self.path)
         if m:
             con = db()
@@ -34290,6 +34305,9 @@ def _nd_tx_matches(t, keys):
 # מאיר (6.11.2026): "יש תורמים בנדרים פלוס שתורמים כל חודש — זכות ושותפות בלימוד התורה — ולא נמצאים ברשימת
 # התורמים. כל מי שלא כתוב עליו דמי חבר או מקום, או מקווה". רשימה לבחירה, ובלחיצה — כרטיס תורם מקושר להוראה.
 ND_DONOR_EXCL_RX = re.compile(r'דמי\s*חבר|חברות|מקום|מושב|מקו?וה|מנוי|טביל')
+# מאיר: "הוראות קבע חייבות להיות בקטגוריה — או בתורמים, או בקהילה (גם האברכים של הכולל, הקהילה חזקוני, דמי חבר,
+# מקום והכל). אין באמצע" — קטגוריות שהן קהילה מעצמן; כל השאר — מאיר משייך (nd_keva_class)
+ND_COMM_RX = re.compile(r'דמי\s*חבר|חברות|מקום|מושב|חזקוני|אברך|אברכים')
 
 
 def nd_keva_donor_keys(con, kid):
@@ -34305,11 +34323,14 @@ def nd_donor_keva_cands(con):
     except Exception:
         pass
     links = {r['key']: r['donor_id'] for r in con.execute("SELECT key, donor_id FROM nd_dlink")}
+    con.execute("CREATE TABLE IF NOT EXISTS nd_keva_class(keva_id TEXT PRIMARY KEY, cls TEXT, at TEXT)")
+    cls = {r['keva_id']: r['cls'] for r in con.execute("SELECT keva_id, cls FROM nd_keva_class")}
     for k in con.execute("SELECT k.*, m.last ml, m.first mf FROM nd_keva k LEFT JOIN members m ON m.id=k.member_id "
                          "WHERE k.active=1 ORDER BY k.name").fetchall():
         g = (k['groupe'] or '').strip()
-        if ND_DONOR_EXCL_RX.search(g) or (mk and str(k['mosad'] or '') == mk):
-            continue
+        if (mk and str(k['mosad'] or '') == mk) or re.search(r'מקו?וה|מנוי|טביל', g):
+            continue                                   # המקווה — נפרד לגמרי
+        auto_comm = bool(ND_COMM_RX.search(g))
         if not _ivr_amt(k['amount']):
             continue
         keys = nd_keva_donor_keys(con, k['id'])
@@ -34336,6 +34357,7 @@ def nd_donor_keva_cands(con):
         out.append({'last_ok': last_ok, 'last_amt': txs[0]['amount'] if txs else 0, 'n6': len(ok6), 'sum6': round(sum(t['amount'] or 0 for t in ok6), 2),
                     'n_all': len(txs), 'err': (errs['error'] or '')[:120] if errs else '', 'err_at': (errs['iso'] or '')[:10] if errs else '',
                     'stale': (not last_ok) or last_ok < (il_now() - datetime.timedelta(days=62)).strftime('%Y-%m-%d'),
+                    'cls': 'donor' if dn else ('comm' if (auto_comm or cls.get(k['id']) == 'comm') else ''), 'auto_comm': auto_comm,
                     'id': k['id'], 'name': k['name'] or '', 'phone': (k['phone'] or '').split(';')[0], 'mail': k['mail'] or '',
                     'amount': k['amount'], 'groupe': g, 'next': k['next_date'] or '', 'last4': k['last4'] or '',
                     'kind': (k['kind'] if 'kind' in k.keys() else '') or 'card', 'mosad': k['mosad'] or '',
