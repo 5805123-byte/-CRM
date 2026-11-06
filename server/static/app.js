@@ -8144,6 +8144,7 @@ async function ndKvDonors(){
     <div class="hintxt">${k.groupe?'🎯 '+esc(k.groupe)+' · ':''}${k.kind==='bank'?'🏦 בנק':'💳 אשראי'+(k.last4?' '+esc(k.last4):'')}${k.phone?' · <span dir="ltr">'+esc(k.phone)+'</span>':''}${k.next?' · חיוב הבא '+esc(k.next):''}${k.member?' · <b>חבר קהילה: '+esc(k.member)+'</b>':''}</div>
     ${k.donor?`<div class="hintxt" style="color:#1d6b3a;font-weight:700">✓ בתורמים: ${esc(k.donor.name)} (כרטיס ${k.donor.id})</div>`:`
     ${(k.sugg||[]).map(x=>`<div class="rf" style="align-items:center"><div class="k">אולי <b>${esc(x.name)}</b> <small>כרטיס ${x.id} · לפי ${esc(x.by||'שם')}${x.phone?' · <span dir="ltr">'+esc(x.phone)+'</span>':''}</small></div><div class="v"><button class="btn sm ghost" data-ki="${i}" data-did="${x.id}">✓ זה הוא — לקשר</button></div></div>`).join('')}
+    <div style="margin-top:6px"><input class="ndkq" data-q="${i}" autocomplete="off" placeholder="🔗 למזג לתורם אחר — לחפש שם / טלפון (למשל: לרר אלחנן)" style="width:100%"><div class="ndkr" id="ndkr${i}"></div></div>
     <div class="addrow" style="gap:6px;flex-wrap:wrap"><button class="btn sm" data-ki="${i}" data-new="1">➕ להכניס לתורמים (כרטיס חדש)</button><button class="btn sm ghost" data-ki="${i}" data-no="1">✕ לא תורם</button></div>`}
   </div>`;
   let hide=[];try{hide=JSON.parse(localStorage.getItem('kc_ndkd_no')||'[]');}catch(e){}
@@ -8153,7 +8154,13 @@ async function ndKvDonors(){
     ${L.map(k=>card(k,NDKD.indexOf(k))).join('')||'<div class="hintxt">אין — כולם כבר ברשימה ✓</div>'}
     ${done.length?`<details style="margin-top:10px"><summary><b>✓ כבר בתורמים (${done.length})</b></summary>${done.map(k=>card(k,NDKD.indexOf(k))).join('')}</details>`:''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
-  rs.querySelectorAll('[data-ki]').forEach(b=>b.onclick=async()=>{const k=NDKD[+b.dataset.ki];
+  // 🔗 מאיר: "חסרה חלונית למזג אותו לתורם אחר — א.ל. שיווק זה אלחנן לרר"
+  const wire=()=>rs.querySelectorAll('[data-ki]').forEach(b=>b.onclick=go);
+  rs.querySelectorAll('.ndkq').forEach(inp=>{let t;inp.oninput=()=>{clearTimeout(t);t=setTimeout(()=>{const i=inp.dataset.q,q=inp.value.trim(),box=document.getElementById('ndkr'+i);
+    const hits=q.length>=2?DB.filter(x=>matchStr([x.last,x.first,x.english,x.business,x.email,x.phone].join(' '),q)).slice(0,8):[];
+    box.innerHTML=hits.map(x=>`<div class="rf" style="align-items:center"><div class="k"><b>${esc(((x.last||'')+' '+(x.first||'')).trim()||x.business||x.english||'')}</b> <small>כרטיס ${x.id}${x.phone?' · <span dir="ltr">'+esc(String(x.phone).split('/')[0])+'</span>':''}</small></div><div class="v"><button class="btn sm" data-ki="${i}" data-did="${x.id}">🔗 למזג לכאן</button></div></div>`).join('')||(q.length>=2?'<div class="hintxt">לא נמצא בתורמים</div>':'');
+    wire();},200);};});
+  async function go(){const b=this;const k=NDKD[+b.dataset.ki];
     if(b.dataset.no){hide.push(k.id);try{localStorage.setItem('kc_ndkd_no',JSON.stringify(hide));}catch(e){}ndKvDonors();return;}
     const body={keva_id:k.id};
     if(b.dataset.did)body.donor_id=+b.dataset.did;
@@ -8162,7 +8169,8 @@ async function ndKvDonors(){
     b.disabled=true;b.textContent='⏳';
     const x=await api('POST','/api/nd/donor_kevas/add',body);
     if(!x||!x.ok){uiAlert((x&&x.error)||'שגיאה');ndKvDonors();return;}
-    toast('✓ בתורמים · '+(x.imported||0)+' תרומות נכנסו מנדרים פלוס');NDKD=null;await load();ndKvDonors();});
+    toast('✓ בתורמים · '+(x.imported||0)+' תרומות נכנסו מנדרים פלוס');NDKD=null;await load();ndKvDonors();}
+  wire();
 }
 async function ndDonorBox(d){
   const box=document.getElementById('ndlinkbox'); if(!box)return;

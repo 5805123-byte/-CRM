@@ -34321,7 +34321,10 @@ def nd_donor_keva_cands(con):
             for d in con.execute("SELECT id,last,first,email,phone FROM donors WHERE COALESCE(TRIM(phone),'')<>''").fetchall():
                 if set(_phones_of(d['phone'])) & set(phs):
                     by_phone.append({'id': d['id'], 'name': ((d['last'] or '') + ' ' + (d['first'] or '')).strip(), 'email': d['email'] or '', 'phone': d['phone'] or '', 'by': 'טלפון'})
-        sug = by_phone + [dict(x, by='שם') for x in donor_suggest(con, k['name'] or '', 3) if x['id'] not in {y['id'] for y in by_phone}]
+        # לפי שם — רק כששם המשפחה של ההצעה מופיע בשם בנדרים (לא "מאיר" לבד)
+        toks = {t for t in re.split(r'[\s,.\-]+', k['name'] or '') if len(t) >= 3}
+        sug = by_phone + [dict(x, by='שם') for x in donor_suggest(con, k['name'] or '', 6)
+                          if x['id'] not in {y['id'] for y in by_phone} and (x['name'].split() or [''])[0] in toks][:3]
         out.append({'id': k['id'], 'name': k['name'] or '', 'phone': (k['phone'] or '').split(';')[0], 'mail': k['mail'] or '',
                     'amount': k['amount'], 'groupe': g, 'next': k['next_date'] or '', 'last4': k['last4'] or '',
                     'kind': (k['kind'] if 'kind' in k.keys() else '') or 'card', 'mosad': k['mosad'] or '',
