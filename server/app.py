@@ -23655,6 +23655,13 @@ class H(BaseHTTPRequestHandler):
                     h = hs.get(r['id']) or []
                     r['hist'] = h[:4]
                     r['rets'] = sum(1 for x in h if x['ret'])
+            # מאיר: "או בתורמים או בקהילה — אין באמצע" — הוראה שמקושרת לכרטיס תורם יוצאת מהוראות הקבע של הקהילה
+            con = db()
+            try:
+                dk = {r['key'][5:] for r in con.execute("SELECT key FROM nd_dlink WHERE key LIKE 'keva:%'")}
+            finally:
+                con.close()
+            rows = [r for r in rows if not (str(r['id']).split(':')[-1].lstrip('M') in dk and not r['mosad'])]
             accts = [{'name': a['name'], 'mosad': a['mosad'], 'mk': a['mosad'] == mk_mosad(),
                       'bank': sum(1 for r in rows if r['kind'] == 'bank' and +r['active'] and r['mosad'] == ('' if a['main'] else a['mosad']))}
                      for a in _nd.accounts()]
