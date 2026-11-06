@@ -34325,7 +34325,18 @@ def nd_donor_keva_cands(con):
         toks = {t for t in re.split(r'[\s,.\-]+', k['name'] or '') if len(t) >= 3}
         sug = by_phone + [dict(x, by='שם') for x in donor_suggest(con, k['name'] or '', 6)
                           if x['id'] not in {y['id'] for y in by_phone} and (x['name'].split() or [''])[0] in toks][:3]
-        out.append({'id': k['id'], 'name': k['name'] or '', 'phone': (k['phone'] or '').split(';')[0], 'mail': k['mail'] or '',
+        # מאיר: "לי זכור שהוא הפסיק מזמן — באמת עבר לו כל חודש?" — מה באמת נכנס מההוראה הזו
+        kv = str(k['id']).split(':')[-1].lstrip('M')
+        txs = con.execute("SELECT iso, amount FROM nd_tx WHERE LTRIM(COALESCE(keva,''),'-')=? AND amount>0 AND COALESCE(mosad,'')=? "
+                          "ORDER BY iso DESC", (kv, k['mosad'] or '')).fetchall()
+        since6 = (il_now() - datetime.timedelta(days=183)).strftime('%Y-%m-%d')
+        ok6 = [t for t in txs if (t['iso'] or '')[:10] >= since6]
+        errs = con.execute("SELECT iso, error FROM nd_err WHERE keva=? ORDER BY iso DESC LIMIT 1", (kv,)).fetchone()
+        last_ok = (txs[0]['iso'] or '')[:10] if txs else ''
+        out.append({'last_ok': last_ok, 'last_amt': txs[0]['amount'] if txs else 0, 'n6': len(ok6), 'sum6': round(sum(t['amount'] or 0 for t in ok6), 2),
+                    'n_all': len(txs), 'err': (errs['error'] or '')[:120] if errs else '', 'err_at': (errs['iso'] or '')[:10] if errs else '',
+                    'stale': (not last_ok) or last_ok < (il_now() - datetime.timedelta(days=62)).strftime('%Y-%m-%d'),
+                    'id': k['id'], 'name': k['name'] or '', 'phone': (k['phone'] or '').split(';')[0], 'mail': k['mail'] or '',
                     'amount': k['amount'], 'groupe': g, 'next': k['next_date'] or '', 'last4': k['last4'] or '',
                     'kind': (k['kind'] if 'kind' in k.keys() else '') or 'card', 'mosad': k['mosad'] or '',
                     'member': ((k['ml'] or '') + ' ' + (k['mf'] or '')).strip() if k['member_id'] else '',
