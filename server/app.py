@@ -18046,6 +18046,63 @@ def klink_save(con, kind, pid, b):
 _KL_WATCH = set()
 
 
+def klink_link_cols(con):
+    for col in ('kl_kind TEXT', 'kl_pid INTEGER'):
+        try:
+            con.execute("ALTER TABLE nd_link ADD COLUMN " + col)
+        except Exception:
+            pass
+
+
+def klink_card_done(kind, pid, kid, label, used_date):
+    """עדכון כרטיס שהושלם בנדרים פלוס — יומן + מייל אליך, פעם אחת בלבד (לפי nd_link.used)."""
+    con = db()
+    try:
+        r = con.execute("SELECT used FROM nd_link WHERE keva_id=?", (kid,)).fetchone()
+        if r and str(r['used'] or '').strip():
+            return False
+        con.execute("UPDATE nd_link SET used=? WHERE keva_id=?", (str(used_date or now_iso()), kid))
+        con.execute("UPDATE nd_keva SET error='' WHERE id=?", (kid,))
+        klink_log(con, kind, pid, '✅ עדכן כרטיס אשראי בנדרים פלוס — ' + label)
+        con.commit()
+        who = klink_fullname(klink_person(con, kind, pid)) or '#%s' % pid
+    finally:
+        con.close()
+    bump_data()
+    klink_alert('✅ %s עדכן כרטיס אשראי' % who,
+                '%s עדכן כרטיס אשראי חדש דרך הקישור האישי.\n\n%s\nעודכן בנדרים פלוס: %s\n\n(נרשם ביומן שלו במערכת)' % (who, label, str(used_date or '')))
+    return True
+
+
+def klink_links_check():
+    """מאיר: "הוא כתב בוצע ולא קיבלתי אימייל" — הבדיקה ברקע נעצרת כשהשרת עולה מחדש, אז גם כל 10 דקות
+    (בסבב של נדרים פלוס) בודקים את כל הקישורים לעדכון כרטיס מ-14 הימים האחרונים שעוד לא נוצלו."""
+    import nedarim as _nd
+    if not _nd.configured():
+        return 0
+    con = db()
+    try:
+        klink_link_cols(con)
+        since = (il_now() - datetime.timedelta(days=14)).strftime('%Y-%m-%d')
+        # קישורים מלפני שנוספו העמודות (kl_pid ריק) — לפי החבר שמשויך להוראה
+        rows = [dict(r) for r in con.execute("SELECT l.keva_id, l.kl_kind, COALESCE(NULLIF(l.kl_pid,0), k.member_id) kl_pid, k.mosad, k.amount, k.groupe, k.last4 "
+                                             "FROM nd_link l LEFT JOIN nd_keva k ON k.id=l.keva_id WHERE l.sent_to='קישור אישי' AND COALESCE(l.used,'')='' "
+                                             "AND COALESCE(NULLIF(l.kl_pid,0), k.member_id, 0)>0 AND COALESCE(l.sent_at,'')>=?", (since,))]
+    finally:
+        con.close()
+    n = 0
+    for r in rows:
+        try:
+            with _nd.use(_nd.account_for(r.get('mosad') or '')):
+                st = _nd.link_status(r['keva_id'])
+        except Exception:
+            continue
+        if str(st.get('Used')).lower() == 'true':
+            if klink_card_done(r['kl_kind'] or ('v' if klink_is_mk(r) else 'm'), r['kl_pid'], r['keva_id'], klink_keva_label(r), st.get('UsedDate') or ''):
+                n += 1
+    return n
+
+
 def klink_watch(kind, pid, kid, mosad, who, label):
     """אחרי שנכנס לדף של נדרים פלוס — בודקים כל 5 דקות (עד 3 שעות) אם עדכן כרטיס; עדכן → יומן + מייל אליך."""
     if kid in _KL_WATCH:
@@ -18063,18 +18120,7 @@ def klink_watch(kind, pid, kid, mosad, who, label):
                 except Exception:
                     continue
                 if str(st.get('Used')).lower() == 'true':
-                    con = db()
-                    try:
-                        con.execute("UPDATE nd_link SET used=? WHERE keva_id=?", (str(st.get('UsedDate') or now_iso()), kid))
-                        con.execute("UPDATE nd_keva SET error='' WHERE id=?", (kid,))
-                        klink_log(con, kind, pid, '✅ עדכן כרטיס אשראי בנדרים פלוס — ' + label)
-                        con.commit()
-                    finally:
-                        con.close()
-                    bump_data()
-                    klink_alert('✅ %s עדכן כרטיס אשראי' % who,
-                                '%s עדכן כרטיס אשראי חדש דרך הקישור האישי.\n\n%s\nעודכן בנדרים פלוס: %s\n\n(נרשם ביומן שלו במערכת)'
-                                % (who, label, str(st.get('UsedDate') or '')))
+                    klink_card_done(kind, pid, kid, label, st.get('UsedDate') or '')
                     return
                 if str(st.get('Expired')).lower() == 'true':
                     return
@@ -18092,8 +18138,10 @@ def klink_card(con, kind, pid, kid):
         ok, link = _nd.update_link(k['id'])
     if not ok:
         return {'ok': False, 'error': 'הדף של נדרים פלוס לא נפתח (%s). נא להתקשר אלינו.' % link}
-    con.execute("INSERT INTO nd_link(keva_id,link,created,sent_at,sent_to) VALUES(?,?,?,?,?) ON CONFLICT(keva_id) DO UPDATE SET "
-                "link=excluded.link, sent_at=excluded.sent_at, sent_to=excluded.sent_to", (k['id'], link, now_iso(), now_iso(), 'קישור אישי'))
+    klink_link_cols(con)
+    con.execute("INSERT INTO nd_link(keva_id,link,created,sent_at,sent_to,used,kl_kind,kl_pid) VALUES(?,?,?,?,?,'',?,?) ON CONFLICT(keva_id) DO UPDATE SET "
+                "link=excluded.link, sent_at=excluded.sent_at, sent_to=excluded.sent_to, used='', kl_kind=excluded.kl_kind, kl_pid=excluded.kl_pid",
+                (k['id'], link, now_iso(), now_iso(), 'קישור אישי', kind, pid))
     label = klink_keva_label(k)
     klink_log(con, kind, pid, '💳 נכנס לעדכון כרטיס אשראי (הדף של נדרים פלוס) — ' + label)
     con.commit()
@@ -36423,6 +36471,12 @@ def _nd_loop():
             nd_run()
         except Exception as e:
             print('  nedarim sync error:', e)
+        try:
+            n_ = klink_links_check()
+            if n_:
+                print('  klink: %d עדכוני כרטיס הושלמו' % n_)
+        except Exception as e:
+            print('  klink links check error:', e)
         # מאיר (5.11.2026): "מספיק כל 10 דקות… מקור העדכון זה מה-webhook, ומקור מחיקות, ביטולים ועדכונים זה מהסריקה"
         time.sleep(max(600, int(os.environ.get('NEDARIM_SECONDS') or 600)))
 
