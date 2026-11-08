@@ -9168,7 +9168,7 @@ function bqBadHTML(rows){
   // מה שהסתדר — פעם אחת לכל חיוב שעבר בסוף
   const seen=new Set(),fx=[];
   fixed.slice().sort((a,b)=>String(b.created||'').localeCompare(String(a.created||''))).forEach(r=>{const f=r.fix||{};const k=key(r)+'|'+(+r.amount)+'|'+(f.ref||f.at||'');if(seen.has(k))return;seen.add(k);fx.push(r);});
-  if(fx.length)h+=`<details class="bqfixedgrp"${bqQ?' open':''}><summary>✅ הסתדרו (${fx.length}) — חיובים שחזרו ואחר כך עברו</summary>
+  if(fx.length)h+=`<details class="bqfixedgrp"${bqQ||bqFxOpen?' open':''}><summary>✅ הסתדרו (${fx.length}) — חיובים שחזרו ואחר כך עברו</summary>
     ${fx.map(r=>{const f=r.fix||{};return `<div class="bqfxl"><b>${esc(r.donor_name||r.name||'?')}</b> · ${bqMoney(r.amount)} · לא עבר ${esc(bqDate(r.created))} → ${f.manual?'סומן כמסודר':(f.via?'שולם ':'חויב בהצלחה ')+esc(bqDate(bqLocalDate(f.at)))}${f.amount&&Math.abs(+f.amount-+r.amount)>0.005?' ('+bqMoney(f.amount)+')':''}${f.via?' · '+esc((chCfg(f.via)||{}).l||f.via):''}${f.note?' · '+esc(f.note):''} <button class="btn sm ghost bqfixb" data-tx="${r.id}" data-amt="${esc(r.amount)}" data-who="${esc(r.donor_name||r.name||'')}" title="לא נכון? לסמן שעדיין לא סודר">✎</button></div>`;}).join('')}</details>`;
   return h;}
 function bqTxRow(r){const op=bqOpen==='t'+r.id, s=BQ_ST[r.status]||[r.status||'?','off'], bad=BQ_BAD.includes(r.status);
@@ -9238,7 +9238,14 @@ async function bqOpenForm(kind,did){
 function bqFormKeep(){if(!bqNew)return;const g=id=>document.getElementById(id);
   ['amt:bqf_amt','cat:bqf_cat','note:bqf_note','next:bqf_next','n:bqf_n','pm:bqf_pm','n_last:bqn_last','n_first:bqn_first','n_eng:bqn_eng','n_email:bqn_email','n_phone:bqn_phone']
     .forEach(x=>{const[k,id]=x.split(':');if(g(id))bqNew[k]=g(id).value;});}
+// מאיר: "לא נפתח השורות של חיובים שבסוף עברו" — הפתיחה נשמרת במשתנה ונקבעת בעצמנו (גם אם משהו אחר
+// בדף מצייר מחדש או חוסם את הפתיחה הרגילה של details)
+let bqFxOpen=false;
 function bqWire(box){const g=id=>document.getElementById(id);
+  box.querySelectorAll('details.bqfixedgrp>summary').forEach(sm=>sm.onclick=e=>{e.preventDefault();e.stopPropagation();
+    bqFxOpen=!sm.parentNode.open;const det=sm.parentNode;
+    // הרשימה יושבת בתחתית תיבה עם גלילה פנימית — אחרי הפתיחה גוללים אליה, שלא ייראה כאילו לא נפתח
+    setTimeout(()=>{det.open=bqFxOpen;if(bqFxOpen){const L=det.closest('.bqlist');if(L)L.scrollTop=det.offsetTop-L.offsetTop-8;det.scrollIntoView({block:'nearest'});}},0);});
   box.querySelectorAll('[data-bqt]').forEach(b=>b.onclick=()=>{bqTab=b.dataset.bqt;bqOpen=null;renderBQ();});
   // מאיר: "כשאני לוחץ על השם שלו בחיובים המסך קופץ ועולה, ולא מתביית על החיוב שלו" — נשארים במקום, והשורה שנפתחה בתצוגה
   box.querySelectorAll('.bqrh').forEach(b=>b.onclick=async()=>{const op=b.dataset.op,y=window.scrollY;bqOpen=bqOpen===op?null:op;
