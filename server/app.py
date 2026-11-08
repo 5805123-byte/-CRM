@@ -17510,7 +17510,7 @@ def klink_token(kind, pid, days=30):
 
 def klink_check(tok):
     """-> ('m' | 'd', מזהה) — או (None, 0) אם הקישור מזויף / פג."""
-    m = re.fullmatch(r'([md])(\d+)\.(\d+)\.([0-9a-f]{32})', str(tok or ''))
+    m = re.fullmatch(r'([mdv])(\d+)\.(\d+)\.([0-9a-f]{32})', str(tok or ''))
     if not m:
         return None, 0
     body = '%s%s.%s' % (m.group(1), m.group(2), m.group(3))
@@ -17521,17 +17521,26 @@ def klink_check(tok):
 
 
 def klink_person(con, kind, pid):
-    return con.execute("SELECT * FROM %s WHERE id=?" % ('members' if kind == 'm' else 'donors'), (pid,)).fetchone()
+    return con.execute("SELECT * FROM %s WHERE id=?" % ('donors' if kind == 'd' else 'members'), (pid,)).fetchone()
 
 
 def klink_fullname(p):
     return ((p['first'] or '') + ' ' + (p['last'] or '')).strip() if p else ''
 
 
+def klink_is_mk(k):
+    try:
+        return str(k['mosad'] or '') == mk_mosad()
+    except Exception:
+        return False
+
+
 def klink_kevas(con, kind, pid):
-    """הוראות הקבע הפעילות באשראי של האדם בנדרים פלוס (חבר — לפי השיוך; תורם — לפי nd_dlink)."""
-    if kind == 'm':
-        return con.execute("SELECT * FROM nd_keva WHERE member_id=? AND active=1 AND COALESCE(kind,'')<>'bank' ORDER BY id", (pid,)).fetchall()
+    """הוראות הקבע הפעילות באשראי של האדם בנדרים פלוס (חבר — לפי השיוך; תורם — לפי nd_dlink).
+    קישור קהילה — בלי הוראות המקווה; קישור המקווה ('v') — רק הוראות המקווה."""
+    if kind in ('m', 'v'):
+        rows = con.execute("SELECT * FROM nd_keva WHERE member_id=? AND active=1 AND COALESCE(kind,'')<>'bank' ORDER BY id", (pid,)).fetchall()
+        return [r for r in rows if klink_is_mk(r) == (kind == 'v')]
     kk = {r['key'][5:] for r in con.execute("SELECT key FROM nd_dlink WHERE donor_id=? AND key LIKE 'keva:%'", (pid,))}
     if not kk:
         return []
@@ -17540,7 +17549,7 @@ def klink_kevas(con, kind, pid):
 
 
 def klink_log(con, kind, pid, summary, body=''):
-    if kind == 'm':
+    if kind in ('m', 'v'):
         con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
                     (pid, today_iso(), 'קישור', summary, body, 'in', '', now_iso()))
     else:
@@ -17565,28 +17574,58 @@ def klink_alert(subject, body):
 
 def klink_keva_label(k):
     a = _amt2(k['amount'])
-    return ('הוראת קבע ₪%s לחודש' % ('%g' % a if a else '?')) + ((' · ' + str(k['groupe']).strip()) if str(k['groupe'] or '').strip() else '') \
+    return (('מנוי המקווה · ' if klink_is_mk(k) else '') + 'הוראת קבע ₪%s לחודש' % ('%g' % a if a else '?')) + ((' · ' + str(k['groupe']).strip()) if str(k['groupe'] or '').strip() else '') \
         + ((' · כרטיס ••••' + str(k['last4'])) if str(k['last4'] or '').strip() else '')
 
 
-def klink_message(p, url):
-    nm = klink_fullname(p) or 'ידידנו'
-    subject = 'הקישור האישי שלך — עדכון פרטים וכרטיס אשראי · כולל חצות'
-    body = ('שלום %s,\n\n'
-            'זה הקישור האישי שלך בכולל חצות. בדף אפשר:\n'
-            '• לעדכן שם, כתובת, טלפון ואימייל.\n'
-            '• לעדכן את כרטיס האשראי בהוראת הקבע — בדף המאובטח של נדרים פלוס.\n'
-            '• לתרום עכשיו בכל סכום.\n\n'
-            '%s\n\n'
+def klink_salute(p, kind):
+    """מאיר: "שיהיה כתוב יותר מכובד — לכבוד חבר קהילתנו היקר ר'…", ובמקווה "לכבוד ר'…"."""
+    nm = klink_fullname(p) or ''
+    try:
+        g = (p['gender'] or '').strip()[:1] if 'gender' in p.keys() else ''
+    except Exception:
+        g = ''
+    g = g if g in ('m', 'f', 'c') else _gender(p['first'] or '')
+    if g == 'f':
+        return {'m': "לכבוד חברת קהילתנו היקרה מרת %s תחי'", 'v': "לכבוד מרת %s תחי'", 'd': "לכבוד ידידתנו היקרה מרת %s תחי'"}[kind] % nm
+    return {'m': 'לכבוד חבר קהילתנו היקר ר\' %s הי"ו', 'v': 'לכבוד ר\' %s הי"ו', 'd': 'לכבוד ידידנו היקר ר\' %s הי"ו'}[kind] % nm
+
+
+KLINK_TXT = {
+    'm': {'subject': 'לכבוד חבר קהילתנו — עדכון פרטים, דמי חבר ונדרים ונדבות',
+          'intro': 'זה הקישור האישי שלך בקהילה. בדף אפשר:',
+          'card': 'לעדכן את כרטיס האשראי לדמי החבר / נדרים ונדבות — בדף המאובטח של נדרים פלוס.',
+          'don': 'לתרום נדרים ונדבות בכל סכום.',
+          'wa': 'זה הקישור האישי שלך בקהילה — לעדכון הפרטים (שם, כתובת, טלפון ואימייל), לעדכון כרטיס האשראי לדמי החבר / נדרים ונדבות, ולנדרים ונדבות בכל סכום:',
+          'sig': 'הרב יהושע מאיר דויטש · קהילת כולל חצות'},
+    'v': {'subject': 'עדכון לגבי המקווה — הקישור האישי שלך',
+          'intro': 'זה הקישור האישי שלך לעדכון לגבי המקווה. בדף אפשר:',
+          'card': 'לעדכן את כרטיס האשראי למנוי המקווה — בדף המאובטח של נדרים פלוס.',
+          'don': '',
+          'wa': 'זה הקישור האישי שלך לעדכון לגבי המקווה — לעדכון הפרטים (שם, כתובת, טלפון ואימייל) ולעדכון כרטיס האשראי למנוי המקווה:',
+          'sig': 'הנהלת המקווה · כולל חצות'},
+    'd': {'subject': 'הקישור האישי שלך — עדכון פרטים וכרטיס אשראי · כולל חצות',
+          'intro': 'זה הקישור האישי שלך בכולל חצות. בדף אפשר:',
+          'card': 'לעדכן את כרטיס האשראי בהוראת הקבע — בדף המאובטח של נדרים פלוס.',
+          'don': 'לתרום נדרים ונדבות בכל סכום.',
+          'wa': 'זה הקישור האישי שלך בכולל חצות — לעדכון הפרטים, לעדכון כרטיס האשראי בהוראת הקבע, ולתרומה בכל סכום:',
+          'sig': 'הרב יהושע מאיר דויטש · כולל חצות'},
+}
+
+
+def klink_message(p, url, kind='m'):
+    T = KLINK_TXT[kind]
+    sal = klink_salute(p, kind)
+    body = (sal + '\n\nשלום וברכה,\n\n' + T['intro'] + '\n'
+            '\u2022 לעדכן שם, כתובת, טלפון ואימייל.\n'
+            '\u2022 ' + T['card'] + '\n'
+            + (('\u2022 ' + T['don'] + '\n') if T['don'] else '') + '\n'
+            + url + '\n\n'
             'הקישור אישי ומאובטח ותקף ל-30 יום. מספר הכרטיס מוזן ישירות בנדרים פלוס ולא עובר אצלנו.\n\n'
-            'תודה רבה ותזכו למצוות!\n'
-            'הרב יהושע מאיר דויטש · כולל חצות') % (nm, url)
-    wa = ('שלום %s,\n'
-          'זה הקישור האישי שלך בכולל חצות — לעדכון שם, כתובת, טלפון ואימייל, לעדכון כרטיס האשראי בהוראת הקבע, ולתרומה בכל סכום:\n'
-          '%s\n'
-          'קישור אישי ומאובטח, תקף 30 יום.\n'
-          'תודה רבה ותזכו למצוות!\nכולל חצות') % (nm, url)
-    return {'subject': subject, 'body': body, 'wa': wa}
+            'בברכה ובתודה, ותזכו למצוות!\n' + T['sig'])
+    wa = (sal + '\nשלום וברכה,\n' + T['wa'] + '\n' + url + '\nקישור אישי ומאובטח, תקף 30 יום.\nתודה רבה ותזכו למצוות!\n'
+          + T['sig'])
+    return {'subject': T['subject'], 'body': body, 'wa': wa}
 
 
 def klink_mail_html(body, url):
@@ -17612,7 +17651,7 @@ def klink_mail_html(body, url):
 
 
 KLINK_PAGE = r'''<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>כולל חצות · הקישור האישי שלי</title><meta property="og:title" content="כולל חצות · הקישור האישי שלי">
+<title>{{TITLE}}</title><meta property="og:title" content="כולל חצות · הקישור האישי שלי">
 <meta property="og:description" content="עדכון פרטים, עדכון כרטיס אשראי ותרומה — בדף אישי ומאובטח">
 <meta property="og:image" content="{{BASE}}/logo_og.png"><meta property="og:type" content="website">
 <style>body{margin:0;background:#efe9db;font-family:Arial,Helvetica,sans-serif;color:#3a2f1a}
@@ -17629,7 +17668,7 @@ button.gold{background:#9c7a2e;border-color:#7a1f1f}button:disabled{opacity:.55;
 .err{color:#8f2a1b;font-size:15px;margin-top:10px}.err:not(:empty){background:#fde8e4;border:1px solid #e3a094;border-radius:8px;padding:10px 12px}
 .amts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.amts span{flex:1;min-width:60px;text-align:center;border:1px solid #d9cfb5;border-radius:8px;padding:9px 4px;cursor:pointer;background:#fffdf7;font-weight:bold}
 .amts span.on{background:#f3e3a8;border-color:#9c7a2e}.foot{text-align:center;font-size:12px;color:#6b6249;margin-top:26px;line-height:1.6}</style></head>
-<body><div class="wrap"><div class="hd"><img src="{{LOGO}}" alt="כולל חצות"><div class="hi">שלום {{NAME}}</div><div class="sub">הדף האישי והמאובטח שלך בכולל חצות</div></div><div class="in">
+<body><div class="wrap"><div class="hd"><img src="{{LOGO}}" alt="כולל חצות"><div class="hi">{{NAME}}</div><div class="sub">{{SUB}}</div></div><div class="in">
 <h3>1 · הפרטים שלי</h3>
 <div class="two"><div><label>שם פרטי</label><input id="first" value="{{FIRST}}"></div><div><label>שם משפחה</label><input id="last" value="{{LAST}}"></div></div>
 <label>כתובת</label><input id="addr" value="{{ADDR}}" placeholder="רחוב ומספר בית">
@@ -17637,11 +17676,11 @@ button.gold{background:#9c7a2e;border-color:#7a1f1f}button:disabled{opacity:.55;
 <div class="two"><div><label>טלפון</label><input id="phone" class="ltr" inputmode="tel" value="{{PHONE}}"></div><div><label>אימייל</label><input id="email" class="ltr" type="email" value="{{EMAIL}}"></div></div>
 <button type="button" id="s_go">שמור ועדכן את הפרטים</button><div class="err" id="s_err"></div><div class="ok" id="s_done" hidden></div>
 {{CARDS}}
-<h3>{{DONNUM}} · תרומה עכשיו</h3>
-<div class="small">תרומה לכולל חצות בכל סכום, בכרטיס אשראי, בדף התשלום המאובטח של נדרים פלוס.</div>
+<div id="donsec"{{DONHIDE}}><h3>{{DONNUM}} · נדרים ונדבות — תרומה עכשיו</h3>
+<div class="small">נדרים ונדבות בכל סכום, בכרטיס אשראי, בדף התשלום המאובטח של נדרים פלוס.</div>
 <div class="amts" id="amts"><span data-a="52">₪52</span><span data-a="100">₪100</span><span data-a="180">₪180</span><span data-a="360">₪360</span></div>
 <label>סכום (₪)</label><input id="amt" inputmode="decimal" placeholder="כל סכום">
-<button type="button" class="gold" id="d_go">תרום עכשיו</button><div class="err" id="d_err"></div>
+<button type="button" class="gold" id="d_go">תרום עכשיו</button><div class="err" id="d_err"></div></div>
 <div class="foot">כולל חצות · ת.ד. 30067 ביתר עילית<br><bdi dir="ltr">02-580-3545</bdi> · <bdi dir="ltr">052-762-8272</bdi><br>הקישור אישי ומאובטח ותקף ל-30 יום</div>
 </div></div>
 <script>
@@ -17662,7 +17701,7 @@ Array.prototype.forEach.call(document.querySelectorAll('#amts span'),function(s)
 g('d_go').onclick=function(){var er=g('d_err');er.textContent='';var a=parseFloat(String(v('amt')).replace(/[^\d.]/g,''))||0;
   if(!a){er.textContent='נא לכתוב סכום.';g('amt').focus();return;}if(!MOSAD){er.textContent='דף התרומה לא זמין כרגע, נא להתקשר אלינו.';return;}
   var nm=(v('first')+' '+v('last')).trim(),ph=v('phone').split(/[\/,;]/)[0].trim();
-  var p=[['mosad',MOSAD],['Amount',a],['OnlyNormal',1],['Avour','דרך הקישור האישי']];
+  var p=[['mosad',MOSAD],['Amount',a],['OnlyNormal',1],['Groupe','נדרים ונדבות'],['Avour','דרך הקישור האישי']];
   if(nm)p.push(['ClientName',nm]);if(ph)p.push(['Phone',ph.replace(/[^\d+]/g,'')]);if(v('email').indexOf('@')>0)p.push(['Mail',v('email')]);
   if(v('addr'))p.push(['Street',v('addr')]);if(v('city'))p.push(['City',v('city')]);
   postJ('/donate',{amount:a});
@@ -17685,13 +17724,18 @@ def klink_page(con, kind, pid, base=''):
             bad = str(k['error'] or '').strip() if 'error' in k.keys() else ''
             rows.append('<div class="keva"><b>%s</b>%s<button type="button" class="cardgo" data-k="%s">\U0001F512 עדכון כרטיס אשראי</button><div class="err"></div></div>'
                         % (e(klink_keva_label(k)), ('<div class="bad">⚠️ החיוב האחרון לא עבר — כדאי לעדכן כרטיס</div>' if bad else ''), e(str(k['id']))))
-        cards = ('<h3>2 · כרטיס האשראי בהוראת הקבע</h3><div class="small">הכרטיס מוזן בדף המאובטח של נדרים פלוס — מספר הכרטיס לא עובר אצלנו. '
+        cards = ('<h3>2 · %s</h3><div class="small">' % {'m': 'כרטיס האשראי — דמי חבר / נדרים ונדבות', 'v': 'כרטיס האשראי — מנוי המקווה',
+                                                        'd': 'כרטיס האשראי בהוראת הקבע'}[kind] + 'הכרטיס מוזן בדף המאובטח של נדרים פלוס — מספר הכרטיס לא עובר אצלנו. '
                  'אחרי העדכון הכרטיס החדש נכנס להוראת הקבע מיד.</div>' + ''.join(rows))
     acc = _nd.accounts()
     mos = (acc[0]['mosad'] if acc else '') or (_nd.mosad() if _nd.configured() else '')
     em = (emails_of(p['email'] or '') or [''])[0]
     rep = {'{{BASE}}': e(base), '{{LOGO}}': 'data:image/png;base64,' + base64.b64encode(letterhead_logo(300)).decode('ascii'),
-           '{{NAME}}': e(klink_fullname(p) or 'ידידנו'), '{{FIRST}}': e(p['first'] or ''), '{{LAST}}': e(p['last'] or ''),
+           '{{NAME}}': e(klink_salute(p, kind)),
+           '{{SUB}}': e({'m': 'הדף האישי שלך בקהילה — עדכון פרטים, דמי חבר ונדרים ונדבות', 'v': 'עדכון לגבי המקווה — הדף האישי שלך',
+                         'd': 'הדף האישי והמאובטח שלך בכולל חצות'}[kind]),
+           '{{TITLE}}': {'m': 'קהילת כולל חצות · הדף האישי שלי', 'v': 'המקווה · הדף האישי שלי', 'd': 'כולל חצות · הדף האישי שלי'}[kind],
+           '{{DONHIDE}}': ' hidden' if kind == 'v' else '', '{{FIRST}}': e(p['first'] or ''), '{{LAST}}': e(p['last'] or ''),
            '{{ADDR}}': e(p['addr'] or ''), '{{CITY}}': e(p['city'] or ''), '{{PHONE}}': e(cardlink_phone_clean(p['phone'])), '{{EMAIL}}': e(em),
            '{{CARDS}}': cards, '{{DONNUM}}': '3' if ks else '2', '{{MOSAD}}': json.dumps(str(mos or ''))}
     out = KLINK_PAGE
@@ -17762,10 +17806,11 @@ def klink_save(con, kind, pid, b):
     if not upd:
         return {'ok': True, 'changes': 0, 'nd': 0}
     if 'email' in upd and (p['email'] or '').strip():
-        upd['email'] = upd['email'] + (' / ' if kind == 'm' else ', ') + (p['email'] or '').strip()   # החדש ראשון, הישן נשאר אחריו
-    tb = 'members' if kind == 'm' else 'donors'
-    sets = ', '.join('%s=?' % k for k in upd) + (", updated=?" if kind == 'm' else '')
-    con.execute("UPDATE %s SET %s WHERE id=?" % (tb, sets), list(upd.values()) + ([now_iso()] if kind == 'm' else []) + [pid])
+        upd['email'] = upd['email'] + (' / ' if kind != 'd' else ', ') + (p['email'] or '').strip()   # החדש ראשון, הישן נשאר אחריו
+    mem = kind != 'd'
+    tb = 'members' if mem else 'donors'
+    sets = ', '.join('%s=?' % k for k in upd) + (", updated=?" if mem else '')
+    con.execute("UPDATE %s SET %s WHERE id=?" % (tb, sets), list(upd.values()) + ([now_iso()] if mem else []) + [pid])
     klink_log(con, kind, pid, '🔗 עדכן פרטים דרך הקישור האישי', '\n'.join(lines))
     con.commit()
     who = klink_fullname(klink_person(con, kind, pid)) or '#%d' % pid
@@ -17779,7 +17824,7 @@ def klink_save(con, kind, pid, b):
     if 'email' in upd:
         client['mail'] = re.split(r'[,/ ]+', upd['email'])[0]
     nks = len(klink_kevas(con, kind, pid))
-    kind_he = 'חבר הקהילה' if kind == 'm' else 'התורם'
+    kind_he = {'m': 'חבר הקהילה', 'v': 'מנוי המקווה', 'd': 'התורם'}[kind]
 
     def run():
         res = []
@@ -21816,7 +21861,7 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, out or {'ok': False, 'error': 'month'})
-        m = re.match(r'/k/([md][0-9.a-f]+)$', self.path.split('?')[0])
+        m = re.match(r'/k/([mdv][0-9.a-f]+)$', self.path.split('?')[0])
         if m:
             kind, pid = klink_check(m.group(1))
             if not pid:
@@ -32368,7 +32413,7 @@ class H(BaseHTTPRequestHandler):
                          _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
-        m = re.match(r'/api/k/([md][0-9.a-f]+)/(save|card|donate)$', self.path)
+        m = re.match(r'/api/k/([mdv][0-9.a-f]+)/(save|card|donate)$', self.path)
         if m:
             kind, pid = klink_check(m.group(1))
             if not pid:
@@ -32393,7 +32438,7 @@ class H(BaseHTTPRequestHandler):
         m = re.match(r'/api/(members|donor)/(\d+)/klink(/send)?$', self.path)
         if m:
             # 🔗 יצירת הקישור האישי בעברית (קהילה / תורם בארץ) + נוסח לוואטסאפ ולמייל; /send — שליחה במייל
-            kind = 'm' if m.group(1) == 'members' else 'd'
+            kind = ('v' if str(b.get('variant') or '') == 'mikveh' else 'm') if m.group(1) == 'members' else 'd'
             pid = int(m.group(2))
             con = db()
             try:
@@ -32402,12 +32447,13 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, {'ok': False, 'error': 'לא נמצא'})
                 base_url = (os.environ.get('PUBLIC_URL') or ('https://' + (self.headers.get('Host') or 'kollel-chatzot-crm.onrender.com'))).rstrip('/')
                 url = base_url + '/k/' + klink_token(kind, pid)
-                msg = klink_message(p_, url)
+                msg = klink_message(p_, url, kind)
                 if not m.group(3):
                     ks = klink_kevas(con, kind, pid)
+                    has_mk = bool(kind != 'd' and klink_kevas(con, 'v', pid))
                     return self._send(200, {'ok': True, 'url': url, 'subject': msg['subject'], 'body': msg['body'], 'wa': msg['wa'],
                                             'email': (emails_of(p_['email'] or '') or [''])[0], 'phone': p_['phone'] or '',
-                                            'name': klink_fullname(p_), 'kevas': [klink_keva_label(k) for k in ks]})
+                                            'name': klink_fullname(p_), 'kevas': [klink_keva_label(k) for k in ks], 'has_mk': has_mk, 'variant': kind})
                 to = str(b.get('email') or '').strip()
                 if '@' not in to:
                     return self._send(200, {'ok': False, 'error': 'חסר מייל'})
@@ -32422,12 +32468,13 @@ class H(BaseHTTPRequestHandler):
                 if kind == 'd':
                     res = send_donor_mail(pid, to, subj, body_, [], rtl=True, html=html_)
                 else:
-                    res = mailer.send(to, subj, body_, [], profile='comm', rtl=True, html=html_)
+                    res = mailer.send(to, subj, body_, [], profile='comm', rtl=True, html=html_,
+                                      from_name='המקווה · כולל חצות' if kind == 'v' else None)
                 if not res.get('ok'):
                     return self._send(200, {'ok': False, 'error': str(res.get('detail') or res.get('error') or 'השליחה נכשלה')[:160]})
-                if kind == 'm':
+                if kind != 'd':
                     con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
-                                (pid, today_iso(), 'מייל', '🔗 נשלח הקישור האישי (עדכון פרטים / כרטיס / תרומה) ל-' + to, body_, 'out', '', now_iso()))
+                                (pid, today_iso(), 'מייל', ('💧 ' if kind == 'v' else '') + '🔗 נשלח הקישור האישי (עדכון פרטים / כרטיס / תרומה) ל-' + to, body_, 'out', '', now_iso()))
                     con.execute("UPDATE members SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", (to, pid))
                 else:
                     con.execute("UPDATE donors SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", (to, pid))
@@ -32436,6 +32483,25 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             bump_data()
             return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/klink':
+            # 💧 מכרטיס המקווה — חבר הקהילה של הלקוח לפי הטלפון (או לפי הוראת המקווה שלו בנדרים פלוס)
+            con = db()
+            try:
+                want = {x[-9:] for x in (re.sub(r'\D', '', p_) for p_ in _phones_of(str(b.get('phone') or ''))) if len(x) >= 9}
+                mid = 0
+                if want:
+                    for r_ in con.execute("SELECT id, phone FROM members WHERE COALESCE(active,1)=1"):
+                        if want & {re.sub(r'\D', '', x)[-9:] for x in _phones_of(r_['phone'] or '')}:
+                            mid = r_['id']; break
+                    if not mid:
+                        for r_ in con.execute("SELECT member_id, phone FROM nd_keva WHERE mosad=? AND COALESCE(member_id,0)>0", (mk_mosad(),)):
+                            if want & {re.sub(r'\D', '', x)[-9:] for x in str(r_['phone'] or '').split(';')}:
+                                mid = r_['member_id']; break
+            finally:
+                con.close()
+            if not mid:
+                return self._send(200, {'ok': False, 'error': 'לא נמצא חבר קהילה עם הטלפון הזה. כדי לשלוח לו קישור — צריך שיהיה לו כרטיס בקהילה עם אותו טלפון.'})
+            return self._send(200, {'ok': True, 'member_id': mid})
         m = re.match(r'/api/members/(\d+)/klink_log$', self.path)
         if m:
             con = db()

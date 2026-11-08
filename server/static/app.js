@@ -2625,6 +2625,7 @@ function mkOpen(c){
       <div class="mkhead"><div class="mkav lg" style="background:${esc(mkColor(g))}">${esc(mkInit(c))}</div>
         <div><h2><a href="#" id="mkweb" class="mkweb" title="לפתוח את הכרטיס שלו באתר המקווה">${esc(mkName(c))} <small>↗</small></a></h2><div class="mksub">${c.phone?`<span dir="ltr"${mkPhoneOk(c.phone)?'':' style="color:#c0392b" title="המספר לא תקין"'}>${mkPhoneOk(c.phone)?'':'⚠️ '}${esc(c.phone)}</span>`:'אין טלפון'}<span>#${esc(c.code||'')}</span><span id="mkmail" dir="ltr" style="${c.email?'':'display:none'}">${esc(c.email||'')}</span><a href="#" id="mkident" title="תעודת זהות (מהמקווה) — לחיצה מראה את המספר המלא" style="text-decoration:none;display:${c.ident?'':'none'}">🪪 ת.ז. ${c.ident?'••••'+esc(String(c.ident).slice(-3)):''}</a><a href="#" id="mkwebset" title="לשנות את הקישור לאתר המקווה" style="text-decoration:none">⚙️</a>
           <button class="mkbtn ${c.phone&&!mkPhoneOk(c.phone)?'':'gh'}" id="mkphed" style="padding:6px 12px;font-size:.9rem">📞 ${c.phone&&!mkPhoneOk(c.phone)?'לתקן את הטלפון':'שינוי טלפון'}</button>
+          ${c.phone?`<button class="mkbtn gh" id="mkkl" style="padding:6px 12px;font-size:.9rem" title="קישור אישי — לכבוד ר'… עדכון לגבי המקווה: פרטים וכרטיס אשראי בנדרים פלוס">💧 קישור אישי — וואטסאפ / מייל</button>`:''}
           ${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
       <div class="mktiles">
         ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`)}
@@ -2702,6 +2703,11 @@ function mkOpen(c){
     document.getElementById('mkweb').onclick=e=>{e.preventDefault();mkOpenWeb(c);};
     document.getElementById('mkwebset').onclick=e=>{e.preventDefault();mkOpenWeb(c,true);};
     document.getElementById('mktwl').onclick=()=>mkTowelEdit(c);
+    const kl=document.getElementById('mkkl');
+    if(kl)kl.onclick=async e=>{e.preventDefault();e.stopPropagation();
+      const r=await api('POST','/api/mikveh/klink',{phone:c.phone||''}).catch(()=>null);
+      if(!r||!r.ok){uiAlert((r&&r.error)||'לא נמצא');return;}
+      klinkOpen('members',r.member_id,c.phone||'','il','mikveh');};
     document.getElementById('mkphed').onclick=async e=>{e.preventDefault();
       const v=await uiPrompt('הטלפון של '+mkName(c)+' במקווה'+(c.phone&&!mkPhoneOk(c.phone)?'\n⚠️ המספר שרשום עכשיו ('+c.phone+') לא תקין':''),c.phone||'');
       if(v===null||!String(v).trim())return;
@@ -20138,15 +20144,16 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.dnkl');if(!b)return;
   e.preventDefault();e.stopPropagation();const d=DB.find(x=>x.id==b.dataset.did);if(!d)return;
   klinkOpen('donor',d.id,(splitPhones(d.phone||'')[0]||'').trim(),d.region||'il');});
-async function klinkOpen(kind,id,phone,region){
-  const r=await api('POST','/api/'+kind+'/'+id+'/klink',{}).catch(()=>null);
+async function klinkOpen(kind,id,phone,region,variant){
+  const r=await api('POST','/api/'+kind+'/'+id+'/klink',{variant:variant||''}).catch(()=>null);
   if(!r||!r.ok){uiAlert((r&&r.error)||'לא נוצר קישור');return;}
   const ph=String(phone||'').split(/[\/,;]/)[0].trim(), wa=ph?waHref(ph,region):'';
   const o=document.createElement('div');o.className='confirmov';
-  o.innerHTML=`<div class="confirmbox qcbox" style="text-align:right"><div class="cm"><b>🔗 קישור אישי ל${esc(r.name)} — עדכון פרטים, כרטיס אשראי ותרומה</b></div>
+  const mk=r.variant==='v';
+  o.innerHTML=`<div class="confirmbox qcbox" style="text-align:right"><div class="cm"><b>${mk?'💧 קישור אישי — עדכון לגבי המקווה':'🔗 קישור אישי'} ל${esc(r.name)}</b></div>
+    ${kind==='members'&&(r.has_mk||mk)?`<div style="display:flex;gap:6px;margin:4px 0 8px"><button type="button" class="btn sm ${mk?'ghost':''} kl_v" data-v="">🕍 נוסח קהילה — דמי חבר / נדרים ונדבות</button><button type="button" class="btn sm ${mk?'':'ghost'} kl_v" data-v="mikveh">💧 נוסח המקווה</button></div>`:''}
     <div class="qcprev"><div class="hintxt">בעברית, תקף 30 יום. בדף: שם, כתובת, טלפון ואימייל (מתעדכנים אצלנו ובהוראת הקבע בנדרים פלוס) ·
-      ${r.kevas&&r.kevas.length?('עדכון כרטיס בדף המאובטח של נדרים פלוס — '+r.kevas.map(esc).join(' | ')):'אין לו הוראת קבע באשראי בנדרים — הכפתור של עדכון כרטיס לא יופיע'} ·
-      תרומה עכשיו בכל סכום. כל עדכון נרשם ביומן שלו ותקבל מייל.</div>
+      ${r.kevas&&r.kevas.length?('עדכון כרטיס בדף המאובטח של נדרים פלוס — '+r.kevas.map(esc).join(' | ')):'אין לו הוראת קבע באשראי '+(mk?'למקווה ':'')+'בנדרים — הכפתור של עדכון כרטיס לא יופיע'}${mk?'':' · נדרים ונדבות בכל סכום'}. כל עדכון נרשם ביומן שלו ותקבל מייל.</div>
       <input id="kl_url" dir="ltr" value="${esc(r.url)}" readonly style="font-size:12px"></div>
     ${wa?`<label class="fld"><span>💬 וואטסאפ (אפשר לערוך)</span><textarea id="kl_wa" rows="5" style="font-size:13px">${esc(r.wa)}</textarea></label>`:'<div class="hintxt">אין טלפון בכרטיס — אפשר להעתיק את הקישור או לשלוח במייל.</div>'}
     <label class="fld"><span>📧 מייל</span><input id="kl_em" dir="ltr" value="${esc(r.email||'')}" placeholder="email@example.com"></label>
@@ -20161,11 +20168,12 @@ async function klinkOpen(kind,id,phone,region){
   if(waA){waA.href=waUrl();g('kl_wa').oninput=()=>{waA.href=waUrl();};
     waA.addEventListener('click',()=>{if(kind==='members')api('POST','/api/members/'+id+'/klink_log',{body:g('kl_wa').value}).catch(()=>{});});}
   o.querySelector('.cno').onclick=()=>o.remove();
+  o.querySelectorAll('.kl_v').forEach(b=>b.onclick=()=>{if((b.dataset.v==='mikveh')===mk)return;o.remove();klinkOpen(kind,id,phone,region,b.dataset.v);});
   o.querySelector('.kl_copy').onclick=async()=>{try{await navigator.clipboard.writeText(r.url);}catch(x){g('kl_url').select();document.execCommand('copy');}toast('הקישור הועתק ✓');};
   o.querySelector('.kl_mail').onclick=async()=>{const em=g('kl_em').value.trim();if(!em.includes('@')){toast('מייל לא תקין');g('kl_em').focus();return;}
     if(!await uiConfirm('לשלוח את הקישור האישי במייל ל-'+em+'?'))return;
     const btn=o.querySelector('.kl_mail');btn.disabled=true;
-    const s2=await api('POST','/api/'+kind+'/'+id+'/klink/send',{email:em,subject:g('kl_subj').value,body:g('kl_body').value}).catch(()=>null);
+    const s2=await api('POST','/api/'+kind+'/'+id+'/klink/send',{email:em,subject:g('kl_subj').value,body:g('kl_body').value,variant:variant||''}).catch(()=>null);
     btn.disabled=false;
     if(!s2||!s2.ok){await uiAlert('לא נשלח:\n'+((s2&&s2.error)||'שגיאה'));return;}
     toast('✅ נשלח ל-'+em);o.remove();};}
