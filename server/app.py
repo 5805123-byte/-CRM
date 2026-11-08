@@ -17653,7 +17653,7 @@ def klink_message(p, url, kind='m'):
             'הקישור אישי ומאובטח ותקף ל-30 יום. מספר הכרטיס מוזן ישירות בנדרים פלוס ולא עובר אצלנו.\n\n'
             'תודה רבה ותזכו למצוות!')
     # בוואטסאפ: הקישור הקצר בשורה משלו — ותצוגת הקישור (התמונה עם "לחצו כאן") מופיעה כקובייה גדולה
-    wa = (sal + '\nשלום וברכה,\n' + T['wa'] + '\n\n👇 לחצו כאן:\n' + url + '\n\nתודה רבה ותזכו למצוות!')
+    wa = ('*' + sal + '*\n\nשלום וברכה,\n' + T['wa'] + '\n\n👇 *לחצו כאן:*\n' + url + '\n\nתודה רבה ותזכו למצוות!')
     return {'subject': T['subject'], 'body': body, 'wa': wa}
 
 
@@ -17661,15 +17661,21 @@ def klink_mail_html(body, url):
     """המייל בעברית: הטקסט, וכפתור במקום הקישור."""
     import html as _h
     e = _h.escape
-    out = []
+    out = ['<div style="text-align:center;margin:0 0 14px"><img src="cid:globe" alt="כולל חצות" width="130" style="width:130px;display:inline-block"></div>']
+    first = True
     for para in str(body or '').split('\n\n'):
         para = para.strip()
         if not para:
             continue
+        if first and para.startswith('לכבוד'):
+            out.append('<p style="font-size:20px;font-weight:bold;color:#7a1f1f;margin:0 0 14px">%s</p>' % e(para))
+            first = False
+            continue
+        first = False
         if url and url in para:
             out.append('<div style="text-align:center;margin:22px 0"><a href="%s" style="display:inline-block;background:#7a1f1f;color:#fff;'
                        'text-decoration:none;font-size:18px;font-weight:bold;padding:14px 30px;border-radius:12px;border:2px solid #9c7a2e">'
-                       '\U0001F512 הקישור האישי שלי · כולל חצות</a></div>' % e(url))
+                       '\U0001F512 לחצו כאן — הדף האישי שלי</a></div>' % e(url))
             continue
         out.append('<p style="font-size:16px;line-height:1.7;margin:0 0 12px">%s</p>' % '<br>'.join(e(x) for x in para.split('\n')))
     return ('<!doctype html><html dir="rtl"><head><meta charset="utf-8"></head><body style="margin:0;background:#efe9db;font-family:Arial,sans-serif;color:#3a2f1a">'
@@ -32498,10 +32504,14 @@ class H(BaseHTTPRequestHandler):
                 else:
                     body_ += '\n\n' + url
                 html_ = klink_mail_html(body_, url)
+                try:
+                    inl = [('globe', 'image/png', letterhead_logo(260))]
+                except Exception as ex:
+                    print('  logo error:', ex); inl = None; html_ = html_.replace('<img src="cid:globe"', '<img style="display:none" src=""')
                 if kind == 'd':
-                    res = send_donor_mail(pid, to, subj, body_, [], rtl=True, html=html_)
+                    res = send_donor_mail(pid, to, subj, body_, [], rtl=True, html=html_, inline=inl)
                 else:
-                    res = mailer.send(to, subj, body_, [], profile='comm', rtl=True, html=html_,
+                    res = mailer.send(to, subj, body_, [], profile='comm', rtl=True, html=html_, inline=inl,
                                       from_name='המקווה · כולל חצות' if kind == 'v' else None)
                 if not res.get('ok'):
                     return self._send(200, {'ok': False, 'error': str(res.get('detail') or res.get('error') or 'השליחה נכשלה')[:160]})
