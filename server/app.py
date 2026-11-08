@@ -5983,6 +5983,14 @@ def ensure_schema():
             con.execute("UPDATE receipt_docs SET pdf=NULL WHERE kind='il' AND COALESCE(src,'own')='own' AND sent_at IS NULL")
             con.execute("INSERT INTO seed_flags(name) VALUES('receipt_il_addr_v1')")
             con.commit()
+        # מאיר: "כתובת תיבת הדואר הזאת כבר לא תקפה, כל מקום תכתוב כנסת יחזקאל 38 ביתר עילית"
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='receipt_il_addr_v2'").fetchone():
+            cur_addr = (kv_get(con, 'org_il_addr', '') or '').strip()
+            if not cur_addr or cur_addr == 'ביתר עילית' or '30067' in cur_addr:
+                con.execute("INSERT INTO app_kv(k,v) VALUES('org_il_addr',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", ('כנסת יחזקאל 38, ביתר עילית',))
+            con.execute("UPDATE receipt_docs SET pdf=NULL WHERE kind='il' AND COALESCE(src,'own')='own' AND sent_at IS NULL")
+            con.execute("INSERT INTO seed_flags(name) VALUES('receipt_il_addr_v2')")
+            con.commit()
         # מאיר: "גם תוריד את המילים תודה על שותפותך בתורת חצות" — ציור מחדש של ה-PDF השמור
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='receipt_il_redraw_v2'").fetchone():
             con.execute("UPDATE receipt_docs SET pdf=NULL WHERE kind='il' AND COALESCE(src,'own')='own' AND sent_at IS NULL")
@@ -17393,7 +17401,7 @@ def globe_png(width=108):
     return _LH_CACHE[k]
 
 
-CL_FOOTER = ('Kollel Chatzos \u00b7 P.O.B. 30067, Beitar Illit, Eretz Yisrael 90500 \u00b7 Tel 972-2-580-3545 \u00b7 From U.S. 646-403-3750<br>'
+CL_FOOTER = ('Kollel Chatzos \u00b7 38 Knesset Yechezkel St., Beitar Illit, Israel \u00b7 Tel 972-2-580-3545 \u00b7 From U.S. 646-403-3750<br>'
              'U.S.A.: Kollel Chatzos c/o Friedman Family, 1540 40th Street, Brooklyn, NY 11218 \u00b7 Tel 718-972-7169<br>'
              'chatzot18@gmail.com \u00b7 www.kollelchatzot.com')
 
@@ -17716,7 +17724,7 @@ button.gold{background:#9c7a2e;border-color:#7a1f1f}button:disabled{opacity:.55;
 <div class="amts" id="amts"><span data-a="52">₪52</span><span data-a="100">₪100</span><span data-a="180">₪180</span><span data-a="360">₪360</span></div>
 <label>סכום (₪)</label><input id="amt" inputmode="decimal" placeholder="כל סכום">
 <button type="button" class="gold" id="d_go">תרום עכשיו</button><div class="err" id="d_err"></div></div>
-<div class="foot">כולל חצות · ת.ד. 30067 ביתר עילית<br><bdi dir="ltr">02-580-3545</bdi> · <bdi dir="ltr">052-762-8272</bdi><br>הקישור אישי ומאובטח ותקף ל-30 יום</div>
+<div class="foot">כולל חצות · כנסת יחזקאל 38 ביתר עילית<br><bdi dir="ltr">02-580-3545</bdi> · <bdi dir="ltr">052-762-8272</bdi><br>הקישור אישי ומאובטח ותקף ל-30 יום</div>
 </div></div>
 <script>
 var API=location.pathname.replace('/k/','/api/k/'),MOSAD={{MOSAD}};
