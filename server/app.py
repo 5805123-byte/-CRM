@@ -17729,12 +17729,11 @@ button.gold{background:#9c7a2e;border-color:#7a1f1f}button:disabled{opacity:.55;
 <div class="amts" id="amts"><span data-a="52">₪52</span><span data-a="100">₪100</span><span data-a="180">₪180</span><span data-a="360">₪360</span></div>
 <label>סכום (₪)</label><input id="amt" inputmode="decimal" placeholder="כל סכום">
 <button type="button" class="gold" id="d_go">תרום עכשיו</button><div class="err" id="d_err"></div></div>
-<div id="daysec"{{DONHIDE}}><h3>{{DAYNUM}} · ארוחת בוקר / יום קפה לאברכי הכולל</h3>
-<div class="small">אם ברצונך לתרום יום אחד של <b>ארוחת בוקר (₪{{PB}})</b> או <b>יום קפה (₪{{PC}})</b> לאברכי הכולל — בחר כאן, בחר תאריך פנוי בלוח, וכתוב לעילוי נשמת או לזכות מי.</div>
-<div class="amts" id="dk"><span data-k="breakfast">🍳 ארוחת בוקר · ₪{{PB}}</span><span data-k="coffee">☕ יום קפה · ₪{{PC}}</span></div>
+<div id="daysec"{{DONHIDE}}><h3>{{DAYNUM}} · ארוחת בוקר / יום בחדר קפה</h3>
+<div class="small">אם ברצונך לתרום יום אחד של <b>ארוחת בוקר (₪{{PB}})</b>, או <b>יום בחדר קפה (₪{{PC}})</b> — שתייה חמה ועוגיות במשך כל היממה, כל היום והלילה, 24 שעות — בחר כאן, בחר תאריך פנוי בלוח, וכתוב את ההקדשה.</div>
+<div class="amts" id="dk"><span data-k="breakfast">🍳 ארוחת בוקר · ₪{{PB}}</span><span data-k="coffee">☕ יום בחדר קפה · ₪{{PC}}</span></div>
 <div id="dkbox" hidden>
-<div class="amts" id="dt"><span data-t="zchus" class="on">לזכות</span><span data-t="iluy">לעילוי נשמת</span></div>
-<label id="dnl">השמות (לזכות)</label><textarea id="dnames" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7" placeholder="למשל: אברהם בן שרה"></textarea>
+<label>ההקדשה</label><textarea id="dnames" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7" placeholder="למשל: לעילוי נשמת… / לזכות…"></textarea>
 <div class="cal"><div class="calhd"><button type="button" class="calnav" id="cal_prev">&rsaquo;</button><div id="cal_title"></div><button type="button" class="calnav" id="cal_next">&lsaquo;</button></div>
 <div class="calgrid" id="cal_grid"></div><div class="small">ירוק — פנוי · אפור — תפוס · בהיר — שבת / חג</div></div>
 <div class="small" id="cal_st"></div>
@@ -17765,7 +17764,7 @@ g('d_go').onclick=function(){var er=g('d_err');er.textContent='';var a=parseFloa
   postJ('/donate',{amount:a});
   location.href='https://www.matara.pro/nedarimplus/online/?'+p.map(function(x){return x[0]+'='+encodeURIComponent(x[1]);}).join('&');};
 // 🍳☕ ארוחת בוקר / יום קפה — לוח של הימים הפנויים, שמות, ותשלום בנדרים פלוס בסכום הקבוע
-var DK='',DT='zchus',CAL={m:'',y:'',sel:null,data:null},PR={breakfast:{{PB}},coffee:{{PC}}},DKL={breakfast:'ארוחת בוקר',coffee:'יום קפה'};
+var DK='',CAL={m:'',y:'',sel:null,data:null},PR={breakfast:{{PB}},coffee:{{PC}}},DKL={breakfast:'ארוחת בוקר',coffee:'יום בחדר קפה'};
 function paintBtn(){var b=g('day_go');b.disabled=!(CAL.sel&&DK);b.textContent=DK?('שריין ותרום '+DKL[DK]+' · ₪'+PR[DK]):'שריין ותרום';}
 async function calLoad(m,y){var r=null;try{r=await (await fetch(API+'/month?kind='+DK+'&m='+encodeURIComponent(m||'')+'&y='+encodeURIComponent(y||''))).json();}catch(e){}
   if(!r||!r.ok){g('cal_title').textContent='הלוח לא נטען';return;}
@@ -17782,16 +17781,14 @@ g('cal_prev').onclick=function(){if(CAL.data&&CAL.data.prev)calLoad(CAL.data.pre
 g('cal_next').onclick=function(){if(CAL.data&&CAL.data.next)calLoad(CAL.data.next.m,CAL.data.next.y);};
 Array.prototype.forEach.call(document.querySelectorAll('#dk span'),function(s){s.onclick=function(){Array.prototype.forEach.call(document.querySelectorAll('#dk span'),function(x){x.classList.remove('on');});
   s.classList.add('on');DK=s.dataset.k;g('dkbox').hidden=false;calLoad(CAL.m,CAL.y);};});
-Array.prototype.forEach.call(document.querySelectorAll('#dt span'),function(s){s.onclick=function(){Array.prototype.forEach.call(document.querySelectorAll('#dt span'),function(x){x.classList.remove('on');});
-  s.classList.add('on');DT=s.dataset.t;g('dnl').textContent='השמות ('+(DT==='iluy'?'לעילוי נשמת':'לזכות')+')';};});
 g('day_go').onclick=async function(){var b=this,er=g('day_err');er.textContent='';
-  if(!v('dnames')){er.textContent='נא לכתוב את השמות.';g('dnames').focus();return;}
+  if(!v('dnames')){er.textContent='נא לכתוב את ההקדשה (לזכות / לעילוי נשמת).';g('dnames').focus();return;}
   if(!CAL.sel){er.textContent='נא לבחור תאריך בלוח.';return;}
   if(!MOSAD){er.textContent='דף התשלום לא זמין כרגע, נא להתקשר אלינו.';return;}
-  busy(b,true,'משריין...');var r=await postJ('/day',{kind:DK,m:CAL.m,y:CAL.y,d:CAL.sel,names:v('dnames'),dtype:DT});
+  busy(b,true,'משריין...');var r=await postJ('/day',{kind:DK,m:CAL.m,y:CAL.y,d:CAL.sel,names:v('dnames')});
   if(!r||!r.ok){busy(b,false);er.innerHTML='<b>לא נשמר.</b> '+((r&&r.error)||'נסו שוב או התקשרו אלינו.');if(r&&/תפוס/.test(r.error||''))calLoad(CAL.m,CAL.y);return;}
   var nm=(v('first')+' '+v('last')).trim(),ph=v('phone').split(/[\/,;]/)[0].trim();
-  var p=[['mosad',MOSAD],['Amount',r.price],['AmountLock',1],['OnlyNormal',1],['Groupe',r.label],['GroupeLock',1],['Avour',r.label+' '+r.date_text+' '+r.year+' — '+r.ded]];
+  var p=[['mosad',MOSAD],['Amount',r.price],['AmountLock',1],['OnlyNormal',1],['Groupe',r.groupe||r.label],['GroupeLock',1],['Avour',r.label+' '+r.date_text+' '+r.year+' — '+r.ded]];
   if(nm)p.push(['ClientName',nm]);if(ph)p.push(['Phone',ph.replace(/[^\d+]/g,'')]);if(v('email').indexOf('@')>0)p.push(['Mail',v('email')]);
   if(v('addr'))p.push(['Street',v('addr')]);if(v('city'))p.push(['City',v('city')]);
   b.textContent='עובר לתשלום...';
@@ -17802,7 +17799,8 @@ g('day_go').onclick=async function(){var b=this,er=g('day_err');er.textContent='
 # 🍳☕ מאיר: "שבאותו קישור יהיה גם… לתרום ארוחת בוקר, ליום… ושזה ישלח אותו ללוח שנה של ארוחת בוקר איפה
 # שפנוי, שיהיה כתוב שארוחת בוקר זה 180 שקלים, וגם קפה, יום קפה… ושם הוא יכול לכתוב לעילוי נשמת או לזכות".
 # המחיר נשמר בהגדרות (klink_price_breakfast / klink_price_coffee) — אפשר לשנות בלי קוד
-KL_DAYK = {'breakfast': ('ארוחת בוקר', '🍳'), 'coffee': ('יום קפה', '☕')}
+KL_DAYK = {'breakfast': ('ארוחת בוקר', '🍳'), 'coffee': ('יום בחדר קפה', '☕')}
+KL_DAYG = {'breakfast': 'ארוחת בוקר', 'coffee': 'חדר קפה'}      # הקטגוריה בנדרים פלוס / בלוח
 
 
 def klink_day_price(con, k):
@@ -17871,10 +17869,10 @@ def klink_day(con, kind, pid, b):
         day = int(b.get('d') or 0)
     except (TypeError, ValueError):
         day = 0
+    # מאיר: "אל תכתוב לזכות / לעילוי נשמת… תן לו בשורה הריקה שיכתוב מה הוא רוצה"
     names = re.sub(r'[ \t]+', ' ', str(b.get('names') or '')).strip()[:1000]
-    dtype = 'לעילוי נשמת' if str(b.get('dtype') or '') == 'iluy' else 'לזכות'
     if not names:
-        return {'ok': False, 'error': 'נא לכתוב את השמות (%s).' % dtype}
+        return {'ok': False, 'error': 'נא לכתוב את ההקדשה (לזכות / לעילוי נשמת).'}
     did0 = klink_donor_id(con, kind, pid)
     md = klink_month(con, did0, dk, str(b.get('m') or ''), str(b.get('y') or ''))
     if not md or str(day) not in md['days']:
@@ -17888,7 +17886,7 @@ def klink_day(con, kind, pid, b):
     label, ic = KL_DAYK[dk]
     price = klink_day_price(con, dk)
     dtext = _he_day(day) + ' ' + md['month']
-    ded = dtype + ' ' + names
+    ded = names
     if dv['mine']:
         con.execute("UPDATE parnes SET dedication=? WHERE donor_id=? AND kind=? AND month=? AND day=? AND COALESCE(status,'confirmed')!='suggested'",
                     (ded, did, dk, md['month'], day))
@@ -17907,7 +17905,7 @@ def klink_day(con, kind, pid, b):
     klink_alert('%s %s שריין %s — %s' % (ic, who, label, dtext),
                 '%s שריין דרך הקישור האישי:\n\n%s %s\n%s %s (%s)\n%s\nסכום: ₪%d\n\nהוא הועבר לדף התשלום של נדרים פלוס. נרשם בלוח (טרם נגבה) ומשימה לוודא את התשלום.'
                 % (who, ic, label, dtext, md['year'], dv['greg'], ded, price))
-    return {'ok': True, 'price': price, 'label': label, 'date_text': dtext, 'year': md['year'], 'ded': ded}
+    return {'ok': True, 'price': price, 'label': label, 'groupe': KL_DAYG[dk], 'date_text': dtext, 'year': md['year'], 'ded': ded}
 
 
 def klink_page(con, kind, pid, base=''):
