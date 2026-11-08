@@ -17730,7 +17730,7 @@ button.gold{background:#9c7a2e;border-color:#7a1f1f}button:disabled{opacity:.55;
 <label>סכום (₪)</label><input id="amt" inputmode="decimal" placeholder="כל סכום">
 <button type="button" class="gold" id="d_go">תרום עכשיו</button><div class="err" id="d_err"></div></div>
 <div id="daysec"{{DONHIDE}}><h3>{{DAYNUM}} · ארוחת בוקר / יום בחדר קפה</h3>
-<div class="small">אם ברצונך לתרום יום אחד של <b>ארוחת בוקר (₪{{PB}})</b>, או <b>יום בחדר קפה (₪{{PC}})</b> — שתייה חמה ועוגיות במשך כל היממה, כל היום והלילה, 24 שעות — בחר כאן, בחר תאריך פנוי בלוח, וכתוב את ההקדשה.</div>
+<div class="small">אם ברצונך לתרום יום אחד של <b>ארוחת בוקר (₪{{PB}})</b> — ארוחת בוקר למאות הלומדים והמתפללים, או <b>יום בחדר קפה (₪{{PC}})</b> — שתייה חמה ועוגיות במשך כל היממה, כל היום והלילה, 24 שעות, למאות הלומדים והמתפללים בבית מדרשנו — בחר כאן, בחר תאריך פנוי בלוח, וכתוב את ההקדשה.</div>
 <div class="amts" id="dk"><span data-k="breakfast">🍳 ארוחת בוקר · ₪{{PB}}</span><span data-k="coffee">☕ יום בחדר קפה · ₪{{PC}}</span></div>
 <div id="dkbox" hidden>
 <label>ההקדשה</label><textarea id="dnames" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7" placeholder="למשל: לעילוי נשמת… / לזכות…"></textarea>
