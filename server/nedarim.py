@@ -437,16 +437,19 @@ def keva_detail(keva_id):
     return res if ok and isinstance(res, dict) else {}
 
 
-def update_keva(keva_id, amount=None, next_date=None, groupe=None, tashlumim=None):
+def update_keva(keva_id, amount=None, next_date=None, groupe=None, tashlumim=None, client=None):
     """✎ שינוי סכום / תאריך חיוב / קטגוריה בהוראת אשראי (UpdateKevaNew). שאר השדות נשלחים כמו
-    שהם בנדרים פלוס (נמשכים רגע לפני), כדי שלא יימחקו. הכרטיס נשאר — 4 הספרות והתוקף שלו."""
+    שהם בנדרים פלוס (נמשכים רגע לפני), כדי שלא יימחקו. הכרטיס נשאר — 4 הספרות והתוקף שלו.
+    client = {'name','addr','city','phone','mail'} — פרטי התורם שעודכנו בקישור האישי (רק מה שנשלח משתנה)."""
     d = keva_detail(keva_id)
     if not d or not d.get('KevaLastNum'):
         return False, 'לא הצלחתי למשוך את פרטי ההוראה מנדרים פלוס'
+    c = client or {}
+    cv = lambda k, nd: (str(c[k]).strip() if c.get(k) not in (None, '') else (d.get(nd) or ''))
     tok = re.sub(r'\D', '', str(d.get('KevaTokef') or ''))
     p = {'KevaId': str(keva_id), 'MosadNumber': mosad(),
-         'Zeout': d.get('KevaZeout') or '', 'ClientName': d.get('KevaName') or '', 'Adresse': d.get('KevaAdresse') or '',
-         'City': d.get('KevaCity') or '', 'Phone': d.get('KevaPhone') or '', 'Mail': d.get('KevaMail') or '',
+         'Zeout': d.get('KevaZeout') or '', 'ClientName': cv('name', 'KevaName'), 'Adresse': cv('addr', 'KevaAdresse'),
+         'City': cv('city', 'KevaCity'), 'Phone': cv('phone', 'KevaPhone'), 'Mail': cv('mail', 'KevaMail'),
          'Tashlumim': d.get('KevaTashlumim') or '' if tashlumim is None else str(tashlumim),
          'Groupe': (d.get('KevaGroupe') or '') if groupe is None else groupe, 'Avour': d.get('KevaAvour') or '',
          'NextDate': next_date or d.get('KevaNextDate') or '', 'Frequency': d.get('KevaFrequency') or '1',

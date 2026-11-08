@@ -15312,6 +15312,7 @@ def auth_hours(role):
 AUTH_PUBLIC = ('/api/yemot/ivr/', '/api/yemot/mkgroup/', '/api/yemot/mkrec/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/',
                '/mcp/',   # ✍️ חיבור ל-Claude (הודעות ליומן) — מוגן בטוקן הסודי שבכתובת (CAL_MCP_TOKEN)
                '/u/', '/api/u/',   # קישור אישי לתורם לעדכון כרטיס (חתום, 30 יום) — בלי כניסה
+               '/k/', '/api/k/',   # 🔗 הקישור האישי בעברית — קהילה / תורמים בארץ (חתום, 30 יום) — בלי כניסה
                '/o.png')   # פיקסל מעקב הפתיחות — נטען אצל מי שקיבל את המייל, בלי כניסה (חתום בטוקן)   # תחיליות; הכניסה עצמה מטופלת לפני
 # כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
 #     GOOGLE_CLIENT_ID     מזהה הלקוח (…apps.googleusercontent.com) — ציבורי, בלי סוד
@@ -17491,6 +17492,366 @@ def cardlink_page(con, did, base=''):
                              'key': json.dumps(key or ''), 'js': json.dumps(js), 'base': e(base),
                              'iz': (' <span class="iz">%s</span>' % e(cardlink_iz(con, d))) if cardlink_iz(con, d) else '',
                              'logo': 'data:image/png;base64,' + base64.b64encode(letterhead_logo(300)).decode('ascii')}).encode('utf-8')
+
+
+# ---------------- 🔗 קישור אישי בעברית — לחברי הקהילה ולתורמים בארץ (נדרים פלוס) ----------------
+# מאיר: "כמו שעשית לתורמים של הכולל שאני שולח להם קישור להחלפת ועדכון כרטיס אשראי חדש, תעשה לי כזה
+# לקהילה בעברית — קישור לכל אחד אישי שיכול לעדכן שם וכתובת וטלפון ואימייל… ושזה יעדכן את המערכת שלנו
+# בנדרים פלוס… עם שורה של תרום עכשיו לכל סכום. בלי פרנס יום. ושאקבל מייל שהוא החליף וסידר".
+# הכרטיס מוזן בדף המאובטח של נדרים פלוס (CreateKevaUpdateLink) — המספר לא עובר אצלנו.
+# התרומה — בדף התשלום של נדרים פלוס, עם הפרטים שלו ממולאים מראש.
+
+def klink_token(kind, pid, days=30):
+    """kind: 'm' = חבר קהילה, 'd' = תורם. חתום כמו הקישור של התורמים, אבל בנפרד (לא מתחלף ביניהם)."""
+    exp = int(time.time()) + int(days) * 86400
+    body = '%s%d.%d' % (kind, int(pid), exp)
+    return body + '.' + hmac.new(_link_secret(), ('k.' + body).encode('ascii'), hashlib.sha256).hexdigest()[:32]
+
+
+def klink_check(tok):
+    """-> ('m' | 'd', מזהה) — או (None, 0) אם הקישור מזויף / פג."""
+    m = re.fullmatch(r'([md])(\d+)\.(\d+)\.([0-9a-f]{32})', str(tok or ''))
+    if not m:
+        return None, 0
+    body = '%s%s.%s' % (m.group(1), m.group(2), m.group(3))
+    want = hmac.new(_link_secret(), ('k.' + body).encode('ascii'), hashlib.sha256).hexdigest()[:32]
+    if not hmac.compare_digest(want, m.group(4)) or int(m.group(3)) < time.time():
+        return None, 0
+    return m.group(1), int(m.group(2))
+
+
+def klink_person(con, kind, pid):
+    return con.execute("SELECT * FROM %s WHERE id=?" % ('members' if kind == 'm' else 'donors'), (pid,)).fetchone()
+
+
+def klink_fullname(p):
+    return ((p['first'] or '') + ' ' + (p['last'] or '')).strip() if p else ''
+
+
+def klink_kevas(con, kind, pid):
+    """הוראות הקבע הפעילות באשראי של האדם בנדרים פלוס (חבר — לפי השיוך; תורם — לפי nd_dlink)."""
+    if kind == 'm':
+        return con.execute("SELECT * FROM nd_keva WHERE member_id=? AND active=1 AND COALESCE(kind,'')<>'bank' ORDER BY id", (pid,)).fetchall()
+    kk = {r['key'][5:] for r in con.execute("SELECT key FROM nd_dlink WHERE donor_id=? AND key LIKE 'keva:%'", (pid,))}
+    if not kk:
+        return []
+    return [r for r in con.execute("SELECT * FROM nd_keva WHERE active=1 AND COALESCE(kind,'')<>'bank' ORDER BY id")
+            if str(r['id']).split(':')[-1].lstrip('M') in kk]
+
+
+def klink_log(con, kind, pid, summary, body=''):
+    if kind == 'm':
+        con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                    (pid, today_iso(), 'קישור', summary, body, 'in', '', now_iso()))
+    else:
+        con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                    (pid, today_iso(), 'קישור', summary + ((' · ' + body) if body else ''), '', now_iso()))
+
+
+def klink_alert(subject, body):
+    """מייל אליך (ALERT_EMAIL, ואם לא הוגדר — תיבת המערכת), ברקע."""
+    to = (os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or '').strip()
+    if not to:
+        return
+    def run():
+        try:
+            import mailer
+            if mailer.configured():
+                mailer.send(to, subject, body, [])
+        except Exception as e:
+            print('  klink alert error:', e)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def klink_keva_label(k):
+    a = _amt2(k['amount'])
+    return ('הוראת קבע ₪%s לחודש' % ('%g' % a if a else '?')) + ((' · ' + str(k['groupe']).strip()) if str(k['groupe'] or '').strip() else '') \
+        + ((' · כרטיס ••••' + str(k['last4'])) if str(k['last4'] or '').strip() else '')
+
+
+def klink_message(p, url):
+    nm = klink_fullname(p) or 'ידידנו'
+    subject = 'הקישור האישי שלך — עדכון פרטים וכרטיס אשראי · כולל חצות'
+    body = ('שלום %s,\n\n'
+            'זה הקישור האישי שלך בכולל חצות. בדף אפשר:\n'
+            '• לעדכן שם, כתובת, טלפון ואימייל.\n'
+            '• לעדכן את כרטיס האשראי בהוראת הקבע — בדף המאובטח של נדרים פלוס.\n'
+            '• לתרום עכשיו בכל סכום.\n\n'
+            '%s\n\n'
+            'הקישור אישי ומאובטח ותקף ל-30 יום. מספר הכרטיס מוזן ישירות בנדרים פלוס ולא עובר אצלנו.\n\n'
+            'תודה רבה ותזכו למצוות!\n'
+            'הרב יהושע מאיר דויטש · כולל חצות') % (nm, url)
+    wa = ('שלום %s,\n'
+          'זה הקישור האישי שלך בכולל חצות — לעדכון שם, כתובת, טלפון ואימייל, לעדכון כרטיס האשראי בהוראת הקבע, ולתרומה בכל סכום:\n'
+          '%s\n'
+          'קישור אישי ומאובטח, תקף 30 יום.\n'
+          'תודה רבה ותזכו למצוות!\nכולל חצות') % (nm, url)
+    return {'subject': subject, 'body': body, 'wa': wa}
+
+
+def klink_mail_html(body, url):
+    """המייל בעברית: הטקסט, וכפתור במקום הקישור."""
+    import html as _h
+    e = _h.escape
+    out = []
+    for para in str(body or '').split('\n\n'):
+        para = para.strip()
+        if not para:
+            continue
+        if url and url in para:
+            out.append('<div style="text-align:center;margin:22px 0"><a href="%s" style="display:inline-block;background:#7a1f1f;color:#fff;'
+                       'text-decoration:none;font-size:18px;font-weight:bold;padding:14px 30px;border-radius:12px;border:2px solid #9c7a2e">'
+                       '\U0001F512 הקישור האישי שלי · כולל חצות</a></div>' % e(url))
+            continue
+        out.append('<p style="font-size:16px;line-height:1.7;margin:0 0 12px">%s</p>' % '<br>'.join(e(x) for x in para.split('\n')))
+    return ('<!doctype html><html dir="rtl"><head><meta charset="utf-8"></head><body style="margin:0;background:#efe9db;font-family:Arial,sans-serif;color:#3a2f1a">'
+            '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background:#efe9db;padding:18px 0"><tr><td align="center">'
+            '<table role="presentation" width="600" cellpadding="0" cellspacing="0" dir="rtl" style="max-width:600px;width:100%%;background:#fffdf8;'
+            'border:1px solid #e3d9c2;border-radius:12px;text-align:right"><tr><td style="padding:22px 30px">%s</td></tr></table>'
+            '</td></tr></table></body></html>' % ''.join(out))
+
+
+KLINK_PAGE = r'''<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>כולל חצות · הקישור האישי שלי</title><meta property="og:title" content="כולל חצות · הקישור האישי שלי">
+<meta property="og:description" content="עדכון פרטים, עדכון כרטיס אשראי ותרומה — בדף אישי ומאובטח">
+<meta property="og:image" content="{{BASE}}/logo_og.png"><meta property="og:type" content="website">
+<style>body{margin:0;background:#efe9db;font-family:Arial,Helvetica,sans-serif;color:#3a2f1a}
+.wrap{max-width:560px;margin:22px auto;padding:0 0 26px;background:#fffdf8;border:1px solid #c9b57a;border-radius:6px;box-shadow:0 10px 30px rgba(90,70,30,.12)}
+@media(max-width:600px){.wrap{margin:10px 8px}}.in{padding:0 20px}.hd{text-align:center;padding:14px 16px 10px;border-bottom:1px solid #c9b57a;margin:0 20px 6px}
+.hd img{width:64px}.hi{font-size:20px;font-weight:bold;color:#7a1f1f;margin:14px 0 4px}.sub{font-size:14px;color:#6b6249}
+h3{font-size:17px;color:#7a1f1f;margin:26px 0 10px;background:#f6f1e5;border:1px solid #e3d3a3;border-right:5px solid #9c7a2e;padding:9px 12px;border-radius:4px}
+label{display:block;font-size:14px;color:#6b6249;margin:10px 0 3px}input{width:100%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:11px;font:inherit;font-size:17px;background:#fffdf7}
+input.ltr{direction:ltr;text-align:right}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button,a.btn{display:block;width:100%;box-sizing:border-box;text-align:center;text-decoration:none;margin-top:14px;background:#7a1f1f;color:#fff;border:2px solid #9c7a2e;border-radius:12px;padding:14px;font:inherit;font-size:18px;font-weight:bold;cursor:pointer}
+button.gold{background:#9c7a2e;border-color:#7a1f1f}button:disabled{opacity:.55;cursor:default}
+.keva{background:#fffdf7;border:1px solid #d9cfb5;border-radius:10px;padding:12px;margin-top:10px}.keva b{color:#7a1f1f}.bad{color:#8f2a1b;font-size:14px;margin-top:4px}
+.small{font-size:13px;color:#6b6249;margin-top:6px;line-height:1.5}.ok{background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:13px;font-size:16px;margin-top:12px}
+.err{color:#8f2a1b;font-size:15px;margin-top:10px}.err:not(:empty){background:#fde8e4;border:1px solid #e3a094;border-radius:8px;padding:10px 12px}
+.amts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.amts span{flex:1;min-width:60px;text-align:center;border:1px solid #d9cfb5;border-radius:8px;padding:9px 4px;cursor:pointer;background:#fffdf7;font-weight:bold}
+.amts span.on{background:#f3e3a8;border-color:#9c7a2e}.foot{text-align:center;font-size:12px;color:#6b6249;margin-top:26px;line-height:1.6}</style></head>
+<body><div class="wrap"><div class="hd"><img src="{{LOGO}}" alt="כולל חצות"><div class="hi">שלום {{NAME}}</div><div class="sub">הדף האישי והמאובטח שלך בכולל חצות</div></div><div class="in">
+<h3>1 · הפרטים שלי</h3>
+<div class="two"><div><label>שם פרטי</label><input id="first" value="{{FIRST}}"></div><div><label>שם משפחה</label><input id="last" value="{{LAST}}"></div></div>
+<label>כתובת</label><input id="addr" value="{{ADDR}}" placeholder="רחוב ומספר בית">
+<label>עיר</label><input id="city" value="{{CITY}}">
+<div class="two"><div><label>טלפון</label><input id="phone" class="ltr" inputmode="tel" value="{{PHONE}}"></div><div><label>אימייל</label><input id="email" class="ltr" type="email" value="{{EMAIL}}"></div></div>
+<button type="button" id="s_go">שמור ועדכן את הפרטים</button><div class="err" id="s_err"></div><div class="ok" id="s_done" hidden></div>
+{{CARDS}}
+<h3>{{DONNUM}} · תרומה עכשיו</h3>
+<div class="small">תרומה לכולל חצות בכל סכום, בכרטיס אשראי, בדף התשלום המאובטח של נדרים פלוס.</div>
+<div class="amts" id="amts"><span data-a="52">₪52</span><span data-a="100">₪100</span><span data-a="180">₪180</span><span data-a="360">₪360</span></div>
+<label>סכום (₪)</label><input id="amt" inputmode="decimal" placeholder="כל סכום">
+<button type="button" class="gold" id="d_go">תרום עכשיו</button><div class="err" id="d_err"></div>
+<div class="foot">כולל חצות · ת.ד. 30067 ביתר עילית<br><bdi dir="ltr">02-580-3545</bdi> · <bdi dir="ltr">052-762-8272</bdi><br>הקישור אישי ומאובטח ותקף ל-30 יום</div>
+</div></div>
+<script>
+var API=location.pathname.replace('/k/','/api/k/'),MOSAD={{MOSAD}};
+var g=function(i){return document.getElementById(i);},v=function(i){return g(i).value.trim();};
+async function postJ(p,b){try{return await (await fetch(API+p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json();}catch(e){return null;}}
+function busy(b,on,t){b.disabled=on;if(on){b.dataset.t=b.textContent;b.textContent=t;}else if(b.dataset.t){b.textContent=b.dataset.t;}}
+g('s_go').onclick=async function(){var b=this,er=g('s_err');er.textContent='';
+  if(v('email')&&v('email').indexOf('@')<0){er.textContent='כתובת האימייל לא תקינה.';g('email').focus();return;}
+  busy(b,true,'שומר...');var r=await postJ('/save',{first:v('first'),last:v('last'),addr:v('addr'),city:v('city'),phone:v('phone'),email:v('email')});busy(b,false);
+  if(!r||!r.ok){er.innerHTML='<b>לא נשמר.</b> '+((r&&r.error)||'משהו השתבש, נסו שוב או התקשרו אלינו.');return;}
+  var d=g('s_done');d.hidden=false;d.innerHTML=r.changes?'<b>תודה רבה!</b> הפרטים עודכנו אצלנו'+(r.nd?' ובהוראת הקבע בנדרים פלוס':'')+'.':'<b>תודה!</b> הפרטים לא השתנו.';};
+Array.prototype.forEach.call(document.querySelectorAll('.cardgo'),function(b){b.onclick=async function(){var er=b.parentNode.querySelector('.err');er.textContent='';
+  busy(b,true,'פותח את הדף המאובטח...');var r=await postJ('/card',{keva:b.dataset.k});
+  if(!r||!r.ok){busy(b,false);er.innerHTML='<b>לא נפתח.</b> '+((r&&r.error)||'נסו שוב או התקשרו אלינו.');return;}
+  location.href=r.link;};});
+Array.prototype.forEach.call(document.querySelectorAll('#amts span'),function(s){s.onclick=function(){Array.prototype.forEach.call(document.querySelectorAll('#amts span'),function(x){x.classList.remove('on');});s.classList.add('on');g('amt').value=s.dataset.a;};});
+g('d_go').onclick=function(){var er=g('d_err');er.textContent='';var a=parseFloat(String(v('amt')).replace(/[^\d.]/g,''))||0;
+  if(!a){er.textContent='נא לכתוב סכום.';g('amt').focus();return;}if(!MOSAD){er.textContent='דף התרומה לא זמין כרגע, נא להתקשר אלינו.';return;}
+  var nm=(v('first')+' '+v('last')).trim(),ph=v('phone').split(/[\/,;]/)[0].trim();
+  var p=[['mosad',MOSAD],['Amount',a],['OnlyNormal',1],['Avour','דרך הקישור האישי']];
+  if(nm)p.push(['ClientName',nm]);if(ph)p.push(['Phone',ph.replace(/[^\d+]/g,'')]);if(v('email').indexOf('@')>0)p.push(['Mail',v('email')]);
+  if(v('addr'))p.push(['Street',v('addr')]);if(v('city'))p.push(['City',v('city')]);
+  postJ('/donate',{amount:a});
+  location.href='https://www.matara.pro/nedarimplus/online/?'+p.map(function(x){return x[0]+'='+encodeURIComponent(x[1]);}).join('&');};
+</script></body></html>'''
+
+
+def klink_page(con, kind, pid, base=''):
+    import html as _h
+    import nedarim as _nd
+    e = _h.escape
+    p = klink_person(con, kind, pid)
+    if not p:
+        return None
+    ks = klink_kevas(con, kind, pid)
+    cards = ''
+    if ks:
+        rows = []
+        for k in ks:
+            bad = str(k['error'] or '').strip() if 'error' in k.keys() else ''
+            rows.append('<div class="keva"><b>%s</b>%s<button type="button" class="cardgo" data-k="%s">\U0001F512 עדכון כרטיס אשראי</button><div class="err"></div></div>'
+                        % (e(klink_keva_label(k)), ('<div class="bad">⚠️ החיוב האחרון לא עבר — כדאי לעדכן כרטיס</div>' if bad else ''), e(str(k['id']))))
+        cards = ('<h3>2 · כרטיס האשראי בהוראת הקבע</h3><div class="small">הכרטיס מוזן בדף המאובטח של נדרים פלוס — מספר הכרטיס לא עובר אצלנו. '
+                 'אחרי העדכון הכרטיס החדש נכנס להוראת הקבע מיד.</div>' + ''.join(rows))
+    acc = _nd.accounts()
+    mos = (acc[0]['mosad'] if acc else '') or (_nd.mosad() if _nd.configured() else '')
+    em = (emails_of(p['email'] or '') or [''])[0]
+    rep = {'{{BASE}}': e(base), '{{LOGO}}': 'data:image/png;base64,' + base64.b64encode(letterhead_logo(300)).decode('ascii'),
+           '{{NAME}}': e(klink_fullname(p) or 'ידידנו'), '{{FIRST}}': e(p['first'] or ''), '{{LAST}}': e(p['last'] or ''),
+           '{{ADDR}}': e(p['addr'] or ''), '{{CITY}}': e(p['city'] or ''), '{{PHONE}}': e(cardlink_phone_clean(p['phone'])), '{{EMAIL}}': e(em),
+           '{{CARDS}}': cards, '{{DONNUM}}': '3' if ks else '2', '{{MOSAD}}': json.dumps(str(mos or ''))}
+    out = KLINK_PAGE
+    for k_, v_ in rep.items():
+        out = out.replace(k_, v_)
+    return out.encode('utf-8')
+
+
+def klink_nd_sync(kind, pid, client, who):
+    """הפרטים החדשים → כל הוראות הקבע שלו בנדרים פלוס, ברקע; ואז מייל אליך עם מה שהשתנה ומה עבר."""
+    import nedarim as _nd
+    res = []
+    con = db()
+    try:
+        ks = [dict(k) for k in klink_kevas(con, kind, pid)]
+    finally:
+        con.close()
+    for k in ks:
+        try:
+            with _nd.use(_nd.account_for(k.get('mosad') or '')):
+                ok, msg = _nd.update_keva(k['id'], client=client)
+        except Exception as ex:
+            ok, msg = False, str(ex)[:120]
+        res.append((k, ok, msg))
+    con = db()
+    try:
+        for k, ok, _m in res:
+            if ok:
+                sets, vals = [], []
+                for col, key in (('name', 'name'), ('phone', 'phone'), ('mail', 'mail'), ('city', 'city')):
+                    if client.get(key):
+                        sets.append(col + '=?'); vals.append(client[key])
+                if sets:
+                    con.execute("UPDATE nd_keva SET %s WHERE id=?" % ', '.join(sets), vals + [k['id']])
+        if res:
+            klink_log(con, kind, pid, '🔄 נדרים פלוס: ' + ' · '.join(('✅' if ok else '⚠️ ') + klink_keva_label(k) + ('' if ok else ' — ' + str(m)) for k, ok, m in res))
+        con.commit()
+    finally:
+        con.close()
+    return res
+
+
+def klink_save(con, kind, pid, b):
+    p = klink_person(con, kind, pid)
+    if not p:
+        return {'ok': False, 'error': 'לא נמצא'}
+    lbl = {'first': 'שם פרטי', 'last': 'שם משפחה', 'addr': 'כתובת', 'city': 'עיר', 'phone': 'טלפון', 'email': 'אימייל'}
+    upd, lines = {}, []
+    for k, lim in (('first', 60), ('last', 60), ('addr', 160), ('city', 80), ('phone', 60), ('email', 120)):
+        if k not in b:
+            continue
+        v = re.sub(r'\s+', ' ', str(b.get(k) or '')).strip()[:lim]
+        if k == 'email':
+            if v and '@' not in v:
+                return {'ok': False, 'error': 'כתובת האימייל לא תקינה'}
+            cur = (emails_of(p['email'] or '') or [''])[0]
+            if not v or v.lower() == cur.lower():
+                continue                       # מייל לא נמחק מהקישור
+        else:
+            cur = str(p[k] or '').strip()
+        if k == 'phone':
+            v = cardlink_phone_clean(v)
+        if k in ('first', 'last', 'phone') and not v:
+            continue                           # שם וטלפון לא נמחקים מהקישור
+        if v != cur:
+            upd[k] = v
+            lines.append('%s: היה "%s" · עכשיו "%s"' % (lbl[k], cur or '—', v or '—'))
+    if not upd:
+        return {'ok': True, 'changes': 0, 'nd': 0}
+    if 'email' in upd and (p['email'] or '').strip():
+        upd['email'] = upd['email'] + (' / ' if kind == 'm' else ', ') + (p['email'] or '').strip()   # החדש ראשון, הישן נשאר אחריו
+    tb = 'members' if kind == 'm' else 'donors'
+    sets = ', '.join('%s=?' % k for k in upd) + (", updated=?" if kind == 'm' else '')
+    con.execute("UPDATE %s SET %s WHERE id=?" % (tb, sets), list(upd.values()) + ([now_iso()] if kind == 'm' else []) + [pid])
+    klink_log(con, kind, pid, '🔗 עדכן פרטים דרך הקישור האישי', '\n'.join(lines))
+    con.commit()
+    who = klink_fullname(klink_person(con, kind, pid)) or '#%d' % pid
+    client = {}
+    if 'first' in upd or 'last' in upd:
+        pn = klink_person(con, kind, pid)
+        client['name'] = ((pn['last'] or '') + ' ' + (pn['first'] or '')).strip()
+    for k, ck in (('addr', 'addr'), ('city', 'city'), ('phone', 'phone')):
+        if k in upd:
+            client[ck] = upd[k].split(' / ')[0]
+    if 'email' in upd:
+        client['mail'] = re.split(r'[,/ ]+', upd['email'])[0]
+    nks = len(klink_kevas(con, kind, pid))
+    kind_he = 'חבר הקהילה' if kind == 'm' else 'התורם'
+
+    def run():
+        res = []
+        try:
+            if client and nks:
+                res = klink_nd_sync(kind, pid, client, who)
+        except Exception as ex:
+            print('  klink nd sync error:', ex)
+        nd_txt = ('\n\nנדרים פלוס:\n' + '\n'.join(('✅ עודכן — ' if ok else '⚠️ לא עודכן — ') + klink_keva_label(k) + ('' if ok else ' (' + str(m) + ')')
+                                                   for k, ok, m in res)) if res else ('\n\n(אין לו הוראת קבע באשראי בנדרים פלוס)' if not nks else '')
+        klink_alert('🔗 %s עדכן פרטים דרך הקישור האישי' % who,
+                    '%s %s עדכן עכשיו דרך הקישור האישי:\n\n%s%s\n\n(נרשם ביומן שלו במערכת)' % (kind_he, who, '\n'.join(lines), nd_txt))
+    threading.Thread(target=run, daemon=True).start()
+    return {'ok': True, 'changes': len(lines), 'nd': nks if client else 0}
+
+
+_KL_WATCH = set()
+
+
+def klink_watch(kind, pid, kid, mosad, who, label):
+    """אחרי שנכנס לדף של נדרים פלוס — בודקים כל 5 דקות (עד 3 שעות) אם עדכן כרטיס; עדכן → יומן + מייל אליך."""
+    if kid in _KL_WATCH:
+        return
+    _KL_WATCH.add(kid)
+
+    def run():
+        import nedarim as _nd
+        try:
+            for _i in range(36):
+                time.sleep(300)
+                try:
+                    with _nd.use(_nd.account_for(mosad or '')):
+                        st = _nd.link_status(kid)
+                except Exception:
+                    continue
+                if str(st.get('Used')).lower() == 'true':
+                    con = db()
+                    try:
+                        con.execute("UPDATE nd_link SET used=? WHERE keva_id=?", (str(st.get('UsedDate') or now_iso()), kid))
+                        con.execute("UPDATE nd_keva SET error='' WHERE id=?", (kid,))
+                        klink_log(con, kind, pid, '✅ עדכן כרטיס אשראי בנדרים פלוס — ' + label)
+                        con.commit()
+                    finally:
+                        con.close()
+                    bump_data()
+                    klink_alert('✅ %s עדכן כרטיס אשראי' % who,
+                                '%s עדכן כרטיס אשראי חדש דרך הקישור האישי.\n\n%s\nעודכן בנדרים פלוס: %s\n\n(נרשם ביומן שלו במערכת)'
+                                % (who, label, str(st.get('UsedDate') or '')))
+                    return
+                if str(st.get('Expired')).lower() == 'true':
+                    return
+        finally:
+            _KL_WATCH.discard(kid)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def klink_card(con, kind, pid, kid):
+    import nedarim as _nd
+    k = next((x for x in klink_kevas(con, kind, pid) if str(x['id']) == str(kid)), None)
+    if not k:
+        return {'ok': False, 'error': 'הוראת הקבע לא נמצאה'}
+    with _nd.use(_nd.account_for(k['mosad'] or '')):
+        ok, link = _nd.update_link(k['id'])
+    if not ok:
+        return {'ok': False, 'error': 'הדף של נדרים פלוס לא נפתח (%s). נא להתקשר אלינו.' % link}
+    con.execute("INSERT INTO nd_link(keva_id,link,created,sent_at,sent_to) VALUES(?,?,?,?,?) ON CONFLICT(keva_id) DO UPDATE SET "
+                "link=excluded.link, sent_at=excluded.sent_at, sent_to=excluded.sent_to", (k['id'], link, now_iso(), now_iso(), 'קישור אישי'))
+    label = klink_keva_label(k)
+    klink_log(con, kind, pid, '💳 נכנס לעדכון כרטיס אשראי (הדף של נדרים פלוס) — ' + label)
+    con.commit()
+    klink_watch(kind, pid, str(k['id']), k['mosad'] or '', klink_fullname(klink_person(con, kind, pid)) or '#%d' % pid, label)
+    return {'ok': True, 'link': link}
 
 
 _HE_MON_EN2 = {'תשרי': 'Tishrei', 'חשון': 'Cheshvan', 'כסלו': 'Kislev', 'טבת': 'Teves', 'שבט': 'Shevat', 'אדר': 'Adar', 'אדר א': 'Adar I',
@@ -21455,6 +21816,20 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, out or {'ok': False, 'error': 'month'})
+        m = re.match(r'/k/([md][0-9.a-f]+)$', self.path.split('?')[0])
+        if m:
+            kind, pid = klink_check(m.group(1))
+            if not pid:
+                return self._send(404, '<!doctype html><meta charset="utf-8"><body dir="rtl" style="font-family:sans-serif;padding:30px">הקישור פג תוקף. נא לפנות לכולל חצות: 02-580-3545 · 052-762-8272</body>'.encode('utf-8'), 'text/html')
+            con = db()
+            try:
+                base_url = (os.environ.get('PUBLIC_URL') or ('https://' + (self.headers.get('Host') or 'kollel-chatzot-crm.onrender.com'))).rstrip('/')
+                page = klink_page(con, kind, pid, base_url)
+            finally:
+                con.close()
+            if not page:
+                return self._send(404, {'ok': False})
+            return self._send(200, page, 'text/html')
         m = re.match(r'/u/([0-9.a-f]+)$', self.path.split('?')[0])
         if m:
             did = cardlink_check(m.group(1))
@@ -31993,6 +32368,84 @@ class H(BaseHTTPRequestHandler):
                          _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        m = re.match(r'/api/k/([md][0-9.a-f]+)/(save|card|donate)$', self.path)
+        if m:
+            kind, pid = klink_check(m.group(1))
+            if not pid:
+                return self._send(200, {'ok': False, 'error': 'הקישור פג תוקף. נא לפנות לכולל חצות.'})
+            con = db()
+            try:
+                if m.group(2) == 'save':
+                    out = klink_save(con, kind, pid, b)
+                elif m.group(2) == 'card':
+                    out = klink_card(con, kind, pid, str(b.get('keva') or ''))
+                else:
+                    a_ = _amt2(re.sub(r'[^\d.]', '', str(b.get('amount') or '')))
+                    klink_log(con, kind, pid, '💛 נכנס לתרומה דרך הקישור האישי — ₪%g (דף התשלום של נדרים פלוס)' % a_)
+                    con.commit()
+                    out = {'ok': True}
+            except Exception as e:
+                out = {'ok': False, 'error': 'משהו השתבש: ' + str(e)[:120]}
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, out)
+        m = re.match(r'/api/(members|donor)/(\d+)/klink(/send)?$', self.path)
+        if m:
+            # 🔗 יצירת הקישור האישי בעברית (קהילה / תורם בארץ) + נוסח לוואטסאפ ולמייל; /send — שליחה במייל
+            kind = 'm' if m.group(1) == 'members' else 'd'
+            pid = int(m.group(2))
+            con = db()
+            try:
+                p_ = klink_person(con, kind, pid)
+                if not p_:
+                    return self._send(200, {'ok': False, 'error': 'לא נמצא'})
+                base_url = (os.environ.get('PUBLIC_URL') or ('https://' + (self.headers.get('Host') or 'kollel-chatzot-crm.onrender.com'))).rstrip('/')
+                url = base_url + '/k/' + klink_token(kind, pid)
+                msg = klink_message(p_, url)
+                if not m.group(3):
+                    ks = klink_kevas(con, kind, pid)
+                    return self._send(200, {'ok': True, 'url': url, 'subject': msg['subject'], 'body': msg['body'], 'wa': msg['wa'],
+                                            'email': (emails_of(p_['email'] or '') or [''])[0], 'phone': p_['phone'] or '',
+                                            'name': klink_fullname(p_), 'kevas': [klink_keva_label(k) for k in ks]})
+                to = str(b.get('email') or '').strip()
+                if '@' not in to:
+                    return self._send(200, {'ok': False, 'error': 'חסר מייל'})
+                import mailer
+                if not mailer.configured():
+                    return self._send(200, {'ok': False, 'error': 'שליחת מייל לא מוגדרת ב-Render'})
+                subj = str(b.get('subject') or msg['subject']).strip()[:200]
+                body_ = str(b.get('body') or msg['body']).strip()[:4000]
+                if url not in body_:
+                    body_ += '\n\n' + url
+                html_ = klink_mail_html(body_, url)
+                if kind == 'd':
+                    res = send_donor_mail(pid, to, subj, body_, [], rtl=True, html=html_)
+                else:
+                    res = mailer.send(to, subj, body_, [], profile='comm', rtl=True, html=html_)
+                if not res.get('ok'):
+                    return self._send(200, {'ok': False, 'error': str(res.get('detail') or res.get('error') or 'השליחה נכשלה')[:160]})
+                if kind == 'm':
+                    con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                                (pid, today_iso(), 'מייל', '🔗 נשלח הקישור האישי (עדכון פרטים / כרטיס / תרומה) ל-' + to, body_, 'out', '', now_iso()))
+                    con.execute("UPDATE members SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", (to, pid))
+                else:
+                    con.execute("UPDATE donors SET email=? WHERE id=? AND COALESCE(TRIM(email),'')=''", (to, pid))
+                con.commit()
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': True})
+        m = re.match(r'/api/members/(\d+)/klink_log$', self.path)
+        if m:
+            con = db()
+            try:
+                con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,?,?,?)",
+                            (int(m.group(1)), today_iso(), 'וואטסאפ', '🔗 נשלח הקישור האישי בוואטסאפ', str(b.get('body') or '')[:4000], 'out', '', now_iso()))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/u/([0-9.a-f]+)/(charge|note)$', self.path)
         if m:
             did = cardlink_check(m.group(1))

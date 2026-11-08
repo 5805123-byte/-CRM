@@ -7010,6 +7010,7 @@ function cardDetails(d,body){
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     <button class="btn dnqc" data-did="${d.id}" type="button">💳 תרומה באשראי — חיוב מהיר + קבלה במייל</button>
     <button class="btn ghost dncl" data-did="${d.id}" type="button">🔗 קישור לתורם לעדכון כרטיס — וואטסאפ / מייל</button>
+    ${(curd==='₪'||d.region==='il')?`<button class="btn ghost dnkl" data-did="${d.id}" type="button">🇮🇱 קישור אישי בעברית (נדרים פלוס) — פרטים, כרטיס ותרומה</button>`:''}
     ${pdebts.length?`<div class="debtbanner">🌙 פרנס שטרם נגבה: <b>${pdebtsum?(pdebtcur+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
     ${debtHTML(d)}
     ${debtBarHTML(d)}
@@ -18054,6 +18055,7 @@ function openMember(m){
       <button class="btn" id="cm_save" style="flex:2">💾 ${isNew?'הוסף לקהילה':'שמור'}</button>
       ${isNew?'':`<button class="btn ghost" id="cm_send1" style="flex:1"${mHasMail(m)?'':' disabled title="אין כתובת מייל"'}>✉️ שלח לו מייל</button>`}
     </div>
+    ${isNew?'':`<button class="btn ghost cmkl" type="button" style="width:100%;margin-top:8px">🔗 קישור אישי — עדכון פרטים, כרטיס אשראי ותרומה · וואטסאפ / מייל</button>`}
     ${isNew?'':`<div class="sec"><div class="rbtitle">💳 נדרים פלוס — הוראת קבע ותרומות</div><div id="cm_ndbox" class="hintxt">טוען…</div></div>
     <div class="sec"><div class="rbtitle">⏰ תזכורות (קהילה)</div><div id="cm_tasksbox" class="hintxt">טוען…</div>
       <div class="addrow" style="margin-top:6px;flex-wrap:wrap"><input id="cm_tdue" type="date" value="${todayStr()}" style="flex:1;min-width:130px"><input id="cm_tnote" placeholder="מה להזכיר? (למשל: לברר על עליית הסכום)" style="flex:3;min-width:160px"><button class="btn sm ghost" id="cm_tadd" style="flex:1">➕ תזכורת</button></div></div>
@@ -18066,6 +18068,7 @@ function openMember(m){
     <div class="addrow" style="margin-top:14px"><button class="btn sm ghost danger" id="cm_del" style="flex:1">🗑️ הסר מרשימת הקהילה</button></div>`}`;
   remov.classList.add('show');
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  if(!isNew){const kb=document.querySelector('.cmkl');if(kb)kb.onclick=()=>klinkOpen('members',m.id,m.phone||'','il');}
   if(!isNew){cmNdPaint(m);cmTasksPaint(m);
     document.getElementById('cm_tadd').onclick=async()=>{const n=document.getElementById('cm_tnote').value.trim();if(!n){toast('כתוב מה להזכיר');return;}
       const r=await api('POST','/api/cm/tasks',{member_id:m.id,due:document.getElementById('cm_tdue').value,note:n});
@@ -20099,6 +20102,43 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
     btn.disabled=false;
     if(!s2||!s2.ok){await uiAlert('לא נשלח:\n'+((s2&&s2.error)||'שגיאה'));return;}
     if(!d.email)d.email=em;o.querySelector('.cbtns').innerHTML='<div class="ok" style="flex:1;background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:12px;font-size:16px;font-weight:bold;color:#1f5e33">✅ נשלח! המייל עם הקישור האישי נשלח ל-'+esc(em)+' ונרשם בקשר של התורם.</div><button class="btn ghost cno2" type="button">סגור</button>';o.querySelector('.cno2').onclick=()=>o.remove();toast('✅ נשלח ל-'+em);};});
+// 🔗 מאיר: "כמו שעשית לתורמים של הכולל… תעשה לי כזה לקהילה בעברית — קישור לכל אחד אישי שיכול לעדכן שם
+// וכתובת וטלפון ואימייל… ושיעדכן בנדרים פלוס… עם שורה של תרום עכשיו לכל סכום. בלי פרנס יום… לאימייל או
+// לווצאפ אצל כל כרטיס של אחד מהקהילה או כל אחד". הקישור חתום, 30 יום; כל עדכון — ביומן ומייל אליך
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.dnkl');if(!b)return;
+  e.preventDefault();e.stopPropagation();const d=DB.find(x=>x.id==b.dataset.did);if(!d)return;
+  klinkOpen('donor',d.id,(splitPhones(d.phone||'')[0]||'').trim(),d.region||'il');});
+async function klinkOpen(kind,id,phone,region){
+  const r=await api('POST','/api/'+kind+'/'+id+'/klink',{}).catch(()=>null);
+  if(!r||!r.ok){uiAlert((r&&r.error)||'לא נוצר קישור');return;}
+  const ph=String(phone||'').split(/[\/,;]/)[0].trim(), wa=ph?waHref(ph,region):'';
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox qcbox" style="text-align:right"><div class="cm"><b>🔗 קישור אישי ל${esc(r.name)} — עדכון פרטים, כרטיס אשראי ותרומה</b></div>
+    <div class="qcprev"><div class="hintxt">בעברית, תקף 30 יום. בדף: שם, כתובת, טלפון ואימייל (מתעדכנים אצלנו ובהוראת הקבע בנדרים פלוס) ·
+      ${r.kevas&&r.kevas.length?('עדכון כרטיס בדף המאובטח של נדרים פלוס — '+r.kevas.map(esc).join(' | ')):'אין לו הוראת קבע באשראי בנדרים — הכפתור של עדכון כרטיס לא יופיע'} ·
+      תרומה עכשיו בכל סכום. כל עדכון נרשם ביומן שלו ותקבל מייל.</div>
+      <input id="kl_url" dir="ltr" value="${esc(r.url)}" readonly style="font-size:12px"></div>
+    ${wa?`<label class="fld"><span>💬 וואטסאפ (אפשר לערוך)</span><textarea id="kl_wa" rows="5" style="font-size:13px">${esc(r.wa)}</textarea></label>`:'<div class="hintxt">אין טלפון בכרטיס — אפשר להעתיק את הקישור או לשלוח במייל.</div>'}
+    <label class="fld"><span>📧 מייל</span><input id="kl_em" dir="ltr" value="${esc(r.email||'')}" placeholder="email@example.com"></label>
+    <label class="fld"><span>נושא</span><input id="kl_subj" value="${esc(r.subject)}"></label>
+    <label class="fld"><span>המייל (אפשר לערוך)</span><textarea id="kl_body" rows="7" style="font-size:13px">${esc(r.body)}</textarea></label>
+    <div class="cbtns"><button class="btn kl_copy" type="button">📋 העתק קישור</button>${wa?`<a class="btn kl_wa" target="_blank" rel="noopener">💬 וואטסאפ</a>`:''}<button class="btn bqgo kl_mail" type="button">📧 שלח במייל</button><a class="btn ghost" href="${esc(r.url)}" target="_blank" rel="noopener">👁 הצג את הדף</a><button class="btn ghost cno" type="button">סגור</button></div></div>`;
+  document.body.appendChild(o);
+  const g=id=>o.querySelector('#'+id);
+  const num=String(wa).replace(/^.*wa\.me\//,'').replace(/^.*phone=/,'').replace(/[^\d].*$/,'');
+  const waUrl=()=>'https://wa.me/'+num+'?text='+encodeURIComponent(g('kl_wa').value);
+  const waA=o.querySelector('.kl_wa');
+  if(waA){waA.href=waUrl();g('kl_wa').oninput=()=>{waA.href=waUrl();};
+    waA.addEventListener('click',()=>{if(kind==='members')api('POST','/api/members/'+id+'/klink_log',{body:g('kl_wa').value}).catch(()=>{});});}
+  o.querySelector('.cno').onclick=()=>o.remove();
+  o.querySelector('.kl_copy').onclick=async()=>{try{await navigator.clipboard.writeText(r.url);}catch(x){g('kl_url').select();document.execCommand('copy');}toast('הקישור הועתק ✓');};
+  o.querySelector('.kl_mail').onclick=async()=>{const em=g('kl_em').value.trim();if(!em.includes('@')){toast('מייל לא תקין');g('kl_em').focus();return;}
+    if(!await uiConfirm('לשלוח את הקישור האישי במייל ל-'+em+'?'))return;
+    const btn=o.querySelector('.kl_mail');btn.disabled=true;
+    const s2=await api('POST','/api/'+kind+'/'+id+'/klink/send',{email:em,subject:g('kl_subj').value,body:g('kl_body').value}).catch(()=>null);
+    btn.disabled=false;
+    if(!s2||!s2.ok){await uiAlert('לא נשלח:\n'+((s2&&s2.error)||'שגיאה'));return;}
+    toast('✅ נשלח ל-'+em);o.remove();};}
 // מאיר: "איפה אני רואה את האימייל עם הקבלה לפני השליחה?" — המייל בדיוק כפי שיישלח (iframe),
 // הקבלה כתמונה, והתעודה אם יש. נטען מהשרת בלי לשלוח ובלי לשמור
 function rcPreviewHTML(don,certUrl){
