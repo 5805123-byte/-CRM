@@ -17807,7 +17807,8 @@ KL_DAYK = {'breakfast': ('ארוחת בוקר', '🍳'), 'coffee': ('יום קפ
 
 def klink_day_price(con, k):
     try:
-        return int(float(kv_get(con, 'klink_price_' + k, '') or 180))
+        # מאיר: "יום קפה זה 320 ש"ח"; ארוחת בוקר — 180
+        return int(float(kv_get(con, 'klink_price_' + k, '') or {'breakfast': 180, 'coffee': 320}.get(k, 180)))
     except (TypeError, ValueError):
         return 180
 
