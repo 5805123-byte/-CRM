@@ -17569,6 +17569,31 @@ async function cdChargeNow(g){
   o.querySelector('#cc_other').onclick=()=>{const a=amtNum(A.value);if(!(a>0)){toast('סכום לא תקין');return;}
     o.remove();ndDonate(g.mid||0,{amount:a,purpose:what,kevas:K});};
 }
+// 💳 מאיר: "כמו שאתה רואה כאן שיש לכל אחד… גם חיוב עכשיו וגם חלון של… לשלוח לו עדכון — אותו דבר שיהיה לקהילה,
+// רק עם נדרים פלוס" — חיוב מהכרטיס שבהוראת הקבע שלו בנדרים (נרשם אצלו ובנדרים), או כרטיס אחר / ביט / העברה
+async function cmChargeNow(m){
+  const r=await api('GET','/api/members/'+m.id+'/nd').catch(()=>null);
+  const K=((r&&r.kevas)||[]).filter(k=>k.active&&k.kind!=='bank'&&!(k.mosad||''));
+  if(!K.length){ndDonate(m.id,{});return;}
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:460px;width:96vw"><div class="cm">💳 חיוב עכשיו — ${esc(mName(m))}</div>
+    <label class="fld"><span>כמה לחייב (₪)</span><input id="cq_amt" class="cinp" inputmode="decimal" placeholder="סכום"></label>
+    <label class="fld"><span>עבור מה</span><input id="cq_for" value="תרומה"></label>
+    ${K.map(k=>`<button class="btn" data-cqk="${esc(k.id)}" style="width:100%;margin:4px 0">⚡ מהכרטיס שבהוראת הקבע ****${esc(k.last4||'')}${k.error?` <small>(🔴 ${esc(String(k.error).slice(0,40))})</small>`:''}</button>`).join('')}
+    <button class="btn ghost" id="cq_other" style="width:100%;margin:4px 0">💳 מכרטיס אחר / ביט / העברה</button>
+    <div class="mksub" style="margin:6px 0">החיוב נעשה בנדרים פלוס ונרשם בכרטיס שלו.</div>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button></div></div>`;
+  document.body.appendChild(o);const A=o.querySelector('#cq_amt'),F=o.querySelector('#cq_for');A.focus();
+  o.querySelector('.cno').onclick=()=>o.remove();o.onclick=e=>{if(e.target===o)o.remove();};
+  o.querySelectorAll('[data-cqk]').forEach(b=>b.onclick=async()=>{const a=amtNum(A.value);if(!(a>0)){toast('סכום לא תקין');A.focus();return;}
+    const k=K.find(x=>String(x.id)===b.dataset.cqk);
+    if(!await uiConfirm('לחייב עכשיו '+cdMoney(a)+' מהכרטיס ****'+(k&&k.last4||'')+'?','⚡ כן, לחייב','ביטול'))return;
+    b.disabled=true;b.textContent='⏳ מחייב…';
+    const x=await api('POST','/api/nd/keva/'+encodeURIComponent(b.dataset.cqk)+'/charge',{amount:a,groupe:F.value.trim()||'תרומה',member_id:m.id}).catch(()=>null);
+    if(x&&x.ok){o.remove();toast('✅ החיוב עבר · אישור '+(x.confirmation||''));try{cmNdPaint(m);}catch(e){}}
+    else{b.disabled=false;b.textContent='⚡ לנסות שוב מהכרטיס הזה';uiAlert('החיוב לא עבר:\n'+((x&&x.error)||'שגיאה')+'\n\nאפשר לחייב "💳 מכרטיס אחר", או לשלוח לו קישור לעדכון כרטיס.');}});
+  o.querySelector('#cq_other').onclick=()=>{const a=amtNum(A.value);o.remove();ndDonate(m.id,{amount:a>0?a:'',purpose:F.value.trim()||'תרומה',kevas:K});};
+}
 function cdNoteAdd(g){
   const deb=g.items.filter(d=>!d._req&&d.status==='open');
   const tm=new Date(Date.now()+864e5), tmS=tm.getFullYear()+'-'+String(tm.getMonth()+1).padStart(2,'0')+'-'+String(tm.getDate()).padStart(2,'0');
@@ -18045,6 +18070,11 @@ function openMember(m){
   const f=(id,lbl,val,ph,dir)=>`<label class="fld"><span>${lbl}</span><input id="${id}" value="${esc(val||'')}" placeholder="${esc(ph||'')}"${dir?` dir="${dir}"`:''}></label>`;
   rs.innerHTML=`<button class="x" id="rx">✕</button>
     <h2>🕍 ${isNew?'חבר קהילה חדש':esc(mName(m))}</h2>
+    ${isNew?'':(()=>{const ph=splitPhones(m.phone||'')[0]||'',wa=ph?waHref(ph,'il'):'',em=(mEmails(m)[0]||'');
+      const ic=(ph?`<a class="cbtn call" href="${esc(telHref(ph,'il'))}" title="התקשר">📞</a>`:'')+(wa?`<a class="cbtn wa" href="${esc(wa)}" ${WA_TGT} title="וואטסאפ">💬</a>`:'')+(em?`<a class="cbtn mail" href="mailto:${esc(em)}" title="${esc(em)}">📧</a>`:'');
+      return (ic?`<div class="cardcbar"><span class="cbtns">${ic}</span></div>`:'')
+        +`<button class="btn dnqc cmqc" type="button">💳 חיוב עכשיו בנדרים פלוס — מהכרטיס שלו או כרטיס אחר</button>`
+        +`<button class="btn ghost dncl cmkl" type="button">🔗 קישור אישי לעדכון פרטים וכרטיס (נדרים פלוס) — וואטסאפ / מייל</button>`;})()}
     <div class="two">${f('cm_last','שם משפחה',m.last,'')}${f('cm_first','שם פרטי',m.first,'')}</div>
     <div class="two">${f('cm_seat','💺 מספר מקום בבית הכנסת',m.seat,'לפי המפה')}${f('cm_phone','טלפון',m.phone,'050-0000000','ltr')}</div>
     ${f('cm_email','אימייל (אפשר כמה, מופרדים ב־/)',m.email,'name@gmail.com','ltr')}
@@ -18055,7 +18085,6 @@ function openMember(m){
       <button class="btn" id="cm_save" style="flex:2">💾 ${isNew?'הוסף לקהילה':'שמור'}</button>
       ${isNew?'':`<button class="btn ghost" id="cm_send1" style="flex:1"${mHasMail(m)?'':' disabled title="אין כתובת מייל"'}>✉️ שלח לו מייל</button>`}
     </div>
-    ${isNew?'':`<button class="btn ghost cmkl" type="button" style="width:100%;margin-top:8px">🔗 קישור אישי — עדכון פרטים, כרטיס אשראי ותרומה · וואטסאפ / מייל</button>`}
     ${isNew?'':`<div class="sec"><div class="rbtitle">💳 נדרים פלוס — הוראת קבע ותרומות</div><div id="cm_ndbox" class="hintxt">טוען…</div></div>
     <div class="sec"><div class="rbtitle">⏰ תזכורות (קהילה)</div><div id="cm_tasksbox" class="hintxt">טוען…</div>
       <div class="addrow" style="margin-top:6px;flex-wrap:wrap"><input id="cm_tdue" type="date" value="${todayStr()}" style="flex:1;min-width:130px"><input id="cm_tnote" placeholder="מה להזכיר? (למשל: לברר על עליית הסכום)" style="flex:3;min-width:160px"><button class="btn sm ghost" id="cm_tadd" style="flex:1">➕ תזכורת</button></div></div>
@@ -18068,7 +18097,8 @@ function openMember(m){
     <div class="addrow" style="margin-top:14px"><button class="btn sm ghost danger" id="cm_del" style="flex:1">🗑️ הסר מרשימת הקהילה</button></div>`}`;
   remov.classList.add('show');
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
-  if(!isNew){const kb=document.querySelector('.cmkl');if(kb)kb.onclick=()=>klinkOpen('members',m.id,m.phone||'','il');}
+  if(!isNew){const kb=document.querySelector('.cmkl');if(kb)kb.onclick=e=>{e.stopPropagation();klinkOpen('members',m.id,m.phone||'','il');};
+    const qb=document.querySelector('.cmqc');if(qb)qb.onclick=e=>{e.stopPropagation();cmChargeNow(m);};}
   if(!isNew){cmNdPaint(m);cmTasksPaint(m);
     document.getElementById('cm_tadd').onclick=async()=>{const n=document.getElementById('cm_tnote').value.trim();if(!n){toast('כתוב מה להזכיר');return;}
       const r=await api('POST','/api/cm/tasks',{member_id:m.id,due:document.getElementById('cm_tdue').value,note:n});
