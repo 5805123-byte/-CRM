@@ -17505,16 +17505,16 @@ def klink_token(kind, pid, days=30):
     """kind: 'm' = חבר קהילה, 'd' = תורם. חתום כמו הקישור של התורמים, אבל בנפרד (לא מתחלף ביניהם)."""
     exp = int(time.time()) + int(days) * 86400
     body = '%s%d.%d' % (kind, int(pid), exp)
-    return body + '.' + hmac.new(_link_secret(), ('k.' + body).encode('ascii'), hashlib.sha256).hexdigest()[:32]
+    return body + '.' + hmac.new(_link_secret(), ('k.' + body).encode('ascii'), hashlib.sha256).hexdigest()[:16]   # קישור קצר יותר
 
 
 def klink_check(tok):
     """-> ('m' | 'd', מזהה) — או (None, 0) אם הקישור מזויף / פג."""
-    m = re.fullmatch(r'([mdv])(\d+)\.(\d+)\.([0-9a-f]{32})', str(tok or ''))
+    m = re.fullmatch(r'([mdv])(\d+)\.(\d+)\.([0-9a-f]{16}|[0-9a-f]{32})', str(tok or ''))
     if not m:
         return None, 0
     body = '%s%s.%s' % (m.group(1), m.group(2), m.group(3))
-    want = hmac.new(_link_secret(), ('k.' + body).encode('ascii'), hashlib.sha256).hexdigest()[:32]
+    want = hmac.new(_link_secret(), ('k.' + body).encode('ascii'), hashlib.sha256).hexdigest()[:len(m.group(4))]
     if not hmac.compare_digest(want, m.group(4)) or int(m.group(3)) < time.time():
         return None, 0
     return m.group(1), int(m.group(2))
@@ -17651,8 +17651,8 @@ def klink_mail_html(body, url):
 
 
 KLINK_PAGE = r'''<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{TITLE}}</title><meta property="og:title" content="כולל חצות · הקישור האישי שלי">
-<meta property="og:description" content="עדכון פרטים, עדכון כרטיס אשראי ותרומה — בדף אישי ומאובטח">
+<title>{{TITLE}}</title><meta property="og:title" content="{{TITLE}}">
+<meta property="og:description" content="{{SUB}}">
 <meta property="og:image" content="{{BASE}}/logo_og.png"><meta property="og:type" content="website">
 <style>body{margin:0;background:#efe9db;font-family:Arial,Helvetica,sans-serif;color:#3a2f1a}
 .wrap{max-width:560px;margin:22px auto;padding:0 0 26px;background:#fffdf8;border:1px solid #c9b57a;border-radius:6px;box-shadow:0 10px 30px rgba(90,70,30,.12)}
