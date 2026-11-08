@@ -17520,6 +17520,37 @@ def klink_check(tok):
     return m.group(1), int(m.group(2))
 
 
+_KL_ABC = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+
+def klink_short(con, tok):
+    """מאיר: "אני לא אוהב את הקישור הארוך הזה" — קוד קצר (8 תווים) שמצביע על הקישור החתום."""
+    con.execute("CREATE TABLE IF NOT EXISTS klink_code(code TEXT PRIMARY KEY, tok TEXT, created TEXT)")
+    for _i in range(20):
+        code = ''.join(_KL_ABC[b % len(_KL_ABC)] for b in os.urandom(8))
+        if not con.execute("SELECT 1 FROM klink_code WHERE code=?", (code,)).fetchone():
+            con.execute("INSERT INTO klink_code(code,tok,created) VALUES(?,?,?)", (code, tok, now_iso()))
+            con.commit()
+            return code
+    return tok
+
+
+def klink_resolve(x):
+    """קוד קצר או קישור חתום מלא -> ('m'|'v'|'d', מזהה) / (None, 0)."""
+    x = str(x or '')
+    if '.' in x:
+        return klink_check(x)
+    if not re.fullmatch(r'[A-Za-z0-9]{6,12}', x):
+        return None, 0
+    con = db()
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS klink_code(code TEXT PRIMARY KEY, tok TEXT, created TEXT)")
+        r = con.execute("SELECT tok FROM klink_code WHERE code=?", (x,)).fetchone()
+    finally:
+        con.close()
+    return klink_check(r['tok']) if r else (None, 0)
+
+
 def klink_person(con, kind, pid):
     return con.execute("SELECT * FROM %s WHERE id=?" % ('donors' if kind == 'd' else 'members'), (pid,)).fetchone()
 
@@ -17592,24 +17623,22 @@ def klink_salute(p, kind):
 
 
 KLINK_TXT = {
-    'm': {'subject': 'לכבוד חבר קהילתנו — עדכון פרטים, דמי חבר ונדרים ונדבות',
-          'intro': 'זה הקישור האישי שלך בקהילה. בדף אפשר:',
-          'card': 'לעדכן את כרטיס האשראי לדמי החבר / נדרים ונדבות — בדף המאובטח של נדרים פלוס.',
+    # מאיר: "כתוב פעמיים נדרים נדבות… ובסוף שלא יהיה כתוב… כלום" — כל דבר פעם אחת, בלי חתימה
+    'm': {'subject': 'הדף האישי שלך בקהילה — עדכון פרטים וכרטיס אשראי',
+          'intro': 'זה הדף האישי שלך בקהילה. בדף אפשר:',
+          'card': 'לעדכן את כרטיס האשראי לדמי החבר — בדף המאובטח של נדרים פלוס.',
           'don': 'לתרום נדרים ונדבות בכל סכום.',
-          'wa': 'זה הקישור האישי שלך בקהילה — לעדכון הפרטים (שם, כתובת, טלפון ואימייל), לעדכון כרטיס האשראי לדמי החבר / נדרים ונדבות, ולנדרים ונדבות בכל סכום:',
-          'sig': 'קהילת כולל חצות'},
-    'v': {'subject': 'עדכון לגבי המקווה — הקישור האישי שלך',
-          'intro': 'זה הקישור האישי שלך לעדכון לגבי המקווה. בדף אפשר:',
+          'wa': 'זה הדף האישי שלך בקהילה — לעדכון הפרטים, כרטיס האשראי לדמי החבר, ונדרים ונדבות בכל סכום.'},
+    'v': {'subject': 'עדכון לגבי המקווה — הדף האישי שלך',
+          'intro': 'זה הדף האישי שלך לעדכון לגבי המקווה. בדף אפשר:',
           'card': 'לעדכן את כרטיס האשראי למנוי המקווה — בדף המאובטח של נדרים פלוס.',
           'don': '',
-          'wa': 'זה הקישור האישי שלך לעדכון לגבי המקווה — לעדכון הפרטים (שם, כתובת, טלפון ואימייל) ולעדכון כרטיס האשראי למנוי המקווה:',
-          'sig': 'הנהלת המקווה · כולל חצות'},
-    'd': {'subject': 'הקישור האישי שלך — עדכון פרטים וכרטיס אשראי · כולל חצות',
-          'intro': 'זה הקישור האישי שלך בכולל חצות. בדף אפשר:',
+          'wa': 'זה הדף האישי שלך לעדכון לגבי המקווה — לעדכון הפרטים וכרטיס האשראי למנוי המקווה.'},
+    'd': {'subject': 'הדף האישי שלך — עדכון פרטים וכרטיס אשראי · כולל חצות',
+          'intro': 'זה הדף האישי שלך בכולל חצות. בדף אפשר:',
           'card': 'לעדכן את כרטיס האשראי בהוראת הקבע — בדף המאובטח של נדרים פלוס.',
           'don': 'לתרום נדרים ונדבות בכל סכום.',
-          'wa': 'זה הקישור האישי שלך בכולל חצות — לעדכון הפרטים, לעדכון כרטיס האשראי בהוראת הקבע, ולתרומה בכל סכום:',
-          'sig': 'כולל חצות'},
+          'wa': 'זה הדף האישי שלך בכולל חצות — לעדכון הפרטים, כרטיס האשראי, ותרומה בכל סכום.'},
 }
 
 
@@ -17622,9 +17651,9 @@ def klink_message(p, url, kind='m'):
             + (('\u2022 ' + T['don'] + '\n') if T['don'] else '') + '\n'
             + url + '\n\n'
             'הקישור אישי ומאובטח ותקף ל-30 יום. מספר הכרטיס מוזן ישירות בנדרים פלוס ולא עובר אצלנו.\n\n'
-            'בברכה ובתודה, ותזכו למצוות!\n' + T['sig'])
-    wa = (sal + '\nשלום וברכה,\n' + T['wa'] + '\n' + url + '\nקישור אישי ומאובטח, תקף 30 יום.\nתודה רבה ותזכו למצוות!\n'
-          + T['sig'])
+            'תודה רבה ותזכו למצוות!')
+    # בוואטסאפ: הקישור הקצר בשורה משלו — ותצוגת הקישור (התמונה עם "לחצו כאן") מופיעה כקובייה גדולה
+    wa = (sal + '\nשלום וברכה,\n' + T['wa'] + '\n\n👇 לחצו כאן:\n' + url + '\n\nתודה רבה ותזכו למצוות!')
     return {'subject': T['subject'], 'body': body, 'wa': wa}
 
 
@@ -17652,8 +17681,8 @@ def klink_mail_html(body, url):
 
 KLINK_PAGE = r'''<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{TITLE}}</title><meta property="og:title" content="{{TITLE}}">
-<meta property="og:description" content="{{SUB}}">
-<meta property="og:image" content="{{BASE}}/logo_og.png"><meta property="og:type" content="website">
+<meta property="og:description" content="דף אישי ומאובטח · לחצו לעדכון">
+<meta property="og:image" content="{{BASE}}/{{OGIMG}}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:type" content="website">
 <style>body{margin:0;background:#efe9db;font-family:Arial,Helvetica,sans-serif;color:#3a2f1a}
 .wrap{max-width:560px;margin:22px auto;padding:0 0 26px;background:#fffdf8;border:1px solid #c9b57a;border-radius:6px;box-shadow:0 10px 30px rgba(90,70,30,.12)}
 @media(max-width:600px){.wrap{margin:10px 8px}}.in{padding:0 20px}.hd{text-align:center;padding:14px 16px 10px;border-bottom:1px solid #c9b57a;margin:0 20px 6px}
@@ -17677,7 +17706,7 @@ button.gold{background:#9c7a2e;border-color:#7a1f1f}button:disabled{opacity:.55;
 <button type="button" id="s_go">שמור ועדכן את הפרטים</button><div class="err" id="s_err"></div><div class="ok" id="s_done" hidden></div>
 {{CARDS}}
 <div id="donsec"{{DONHIDE}}><h3>{{DONNUM}} · נדרים ונדבות — תרומה עכשיו</h3>
-<div class="small">נדרים ונדבות בכל סכום, בכרטיס אשראי, בדף התשלום המאובטח של נדרים פלוס.</div>
+<div class="small">בכל סכום, בכרטיס אשראי, בדף התשלום המאובטח של נדרים פלוס.</div>
 <div class="amts" id="amts"><span data-a="52">₪52</span><span data-a="100">₪100</span><span data-a="180">₪180</span><span data-a="360">₪360</span></div>
 <label>סכום (₪)</label><input id="amt" inputmode="decimal" placeholder="כל סכום">
 <button type="button" class="gold" id="d_go">תרום עכשיו</button><div class="err" id="d_err"></div></div>
@@ -17724,7 +17753,7 @@ def klink_page(con, kind, pid, base=''):
             bad = str(k['error'] or '').strip() if 'error' in k.keys() else ''
             rows.append('<div class="keva"><b>%s</b>%s<button type="button" class="cardgo" data-k="%s">\U0001F512 עדכון כרטיס אשראי</button><div class="err"></div></div>'
                         % (e(klink_keva_label(k)), ('<div class="bad">⚠️ החיוב האחרון לא עבר — כדאי לעדכן כרטיס</div>' if bad else ''), e(str(k['id']))))
-        cards = ('<h3>2 · %s</h3><div class="small">' % {'m': 'כרטיס האשראי — דמי חבר / נדרים ונדבות', 'v': 'כרטיס האשראי — מנוי המקווה',
+        cards = ('<h3>2 · %s</h3><div class="small">' % {'m': 'כרטיס האשראי — דמי חבר', 'v': 'כרטיס האשראי — מנוי המקווה',
                                                         'd': 'כרטיס האשראי בהוראת הקבע'}[kind] + 'הכרטיס מוזן בדף המאובטח של נדרים פלוס — מספר הכרטיס לא עובר אצלנו. '
                  'אחרי העדכון הכרטיס החדש נכנס להוראת הקבע מיד.</div>' + ''.join(rows))
     acc = _nd.accounts()
@@ -17732,7 +17761,8 @@ def klink_page(con, kind, pid, base=''):
     em = (emails_of(p['email'] or '') or [''])[0]
     rep = {'{{BASE}}': e(base), '{{LOGO}}': 'data:image/png;base64,' + base64.b64encode(letterhead_logo(300)).decode('ascii'),
            '{{NAME}}': e(klink_salute(p, kind)),
-           '{{SUB}}': e({'m': 'הדף האישי שלך בקהילה — עדכון פרטים, דמי חבר ונדרים ונדבות', 'v': 'עדכון לגבי המקווה — הדף האישי שלך',
+           '{{OGIMG}}': 'kl_og_mk.png' if kind == 'v' else 'kl_og.png',
+           '{{SUB}}': e({'m': 'הדף האישי שלך בקהילה', 'v': 'עדכון לגבי המקווה — הדף האישי שלך',
                          'd': 'הדף האישי והמאובטח שלך בכולל חצות'}[kind]),
            '{{TITLE}}': {'m': 'קהילת כולל חצות · הדף האישי שלי', 'v': 'המקווה · הדף האישי שלי', 'd': 'כולל חצות · הדף האישי שלי'}[kind],
            '{{DONHIDE}}': ' hidden' if kind == 'v' else '', '{{FIRST}}': e(p['first'] or ''), '{{LAST}}': e(p['last'] or ''),
@@ -21861,9 +21891,9 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, out or {'ok': False, 'error': 'month'})
-        m = re.match(r'/k/([mdv][0-9.a-f]+)$', self.path.split('?')[0])
+        m = re.match(r'/k/([A-Za-z0-9.]+)$', self.path.split('?')[0])
         if m:
-            kind, pid = klink_check(m.group(1))
+            kind, pid = klink_resolve(m.group(1))
             if not pid:
                 return self._send(404, '<!doctype html><meta charset="utf-8"><body dir="rtl" style="font-family:sans-serif;padding:30px">הקישור פג תוקף. נא לפנות לכולל חצות: 02-580-3545 · 052-762-8272</body>'.encode('utf-8'), 'text/html')
             con = db()
@@ -32413,9 +32443,9 @@ class H(BaseHTTPRequestHandler):
                          _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
-        m = re.match(r'/api/k/([mdv][0-9.a-f]+)/(save|card|donate)$', self.path)
+        m = re.match(r'/api/k/([A-Za-z0-9.]+)/(save|card|donate)$', self.path)
         if m:
-            kind, pid = klink_check(m.group(1))
+            kind, pid = klink_resolve(m.group(1))
             if not pid:
                 return self._send(200, {'ok': False, 'error': 'הקישור פג תוקף. נא לפנות לכולל חצות.'})
             con = db()
@@ -32446,7 +32476,7 @@ class H(BaseHTTPRequestHandler):
                 if not p_:
                     return self._send(200, {'ok': False, 'error': 'לא נמצא'})
                 base_url = (os.environ.get('PUBLIC_URL') or ('https://' + (self.headers.get('Host') or 'kollel-chatzot-crm.onrender.com'))).rstrip('/')
-                url = base_url + '/k/' + klink_token(kind, pid)
+                url = base_url + '/k/' + klink_short(con, klink_token(kind, pid))
                 msg = klink_message(p_, url, kind)
                 if not m.group(3):
                     ks = klink_kevas(con, kind, pid)
@@ -32462,7 +32492,10 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, {'ok': False, 'error': 'שליחת מייל לא מוגדרת ב-Render'})
                 subj = str(b.get('subject') or msg['subject']).strip()[:200]
                 body_ = str(b.get('body') or msg['body']).strip()[:4000]
-                if url not in body_:
+                mu = re.search(r'https?://\S+/k/[A-Za-z0-9.]+', body_)
+                if mu:
+                    url = mu.group(0)            # הקישור שכבר מופיע בנוסח (נוצר בפתיחת החלון) — לא קישור שני
+                else:
                     body_ += '\n\n' + url
                 html_ = klink_mail_html(body_, url)
                 if kind == 'd':
