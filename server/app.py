@@ -17710,7 +17710,12 @@ button.gold{background:#9c7a2e;border-color:#7a1f1f}button:disabled{opacity:.55;
 .small{font-size:13px;color:#6b6249;margin-top:6px;line-height:1.5}.ok{background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:13px;font-size:16px;margin-top:12px}
 .err{color:#8f2a1b;font-size:15px;margin-top:10px}.err:not(:empty){background:#fde8e4;border:1px solid #e3a094;border-radius:8px;padding:10px 12px}
 .amts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.amts span{flex:1;min-width:60px;text-align:center;border:1px solid #d9cfb5;border-radius:8px;padding:9px 4px;cursor:pointer;background:#fffdf7;font-weight:bold}
-.amts span.on{background:#f3e3a8;border-color:#9c7a2e}.foot{text-align:center;font-size:12px;color:#6b6249;margin-top:26px;line-height:1.6}</style></head>
+.amts span.on{background:#f3e3a8;border-color:#9c7a2e}.foot{text-align:center;font-size:12px;color:#6b6249;margin-top:26px;line-height:1.6}
+.cal{background:#fffdf7;border:1px solid #d9cfb5;border-radius:10px;padding:10px;margin-top:12px}.calhd{display:flex;align-items:center;justify-content:space-between;font-weight:bold;color:#7a1f1f;font-size:17px}
+.calnav{width:auto!important;margin:0!important;padding:4px 14px!important;font-size:22px!important;background:#fffdf7!important;color:#7a1f1f!important;border:1px solid #d9cfb5!important}
+.calgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px}.cd{border:1px solid #d9cfb5;border-radius:8px;padding:6px 2px;text-align:center;cursor:pointer;background:#e8f3ea;line-height:1.25}
+.cd b{display:block;font-size:17px}.cd small{display:block;font-size:11px;color:#6b6249}.cd.taken{background:#ececec;color:#9a9a9a;cursor:not-allowed}.cd.block{background:#f6f1e5;color:#b0a890;cursor:not-allowed}
+.cd.mine{background:#f3e3a8;border-color:#9c7a2e}.cd.sel{outline:3px solid #7a1f1f}</style></head>
 <body><div class="wrap"><div class="hd"><img src="{{LOGO}}" alt="כולל חצות"><div class="hi">{{NAME}}</div><div class="sub">{{SUB}}</div></div><div class="in">
 <h3>1 · הפרטים שלי</h3>
 <div class="two"><div><label>שם פרטי</label><input id="first" value="{{FIRST}}"></div><div><label>שם משפחה</label><input id="last" value="{{LAST}}"></div></div>
@@ -17724,6 +17729,16 @@ button.gold{background:#9c7a2e;border-color:#7a1f1f}button:disabled{opacity:.55;
 <div class="amts" id="amts"><span data-a="52">₪52</span><span data-a="100">₪100</span><span data-a="180">₪180</span><span data-a="360">₪360</span></div>
 <label>סכום (₪)</label><input id="amt" inputmode="decimal" placeholder="כל סכום">
 <button type="button" class="gold" id="d_go">תרום עכשיו</button><div class="err" id="d_err"></div></div>
+<div id="daysec"{{DONHIDE}}><h3>{{DAYNUM}} · ארוחת בוקר / יום קפה לאברכי הכולל</h3>
+<div class="small">אם ברצונך לתרום יום אחד של <b>ארוחת בוקר (₪{{PB}})</b> או <b>יום קפה (₪{{PC}})</b> לאברכי הכולל — בחר כאן, בחר תאריך פנוי בלוח, וכתוב לעילוי נשמת או לזכות מי.</div>
+<div class="amts" id="dk"><span data-k="breakfast">🍳 ארוחת בוקר · ₪{{PB}}</span><span data-k="coffee">☕ יום קפה · ₪{{PC}}</span></div>
+<div id="dkbox" hidden>
+<div class="amts" id="dt"><span data-t="zchus" class="on">לזכות</span><span data-t="iluy">לעילוי נשמת</span></div>
+<label id="dnl">השמות (לזכות)</label><textarea id="dnames" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7" placeholder="למשל: אברהם בן שרה"></textarea>
+<div class="cal"><div class="calhd"><button type="button" class="calnav" id="cal_prev">&rsaquo;</button><div id="cal_title"></div><button type="button" class="calnav" id="cal_next">&lsaquo;</button></div>
+<div class="calgrid" id="cal_grid"></div><div class="small">ירוק — פנוי · אפור — תפוס · בהיר — שבת / חג</div></div>
+<div class="small" id="cal_st"></div>
+<button type="button" class="gold" id="day_go" disabled>שריין ותרום</button><div class="err" id="day_err"></div></div></div>
 <div class="foot">כולל חצות · כנסת יחזקאל 38 ביתר עילית<br><bdi dir="ltr">02-580-3545</bdi> · <bdi dir="ltr">052-762-8272</bdi><br>הקישור אישי ומאובטח ותקף ל-30 יום</div>
 </div></div>
 <script>
@@ -17749,7 +17764,149 @@ g('d_go').onclick=function(){var er=g('d_err');er.textContent='';var a=parseFloa
   if(v('addr'))p.push(['Street',v('addr')]);if(v('city'))p.push(['City',v('city')]);
   postJ('/donate',{amount:a});
   location.href='https://www.matara.pro/nedarimplus/online/?'+p.map(function(x){return x[0]+'='+encodeURIComponent(x[1]);}).join('&');};
+// 🍳☕ ארוחת בוקר / יום קפה — לוח של הימים הפנויים, שמות, ותשלום בנדרים פלוס בסכום הקבוע
+var DK='',DT='zchus',CAL={m:'',y:'',sel:null,data:null},PR={breakfast:{{PB}},coffee:{{PC}}},DKL={breakfast:'ארוחת בוקר',coffee:'יום קפה'};
+function paintBtn(){var b=g('day_go');b.disabled=!(CAL.sel&&DK);b.textContent=DK?('שריין ותרום '+DKL[DK]+' · ₪'+PR[DK]):'שריין ותרום';}
+async function calLoad(m,y){var r=null;try{r=await (await fetch(API+'/month?kind='+DK+'&m='+encodeURIComponent(m||'')+'&y='+encodeURIComponent(y||''))).json();}catch(e){}
+  if(!r||!r.ok){g('cal_title').textContent='הלוח לא נטען';return;}
+  CAL.data=r;CAL.m=r.month;CAL.y=r.year;CAL.sel=null;g('cal_st').textContent='';paintBtn();g('cal_title').textContent=r.month+' '+r.year;
+  var h='';for(var d=1;d<=r.len;d++){var dv=r.days[String(d)]||{};var c=dv.block?'block':(dv.taken?'taken':(dv.mine?'mine':'free'));
+    h+='<div class="cd '+c+'" data-d="'+d+'"><b>'+(dv.he||d)+'</b><small>'+(dv.block?(dv.why||'שבת'):(dv.taken?'תפוס':(dv.mine?'שלך':(dv.greg?dv.greg.slice(8,10)+'.'+dv.greg.slice(5,7):''))))+'</small></div>';}
+  var gr=g('cal_grid');gr.innerHTML=h;
+  Array.prototype.forEach.call(gr.querySelectorAll('.cd'),function(el){el.onclick=function(){var d=+el.dataset.d,dv=r.days[String(d)]||{},st=g('cal_st');
+    if(dv.block){st.innerHTML='<span style="color:#8f2a1b">אי אפשר לבחור את היום הזה ('+(dv.why||'שבת')+').</span>';return;}
+    if(dv.taken){st.innerHTML='<span style="color:#8f2a1b"><b>התאריך הזה כבר תפוס.</b> נא לבחור יום אחר.</span>';return;}
+    Array.prototype.forEach.call(gr.querySelectorAll('.cd.sel'),function(x){x.classList.remove('sel');});el.classList.add('sel');CAL.sel=d;
+    st.innerHTML='<span style="color:#2e7d4f"><b>'+(dv.he||d)+' '+r.month+' '+r.year+'</b> — פנוי ✓</span>';paintBtn();};});}
+g('cal_prev').onclick=function(){if(CAL.data&&CAL.data.prev)calLoad(CAL.data.prev.m,CAL.data.prev.y);};
+g('cal_next').onclick=function(){if(CAL.data&&CAL.data.next)calLoad(CAL.data.next.m,CAL.data.next.y);};
+Array.prototype.forEach.call(document.querySelectorAll('#dk span'),function(s){s.onclick=function(){Array.prototype.forEach.call(document.querySelectorAll('#dk span'),function(x){x.classList.remove('on');});
+  s.classList.add('on');DK=s.dataset.k;g('dkbox').hidden=false;calLoad(CAL.m,CAL.y);};});
+Array.prototype.forEach.call(document.querySelectorAll('#dt span'),function(s){s.onclick=function(){Array.prototype.forEach.call(document.querySelectorAll('#dt span'),function(x){x.classList.remove('on');});
+  s.classList.add('on');DT=s.dataset.t;g('dnl').textContent='השמות ('+(DT==='iluy'?'לעילוי נשמת':'לזכות')+')';};});
+g('day_go').onclick=async function(){var b=this,er=g('day_err');er.textContent='';
+  if(!v('dnames')){er.textContent='נא לכתוב את השמות.';g('dnames').focus();return;}
+  if(!CAL.sel){er.textContent='נא לבחור תאריך בלוח.';return;}
+  if(!MOSAD){er.textContent='דף התשלום לא זמין כרגע, נא להתקשר אלינו.';return;}
+  busy(b,true,'משריין...');var r=await postJ('/day',{kind:DK,m:CAL.m,y:CAL.y,d:CAL.sel,names:v('dnames'),dtype:DT});
+  if(!r||!r.ok){busy(b,false);er.innerHTML='<b>לא נשמר.</b> '+((r&&r.error)||'נסו שוב או התקשרו אלינו.');if(r&&/תפוס/.test(r.error||''))calLoad(CAL.m,CAL.y);return;}
+  var nm=(v('first')+' '+v('last')).trim(),ph=v('phone').split(/[\/,;]/)[0].trim();
+  var p=[['mosad',MOSAD],['Amount',r.price],['AmountLock',1],['OnlyNormal',1],['Groupe',r.label],['GroupeLock',1],['Avour',r.label+' '+r.date_text+' '+r.year+' — '+r.ded]];
+  if(nm)p.push(['ClientName',nm]);if(ph)p.push(['Phone',ph.replace(/[^\d+]/g,'')]);if(v('email').indexOf('@')>0)p.push(['Mail',v('email')]);
+  if(v('addr'))p.push(['Street',v('addr')]);if(v('city'))p.push(['City',v('city')]);
+  b.textContent='עובר לתשלום...';
+  location.href='https://www.matara.pro/nedarimplus/online/?'+p.map(function(x){return x[0]+'='+encodeURIComponent(x[1]);}).join('&');};
 </script></body></html>'''
+
+
+# 🍳☕ מאיר: "שבאותו קישור יהיה גם… לתרום ארוחת בוקר, ליום… ושזה ישלח אותו ללוח שנה של ארוחת בוקר איפה
+# שפנוי, שיהיה כתוב שארוחת בוקר זה 180 שקלים, וגם קפה, יום קפה… ושם הוא יכול לכתוב לעילוי נשמת או לזכות".
+# המחיר נשמר בהגדרות (klink_price_breakfast / klink_price_coffee) — אפשר לשנות בלי קוד
+KL_DAYK = {'breakfast': ('ארוחת בוקר', '🍳'), 'coffee': ('יום קפה', '☕')}
+
+
+def klink_day_price(con, k):
+    try:
+        return int(float(kv_get(con, 'klink_price_' + k, '') or 180))
+    except (TypeError, ValueError):
+        return 180
+
+
+def klink_donor_id(con, kind, pid, create=False):
+    """כרטיס התורם שעליו נרשם היום בלוח: תורם — הוא עצמו; חבר קהילה — התורם עם אותו טלפון, ואם אין
+    ו-create — כרטיס תורם חדש (ישראלי) על שמו."""
+    if kind == 'd':
+        return pid
+    p = klink_person(con, kind, pid)
+    if not p:
+        return 0
+    want = {re.sub(r'\D', '', x)[-9:] for x in _phones_of(p['phone'] or '') if len(re.sub(r'\D', '', x)) >= 9}
+    if want:
+        for r in con.execute("SELECT id, phone FROM donors"):
+            if want & {re.sub(r'\D', '', x)[-9:] for x in _phones_of(r['phone'] or '')}:
+                return r['id']
+    if not create:
+        return 0
+    cur = con.execute("INSERT INTO donors(last,first,phone,email,addr,city,region,notes) VALUES(?,?,?,?,?,?,?,?)",
+                      (p['last'] or '', p['first'] or '', p['phone'] or '', p['email'] or '', p['addr'] or '', p['city'] or '', 'il',
+                       'נוצר מהקישור האישי של הקהילה (חבר קהילה #%d)' % pid))
+    return cur.lastrowid
+
+
+def klink_month(con, did, dk, m='', y=''):
+    """חודש עברי ללוח של ארוחת בוקר / קפה: לכל יום — לועזי, שבת/יו"ט, תפוס, שלו."""
+    from hebdate import month_days, current_heb_year as _cy
+    cur = _cy()
+    if not m or not y:
+        parts = (greg_to_heb_full() or '').split()
+        m = m or (parts[1] if len(parts) == 3 else (' '.join(parts[1:-1]) if len(parts) > 3 else 'תשרי'))
+        y = y or cur
+    md = month_days(m, y)
+    if not md.get('ok'):
+        return None
+    mon = md['month']
+    taken, mine = set(), set()
+    for r in con.execute("SELECT donor_id, day FROM parnes WHERE COALESCE(kind,'parnes')=? AND month=? "
+                         "AND COALESCE(status,'confirmed')!='suggested' AND (COALESCE(hyear,'')=? OR (COALESCE(hyear,'')='' AND ?=?))",
+                         (dk, mon, md['year'], md['year'], cur)):
+        (mine if did and r['donor_id'] == did else taken).add(int(r['day'] or 0))
+    today = today_iso()
+    days = {}
+    for k, v in md['days'].items():
+        d = int(k)
+        past = bool(v.get('greg')) and str(v.get('greg')) <= today     # היום עצמו כבר מאוחר מדי
+        days[k] = {'greg': v.get('greg') or '', 'block': bool(v.get('block')) or past, 'why': ('עבר' if past and not v.get('block') else (v.get('why') or '')),
+                   'taken': d in taken, 'mine': d in mine, 'he': _he_day(d)}
+    return {'ok': True, 'month': mon, 'year': md['year'], 'len': md['len'], 'days': days, 'prev': md.get('prev'), 'next': md.get('next')}
+
+
+def klink_day(con, kind, pid, b):
+    """שריון יום ארוחת בוקר / קפה מהקישור: נרשם בלוח (טרם נגבה), משימה למשרד, יומן ומייל אליך —
+    ומשם הדף מעביר לתשלום בנדרים פלוס בסכום הקבוע."""
+    dk = str(b.get('kind') or '')
+    if dk not in KL_DAYK:
+        return {'ok': False, 'error': 'נא לבחור ארוחת בוקר או יום קפה.'}
+    try:
+        day = int(b.get('d') or 0)
+    except (TypeError, ValueError):
+        day = 0
+    names = re.sub(r'[ \t]+', ' ', str(b.get('names') or '')).strip()[:1000]
+    dtype = 'לעילוי נשמת' if str(b.get('dtype') or '') == 'iluy' else 'לזכות'
+    if not names:
+        return {'ok': False, 'error': 'נא לכתוב את השמות (%s).' % dtype}
+    did0 = klink_donor_id(con, kind, pid)
+    md = klink_month(con, did0, dk, str(b.get('m') or ''), str(b.get('y') or ''))
+    if not md or str(day) not in md['days']:
+        return {'ok': False, 'error': 'נא לבחור תאריך בלוח.'}
+    dv = md['days'][str(day)]
+    if dv['block']:
+        return {'ok': False, 'error': 'אי אפשר לבחור את היום הזה (%s). נא לבחור יום אחר.' % (dv['why'] or 'שבת')}
+    if dv['taken']:
+        return {'ok': False, 'error': 'התאריך הזה כבר תפוס. נא לבחור יום אחר.'}
+    did = did0 or klink_donor_id(con, kind, pid, create=True)
+    label, ic = KL_DAYK[dk]
+    price = klink_day_price(con, dk)
+    dtext = _he_day(day) + ' ' + md['month']
+    ded = dtype + ' ' + names
+    if dv['mine']:
+        con.execute("UPDATE parnes SET dedication=? WHERE donor_id=? AND kind=? AND month=? AND day=? AND COALESCE(status,'confirmed')!='suggested'",
+                    (ded, did, dk, md['month'], day))
+    else:
+        con.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,paid,night_date,hyear,method,currency) "
+                    "VALUES(?,?,?,?,?,?,?,'confirmed',0,?,?,?,?)", (did, day, md['month'], dtext, str(price), ded, dk, dv['greg'], md['year'], 'נדרים פלוס', '₪'))
+        con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                    (did, today_iso(), 'charge', '%s שריין דרך הקישור האישי %s %s %s (₪%d) — לוודא שהתשלום בנדרים פלוס עבר' % (ic, label, dtext, md['year'], price)))
+    who = klink_fullname(klink_person(con, kind, pid)) or '#%d' % pid
+    line = '%s שריין %s · %s %s · %s · ₪%d — עובר לתשלום בנדרים פלוס' % (ic, label, dtext, md['year'], ded, price)
+    klink_log(con, kind, pid, line)
+    if kind != 'd':
+        con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                    (did, today_iso(), 'קישור', line + ' (חבר קהילה)', '', now_iso()))
+    con.commit()
+    klink_alert('%s %s שריין %s — %s' % (ic, who, label, dtext),
+                '%s שריין דרך הקישור האישי:\n\n%s %s\n%s %s (%s)\n%s\nסכום: ₪%d\n\nהוא הועבר לדף התשלום של נדרים פלוס. נרשם בלוח (טרם נגבה) ומשימה לוודא את התשלום.'
+                % (who, ic, label, dtext, md['year'], dv['greg'], ded, price))
+    return {'ok': True, 'price': price, 'label': label, 'date_text': dtext, 'year': md['year'], 'ded': ded}
 
 
 def klink_page(con, kind, pid, base=''):
@@ -17781,7 +17938,8 @@ def klink_page(con, kind, pid, base=''):
            '{{TITLE}}': {'m': 'קהילת כולל חצות · הדף האישי שלי', 'v': 'המקווה · הדף האישי שלי', 'd': 'כולל חצות · הדף האישי שלי'}[kind],
            '{{DONHIDE}}': ' hidden' if kind == 'v' else '', '{{FIRST}}': e(p['first'] or ''), '{{LAST}}': e(p['last'] or ''),
            '{{ADDR}}': e(p['addr'] or ''), '{{CITY}}': e(p['city'] or ''), '{{PHONE}}': e(cardlink_phone_clean(p['phone'])), '{{EMAIL}}': e(em),
-           '{{CARDS}}': cards, '{{DONNUM}}': '3' if ks else '2', '{{MOSAD}}': json.dumps(str(mos or ''))}
+           '{{CARDS}}': cards, '{{DONNUM}}': '3' if ks else '2', '{{DAYNUM}}': '4' if ks else '3',
+           '{{PB}}': str(klink_day_price(con, 'breakfast')), '{{PC}}': str(klink_day_price(con, 'coffee')), '{{MOSAD}}': json.dumps(str(mos or ''))}
     out = KLINK_PAGE
     for k_, v_ in rep.items():
         out = out.replace(k_, v_)
@@ -21902,6 +22060,20 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 out = cardlink_month(con, did, (qs.get('m') or [''])[0], (qs.get('y') or [''])[0])
+            finally:
+                con.close()
+            return self._send(200, out or {'ok': False, 'error': 'month'})
+        m = re.match(r'/api/k/([A-Za-z0-9.]+)/month$', self.path.split('?')[0])
+        if m:
+            kind, pid = klink_resolve(m.group(1))
+            if not pid:
+                return self._send(200, {'ok': False, 'error': 'expired'})
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            dk = (qs.get('kind') or ['breakfast'])[0]
+            dk = dk if dk in KL_DAYK else 'breakfast'
+            con = db()
+            try:
+                out = klink_month(con, klink_donor_id(con, kind, pid), dk, (qs.get('m') or [''])[0], (qs.get('y') or [''])[0])
             finally:
                 con.close()
             return self._send(200, out or {'ok': False, 'error': 'month'})
@@ -32457,7 +32629,7 @@ class H(BaseHTTPRequestHandler):
                          _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
-        m = re.match(r'/api/k/([A-Za-z0-9.]+)/(save|card|donate)$', self.path)
+        m = re.match(r'/api/k/([A-Za-z0-9.]+)/(save|card|donate|day)$', self.path)
         if m:
             kind, pid = klink_resolve(m.group(1))
             if not pid:
@@ -32468,6 +32640,8 @@ class H(BaseHTTPRequestHandler):
                     out = klink_save(con, kind, pid, b)
                 elif m.group(2) == 'card':
                     out = klink_card(con, kind, pid, str(b.get('keva') or ''))
+                elif m.group(2) == 'day':
+                    out = klink_day(con, kind, pid, b)
                 else:
                     a_ = _amt2(re.sub(r'[^\d.]', '', str(b.get('amount') or '')))
                     klink_log(con, kind, pid, '💛 נכנס לתרומה דרך הקישור האישי — ₪%g (דף התשלום של נדרים פלוס)' % a_)
