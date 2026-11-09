@@ -29056,6 +29056,7 @@ class H(BaseHTTPRequestHandler):
                    'divisor': num('divisor', 1, 366, 30), 'round': num('round', 0, 100, 1),
                    'credit_down': bool(b.get('credit_down')), 'say_prices': bool(b.get('say_prices')),
                    'cancel_on': bool(b.get('cancel_on')),
+                   'debt_block': b.get('debt_block') is not False, 'debt_screen': b.get('debt_screen') is not False,
                    'pay_methods': [m for m in (b.get('pay_methods') or []) if m in ('keva', 'card', 'debt')] or ['debt'],
                    'nd_mosad': str(b.get('nd_mosad') or '').strip()[:20],
                    'erech_groups': [str(x) for x in (b.get('erech_groups') or []) if str(x) in known]
@@ -37340,7 +37341,10 @@ MKG_DEFAULT = {'enabled': False, 'groups': [], 'max': 1, 'days': 30, 'say': {}, 
                # מאיר: "מינימום של הוראת קבע — רק מי שיש לו הוראת קבע של לפחות 100 שקל, שיהיה ניתן לשינוי"
                'min_keva': 100, 'keva_cats': [],
                # 🗂️ מאיר: "בוחרים לפי קטגוריות שסימנו שמושמעים בטלפון, ואז בוחר מתוך הקטגוריה" — הסדר כאן = הסדר בטלפון
-               'phone_cats': [], 'cat_say': {}}
+               'phone_cats': [], 'cat_say': {},
+               # ⛔ מאיר: "העברתי מנוי ולא חסמת… והוא אמור להגיד גם בטלפון שהוא לא יוכל להיכנס עד שמשלמים" —
+               # חוב הפרש מהטלפון: חסימה עד התשלום (נפתחת לבד) + הודעה במסך המכונה, כמו מהכרטיס
+               'debt_block': True, 'debt_screen': True}
 
 # 🗣️ מאיר: "אני רוצה אפשרות לשנות טקסטים בשלוחה API" — כל מה שהשלוחות של המקווה אומרות. בסוגריים מסולסלים —
 # מה שהמערכת ממלאת לבד (שם, קבוצה, סכום…). מה שלא שונה — ברירת המחדל. נשמר ב-app_kv (mk_ivr_texts).
@@ -37361,9 +37365,12 @@ MK_TEXTS = [
     ('pay_keva', 'grp', 'תשלום — הוראת קבע', 'לתשלום מהוראת הקבע בכרטיס המסתיים בספרות {last4} הקישו {n}'),
     ('pay_card', 'grp', 'תשלום — כרטיס אשראי', 'לתשלום בכרטיס אשראי הקישו {n}'),
     ('pay_debt', 'grp', 'תשלום — חוב במקווה', 'לרישום חוב במקווה ותשלום במכונה של המקווה הקישו {n}'),
+    ('pay_debt_block', 'grp', 'תשלום — חוב במקווה (עם חסימה עד התשלום)', 'לרישום חוב ותשלום במכונה של המקווה הקישו {n}. עד שתשלמו את החוב לא תוכלו להיכנס'),
     ('pay_fail', 'grp', 'החיוב לא עבר', 'החיוב לא עבר'),
     ('pay_cancel', 'grp', 'התשלום בוטל', 'התשלום בוטל, המנוי לא שונה'),
     ('done_paid', 'grp', 'שולם והועבר', 'התשלום של {amount} שקלים התקבל, והמנוי שלכם שונה ל{group}. תודה רבה'),
+    ('done_debt_block', 'grp', 'הועבר עם חוב — חסום עד התשלום', 'המנוי שלכם שונה ל{group}. נרשם לכם חוב של {amount} שקלים. עד שתשלמו אותו במכונה של המקווה, באשראי או במזומן, לא תוכלו להיכנס. אחרי התשלום הכניסה נפתחת מיד'),
+    ('debt_blocked', 'grp', 'מתקשר שחסום עד תשלום חוב הפרש', 'יש לכם חוב הפרש של {amount} שקלים. עד שתשלמו אותו במכונה של המקווה לא תוכלו להיכנס, ואחרי התשלום הכניסה נפתחת מיד'),
     ('done_debt', 'grp', 'הועבר עם חוב', 'המנוי שלכם שונה ל{group}. נרשם לכם חוב של {amount} שקלים, ואפשר לשלם אותו במכונה של המקווה באשראי או במזומן. תודה רבה'),
     ('not_member', 'grp', 'המנוי רק לחברי קהילה', 'המנויים האלה מיועדים לחברי הקהילה בלבד. לפרטים אנא פנו למשרד'),
     ('done_credit', 'grp', 'הועבר עם זיכוי', 'המנוי שלכם שונה ל{group}. זיכינו אתכם על סך {amount} שקלים ביתרה הזמנית. תודה רבה'),
@@ -37599,13 +37606,24 @@ def mkg_apply(con, cid, c, gr, cur, tgt, q, method, call_id, phone, conf=''):
         if method == 'debt' and amt > 0:
             res = _mk.add_debt(cid, int(round(amt * 100)), MK_DIFF_REASON)
             debt_id = str((res or {}).get('id') or '') if isinstance(res, dict) else ''
+            cfg_ = mkg_cfg(con)
+            mtxt, blk_ = '', False
+            if cfg_.get('debt_screen', True):
+                mtxt = MK_DIFF_MSG.format(amount='%g' % amt)
+                full = _mk.client(cid)
+                _mk.update_client(cid, {'message': mk_msg_add(full.get('message'), mtxt)})
+            if cfg_.get('debt_block', True):
+                _mk.set_blocked(cid, True, MK_DIFF_BLOCK + ' ₪%g' % amt)
+                blk_ = True
+            con.execute("INSERT INTO mk_diff(cid,at,from_name,to_name,amount,debt_id,reason,msg,blocked) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (cid, now_iso(), gr[cur]['name'], gr[tgt]['name'], amt, debt_id, MK_DIFF_REASON, mtxt, 1 if blk_ else 0))
         elif method == 'credit' and amt < 0:
             _mk.add_credit(cid, int(round(-amt * 100)), temp=True)
     except Exception as e:
         err = 'הקבוצה הוחלפה, אבל %s לא נרשם במקווה: %s' % ('החוב' if method == 'debt' else 'הזיכוי', str(e)[:200])
     con.execute("INSERT INTO mkg_log(at,cid,name,code,phone,from_gid,from_name,to_gid,to_name,fee,call_id,amount,method,conf,ok,error,status,debt_id) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,'active',?)", row + [err, debt_id])
-    how = {'debt': ' · נרשם חוב ₪%g במקווה' % amt, 'card': ' · שילם ₪%g באשראי' % amt, 'keva': ' · שילם ₪%g מהוראת הקבע' % amt,
+    how = {'debt': ' · נרשם חוב ₪%g במקווה%s' % (amt, ' · ⛔ חסום עד התשלום' if method == 'debt' and amt > 0 and mkg_cfg(con).get('debt_block', True) else ''), 'card': ' · שילם ₪%g באשראי' % amt, 'keva': ' · שילם ₪%g מהוראת הקבע' % amt,
            'credit': ' · זיכוי ₪%g ביתרה הזמנית' % -amt}.get(method, '') if amt else ''
     con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                 (cid, now_iso(), 'group', ('📞 שינה סוג מנוי בטלפון: %s → %s' if call_id and not str(call_id).startswith('req:') else '✓ אושרה הבקשה מהטלפון: %s → %s')
@@ -37677,7 +37695,8 @@ def mkg_ivr(P):
         cid = str(c.get('id'))
         first = (c.get('firstName') or '').strip()
         name = (first + ' ' + (c.get('lastName') or '').strip()).strip()
-        if c.get('isBlocked'):
+        diff_blocked = bool(c.get('isBlocked') and str(c.get('blockReason') or '').startswith(MK_DIFF_BLOCK))
+        if c.get('isBlocked') and not diff_blocked:
             return msg('blocked')
         cur = c.get('groupId')
         if cur not in gr or cur in (cfg.get('locked_groups') or []) or cid in mkg_locked(con):
@@ -37701,6 +37720,9 @@ def mkg_ivr(P):
         choose = lambda count: S('choose_hash' if count > 9 else 'choose')
         if '*' in (P.get('Who'), P.get('Pay'), P.get('Pay2')):
             return msg('bye')
+        if diff_blocked and not undo:
+            od = con.execute("SELECT COALESCE(SUM(amount),0) FROM mk_diff WHERE cid=? AND status='open'", (cid,)).fetchone()[0]
+            return msg('debt_blocked', amount='%g' % float(od or 0))
         # 🗂️ מאיר: "בוחרים לפי קטגוריות שסימנו שמושמעים בטלפון, ואז בוחר מתוך קטגוריה… מספר שלא רשום בקהילה לא מושמע לו
         # בכלל מנוי קהילה… שנכנסים הוא יגיד שלום (כולל משפחה) חבר קהילה"
         mgs = set(cfg.get('member_groups') or [])
@@ -37784,6 +37806,7 @@ def mkg_ivr(P):
             con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                         (cid, now_iso(), 'group', '↩️ ביטל בטלפון את השינוי: חזר ל%s, והחוב ₪%g נמחק' % (undo['from_name'], undo['amount'] or 0)))
             con.commit()
+            threading.Thread(target=mk_diff_check, daemon=True).start()   # החוב נמחק — מורידים מיד את החסימה וההודעה
             return msg('cancel_done', old=SAY(undo['from_gid'], undo['from_name']))
         if not cat_opts:
             return 'id_list_message=' + '.'.join([hello, S('no_target')]) + END
@@ -37931,10 +37954,11 @@ def mkg_ivr(P):
             menu.append(('keva', T('pay_keva', last4=' '.join(re.sub(r'\D', '', ks[0].get('last4') or '') or '0'), n=len(menu) + 1)))
         if acct and 'card' in meth:
             menu.append(('card', T('pay_card', n=len(menu) + 1)))
+        dk = 'pay_debt_block' if cfg.get('debt_block', True) else 'pay_debt'
         if 'debt' in meth:
-            menu.append(('debt', T('pay_debt', n=len(menu) + 1)))
+            menu.append(('debt', T(dk, n=len(menu) + 1)))
         if not menu:
-            menu = [('debt', T('pay_debt', n=1))]
+            menu = [('debt', T(dk, n=1))]
         if 'CreditCard_CODE' in P:
             if P['CreditCard_CODE'] == 'GoBack':
                 return msg('pay_cancel')
@@ -37960,7 +37984,7 @@ def mkg_ivr(P):
             ok, err, _d = mkg_apply(con, cid, c, gr, cur, tgt, q, 'debt', call_id, phone)
             if not ok:
                 return msg('error')
-            return msg('done_debt', group=tname, amount=A)
+            return msg('done_debt_block' if cfg.get('debt_block', True) else 'done_debt', group=tname, amount=A)
         # הוראת קבע
         k = ks[0]
         with _nd.use(acct):

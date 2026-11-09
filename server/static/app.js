@@ -3476,6 +3476,8 @@ async function mkSelfGroupOpen(){
       <label class="fld" style="display:block;margin:10px 0"><span>קופת נדרים פלוס לתשלום בטלפון</span><select id="pcnd"><option value="">— לא נבחרה (רק חוב במקווה) —</option>
         ${(r.accounts||[]).map(a=>`<option value="${esc(a.mosad)}"${String(C.nd_mosad||'')===String(a.mosad)?' selected':''}>${esc(a.name)} · ${esc(a.mosad)}${a.mk?' (המקווה)':''}</option>`).join('')}</select></label>
       ${(r.accounts||[]).length?'':'<div class="mksub" style="color:#c0392b">אין חשבונות נדרים פלוס מחוברים למערכת — אפשר רק חוב במקווה.</div>'}
+      <label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" id="pcblk" style="width:20px;height:20px" ${C.debt_block!==false?'checked':''}> <b>⛔ חוב הפרש — לחסום עד שישלם</b> (חסום יכול לשלם חובות במכונה; נפתח לבד תוך כ-10 שניות מהתשלום)</label>
+      <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="pcscr" style="width:20px;height:20px" ${C.debt_screen!==false?'checked':''}> <b>📺 הודעה במסך המכונה</b> עד שישלם ("חוב ₪X — הפרש מנוי. לתשלום במכונה.")</label>
       <label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" id="pccancel" style="width:20px;height:20px" ${C.cancel_on!==false?'checked':''}> מי שעבר עם חוב שעוד לא שולם — יוכל לבטל את המעבר בטלפון (הקש 9)</label>
       <div class="mksec" style="margin-top:12px">🔽 מעבר לקבוצה זולה יותר</div>
       <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="pccredit" style="width:20px;height:20px" ${C.credit_down!==false?'checked':''}> לזכות את ההפרש ביתרה הזמנית (זיכוי). אחרי זיכוי — אי אפשר לבטל את המעבר בטלפון.</label>
@@ -3512,7 +3514,7 @@ async function mkSelfGroupOpen(){
       max:document.getElementById('sgmax').value,days:document.getElementById('sgdays').value,
       divisor:document.getElementById('pcdiv').value,round:document.getElementById('pcround').value,
       pay_methods:[...rs.querySelectorAll('[data-pm]')].filter(x=>x.checked).map(x=>x.dataset.pm),nd_mosad:document.getElementById('pcnd').value,
-      cancel_on:document.getElementById('pccancel').checked,credit_down:document.getElementById('pccredit').checked,say_prices:true,
+      cancel_on:document.getElementById('pccancel').checked,debt_block:document.getElementById('pcblk').checked,debt_screen:document.getElementById('pcscr').checked,credit_down:document.getElementById('pccredit').checked,say_prices:true,
       min_keva:document.getElementById('sgminkeva').value,keva_cats:[...rs.querySelectorAll('[data-kc]')].filter(x=>x.checked).map(x=>x.dataset.kc),
       erech_groups:[...rs.querySelectorAll('[data-eg]')].filter(x=>x.checked).map(x=>x.dataset.eg)};
     if(body.pay_methods.some(m=>m!=='debt')&&!body.nd_mosad){uiAlert('לתשלום באשראי / הוראת קבע צריך לבחור קופת נדרים פלוס');return;}
