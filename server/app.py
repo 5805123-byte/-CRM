@@ -25080,6 +25080,32 @@ class H(BaseHTTPRequestHandler):
             txt = 'קבצים: %s\n\nנתיבים: %s\n\n' % (', '.join(r['files']), ', '.join(r['paths']) or '—')
             txt += '\n\n---\n\n'.join(r['hits'])
             return self._send(200, txt.encode('utf-8'), 'text/plain; charset=utf-8')
+        if self.path.split('?')[0] == '/api/mikveh/client_recent':
+            # 🕘 מאיר: "כשמעדכנים מנוי דרך הממשק — שיופיע מה הוא החליף לאחרונה, כדי שלא אחליף בטעות למי שהשאיר הודעה"
+            cid = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('id') or [''])[0]
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                return self._send(200, {'ok': False, 'error': 'לקוח לא תקין'})
+            since = (il_now() - datetime.timedelta(days=60)).strftime('%Y-%m-%d')
+            con = db()
+            try:
+                chg = [dict(r) for r in con.execute("SELECT at, summary FROM mk_log WHERE cid=? AND kind='group' AND at>=? ORDER BY at DESC LIMIT 5", (cid, since))]
+                try:
+                    vm = [dict(r) for r in con.execute("SELECT id, at, transcript, heard, done, note FROM mk_vm WHERE cid=? AND at>=? ORDER BY at DESC LIMIT 5", (cid, since))]
+                except sqlite3.Error:
+                    vm = []
+                try:
+                    rq = [dict(r) for r in con.execute("SELECT at, to_name, reason FROM mkg_req WHERE cid=? AND status='new' ORDER BY id DESC LIMIT 5", (cid,))]
+                except sqlite3.Error:
+                    rq = []
+                try:
+                    df = [dict(r) for r in con.execute("SELECT at, amount, from_name, to_name FROM mk_diff WHERE cid=? AND status='open' ORDER BY id DESC LIMIT 5", (cid,))]
+                except sqlite3.Error:
+                    df = []
+            finally:
+                con.close()
+            for v in vm:
+                v['transcript'] = (v.get('transcript') or '')[:220]
+            return self._send(200, {'ok': True, 'changes': chg, 'vm': vm, 'reqs': rq, 'debts': df, 'today': il_now().strftime('%Y-%m-%d')})
         if self.path.split('?')[0] == '/api/mikveh/diff_check':
             # 💲 בדיקה עכשיו: חובות הפרש ששולמו — מוריד את ההודעה מהמסך (רץ גם לבד כל 5 דקות)
             try:
@@ -28054,7 +28080,7 @@ class H(BaseHTTPRequestHandler):
                     con = db()
                     try:
                         con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                                    (cid, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'group', '🔄 הועבר לקבוצה: ' + gname))
+                                    (cid, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'group', '🏢 שונה סוג מנוי במשרד: ' + gname))
                         if credit:
                             con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                                         (cid, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'credit', '💳 זיכוי: עבר ל"%s" עם יתרה צבורה של ₪%g — הכסף נשאר לזכותו במקווה (קוביית היתרה)' % (gname, credit)))
@@ -37251,6 +37277,7 @@ MK_TEXTS = [
     ('who', 'grp', 'כמה מנויים על אותו טלפון', 'שלום, על המספר הזה רשומים כמה מנויים'),
     ('who_item', 'grp', 'בחירת מנוי', 'ל{name} הקישו {n}'),
     ('max', 'grp', 'הגיע למספר השינויים המרבי', 'הגעתם למספר השינויים המרבי. אפשר לשנות שוב בעוד {left} ימים'),
+    ('vm_hint', 'grp', 'הפניה להודעה קולית (במקום בקשה למשרד)', 'לכל בקשה אפשר להשאיר הודעה קולית למשרד בשלוחה 3'),
     ('req_offer', 'grp', 'הצעה לשלוח בקשה למשרד (המספר נאמר אחרי)', 'לשליחת בקשה למשרד הקישו'),
     ('req_option', 'grp', 'אפשרות בתפריט הבקשה (המספר נאמר אחרי)', 'לבקשה ל{group} הקישו'),
     ('req_done', 'grp', 'הבקשה נשלחה', 'הבקשה שלכם נשלחה למשרד המקווה ותטופל בהקדם, תודה רבה'),
@@ -37502,6 +37529,8 @@ def mkg_ivr(P):
         if P.get('hangup') == 'yes':
             return 'noop=hangup'
         cfg = mkg_cfg(con)
+        # מאיר: "אני רוצה להוריד את האפשרות של שליחת בקשות, תמיד. מי שרוצה — שיפנה בהודעה קולית"
+        cfg['req_on'] = False
         call_id = str(P.get('ApiCallId') or '')[:60]
         if call_id:
             done = con.execute("SELECT * FROM mkg_log WHERE call_id=? AND ok=1", (call_id,)).fetchone()
@@ -37665,7 +37694,7 @@ def mkg_ivr(P):
             if con.execute("SELECT 1 FROM mkg_req WHERE cid=? AND status='new'", (cid,)).fetchone():
                 return 'id_list_message=' + '.'.join(lead_r + [S('req_dup')]) + END
             if not cfg.get('req_on'):
-                return 'id_list_message=' + '.'.join(lead_r) + END
+                return 'id_list_message=' + '.'.join(lead_r + [S('vm_hint')]) + END
             if 'Req' not in P:
                 return ask(lead_r + [S('req_offer'), N(1), S('end_opt')], 'Req', 1)
             if P.get('Req') != '1':
@@ -37752,7 +37781,7 @@ def mkg_ivr(P):
                     rv = P.get('R' + sx)
                     if rv is None:
                         parts = [S(blk[0], **blk[1])] + ([S('req_dup')] if dup else []) + \
-                            ([S('req_offer'), N(1)] if can_req else []) + [S('other_opt'), N(2), S('end_opt')]
+                            ([S('req_offer'), N(1)] if can_req else [S('vm_hint')]) + [S('other_opt'), N(2), S('end_opt')]
                         return ask(parts, 'R' + sx, 1)
                     if rv == '1' and can_req:
                         return make_req(tgt, blk[2])

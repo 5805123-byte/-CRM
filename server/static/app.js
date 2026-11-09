@@ -2562,6 +2562,27 @@ function mkDiffAsk(cid,gid){return new Promise(async resolve=>{
   ov.querySelector('[data-ok]').onclick=()=>{if(!q||!q.ok)return done({mode:'none'});
     const m=(ov.querySelector('[name=dfm]:checked')||{}).value||'none',a=Math.abs(parseFloat(sAmt&&sAmt.value)||0);
     done({mode:a>0?m:'none',amount:a,screen:!!(sChk&&sChk.checked),from_name:q.from_name});};});}
+// 🕘 מאיר: "כשמעדכנים מנוי דרך הממשק — שיופיע מה הוא החליף לאחרונה, כדי שאני לא יחליף בטעות למי שהשאיר הודעה וכו'"
+// ממלא את el: שינויים אחרונים (טלפון / משרד), הודעות קוליות, בקשות פתוחות וחובות הפרש — 60 הימים האחרונים
+const MKRECENT={};
+async function mkRecentFill(cid,el){if(!el)return;
+  const esc_=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const dmy=s=>s?String(s).slice(8,10)+'.'+String(s).slice(5,7)+' '+String(s).slice(11,16):'';
+  let r=MKRECENT[cid];
+  if(!r){el.innerHTML='<div style="color:#888;font-size:.85rem">⏳ בודק מה קרה אצלו לאחרונה…</div>';
+    r=await fetch('/api/mikveh/client_recent?id='+encodeURIComponent(cid)).then(x=>x.json()).catch(()=>null);if(r&&r.ok)MKRECENT[cid]=r;}
+  if(!r||!r.ok){el.innerHTML='';return;}
+  const days=s=>Math.round((new Date(r.today)-new Date(String(s).slice(0,10)))/864e5);
+  const fresh=[...r.changes,...r.vm].some(x=>days(x.at)<=14)||r.reqs.length||r.debts.length;
+  const it=(ic,t)=>'<div style="padding:3px 0;border-top:1px dashed #ead9b4">'+ic+' '+t+'</div>';
+  let h='';
+  r.changes.forEach(x=>h+=it('🔄','<b>'+dmy(x.at)+'</b> <small>(לפני '+days(x.at)+' ימים)</small> — '+esc_(x.summary)));
+  r.vm.forEach(x=>h+=it('📥','<b>'+dmy(x.at)+'</b> השאיר הודעה קולית'+(x.done?' <small style="color:#1e7a3c">· טופלה</small>':' <small style="color:#c0392b">· לא טופלה</small>')+(x.transcript?'<div style="color:#555;font-size:.85rem">"'+esc_(x.transcript)+'"</div>':'')));
+  r.reqs.forEach(x=>h+=it('📨','<b>'+dmy(x.at)+'</b> בקשה פתוחה לעבור ל'+esc_(x.to_name)+(x.reason?' <small>('+esc_(x.reason)+')</small>':'')));
+  r.debts.forEach(x=>h+=it('💲','<b>'+dmy(x.at)+'</b> חוב הפרש פתוח ₪'+x.amount+' <small>('+esc_(x.from_name)+' → '+esc_(x.to_name)+')</small>'));
+  el.innerHTML=h?'<div style="background:'+(fresh?'#fff8e6':'#f6f8fc')+';border:1px solid '+(fresh?'#f0d48a':'#e3e7ee')+';border-radius:10px;padding:8px 12px;margin:8px 0;font-size:.9rem">'+
+    '<b>'+(fresh?'⚠️ שימו לב — מה קרה אצלו לאחרונה':'🕘 לאחרונה')+'</b>'+h+'</div>'
+    :'<div style="color:#888;font-size:.85rem;margin:6px 0">🕘 אין שינויים, הודעות או בקשות ב-60 הימים האחרונים</div>';}
 async function mkSetGroup(c,g,on,diff){
   on=on||(()=>{});
   const t0=Date.now(); let tick=null;
@@ -2649,7 +2670,8 @@ function mkOpen(c){
       ${MKLOCK[c.id]?'<div class="mksub" style="color:#c0392b;font-weight:700">🔒 נעול — לא יכול להחליף קבוצה בשלוחה בטלפון</div>':''}
       <div class="mkseg" id="mkctabs" style="margin:12px 0 10px;flex-wrap:wrap">${[['grp','🔄 קבוצה ומנוי'],['money','💳 תשלומים וחובות'],['hist','📜 היסטוריה והודעות'],['act','🗓️ פעילות']].map(([k,l])=>`<button data-t="${k}" class="${MKCT===k?'on':''}">${l}</button>`).join('')}</div>
       <div data-ct="grp">
-      <div class="mksec">🔄 העברה לקבוצה <small>בוחרים קבוצה ומאשרים</small></div>
+      <div class="mksec">🔄 שינוי סוג מנוי <small>בוחרים מנוי ומאשרים</small></div>
+      <div id="mkrecent"></div>
       <div class="mkgrid">${MK.groups.map(x=>`<button class="mkg${x.id===c.group?' cur':''}${pick&&x.id===pick.id?' pick':''}" data-g="${esc(x.id)}"${x.id===c.group||busy?' disabled':''}>
           <span class="mkdot" style="background:${esc(mkColor(x))}"></span><span>${esc(x.name)}</span></button>`).join('')}</div>
       ${pick||state?`<div class="mkconf ${state==='ok'?'ok':state==='err'?'err':''}">
@@ -2716,6 +2738,7 @@ function mkOpen(c){
       if(bt){bt.disabled=false;bt.textContent='📞 לתקן את הטלפון';}
       if(!r||!r.ok)return uiAlert('הטלפון לא עודכן:\n'+((r&&r.error)||'אין תשובה מהשרת'));
       c.phone=r.phone;toast('✓ הטלפון עודכן במקווה: '+r.phone);mkOpen(c);};
+    mkRecentFill(c.id,document.getElementById('mkrecent'));
     rs.querySelectorAll('.mkg[data-g]').forEach(b=>b.onclick=()=>{if(busy)return;pick=G[b.dataset.g];state='';draw();
       const cf=rs.querySelector('.mkconf');if(cf)cf.scrollIntoView({block:'nearest',behavior:'smooth'});});
     const no=document.getElementById('mkno'); if(no)no.onclick=()=>{pick=null;state='';draw();};
@@ -2723,6 +2746,7 @@ function mkOpen(c){
     if(go)go.onclick=async()=>{const target=pick;
       const d=await mkDiffAsk(c.id,target.id);if(d===null)return;
       const ok=await mkSetGroup(c,target,(st,v)=>{state=st;info=v;draw();},d);
+      if(ok){delete MKRECENT[c.id];mkRecentFill(c.id,document.getElementById('mkrecent'));}
       if(ok&&d.mode==='debt')toast('💲 נרשם חוב הפרש ₪'+d.amount+' במקווה'+(d.screen?' · הודעה במסך עד התשלום':''));
       if(ok&&d.mode==='credit')toast('💳 זיכוי ₪'+d.amount+' ביתרה הזמנית');
       if(ok){pick=target;if(c.phone)setTimeout(()=>{if(state==='ok'&&document.getElementById('mkafter'))mkNotify(c,'group',{group:target.id});},700);}};
@@ -3380,7 +3404,6 @@ async function mkSelfGroupOpen(){
         <input type="number" id="sgmax" min="0" value="${esc(C.max)}" style="width:80px"> פעמים בתוך
         <input type="number" id="sgdays" min="1" value="${esc(C.days)}" style="width:80px"> ימים</div>
       <div class="mksub">0 פעמים = בלי הגבלה. הספירה מתגלגלת: החלפה יוצאת מהחשבון אחרי שעברו הימים.</div>
-      <div style="display:flex;gap:10px;align-items:center;margin:12px 0"><input type="checkbox" id="sgreq" style="width:22px;height:22px;flex:none" ${C.req_on?'checked':''}><label for="sgreq" style="cursor:pointer"><b>מי שעבר את המקסימום — יוכל לשלוח בקשה למשרד</b> (בוחר קבוצה בטלפון, בלי להקליט; הבקשה מופיעה במסך המקווה בכפתור "📨 בקשות שינוי מנוי")</label></div>
       <button class="mkbtn" id="sgsave" style="margin-top:8px">💾 לשמור</button>
       <div class="mksec" style="margin-top:18px">⚙️ הגדרה בימות המשיח <small>שלוחה חדשה (ext.ini)</small></div>
       <pre dir="ltr" style="background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-all;user-select:all">${esc(ini)}</pre>
@@ -3428,7 +3451,7 @@ async function mkSelfGroupOpen(){
   document.getElementById('sgsave').onclick=async()=>{const say={};rs.querySelectorAll('[data-say]').forEach(i=>{if(i.value.trim())say[i.dataset.say]=i.value.trim();});
     const body={enabled:document.getElementById('sgon').checked,groups:C.groups||[],...mkPcRead(document.getElementById('sgpc')),
       locked_groups:[...rs.querySelectorAll('[data-lg]')].filter(x=>x.checked).map(x=>x.dataset.lg),say,
-      member_groups:[...rs.querySelectorAll('[data-mg]')].filter(x=>x.checked).map(x=>x.dataset.mg),req_on:document.getElementById('sgreq').checked,
+      member_groups:[...rs.querySelectorAll('[data-mg]')].filter(x=>x.checked).map(x=>x.dataset.mg),req_on:false,
       max:document.getElementById('sgmax').value,days:document.getElementById('sgdays').value,
       divisor:document.getElementById('pcdiv').value,round:document.getElementById('pcround').value,
       pay_methods:[...rs.querySelectorAll('[data-pm]')].filter(x=>x.checked).map(x=>x.dataset.pm),nd_mosad:document.getElementById('pcnd').value,

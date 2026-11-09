@@ -632,14 +632,36 @@ function mkDiffAsk(cid,gid){return new Promise(async resolve=>{
   ov.querySelector('[data-ok]').onclick=()=>{if(!q||!q.ok)return done({mode:'none'});
     const m=(ov.querySelector('[name=dfm]:checked')||{}).value||'none',a=Math.abs(parseFloat(sAmt&&sAmt.value)||0);
     done({mode:a>0?m:'none',amount:a,screen:!!(sChk&&sChk.checked),from_name:q.from_name});};});}
+// 🕘 מאיר: "כשמעדכנים מנוי דרך הממשק — שיופיע מה הוא החליף לאחרונה, כדי שאני לא יחליף בטעות למי שהשאיר הודעה וכו'"
+// ממלא את el: שינויים אחרונים (טלפון / משרד), הודעות קוליות, בקשות פתוחות וחובות הפרש — 60 הימים האחרונים
+const MKRECENT={};
+async function mkRecentFill(cid,el){if(!el)return;
+  const esc_=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const dmy=s=>s?String(s).slice(8,10)+'.'+String(s).slice(5,7)+' '+String(s).slice(11,16):'';
+  let r=MKRECENT[cid];
+  if(!r){el.innerHTML='<div style="color:#888;font-size:.85rem">⏳ בודק מה קרה אצלו לאחרונה…</div>';
+    r=await fetch('/api/mikveh/client_recent?id='+encodeURIComponent(cid)).then(x=>x.json()).catch(()=>null);if(r&&r.ok)MKRECENT[cid]=r;}
+  if(!r||!r.ok){el.innerHTML='';return;}
+  const days=s=>Math.round((new Date(r.today)-new Date(String(s).slice(0,10)))/864e5);
+  const fresh=[...r.changes,...r.vm].some(x=>days(x.at)<=14)||r.reqs.length||r.debts.length;
+  const it=(ic,t)=>'<div style="padding:3px 0;border-top:1px dashed #ead9b4">'+ic+' '+t+'</div>';
+  let h='';
+  r.changes.forEach(x=>h+=it('🔄','<b>'+dmy(x.at)+'</b> <small>(לפני '+days(x.at)+' ימים)</small> — '+esc_(x.summary)));
+  r.vm.forEach(x=>h+=it('📥','<b>'+dmy(x.at)+'</b> השאיר הודעה קולית'+(x.done?' <small style="color:#1e7a3c">· טופלה</small>':' <small style="color:#c0392b">· לא טופלה</small>')+(x.transcript?'<div style="color:#555;font-size:.85rem">"'+esc_(x.transcript)+'"</div>':'')));
+  r.reqs.forEach(x=>h+=it('📨','<b>'+dmy(x.at)+'</b> בקשה פתוחה לעבור ל'+esc_(x.to_name)+(x.reason?' <small>('+esc_(x.reason)+')</small>':'')));
+  r.debts.forEach(x=>h+=it('💲','<b>'+dmy(x.at)+'</b> חוב הפרש פתוח ₪'+x.amount+' <small>('+esc_(x.from_name)+' → '+esc_(x.to_name)+')</small>'));
+  el.innerHTML=h?'<div style="background:'+(fresh?'#fff8e6':'#f6f8fc')+';border:1px solid '+(fresh?'#f0d48a':'#e3e7ee')+';border-radius:10px;padding:8px 12px;margin:8px 0;font-size:.9rem">'+
+    '<b>'+(fresh?'⚠️ שימו לב — מה קרה אצלו לאחרונה':'🕘 לאחרונה')+'</b>'+h+'</div>'
+    :'<div style="color:#888;font-size:.85rem;margin:6px 0">🕘 אין שינויים, הודעות או בקשות ב-60 הימים האחרונים</div>';}
 async function cAction(a){const c=CUR;if(!c)return;
   const refresh=async(upd)=>{if(upd)Object.assign(c,upd);drawClient(true);cTab();};
   if(a==='grp'){const cur=c.group;
-    const v=await modal('שינוי סוג מנוי — '+esc(cName(c)),`<div class="hint">נוכחית: <b>${esc((S.G[cur]||{}).name||'—')}</b>. השינוי נעשה במקווה מיד; אם נשארו ימים במנוי — יחושב הפרש.</div>
+    setTimeout(()=>mkRecentFill(c.id,document.getElementById('cgrecent')),0);
+    const v=await modal('שינוי סוג מנוי — '+esc(cName(c)),`<div class="hint">נוכחית: <b>${esc((S.G[cur]||{}).name||'—')}</b>. השינוי נעשה במקווה מיד; אם נשארו ימים במנוי — יחושב הפרש.</div><div id="cgrecent"></div>
       <div class="list">${S.mk.groups.map(g=>`<label class="it" style="cursor:pointer"><input type="radio" name="gg" value="${esc(g.id)}" ${g.id===cur?'checked disabled':''}><span class="d" style="width:10px;height:10px;border-radius:50%;background:${gColor(g)}"></span><div class="m"><b>${esc(g.name)}</b></div><span class="mut num">${g.price!=null?nis(g.price):''}</span></label>`).join('')}</div>`,
       [{t:'להעביר',cls:'p',run:async b=>{const gid=(b.querySelector('[name=gg]:checked:not(:disabled)')||{}).value;if(!gid){toast('לבחור קבוצה');return false;}
         const d=await mkDiffAsk(c.id,gid);if(d===null)return false;
-        const r=await api('POST','/api/mikveh/group',{id:c.id,group:gid,diff:d});if(!r.ok){alertBox('לא הועבר',r.error);return false;}
+        const r=await api('POST','/api/mikveh/group',{id:c.id,group:gid,diff:d});delete MKRECENT[c.id];if(!r.ok){alertBox('לא הועבר',r.error);return false;}
         if(r.diff&&r.diff.error)alertBox('המנוי שונה',r.diff.error);
         else if(r.diff&&r.diff.debt)toast('נרשם חוב הפרש ₪'+r.diff.debt+(r.diff.screen?' · הודעה במסך עד התשלום':''));
         else if(r.diff&&r.diff.credit)toast('זיכוי ₪'+r.diff.credit+' ביתרה הזמנית');
@@ -857,7 +879,7 @@ async function vIvr(){
   if(ITAB==='txt'||ITAB==='vmset')return ivrTexts();
   const r=await api('GET','/api/mikveh/selfgroup');if(!$('#ib'))return;if(!r.ok){$('#ib').innerHTML='<div class="warn">'+esc(r.error||'')+'</div>';return;}
   const C=r.cfg,sel=new Set(C.groups||[]),lk=new Set(C.locked_groups||[]),mg=new Set(C.member_groups||[]),PM=new Set(C.pay_methods||['debt']);
-  const save=async extra=>{const body={enabled:C.enabled,groups:C.groups,locked_groups:C.locked_groups,member_groups:C.member_groups,say:C.say,req_on:C.req_on,max:C.max,days:C.days,
+  const save=async extra=>{const body={enabled:C.enabled,groups:C.groups,locked_groups:C.locked_groups,member_groups:C.member_groups,say:C.say,req_on:false,max:C.max,days:C.days,
       divisor:C.divisor,round:C.round,pay_methods:C.pay_methods,nd_mosad:C.nd_mosad,cancel_on:C.cancel_on,credit_down:C.credit_down,say_prices:true,
       erech_groups:Array.isArray(C.erech_groups)?C.erech_groups:r.groups.filter(g=>g.erech).map(g=>g.id),min_keva:C.min_keva,keva_cats:C.keva_cats||[],phone_cats:C.phone_cats||[],cat_say:C.cat_say||{}};Object.assign(body,extra||{});
     const x=await api('POST','/api/mikveh/selfgroup',body);if(!x.ok){alertBox('לא נשמר',x.error);return;}toast('נשמר');vIvr();};
@@ -870,13 +892,12 @@ async function vIvr(){
         <label class="fld"><span>הנחת חבר קהילה — מינימום הוראת קבע (₪)</span><input type="number" id="imin" value="${esc(C.min_keva!=null?C.min_keva:100)}"></label>
         <div class="fld"><span>קטגוריית הוראת הקבע בנדרים שנחשבת להנחה</span><div class="kcs">${[...new Set([...(r.keva_cats||[]),...(C.keva_cats||[])])].map(k=>`<label class="chk"><input type="checkbox" data-kc="${esc(k)}" ${(C.keva_cats||[]).includes(k)?'checked':''}>${esc(k)}</label>`).join('')||'<span class="mut">אין עדיין קטגוריות בהוראות הקבע שנמשכו</span>'}</div><div class="hint">הוראת קבע בקטגוריה אחרת לא נחשבת. בלי סימון — כל הוראת קבע לקהילה נחשבת.</div></div>
         <div class="hint">👥 מנוי "לקהילה בלבד" נשמע רק למי שהטלפון שלו רשום בקהילה. ההנחה ניתנת לבד רק עם הוראת קבע פעילה מהמינימום ומעלה, ורק אם אין לקוח אחר עם אותו טלפון / ת.ז. שכבר בהנחה. אחרת הוא שומע למה, ויכול לשלוח בקשה.</div>
-        <label class="chk"><input type="checkbox" id="ireq" ${C.req_on?'checked':''}>מי שאין לו הרשאה / עבר את המקסימום — יכול לשלוח בקשה למשרד</label>
         <button class="btn p" id="isave" style="margin-top:10px">שמירה</button>
         <h3 style="margin-top:22px">הגדרה בימות המשיח</h3><pre class="code">type=api\napi_link=${esc(r.link)}\napi_hangup_send=no</pre></div></div>`;
     mkPcWire($('#ipc'));
     $('#isave').onclick=()=>{const say={};$$('#ib [data-say]').forEach(i=>{if(i.value.trim())say[i.dataset.say]=i.value.trim();});
       save({enabled:$('#ion').checked,groups:C.groups||[],...mkPcRead($('#ipc')),member_groups:$$('#ib [data-mg]').filter(x=>x.checked).map(x=>x.dataset.mg),
-        locked_groups:$$('#ib [data-lg]').filter(x=>x.checked).map(x=>x.dataset.lg),say,max:$('#imax').value,days:$('#idays').value,min_keva:$('#imin').value,keva_cats:$$('#ib [data-kc]').filter(x=>x.checked).map(x=>x.dataset.kc),req_on:$('#ireq').checked});};}
+        locked_groups:$$('#ib [data-lg]').filter(x=>x.checked).map(x=>x.dataset.lg),say,max:$('#imax').value,days:$('#idays').value,min_keva:$('#imin').value,keva_cats:$$('#ib [data-kc]').filter(x=>x.checked).map(x=>x.dataset.kc),req_on:false});};}
   else if(ITAB==='price'){
     $('#ib').innerHTML=`<div class="grid two"><div class="card pad"><h3>${ic('cash')} חישוב ההפרש</h3>
         <div class="hint">(המחיר החודשי החדש − המחיר החודשי שלו) × ימים שנשארו במנוי ÷ ימים בחודש. בלי מנוי בתוקף — אין הפרש.</div>
