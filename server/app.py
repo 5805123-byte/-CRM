@@ -19458,12 +19458,14 @@ def con_open_blocks(cid, except_id):
         con.close()
 
 
-def mk_diff_check():
-    """💲 חובות הפרש שעוד פתוחים: אם שולם (או נמחק) במקווה — מוחקים מהמסך את ההודעה שהוספנו"""
+def mk_diff_check(only_blocked=False):
+    """💲 חובות הפרש שעוד פתוחים: אם שולם (או נמחק) במקווה — מוחקים מהמסך את ההודעה שהוספנו ומשחררים את החסימה.
+    only_blocked — רק מי שחסום ומחכה לשלם (הבדיקה המהירה)"""
     import mikveh as _mk
     con = db()
     try:
-        rows = [dict(r) for r in con.execute("SELECT * FROM mk_diff WHERE status='open' ORDER BY id LIMIT 200")]
+        rows = [dict(r) for r in con.execute("SELECT * FROM mk_diff WHERE status='open'" + (" AND blocked=1" if only_blocked else "") +
+                                             " ORDER BY id LIMIT 200")]
     finally:
         con.close()
     done = 0
@@ -19506,23 +19508,29 @@ def mk_diff_check():
     return done
 
 
+MK_DIFF_FAST = 10       # שניות — מאיר: "אפשר גם פחות מדקה?"
+
+
 def _mk_diff_loop():
-    time.sleep(60)
+    """מי שחסום ומחכה לשלם — נבדק כל 10 שניות (רק הוא); כל השאר — כל 5 דקות"""
+    time.sleep(30)
+    last_full = 0.0
     while True:
         try:
-            mk_diff_check()
+            if time.time() - last_full >= 300:
+                mk_diff_check()
+                last_full = time.time()
+            else:
+                con = db()
+                try:
+                    waiting = con.execute("SELECT COUNT(*) FROM mk_diff WHERE status='open' AND blocked=1").fetchone()[0]
+                finally:
+                    con.close()
+                if waiting:
+                    mk_diff_check(only_blocked=True)
         except Exception as e:
             print('  mk diff loop error:', e)
-        try:
-            con = db()
-            try:
-                waiting = con.execute("SELECT COUNT(*) FROM mk_diff WHERE status='open' AND blocked=1").fetchone()[0]
-            finally:
-                con.close()
-        except Exception:
-            waiting = 0
-        # מאיר: "איך הוא יפתח לו אוטומטית אחרי התשלום? כמה זמן ייקח?" — מי שחסום מחכה לכל היותר כדקה
-        time.sleep(60 if waiting else 300)
+        time.sleep(MK_DIFF_FAST)
 
 
 def _mk_req_loop():
