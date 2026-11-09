@@ -974,6 +974,10 @@ def ensure_schema():
     # 💲 הפרש על שינוי מנוי מהכרטיס: החוב במקווה וההודעה שהוספנו למסך המכונה — עד שישולם
     con.execute("CREATE TABLE IF NOT EXISTS mk_diff(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, at TEXT, from_name TEXT, to_name TEXT, "
                 "amount REAL, debt_id TEXT, reason TEXT, msg TEXT, status TEXT DEFAULT 'open', closed_at TEXT)")
+    try:
+        con.execute("ALTER TABLE mk_diff ADD COLUMN blocked INTEGER DEFAULT 0")
+    except sqlite3.Error:
+        pass
     con.execute("CREATE TABLE IF NOT EXISTS mk_towel_pay(cid TEXT, hmonth TEXT, paid_at TEXT, method TEXT, amount REAL, msg_at TEXT, "
                 "PRIMARY KEY(cid, hmonth))")
     try:
@@ -19426,7 +19430,10 @@ def mk_req_sync(days=None):
     return r
 
 
-MK_DIFF_MSG = 'יש לך חוב של {amount} ש"ח — הפרש על שינוי המנוי. יש לשלם במכונה.'
+# מאיר: "בהערות לחוב לא צריך לכתוב כל כך ארוך, זה סתם מסבך במכשיר" — נוסחים קצרים
+MK_DIFF_MSG = 'חוב ₪{amount} — הפרש מנוי. לתשלום במכונה.'
+MK_DIFF_REASON = 'הפרש מנוי'
+MK_DIFF_BLOCK = 'חוב הפרש מנוי'
 
 
 def mk_msg_add(cur, txt):
@@ -19440,6 +19447,15 @@ def mk_msg_remove(cur, txt):
         return cur
     out = cur.replace(' · ' + txt, '').replace(txt + ' · ', '').replace(txt, '')
     return re.sub(r'\s{2,}', ' ', out).strip(' ·')
+
+
+def con_open_blocks(cid, except_id):
+    """עוד חובות הפרש פתוחים שבגללם הוא חסום (חוץ מזה) — אם יש, לא משחררים עדיין"""
+    con = db()
+    try:
+        return con.execute("SELECT COUNT(*) FROM mk_diff WHERE cid=? AND status='open' AND blocked=1 AND id<>?", (cid, except_id)).fetchone()[0]
+    finally:
+        con.close()
 
 
 def mk_diff_check():
@@ -19461,17 +19477,26 @@ def mk_diff_check():
             if d is None or d.get('open'):
                 continue
             st = 'paid' if d.get('paid_ok') else 'deleted'
-            if r['msg']:
+            unblocked = False
+            if r['msg'] or r.get('blocked'):
                 full = _mk.client(r['cid'])
-                new = mk_msg_remove(full.get('message'), r['msg'])
-                if new != (full.get('message') or '').strip():
-                    _mk.update_client(r['cid'], {'message': new})
+                if r['msg']:
+                    new = mk_msg_remove(full.get('message'), r['msg'])
+                    if new != (full.get('message') or '').strip():
+                        _mk.update_client(r['cid'], {'message': new})
+                # משחררים רק חסימה שלנו (הסיבה "חוב הפרש מנוי…") — חסימה אחרת נשארת
+                if r.get('blocked') and full.get('isBlocked') and str(full.get('blockReason') or '').startswith(MK_DIFF_BLOCK):
+                    still = con_open_blocks(r['cid'], r['id'])
+                    if not still:
+                        _mk.set_blocked(r['cid'], False)
+                        unblocked = True
             con = db()
             try:
                 con.execute("UPDATE mk_diff SET status=?, closed_at=? WHERE id=?", (st, now_iso(), r['id']))
                 con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                            (r['cid'], now_iso(), 'debt', ('✓ שולם' if st == 'paid' else '🗑️ נמחק') + ' חוב ההפרש ₪%g (%s → %s)%s' % (
-                                r['amount'], r['from_name'], r['to_name'], ' — ההודעה ירדה מהמסך' if r['msg'] else '')))
+                            (r['cid'], now_iso(), 'debt', ('✓ שולם' if st == 'paid' else '🗑️ נמחק') + ' חוב ההפרש ₪%g (%s → %s)%s%s' % (
+                                r['amount'], r['from_name'], r['to_name'], ' — ההודעה ירדה מהמסך' if r['msg'] else '',
+                                ' — החסימה בוטלה' if unblocked else '')))
                 con.commit()
             finally:
                 con.close()
@@ -19482,13 +19507,22 @@ def mk_diff_check():
 
 
 def _mk_diff_loop():
-    time.sleep(120)
+    time.sleep(60)
     while True:
         try:
             mk_diff_check()
         except Exception as e:
             print('  mk diff loop error:', e)
-        time.sleep(300)
+        try:
+            con = db()
+            try:
+                waiting = con.execute("SELECT COUNT(*) FROM mk_diff WHERE status='open' AND blocked=1").fetchone()[0]
+            finally:
+                con.close()
+        except Exception:
+            waiting = 0
+        # מאיר: "איך הוא יפתח לו אוטומטית אחרי התשלום? כמה זמן ייקח?" — מי שחסום מחכה לכל היותר כדקה
+        time.sleep(60 if waiting else 300)
 
 
 def _mk_req_loop():
@@ -28035,7 +28069,7 @@ class H(BaseHTTPRequestHandler):
             diff_res = {}
             if dmode in ('debt', 'credit') and damt > 0:
                 from_name = str(diff.get('from_name') or '')[:80]
-                reason = 'הפרש שינוי סוג מנוי: %s → %s' % (from_name, gname)
+                reason = MK_DIFF_REASON
                 try:
                     if dmode == 'debt':
                         dr = _mk.add_debt(cid, int(round(damt * 100)), reason)
@@ -28045,16 +28079,22 @@ class H(BaseHTTPRequestHandler):
                             mtxt = MK_DIFF_MSG.format(amount='%g' % damt)
                             full = _mk.client(cid)
                             _mk.update_client(cid, {'message': mk_msg_add(full.get('message'), mtxt)})
+                        blk_ = False
+                        if diff.get('block'):
+                            # מאיר: "חסום יכול לשלם רק חובות במערכת" — חוסמים עד שישלם; נפתח לבד אחרי התשלום (mk_diff_check)
+                            _mk.set_blocked(cid, True, MK_DIFF_BLOCK + ' ₪%g' % damt)
+                            blk_ = True
                         con = db()
                         try:
-                            con.execute("INSERT INTO mk_diff(cid,at,from_name,to_name,amount,debt_id,reason,msg) VALUES(?,?,?,?,?,?,?,?)",
-                                        (cid, now_iso(), from_name, gname, damt, debt_id, reason, mtxt))
+                            con.execute("INSERT INTO mk_diff(cid,at,from_name,to_name,amount,debt_id,reason,msg,blocked) VALUES(?,?,?,?,?,?,?,?,?)",
+                                        (cid, now_iso(), from_name, gname, damt, debt_id, reason, mtxt, 1 if blk_ else 0))
                             con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                                        (cid, now_iso(), 'debt', '💲 נרשם חוב הפרש ₪%g במקווה (%s → %s)%s' % (damt, from_name, gname, ' · 📺 הודעה במסך עד התשלום' if mtxt else '')))
+                                        (cid, now_iso(), 'debt', '💲 נרשם חוב הפרש ₪%g במקווה (%s → %s)%s%s' % (damt, from_name, gname,
+                                         ' · 📺 הודעה במסך עד התשלום' if mtxt else '', ' · ⛔ חסום עד התשלום' if blk_ else '')))
                             con.commit()
                         finally:
                             con.close()
-                        diff_res = {'debt': damt, 'screen': bool(mtxt)}
+                        diff_res = {'debt': damt, 'screen': bool(mtxt), 'blocked': blk_}
                     else:
                         _mk.add_credit(cid, int(round(damt * 100)), temp=True)
                         con = db()
@@ -37496,7 +37536,7 @@ def mkg_apply(con, cid, c, gr, cur, tgt, q, method, call_id, phone, conf=''):
     err, debt_id = '', ''
     try:
         if method == 'debt' and amt > 0:
-            res = _mk.add_debt(cid, int(round(amt * 100)), 'הפרש החלפת קבוצה: %s → %s' % (gr[cur]['name'], gr[tgt]['name']))
+            res = _mk.add_debt(cid, int(round(amt * 100)), MK_DIFF_REASON)
             debt_id = str((res or {}).get('id') or '') if isinstance(res, dict) else ''
         elif method == 'credit' and amt < 0:
             _mk.add_credit(cid, int(round(-amt * 100)), temp=True)

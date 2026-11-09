@@ -2549,7 +2549,8 @@ function mkDiffAsk(cid,gid){return new Promise(async resolve=>{
       '<span style="color:#666;font-size:.88rem">('+q.new_price+' − '+q.old_price+') × '+q.days+' ÷ '+q.divisor+' = ₪'+amt+'</span></div>'+
       '<label style="display:flex;gap:8px;align-items:center"><b>'+(up?'הפרש לתשלום':'זיכוי')+' (₪):</b><input data-a type="number" min="0" step="1" value="'+amt+'" style="border:1px solid #ccd;border-radius:8px;padding:6px;font:inherit;width:110px"></label>'+
       (up?'<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="dfm" value="debt" checked> לרשום <b>חוב במקווה</b> — משלם במכונה</label>'+
-          '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-inline-start:24px"><input type="checkbox" data-s checked style="margin-top:4px"> <span>להציג לו <b>הודעה במסך המכונה</b> עד שישלם:<br><small style="color:#555">"'+esc_(String(q.msg||'').replace('{amount}',amt))+'"</small></span></label>'
+          '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-inline-start:24px"><input type="checkbox" data-s checked style="margin-top:4px"> <span>להציג לו <b>הודעה במסך המכונה</b> עד שישלם:<br><small style="color:#555">"'+esc_(String(q.msg||'').replace('{amount}',amt))+'"</small></span></label>'+
+          '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-inline-start:24px"><input type="checkbox" data-b checked style="margin-top:4px"> <span><b>לחסום אותו עד שישלם</b> — חסום יכול לשלם חובות במכונה; החסימה נפתחת לבד תוך כדקה מהתשלום</span></label>'
          :'<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="dfm" value="credit" checked> לתת <b>זיכוי</b> ביתרה הזמנית</label>')+
       '<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="dfm" value="none"> בלי '+(up?'הפרש':'זיכוי')+' — רק להעביר</label>')+
     '</div><div style="padding:12px 18px;border-top:1px solid #eee;display:flex;gap:8px"><button data-ok style="background:#2f6fb0;color:#fff;border:0;border-radius:10px;padding:9px 18px;font:inherit;font-weight:700;cursor:pointer">להעביר</button>'+
@@ -2561,7 +2562,8 @@ function mkDiffAsk(cid,gid){return new Promise(async resolve=>{
   if(sAmt&&sChk)sAmt.oninput=()=>{const sm=sChk.parentNode.querySelector('small');if(sm)sm.textContent='"'+String(q.msg||'').replace('{amount}',sAmt.value||0)+'"';};
   ov.querySelector('[data-ok]').onclick=()=>{if(!q||!q.ok)return done({mode:'none'});
     const m=(ov.querySelector('[name=dfm]:checked')||{}).value||'none',a=Math.abs(parseFloat(sAmt&&sAmt.value)||0);
-    done({mode:a>0?m:'none',amount:a,screen:!!(sChk&&sChk.checked),from_name:q.from_name});};});}
+    const bChk=ov.querySelector('[data-b]');
+    done({mode:a>0?m:'none',amount:a,screen:!!(sChk&&sChk.checked),block:!!(bChk&&bChk.checked&&m==='debt'),from_name:q.from_name});};});}
 // 🕘 מאיר: "כשמעדכנים מנוי דרך הממשק — שיופיע מה הוא החליף לאחרונה, כדי שאני לא יחליף בטעות למי שהשאיר הודעה וכו'"
 // ממלא את el: שינויים אחרונים (טלפון / משרד), הודעות קוליות, בקשות פתוחות וחובות הפרש — 60 הימים האחרונים
 const MKRECENT={};
@@ -2747,7 +2749,7 @@ function mkOpen(c){
       const d=await mkDiffAsk(c.id,target.id);if(d===null)return;
       const ok=await mkSetGroup(c,target,(st,v)=>{state=st;info=v;draw();},d);
       if(ok){delete MKRECENT[c.id];mkRecentFill(c.id,document.getElementById('mkrecent'));}
-      if(ok&&d.mode==='debt')toast('💲 נרשם חוב הפרש ₪'+d.amount+' במקווה'+(d.screen?' · הודעה במסך עד התשלום':''));
+      if(ok&&d.mode==='debt')toast('💲 נרשם חוב הפרש ₪'+d.amount+' במקווה'+(d.screen?' · הודעה במסך':'')+(d.block?' · ⛔ חסום עד התשלום':''));
       if(ok&&d.mode==='credit')toast('💳 זיכוי ₪'+d.amount+' ביתרה הזמנית');
       if(ok){pick=target;if(c.phone)setTimeout(()=>{if(state==='ok'&&document.getElementById('mkafter'))mkNotify(c,'group',{group:target.id});},700);}};
     const af=document.getElementById('mkafter'); if(af)af.onclick=()=>mkNotify(c,'group',{group:c.group});
