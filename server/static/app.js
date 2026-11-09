@@ -16535,28 +16535,28 @@ async function ndCardMail(k,m,after){
 // 🔍 מאיר: "תחפש לי בנדרים פלוס תרומה של 100 ש"ח לחודש… ארבע ספרות אחרונות 8529, אני לא יודע מי זה — בכל הקופות"
 async function ndFind4(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
-  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔍 חיפוש בנדרים פלוס לפי 4 ספרות</h2>
+  rs.innerHTML=`<button class="x" id="rx">✕</button><h2>🔍 חיפוש בנדרים פלוס — 4 ספרות, טלפון או שם</h2>
     <div class="hintxt">בכל הקופות: עסקאות, הוראות קבע (אשראי ובנק) וסירובים — מה שכבר נמשך מנדרים פלוס לסנכרון.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:end">
-      <label class="fld" style="flex:1;min-width:110px"><span>4 ספרות אחרונות</span><input id="f4_l" inputmode="numeric" maxlength="4" dir="ltr" placeholder="8529"></label>
+      <label class="fld" style="flex:1;min-width:110px"><span>4 ספרות / טלפון / שם</span><input id="f4_l" placeholder="8529 · 0502272980 · גולדגרב"></label>
       <label class="fld" style="flex:1;min-width:90px"><span>סכום ₪ (לא חובה)</span><input id="f4_a" inputmode="decimal" placeholder="100"></label>
-      <label class="fld" style="flex:1;min-width:110px"><span>תקופה</span><select id="f4_m"><option value="6">חצי שנה אחרונה</option><option value="12">שנה אחרונה</option><option value="0">הכל</option></select></label>
+      <label class="fld" style="flex:1;min-width:110px"><span>תקופה</span><select id="f4_m"><option value="6">חצי שנה אחרונה</option><option value="12">שנה אחרונה</option><option value="0">הכל</option>${[0,1,2].map(i=>{const y=new Date().getFullYear()-i;return `<option value="y${y}">שנת ${y}</option>`;}).join('')}</select></label>
       <button class="btn" id="f4_go">🔍 חפש</button></div>
     <div id="f4_res"></div>`;
   remov.classList.add('show');document.getElementById('rx').onclick=()=>remov.classList.remove('show');
-  const go=async()=>{const l=document.getElementById('f4_l').value.replace(/\D/g,'');if(l.length!==4){toast('צריך 4 ספרות');return;}
+  const go=async()=>{const l=document.getElementById('f4_l').value.trim();if(!l){toast('צריך 4 ספרות, טלפון או שם');return;}const pm=document.getElementById('f4_m').value;
     const R=document.getElementById('f4_res');R.innerHTML='<div class="hintxt">⏳ מחפש…</div>';
-    const r=await api('GET','/api/nd/find?last4='+l+'&amount='+encodeURIComponent(document.getElementById('f4_a').value)+'&months='+document.getElementById('f4_m').value).catch(()=>null);
+    const r=await api('GET','/api/nd/find?q='+encodeURIComponent(l)+'&amount='+encodeURIComponent(document.getElementById('f4_a').value)+(pm[0]==='y'?'&months=0&year='+pm.slice(1):'&months='+pm)).catch(()=>null);
     if(!r||!r.ok){R.innerHTML=`<div class="hintxt">${esc((r&&r.error)||'אין תשובה')}</div>`;return;}
-    if(!r.rows.length){R.innerHTML=`<div class="hintxt">לא נמצא כרטיס שמסתיים ב-<b dir="ltr">${esc(r.last4)}</b>${r.amount?' בסכום ₪'+esc(r.amount):''} — בקופות: ${esc((r.kupot||[]).join(', '))}. אם החיוב חדש מאוד — כדאי ללחוץ על סנכרון נדרים ולחפש שוב.</div>`;return;}
-    R.innerHTML=`<div class="mksec">נמצאו ${r.rows.length} — כרטיס שמסתיים ב-<span dir="ltr">${esc(r.last4)}</span></div>`+r.rows.map((g,i)=>{
+    if(!r.rows.length){R.innerHTML=`<div class="hintxt">לא נמצא <b dir="auto">${esc(r.last4)}</b>${r.year?' בשנת '+esc(r.year):''}${r.amount?' בסכום ₪'+esc(r.amount):''} — בקופות: ${esc((r.kupot||[]).join(', '))}. אם החיוב חדש מאוד — כדאי ללחוץ על סנכרון נדרים ולחפש שוב.</div>`;return;}
+    R.innerHTML=`<div class="mksec">נמצאו ${r.rows.length} — <span dir="auto">${esc(r.last4)}</span>${r.year?' · שנת '+esc(r.year):''}</div>`+r.rows.map((g,i)=>{
       const sum=g.tx.reduce((t,x)=>t+(+x.amount||0),0);
       return `<div class="mkrow" style="grid-template-columns:1fr;cursor:default"><div class="mknm">
         <b style="font-size:1.05rem">${esc(g.name||'— בלי שם —')}</b> ${g.who?`<a href="#" data-f4w="${i}" style="font-size:.85rem">· ${g.who.kind==='member'?'👥 חבר קהילה':'💼 תורם'}: ${esc(g.who.name)} ↗</a>`:'<small class="cdres bad">לא מקושר לאף כרטיס</small>'}
         <div class="mksub">🏦 קופה: <b>${esc(g.kupa)}</b>${g.phone?` · 📞 <span dir="ltr">${esc(g.phone)}</span>`:''}${g.kevas.find(k=>k.mail)?` · ✉️ <span dir="ltr">${esc(g.kevas.find(k=>k.mail).mail)}</span>`:''}</div>
         ${g.kevas.map(k=>`<div class="mksub">🔁 הוראת קבע${k.bank?' (בנק)':''} ₪${esc(k.amount)}${k.groupe?' · '+esc(k.groupe):''} · ${k.active?'פעילה'+(k.next?' · חיוב הבא '+esc(k.next):''):'<b>לא פעילה</b>'}</div>`).join('')}
         ${g.tx.length?`<details style="margin-top:4px"><summary class="mksub" style="cursor:pointer">💳 ${g.tx.length} חיובים · סה״כ ₪${Math.round(sum)} · אחרון ${esc(g.tx[0].iso)}</summary>
-          ${g.tx.map(x=>`<div class="mksub">${esc(x.iso)} · ₪${esc(x.amount)}${x.keva?' · הו״ק':''}${x.groupe?' · '+esc(x.groupe):''}${x.comments?' · '+esc(x.comments):''}</div>`).join('')}</details>`:''}
+          ${g.tx.map(x=>`<div class="mksub">${esc(x.iso)} · ₪${esc(x.amount)}${x.last4?' · <span dir="ltr">••'+esc(x.last4)+'</span>':''}${x.keva?' · הו״ק':''}${x.groupe?' · '+esc(x.groupe):''}${x.comments?' · '+esc(x.comments):''}</div>`).join('')}</details>`:''}
         ${g.errs.length?`<div class="mksub" style="color:var(--no)">⚠️ ${g.errs.length} סירובים · אחרון ${esc(g.errs[0].iso)} — ${esc(g.errs[0].error)}</div>`:''}
       </div></div>`;}).join('');
     R.querySelectorAll('[data-f4w]').forEach(a=>a.onclick=async e=>{e.preventDefault();const w=r.rows[+a.dataset.f4w].who;remov.classList.remove('show');

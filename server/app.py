@@ -24463,9 +24463,15 @@ class H(BaseHTTPRequestHandler):
             # 🔍 מאיר: "תחפש לי בנדרים פלוס תרומה של 100 ש"ח לחודש בחצי שנה האחרונה, ארבע ספרות אחרונות 8529, אני לא
             # יודע מי זה — בכל הקופות". חיפוש לפי 4 ספרות (וסכום, ותקופה) בכל המוסדות: עסקאות, הוראות קבע וסירובים
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            l4 = re.sub(r'\D', '', (qs.get('last4') or [''])[0])[-4:]
-            if len(l4) != 4:
-                return self._send(200, {'ok': False, 'error': 'צריך 4 ספרות'})
+            # מאיר: "תחפש בנדרים פלוס עצמו… מה גולדגראב תרם ב-25" — גם לפי שם / טלפון, וגם לפי שנה
+            qtxt = str((qs.get('q') or qs.get('last4') or [''])[0]).strip()
+            qd = re.sub(r'\D', '', qtxt)
+            l4 = qd if (len(qd) == 4 and qd == re.sub(r'[\s\-]', '', qtxt)) else ''
+            ph9 = qd[-9:] if len(qd) >= 7 and not re.search(r'[A-Za-z\u05d0-\u05ea]', qtxt) else ''
+            ntoks = [t for t in _norm(qtxt).split() if len(t) >= 2] if not (l4 or ph9) else []
+            if not (l4 or ph9 or ntoks):
+                return self._send(200, {'ok': False, 'error': 'צריך 4 ספרות, טלפון או שם'})
+            yr = re.sub(r'\D', '', (qs.get('year') or [''])[0])[:4]
             try:
                 amt = float(re.sub(r'[^\d.]', '', (qs.get('amount') or [''])[0]) or 0)
             except ValueError:
@@ -24475,6 +24481,9 @@ class H(BaseHTTPRequestHandler):
             except ValueError:
                 months = 6
             since = (datetime.date.today() - datetime.timedelta(days=31 * months)).isoformat() if months > 0 else ''
+            until = '9999'
+            if len(yr) == 4:
+                since, until = yr + '-01-01', yr + '-12-31~'
             import nedarim as _nd
             acc = {('' if x['main'] else x['mosad']): x['name'] for x in _nd.accounts()}
             kupa = lambda mo: acc.get(mo or '') or ('מוסד ' + mo if mo else 'כולל חצות')
@@ -24483,20 +24492,48 @@ class H(BaseHTTPRequestHandler):
                 cols = {r[1] for r in con.execute("PRAGMA table_info(nd_tx)")}
                 aw = " AND ABS(COALESCE(amount,0)-?)<0.5" if amt else ""
                 aa = [amt] if amt else []
+                # 4 ספרות — בשאילתה; שם / טלפון — מסננים אחרי (שם בכל סדר, טלפון לפי 9 הספרות האחרונות)
+                lw, la = ("last4=? AND ", [l4]) if l4 else ("", [])
+
+                # שם — בלי הבדלי כתיב (גולדגרב / גולדגראב), ואנגלית בלי אותיות גדולות; גם לפי הכרטיס המקושר אצלנו
+                sk = lambda s: re.sub(r'[אויה]', '', _norm(s).lower())
+                ltoks = [sk(t) for t in ntoks]
+                ltoks = [t for t in ltoks if t]
+                lnk_d, lnk_m = set(), set()
+                if ltoks:
+                    for r_ in con.execute("SELECT id, first, last, COALESCE(email,'') em FROM donors"):
+                        if all(t in sk('%s %s %s' % (r_['first'] or '', r_['last'] or '', r_['em'])) for t in ltoks):
+                            lnk_d.add(r_['id'])
+                    for r_ in con.execute("SELECT id, first, last FROM members"):
+                        if all(t in sk('%s %s' % (r_['first'] or '', r_['last'] or '')) for t in ltoks):
+                            lnk_m.add(r_['id'])
+
+                def hit(r):
+                    if l4:
+                        return True
+                    if ph9:
+                        return any(re.sub(r'\D', '', x)[-9:] == ph9 for x in re.split(r'[;,/]', str(r.get('phone') or '')) if x.strip())
+                    if (r.get('donor_id') and r['donor_id'] in lnk_d) or (r.get('member_id') and r['member_id'] in lnk_m):
+                        return True
+                    nm = sk(r.get('name') or '') + ' ' + sk(re.sub(r'[@._\d]', ' ', r.get('mail') or '')) + ' ' + sk(r.get('comments') or '')
+                    return bool(ltoks) and all(t in nm for t in ltoks)
                 tx = [dict(r) for r in con.execute(
-                    "SELECT id, iso, amount, name, phone, keva, groupe, comments, %s mosad, %s donor_id, member_id, type FROM nd_tx "
-                    "WHERE last4=? AND COALESCE(iso,'')>=?%s ORDER BY iso DESC LIMIT 400" % (
-                        "COALESCE(mosad,'')" if 'mosad' in cols else "''", 'donor_id' if 'donor_id' in cols else 'NULL', aw),
-                    [l4, since] + aa)]
+                    "SELECT id, iso, amount, name, phone, keva, groupe, comments, %s mosad, %s donor_id, member_id, type, last4 FROM nd_tx "
+                    "WHERE %sCOALESCE(iso,'')>=? AND COALESCE(iso,'')<=?%s ORDER BY iso DESC LIMIT %d" % (
+                        "COALESCE(mosad,'')" if 'mosad' in cols else "''", 'donor_id' if 'donor_id' in cols else 'NULL', lw, aw, 400 if l4 else 200000),
+                    la + [since, until] + aa)]
+                tx = [t for t in tx if hit(t)][:400]
                 kcols = {r[1] for r in con.execute("PRAGMA table_info(nd_keva)")}
                 kv = [dict(r) for r in con.execute(
-                    "SELECT id, name, phone, mail, amount, groupe, next_date, active, member_id, %s mosad, %s kind FROM nd_keva WHERE last4=?" % (
-                        "COALESCE(mosad,'')" if 'mosad' in kcols else "''", "COALESCE(kind,'')" if 'kind' in kcols else "''"), (l4,))]
+                    "SELECT id, name, phone, mail, amount, groupe, next_date, active, member_id, %s mosad, %s kind FROM nd_keva%s" % (
+                        "COALESCE(mosad,'')" if 'mosad' in kcols else "''", "COALESCE(kind,'')" if 'kind' in kcols else "''", " WHERE last4=?" if l4 else ""), la)]
+                kv = [k for k in kv if hit(k)]
                 if amt:
                     kv = [k for k in kv if abs((float(re.sub(r'[^\d.]', '', str(k['amount'] or '')) or 0)) - amt) < 0.5]
                 er = [dict(r) for r in con.execute(
-                    "SELECT iso, amount, name, phone, error, COALESCE(mosad,'') mosad, keva FROM nd_err WHERE last4=? AND COALESCE(iso,'')>=?%s "
-                    "ORDER BY iso DESC LIMIT 100" % aw, [l4, since] + aa)]
+                    "SELECT iso, amount, name, phone, error, COALESCE(mosad,'') mosad, keva FROM nd_err WHERE %sCOALESCE(iso,'')>=? AND COALESCE(iso,'')<=?%s "
+                    "ORDER BY iso DESC LIMIT %d" % (lw, aw, 100 if l4 else 50000), la + [since, until] + aa)]
+                er = [e_ for e_ in er if hit(e_)][:100]
                 # מי זה — חבר קהילה / תורם מקושר
                 def who(mid, did):
                     if mid:
@@ -24513,7 +24550,8 @@ class H(BaseHTTPRequestHandler):
                     k = (re.sub(r'\s+', ' ', (t['name'] or '').strip()), t['phone'] or '', t['mosad'])
                     g = grp.setdefault(k, {'name': k[0], 'phone': k[1], 'kupa': kupa(k[2]), 'tx': [], 'kevas': [], 'errs': [], 'who': None})
                     g['tx'].append({'iso': (t['iso'] or '')[:10], 'amount': t['amount'], 'keva': bool(str(t['keva'] or '').strip() and not str(t['keva']).startswith('-')),
-                                    'groupe': t['groupe'] or '', 'comments': (t['comments'] or '')[:80]})
+                                    'groupe': t['groupe'] or '', 'comments': (t['comments'] or '')[:80], 'last4': t.get('last4') or '', 'id': t['id'],
+                                    'type': t.get('type') or ''})
                     g['who'] = g['who'] or who(t['member_id'], t['donor_id'])
                 for k_ in kv:
                     k = (re.sub(r'\s+', ' ', (k_['name'] or '').strip()), k_['phone'] or '', k_['mosad'])
@@ -24530,7 +24568,7 @@ class H(BaseHTTPRequestHandler):
                 ah = {x['mosad'] or '': kv_get(con, 'nd_hist_at:' + x['mosad'], '') for x in _nd.accounts() if not x['main']}
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'last4': l4, 'amount': amt, 'months': months, 'rows': rows,
+            return self._send(200, {'ok': True, 'last4': l4 or qtxt, 'amount': amt, 'months': months, 'year': yr, 'rows': rows,
                                     'kupot': [x['name'] for x in _nd.accounts()], 'synced': ah})
         if self.path.split('?')[0] == '/api/nd/donor_kevas':
             con = db()
