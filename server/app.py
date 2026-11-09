@@ -978,6 +978,9 @@ def ensure_schema():
         con.execute("ALTER TABLE mk_diff ADD COLUMN blocked INTEGER DEFAULT 0")
     except sqlite3.Error:
         pass
+    # 📞 מאיר: "אני רוצה לקבל מידע מלא — מי התקשר לקו, עדכונים מלאים" — כל שיחה לשלוחות המקווה, צעד אחרי צעד
+    con.execute("CREATE TABLE IF NOT EXISTS mk_calls(id INTEGER PRIMARY KEY AUTOINCREMENT, call_id TEXT UNIQUE, line TEXT, phone TEXT, "
+                "first_at TEXT, last_at TEXT, steps TEXT, outcome TEXT, ended INTEGER DEFAULT 0)")
     con.execute("CREATE TABLE IF NOT EXISTS mk_towel_pay(cid TEXT, hmonth TEXT, paid_at TEXT, method TEXT, amount REAL, msg_at TEXT, "
                 "PRIMARY KEY(cid, hmonth))")
     try:
@@ -19505,21 +19508,27 @@ def mk_diff_check(only_blocked=False):
             done += 1
         except Exception as e:
             print('  mk diff check error:', r.get('cid'), e)
+            MK_DIFF_STATE.update(last_error='%s: %s' % (r.get('cid'), str(e)[:160]), error_at=now_iso())
     return done
 
 
 MK_DIFF_FAST = 10       # שניות — מאיר: "אפשר גם פחות מדקה?"
+MK_DIFF_STATE = {'started': '', 'last_full': '', 'last_fast': '', 'last_error': '', 'error_at': '', 'closed': 0, 'beat': 0.0}
 
 
 def _mk_diff_loop():
     """מי שחסום ומחכה לשלם — נבדק כל 10 שניות (רק הוא); כל השאר — כל 5 דקות"""
+    MK_DIFF_STATE['started'] = now_iso()
+    MK_DIFF_STATE['beat'] = time.time()
     time.sleep(30)
     last_full = 0.0
     while True:
+        MK_DIFF_STATE['beat'] = time.time()
         try:
             if time.time() - last_full >= 300:
-                mk_diff_check()
+                MK_DIFF_STATE['closed'] += mk_diff_check() or 0
                 last_full = time.time()
+                MK_DIFF_STATE['last_full'] = now_iso()
             else:
                 con = db()
                 try:
@@ -19527,9 +19536,11 @@ def _mk_diff_loop():
                 finally:
                     con.close()
                 if waiting:
-                    mk_diff_check(only_blocked=True)
+                    MK_DIFF_STATE['closed'] += mk_diff_check(only_blocked=True) or 0
+                    MK_DIFF_STATE['last_fast'] = now_iso()
         except Exception as e:
             print('  mk diff loop error:', e)
+            MK_DIFF_STATE.update(last_error=str(e)[:200], error_at=now_iso())
         time.sleep(MK_DIFF_FAST)
 
 
@@ -24093,6 +24104,7 @@ class H(BaseHTTPRequestHandler):
                 print('  mk vm ivr error:', e)
                 ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&'
             mkg_ivr_log(P, ans)
+            mk_call_log('vm', P, ans)
             return self._send(200, ans.encode('utf-8'), 'text/plain; charset=utf-8')
         m = re.match(r'/api/yemot/mkgroup/([A-Za-z0-9]+)$', self.path.split('?')[0])
         if m:
@@ -24105,6 +24117,7 @@ class H(BaseHTTPRequestHandler):
                 print('  mkg ivr error:', e)
                 ans = 'id_list_message=t-' + _ivr_t('אירעה תקלה, נסו שוב מאוחר יותר') + '&'
             mkg_ivr_log(P, ans)
+            mk_call_log('grp', P, ans)
             return self._send(200, ans.encode('utf-8'), 'text/plain; charset=utf-8')
         m = re.match(r'/api/yemot/ivr(?:/([A-Za-z0-9]+))?(/rec|/zmanim)?$', self.path.split('?')[0])
         if m:
@@ -25122,6 +25135,46 @@ class H(BaseHTTPRequestHandler):
             txt = 'קבצים: %s\n\nנתיבים: %s\n\n' % (', '.join(r['files']), ', '.join(r['paths']) or '—')
             txt += '\n\n---\n\n'.join(r['hits'])
             return self._send(200, txt.encode('utf-8'), 'text/plain; charset=utf-8')
+        if self.path.split('?')[0] == '/api/mikveh/monitor':
+            # 📡 מאיר: "שיראו מקום באתר אם יש כעת חובות ואם המערכת בודקת, ומידע מלא — מי התקשר לקו, עדכונים מלאים"
+            import mikveh as _mk
+            con = db()
+            try:
+                op_ = [dict(r) for r in con.execute("SELECT * FROM mk_diff WHERE status='open' ORDER BY id DESC LIMIT 200")]
+                cl_ = [dict(r) for r in con.execute("SELECT * FROM mk_diff WHERE status<>'open' AND status<>'old' ORDER BY id DESC LIMIT 50")]
+                calls = [dict(r) for r in con.execute("SELECT * FROM mk_calls ORDER BY last_at DESC LIMIT 150")]
+            finally:
+                con.close()
+            try:
+                byid = {str(c.get('id')): c for c in _mk.clients()}
+                import yemot as _ym
+                byph = {}
+                for c in byid.values():
+                    for ph in _mkg_phones(c):
+                        byph.setdefault(ph, []).append(c)
+            except Exception:
+                byid, byph = {}, {}
+                _ym = None
+            nm = lambda c: ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip()
+            for r in op_ + cl_:
+                c = byid.get(str(r['cid'])) or {}
+                r['name'], r['code'], r['blocked_now'] = nm(c), c.get('clientCode'), bool(c.get('isBlocked'))
+            for r in calls:
+                try:
+                    r['steps'] = json.loads(r['steps'] or '[]')
+                except Exception:
+                    r['steps'] = []
+                for st_ in r['steps']:
+                    st_.pop('vars', None)
+                n_ = _ym.norm_phone(r['phone']) if _ym else ''
+                hits = byph.get(n_) or []
+                r['names'] = [nm(c) for c in hits][:3]
+                r['cids'] = [str(c.get('id')) for c in hits][:3]
+            beat = MK_DIFF_STATE.get('beat') or 0
+            return self._send(200, {'ok': True, 'open': op_, 'closed': cl_, 'calls': calls, 'now': now_iso(),
+                                    'check': dict({k: v for k, v in MK_DIFF_STATE.items() if k != 'beat'},
+                                                  alive=bool(beat and time.time() - beat < 90), ago=int(time.time() - beat) if beat else None,
+                                                  fast=MK_DIFF_FAST, waiting=sum(1 for r in op_ if r.get('blocked')))})
         if self.path.split('?')[0] == '/api/mikveh/client_recent':
             # 🕘 מאיר: "כשמעדכנים מנוי דרך הממשק — שיופיע מה הוא החליף לאחרונה, כדי שלא אחליף בטעות למי שהשאיר הודעה"
             cid = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('id') or [''])[0]
@@ -37938,6 +37991,62 @@ def mkg_paid_fail(con, cid, name, c, phone, gr, cur, tgt, call_id, amt, how):
                 (now_iso(), cid, name, c.get('clientCode'), phone, cur, gr[cur]['name'], tgt, gr[tgt]['name'],
                  '⚠️ שילם ₪%g (%s) אבל המעבר במקווה נכשל — להעביר ידנית' % (amt, how), call_id))
     con.commit()
+
+
+def _ivr_heard(ans):
+    """מה המתקשר שמע — בעברית קריאה ("t-…" ו-"n-3" → 3)"""
+    a = str(ans or '')
+    body = a.split('=', 2)[1] if a.startswith('read=') else a.split('=', 1)[1] if '=' in a else a
+    body = body.split('&')[0]
+    parts = []
+    for seg in body.split('.'):
+        seg = seg.strip()
+        if seg.startswith('t-'):
+            parts.append(seg[2:])
+        elif seg.startswith('n-'):
+            parts.append(seg[2:])
+    return ' '.join(parts).strip()[:600]
+
+
+def mk_call_log(line, P, ans):
+    """📞 שיחה אחת = שורה אחת (לפי ApiCallId). כל פנייה של ימות = צעד: מה הוקש עכשיו, ומה הוא שמע"""
+    try:
+        cid_ = str(P.get('ApiCallId') or '')[:60] or ('%s-%s' % (str(P.get('ApiPhone') or ''), il_now().strftime('%Y%m%d%H%M')))
+        phone = str(P.get('ApiPhone') or '')[:20]
+        vars_ = {k: str(v)[:20] for k, v in P.items() if k not in ('k', 'hangup') and not k.startswith('Api')}
+        con = db()
+        try:
+            row = con.execute("SELECT * FROM mk_calls WHERE call_id=?", (cid_,)).fetchone()
+            steps = json.loads(row['steps'] or '[]') if row else []
+            seen = {}
+            for st_ in steps:
+                seen.update(st_.get('vars') or {})
+            pressed = {k: v for k, v in vars_.items() if seen.get(k) != v}
+            a = str(ans or '')
+            ended, outcome = (row['ended'] if row else 0), (row['outcome'] if row else '')
+            if P.get('hangup') == 'yes':
+                ended = 1
+                outcome = outcome or 'ניתק באמצע'
+                steps.append({'at': now_iso(), 'pressed': {}, 'vars': vars_, 'heard': '— ניתק —'})
+            else:
+                heard = _ivr_heard(a)
+                steps.append({'at': now_iso(), 'pressed': pressed, 'vars': vars_, 'heard': heard})
+                if a.startswith('id_list_message'):
+                    ended, outcome = 1, heard[:300]
+                elif a.startswith('credit_card'):
+                    outcome = 'עבר לתשלום באשראי'
+            steps = steps[-60:]
+            if row:
+                con.execute("UPDATE mk_calls SET last_at=?, steps=?, outcome=?, ended=? WHERE id=?",
+                            (now_iso(), json.dumps(steps, ensure_ascii=False), outcome, ended, row['id']))
+            else:
+                con.execute("INSERT INTO mk_calls(call_id,line,phone,first_at,last_at,steps,outcome,ended) VALUES(?,?,?,?,?,?,?,?)",
+                            (cid_, line, phone, now_iso(), now_iso(), json.dumps(steps, ensure_ascii=False), outcome, ended))
+            con.commit()
+        finally:
+            con.close()
+    except Exception as e:
+        print('  mk call log error:', e)
 
 
 def mkg_ivr_log(P, ans):

@@ -2382,6 +2382,7 @@ function renderMikveh(){
           <button class="mkibtn" id="mkrqb" title="בקשות לשינוי סוג מנוי שנשלחו מהטלפון — לאשר ולהעביר, או לדחות">📨 בקשות שינוי מנוי<b id="mksgn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button>
       <button class="mkibtn" id="mkvmb" title="הודעות שהשאירו בשלוחת המקווה בטלפון — להאזין, לקרוא את התמלול, לסמן שטופל">📥 הודעות מוקלטות<b id="mkvmn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button></div></div>
         <div class="mkhg"><span>📊 דוחות ובדיקות</span><div><button class="mkibtn" id="mkentday" title="כמה נכנסו למקווה ביום מסוים — לפי קבוצה (ערך צבור, מזדמן וכו')">📊 כניסות ליום</button>
+          <button class="mkibtn" id="mkmonb1" title="מי התקשר לשלוחות, חובות הפרש פתוחים, והאם הבדיקה האוטומטית פועלת">📡 מעקב — שיחות וחובות</button>
           <button class="mkibtn" id="mkdebtsb" title="כל החובות הפתוחים במקווה — מי חייב, כמה ועל מה">🧾 חובות פתוחים</button>
       <button class="mkibtn" id="mkprice" title="מסמך Word על הבלאנק של המקווה — כל המנויים והמחירים, מהמקווה עכשיו">📄 מחירון המנויים</button>
       <button class="mkibtn" id="mktwm" title="מראש חודש כסלו המגבת כלולה במנוי — העברת מי שיש לו מנוי מגבות למנוי עם מגבת">🧺 העברת מנויי מגבות</button>
@@ -2422,6 +2423,7 @@ function renderMikveh(){
   document.getElementById('mkvmb').onclick=()=>mkVmOpen();
   document.getElementById('mkrqb').onclick=()=>mkSgReqOpen();
   document.getElementById('mkdebtsb').onclick=()=>mkDebtsAll();
+  document.getElementById('mkmonb1').onclick=()=>mkMonitorOpen();
   mkVmCount();
   mkReqCount();
   mkPendLoad();
@@ -2585,6 +2587,59 @@ async function mkRecentFill(cid,el){if(!el)return;
   el.innerHTML=h?'<div style="background:'+(fresh?'#fff8e6':'#f6f8fc')+';border:1px solid '+(fresh?'#f0d48a':'#e3e7ee')+';border-radius:10px;padding:8px 12px;margin:8px 0;font-size:.9rem">'+
     '<b>'+(fresh?'⚠️ שימו לב — מה קרה אצלו לאחרונה':'🕘 לאחרונה')+'</b>'+h+'</div>'
     :'<div style="color:#888;font-size:.85rem;margin:6px 0">🕘 אין שינויים, הודעות או בקשות ב-60 הימים האחרונים</div>';}
+// 📡 מאיר: "שיראו מקום באתר אם יש כעת חובות ואם המערכת בודקת, ואני רוצה לקבל מידע מלא — מי התקשר לקו, עדכונים מלאים"
+// משותף לשני האתרים: ממלא את el ומתרענן לבד כל 15 שניות כל עוד הוא על המסך
+let MKMON_T=null,MKMON_TAB='calls';
+async function mkMonitorInto(el,openClient){
+  const esc_=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const dmy=s=>s?String(s).slice(8,10)+'.'+String(s).slice(5,7)+' '+String(s).slice(11,16):'';
+  const ago=s=>{if(!s)return '';const d=(Date.now()-new Date(String(s).replace(' ','T')).getTime())/1000;
+    return d<60?'לפני '+Math.max(0,Math.round(d))+' שניות':d<3600?'לפני '+Math.round(d/60)+' דקות':d<86400?'לפני '+Math.round(d/3600)+' שעות':'לפני '+Math.round(d/86400)+' ימים';};
+  const LINE={grp:'שינוי סוג מנוי',vm:'הודעה קולית'};
+  const r=await fetch('/api/mikveh/monitor').then(x=>x.json()).catch(()=>null);
+  if(!document.body.contains(el))return;
+  if(!r||!r.ok){el.innerHTML='<div style="background:#fdecec;border-radius:10px;padding:10px">⚠️ '+esc_((r&&r.error)||'אין תשובה מהשרת')+'</div>';return;}
+  const k=r.check||{},calls=r.calls||[],open_=r.open||[],closed=r.closed||[];
+  const live=k.alive;
+  const card=(t,v,sub,col)=>'<div style="flex:1;min-width:150px;background:#fff;border:1px solid #e3e7ee;border-top:4px solid '+col+';border-radius:12px;padding:10px 12px"><div style="color:#666;font-size:.82rem">'+t+'</div><div style="font-size:1.5rem;font-weight:800;color:'+col+'">'+v+'</div><div style="color:#888;font-size:.78rem">'+sub+'</div></div>';
+  let h='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'+
+    card('הבדיקה האוטומטית',live?'🟢 פועלת':'🔴 לא פועלת',live?'רצה עכשיו · כל '+k.fast+' שניות למי שחסום, כל 5 דקות לכל השאר':'השרת לא בודק כרגע — אולי עלה זה עתה, או שהוא כבוי',live?'#1e7a3c':'#c0392b')+
+    card('חובות הפרש פתוחים',open_.length,open_.length?(k.waiting?k.waiting+' חסומים עד שישלמו':'אף אחד לא חסום'):'אין חובות פתוחים','#b9770e')+
+    card('שיחות לשלוחות',calls.length,calls.length?'אחרונה '+ago(calls[0].last_at):'עוד לא התקשרו','#2f6fb0')+
+    card('שולמו / נסגרו',closed.length,k.closed?'מאז שהשרת עלה: '+k.closed:'ב-50 האחרונים','#6b4bc4')+'</div>'+
+    (k.last_error?'<div style="background:#fff4e5;border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:.88rem">⚠️ תקלה אחרונה בבדיקה ('+dmy(k.error_at)+'): '+esc_(k.last_error)+'</div>':'')+
+    '<div style="color:#888;font-size:.8rem;margin-bottom:10px">בדיקה מלאה אחרונה: '+(k.last_full?dmy(k.last_full)+' ('+ago(k.last_full)+')':'—')+(k.last_fast?' · בדיקה מהירה אחרונה: '+ago(k.last_fast):'')+' · מתרענן לבד כל 15 שניות</div>'+
+    '<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">'+[['calls','📞 שיחות ('+calls.length+')'],['debts','💲 חובות הפרש ('+open_.length+')'],['closed','✓ שולמו ('+closed.length+')']].map(([t,l])=>
+      '<button data-mt="'+t+'" style="border:1px solid '+(MKMON_TAB===t?'#2f6fb0':'#dde3ee')+';background:'+(MKMON_TAB===t?'#2f6fb0':'#fff')+';color:'+(MKMON_TAB===t?'#fff':'#333')+';border-radius:20px;padding:5px 14px;cursor:pointer;font:inherit">'+l+'</button>').join('')+'</div>';
+  const who=(names,cids,phone)=>(names&&names.length?names.map((n,i)=>'<a href="#" data-oc="'+esc_(cids[i])+'" style="font-weight:700">'+esc_(n)+'</a>').join(' / '):'<span style="color:#999">לא מזוהה</span>')+' <span dir="ltr" style="color:#888;font-size:.85rem">'+esc_(phone)+'</span>';
+  if(MKMON_TAB==='calls'){
+    h+=calls.length?calls.map((c,i)=>{const done=/המנוי שלכם שונה|הועברתם|השינוי בוטל|נשלחה|נשמרה/.test(c.outcome||'');
+      return '<div style="border:1px solid #e8ecf2;border-radius:10px;margin-bottom:8px;background:#fff"><div data-cx="'+i+'" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 12px;cursor:pointer">'+
+        '<b style="white-space:nowrap">'+dmy(c.first_at)+'</b><span style="background:#eef3fd;color:#2f6fb0;border-radius:12px;padding:1px 8px;font-size:.8rem">'+esc_(LINE[c.line]||c.line)+'</span>'+
+        '<span style="flex:1;min-width:160px">'+who(c.names,c.cids,c.phone)+'</span>'+
+        '<span style="font-size:.85rem;color:'+(c.ended?(done?'#1e7a3c':'#555'):'#b9770e')+';max-width:340px">'+(c.ended?esc_((c.outcome||'').slice(0,90)):'⏳ בשיחה / לא הסתיים')+'</span>'+
+        '<small style="color:#999">'+c.steps.length+' צעדים ▾</small></div>'+
+        '<div data-cs="'+i+'" style="display:none;padding:0 14px 10px;font-size:.86rem">'+c.steps.map(s=>'<div style="border-top:1px dashed #e3e7ee;padding:5px 0"><b style="color:#888">'+dmy(s.at).slice(6)+'</b> '+
+          (Object.keys(s.pressed||{}).length?'<span style="background:#fff3c4;border-radius:6px;padding:0 6px;margin-inline-end:6px">הקיש: '+Object.entries(s.pressed).map(([kk,v])=>esc_(v)).join(', ')+'</span>':'')+
+          '<span style="color:#444">'+esc_(s.heard||'')+'</span></div>').join('')+'</div></div>';}).join('')
+      :'<div style="color:#888;padding:20px;text-align:center">עוד לא נרשמו שיחות. כל שיחה חדשה לשלוחות המקווה תופיע כאן.</div>';}
+  else{const L=MKMON_TAB==='debts'?open_:closed;
+    h+=L.length?'<table style="border-collapse:collapse;width:100%;font-size:.88rem"><tr style="background:#f3f5f8"><th style="text-align:right;padding:6px">לקוח</th><th style="padding:6px">סכום</th><th style="text-align:right;padding:6px">שינוי</th><th style="padding:6px">מתי</th><th style="padding:6px">'+(MKMON_TAB==='debts'?'מצב':'נסגר')+'</th></tr>'+
+      L.map(x=>'<tr style="border-top:1px solid #eef0f4"><td style="padding:6px"><a href="#" data-oc="'+esc_(x.cid)+'" style="font-weight:700">'+esc_(x.name||'—')+'</a> <small style="color:#888">#'+esc_(x.code||'')+'</small></td>'+
+        '<td style="padding:6px;text-align:center;font-weight:800">₪'+x.amount+'</td><td style="padding:6px">'+esc_(x.from_name)+' → '+esc_(x.to_name)+'</td><td style="padding:6px;text-align:center;white-space:nowrap">'+dmy(x.at)+'</td>'+
+        '<td style="padding:6px;text-align:center">'+(MKMON_TAB==='debts'?(x.blocked?'<span style="color:#c0392b">⛔ חסום עד התשלום</span>':'')+(x.msg?' <span style="color:#555">📺 הודעה במסך</span>':'')+(!x.blocked&&!x.msg?'ממתין לתשלום':'')
+          :(x.status==='paid'?'<span style="color:#1e7a3c">✓ שולם</span>':'🗑️ נמחק')+' '+dmy(x.closed_at))+'</td></tr>').join('')+'</table>'
+      :'<div style="color:#888;padding:20px;text-align:center">'+(MKMON_TAB==='debts'?'✓ אין חובות הפרש פתוחים':'עוד לא שולם חוב הפרש')+'</div>';}
+  el.innerHTML=h;
+  el.querySelectorAll('[data-mt]').forEach(b=>b.onclick=()=>{MKMON_TAB=b.dataset.mt;mkMonitorInto(el,openClient);});
+  el.querySelectorAll('[data-cx]').forEach(b=>b.onclick=e=>{if(e.target.closest('[data-oc]'))return;const d=el.querySelector('[data-cs="'+b.dataset.cx+'"]');d.style.display=d.style.display==='none'?'':'none';});
+  el.querySelectorAll('[data-oc]').forEach(a=>a.onclick=e=>{e.preventDefault();if(openClient)openClient(a.dataset.oc);});
+  clearTimeout(MKMON_T);MKMON_T=setTimeout(()=>{if(document.body.contains(el)&&!el.querySelector('[data-cs]:not([style*="none"])'))mkMonitorInto(el,openClient);
+    else if(document.body.contains(el))MKMON_T=setTimeout(()=>mkMonitorInto(el,openClient),15000);},15000);}
+function mkMonitorOpen(){const rs=document.getElementById('remsheet'),remov=document.getElementById('remov');
+  rs.innerHTML='<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📡</div><div><h2>מעקב — שיחות וחובות</h2><div class="mksub">מי התקשר לשלוחות המקווה, חובות הפרש פתוחים, והאם הבדיקה האוטומטית פועלת</div></div></div><div id="mkmonb">⏳ טוען…</div>';
+  remov.classList.add('show');document.getElementById('rx').onclick=()=>{remov.classList.remove('show');clearTimeout(MKMON_T);};
+  mkMonitorInto(document.getElementById('mkmonb'),id=>{const c=MK&&MK.clients.find(z=>z.id===id);if(c)mkOpen(c);});}
 async function mkSetGroup(c,g,on,diff){
   on=on||(()=>{});
   const t0=Date.now(); let tick=null;
