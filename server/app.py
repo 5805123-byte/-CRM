@@ -5290,6 +5290,37 @@ def ensure_schema():
         con.rollback()
         print('  berger move error:', e)
 
+    # מאיר: "כן, תאחד את שני הכרטיסים ברור" — שני הכרטיסים של איצי ברגר מתאחדים לכרטיס שבו נמצאים תשלומי פרידמן
+    try:
+        if con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_move_v1'").fetchone() and \
+                not con.execute("SELECT 1 FROM seed_flags WHERE name='berger_merge_v3'").fetchone():
+            keeps = [r['donor_id'] for r in con.execute("SELECT DISTINCT donor_id FROM donations WHERE tid LIKE 'FR%' AND note LIKE 'פרידמן · Sales Receipt%'")]
+            _nl = lambda s: re.sub(r'[עיו\s]', '', str(s or ''))
+            tg = {r['id'] for r in con.execute("SELECT id, last, first, email FROM donors").fetchall()
+                  if (_nl(r['last']) == 'ברגר' and ('איצי' in (r['first'] or '') or 'יצחק' in (r['first'] or '')))
+                  or 'mark4realty@verizon.net' in (r['email'] or '').lower()}
+            if len(keeps) == 1 and keeps[0] in tg and len(tg) == 2:
+                keep = keeps[0]
+                drop = [i for i in tg if i != keep][0]
+                for t_ in ('receipt_docs',):
+                    try:
+                        con.execute("UPDATE %s SET donor_id=? WHERE donor_id=?" % t_, (keep, drop))
+                    except Exception:
+                        pass
+                mv = merge_into(con, keep, drop)
+                if mv is not None:
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                                (keep, today_iso(), 'מיזוג', '🔗 אוחד עם הכרטיס הכפול #%d (Itzi Berger · mark4realty@verizon.net) — %s'
+                                 % (drop, ', '.join('%s %d' % (k_, v_) for k_, v_ in mv.items()) or 'בלי רשומות'), '', now_iso()))
+                    print('  ברגר: #%d אוחד לתוך #%d' % (drop, keep))
+            else:
+                print('  ברגר מיזוג: לא בוצע (פרידמן ב-%s, כרטיסים %s)' % (keeps, sorted(tg)))
+            con.execute("INSERT INTO seed_flags(name) VALUES('berger_merge_v3')")
+            con.commit()
+    except Exception as e:
+        con.rollback()
+        print('  berger merge v3 error:', e)
+
     # מאיר: "כן, על שם החברה B & C Lead Consultants LLC" — הקבלה השנתית 2025 של ברגר על שם החברה
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_name_v1'").fetchone():
