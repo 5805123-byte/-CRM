@@ -399,8 +399,21 @@ def set_sub_dates(cid, end=None, start=None):
     return {'sub_end': str(c2.get('subscriptionEndDate') or '')[:10], 'sub_start': str(c2.get('subscriptionStartDate') or '')[:10]}
 
 
-def set_group(cid, group_id):
-    return update_client(cid, {'groupId': group_id})
+def fix_price(c):
+    """המחיר המיוחד של הלקוח במקווה (subscriptionFixPrice, באגורות) — או None"""
+    v = (c or {}).get('subscriptionFixPrice')
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v else None
+
+
+def set_group(cid, group_id, clear_fix=False, fix=None):
+    """מעבר מנוי. מאיר: "מי שמעביר מנוי — שזה ימחק לו את המחיר המיוחד" — clear_fix מוחק את המחיר המיוחד;
+    fix (באגורות) — מחזיר מחיר מיוחד (בביטול מעבר)"""
+    ch = {'groupId': group_id}
+    if clear_fix:
+        ch['subscriptionFixPrice'] = None
+    if fix:
+        ch['subscriptionFixPrice'] = int(fix)
+    return update_client(cid, ch)
 
 
 # ---------- מחירים ----------

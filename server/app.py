@@ -951,7 +951,7 @@ def ensure_schema():
                     "phone TEXT, from_gid TEXT, from_name TEXT, to_gid TEXT, to_name TEXT, fee REAL, call_id TEXT, ok INTEGER, error TEXT)")
         con.execute("CREATE INDEX IF NOT EXISTS ix_mkglog_cid ON mkg_log(cid, at)")
     except Exception: pass
-    for col in ('amount REAL', 'method TEXT', 'conf TEXT', 'status TEXT', 'debt_id TEXT'):
+    for col in ('amount REAL', 'method TEXT', 'conf TEXT', 'status TEXT', 'debt_id TEXT', 'old_fix REAL'):
         try:
             con.execute("ALTER TABLE mkg_log ADD COLUMN " + col)
         except Exception: pass
@@ -19452,8 +19452,16 @@ def mk_req_sync(days=None):
 
 # מאיר: "בהערות לחוב לא צריך לכתוב כל כך ארוך, זה סתם מסבך במכשיר" — נוסחים קצרים
 MK_DIFF_MSG = 'חוב ₪{amount} — הפרש מנוי. לתשלום במכונה.'
+# מאיר: "שיופיע במכונה וגם יגיד בטלפון באופן ברור, שהמנוי ייחסם עד לתשלום החוב"
+MK_DIFF_MSG_BLOCK = 'המנוי חסום עד לתשלום חוב ₪{amount} (הפרש מנוי). לתשלום במכונה.'
 MK_DIFF_REASON = 'הפרש מנוי'
-MK_DIFF_BLOCK = 'חוב הפרש מנוי'
+MK_DIFF_BLOCK = 'המנוי חסום עד תשלום חוב הפרש'
+MK_DIFF_BLOCK_OLD = ('חוב הפרש מנוי',)          # הנוסח הקודם — גם אותו משחררים
+
+
+def mk_is_diff_block(reason):
+    r = str(reason or '')
+    return r.startswith(MK_DIFF_BLOCK) or any(r.startswith(x) for x in MK_DIFF_BLOCK_OLD)
 
 
 def mk_msg_add(cur, txt):
@@ -19507,7 +19515,7 @@ def mk_diff_check(only_blocked=False):
                     if new != (full.get('message') or '').strip():
                         _mk.update_client(r['cid'], {'message': new})
                 # משחררים רק חסימה שלנו (הסיבה "חוב הפרש מנוי…") — חסימה אחרת נשארת
-                if r.get('blocked') and full.get('isBlocked') and str(full.get('blockReason') or '').startswith(MK_DIFF_BLOCK):
+                if r.get('blocked') and full.get('isBlocked') and mk_is_diff_block(full.get('blockReason')):
                     still = con_open_blocks(r['cid'], r['id'])
                     if not still:
                         _mk.set_blocked(r['cid'], False)
@@ -25299,7 +25307,8 @@ class H(BaseHTTPRequestHandler):
             if gid not in gr:
                 return self._send(200, {'ok': False, 'error': 'המנוי לא נמצא'})
             q = mkg_quote(cfg, c, gr, gid)
-            return self._send(200, dict(q, ok=True, end=str(c.get('subscriptionEndDate') or '')[:10],
+            fx = _mk.fix_price(c)
+            return self._send(200, dict(q, ok=True, end=str(c.get('subscriptionEndDate') or '')[:10], fix=(fx / 100.0) if fx else None,
                                         from_name=(gr.get(c.get('groupId')) or {}).get('name', ''), to_name=gr[gid]['name'],
                                         divisor=cfg.get('divisor') or 30, msg=MK_DIFF_MSG))
         if self.path.split('?')[0] == '/api/mikveh/towel_migrate':
@@ -25336,7 +25345,7 @@ class H(BaseHTTPRequestHandler):
                 elif not ts and not tl:
                     note = 'אין מנוי עם מגבת בקטגוריה "%s"' % (cmap.get(gid) or '')
                 if isinstance(fix, (int, float)) and fix:
-                    note = (note + ' · ' if note else '') + 'יש לו מחיר אישי ₪%g — הוא יישאר גם אחרי המעבר' % (fix / 100.0)
+                    note = (note + ' · ' if note else '') + 'יש לו מחיר מיוחד ₪%g — במעבר הוא יימחק' % (fix / 100.0)
                 end = str(c.get('subscriptionEndDate') or '')[:10]
                 rows.append({'id': c.get('id'), 'name': ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip(),
                              'code': c.get('clientCode'), 'size': size, 'src': src, 'text': str(txt).strip()[:200],
@@ -28180,7 +28189,8 @@ class H(BaseHTTPRequestHandler):
                 gname = next((g['name'] for g in _mk.groups() if g['id'] == gid), '')
                 if not gname:
                     return self._send(200, {'ok': False, 'error': 'הקבוצה לא קיימת במקווה'})
-                res = _mk.set_group(cid, gid)
+                old_fix = _mk.fix_price(_mk.client(cid, max_age=30))
+                res = _mk.set_group(cid, gid, clear_fix=True)
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:300]})
             row = _mk.slim(res)
@@ -28203,7 +28213,7 @@ class H(BaseHTTPRequestHandler):
                         debt_id = str((dr or {}).get('id') or '') if isinstance(dr, dict) else ''
                         mtxt = ''
                         if diff.get('screen'):
-                            mtxt = MK_DIFF_MSG.format(amount='%g' % damt)
+                            mtxt = (MK_DIFF_MSG_BLOCK if diff.get('block') else MK_DIFF_MSG).format(amount='%g' % damt)
                             full = _mk.client(cid)
                             _mk.update_client(cid, {'message': mk_msg_add(full.get('message'), mtxt)})
                         blk_ = False
@@ -28247,7 +28257,8 @@ class H(BaseHTTPRequestHandler):
                     con = db()
                     try:
                         con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                                    (cid, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'group', '🏢 שונה סוג מנוי במשרד: ' + gname))
+                                    (cid, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'group', '🏢 שונה סוג מנוי במשרד: ' + gname +
+                                     (' · 🏷️ המחיר המיוחד ₪%g אופס' % (old_fix / 100.0) if old_fix else '')))
                         if credit:
                             con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                                         (cid, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'credit', '💳 זיכוי: עבר ל"%s" עם יתרה צבורה של ₪%g — הכסף נשאר לזכותו במקווה (קוביית היתרה)' % (gname, credit)))
@@ -28574,8 +28585,9 @@ class H(BaseHTTPRequestHandler):
                     try:
                         full = _mk.client(cid)
                         frm = full.get('groupId')
+                        old_fix = _mk.fix_price(full)
                         if to and frm != to:
-                            _mk.set_group(cid, to)
+                            _mk.set_group(cid, to, clear_fix=True)
                             if str(_mk.client(cid).get('groupId')) != to:
                                 raise RuntimeError('המקווה לא עדכן את המנוי')
                         if mk_twl_of(full.get('remark')) == 'yes':          # ההודעה (מה שמוצג במכונה) — לא נוגעים
@@ -28583,7 +28595,8 @@ class H(BaseHTTPRequestHandler):
                             if rk != (full.get('remark') or '').strip():
                                 _mk.update_client(cid, {'remark': rk})
                         con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                                    (cid, now_iso(), 'towel', ('🧺 מנוי המגבות אוחד עם המנוי: %s → %s' % ((gr.get(frm) or {}).get('name', '—'), gr[to]['name']))
+                                    (cid, now_iso(), 'towel', ('🧺 מנוי המגבות אוחד עם המנוי: %s → %s%s' % ((gr.get(frm) or {}).get('name', '—'), gr[to]['name'],
+                                                                                                    ' · 🏷️ המחיר המיוחד ₪%g אופס' % (old_fix / 100.0) if old_fix else ''))
                                      if to and frm != to else '🧺 המנוי כבר כולל מגבת'))
                         con.commit()
                         res.append({'id': cid, 'ok': True})
@@ -29123,6 +29136,8 @@ class H(BaseHTTPRequestHandler):
                    'credit_down': bool(b.get('credit_down')), 'say_prices': bool(b.get('say_prices')),
                    'cancel_on': bool(b.get('cancel_on')),
                    'debt_block': b.get('debt_block') is not False, 'debt_screen': b.get('debt_screen') is not False,
+                   'mail_on': b.get('mail_on') is not False,
+                   'notify_email': str(b.get('notify_email') or '').strip()[:120] if re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', str(b.get('notify_email') or '').strip()) else '',
                    'pay_methods': [m for m in (b.get('pay_methods') or []) if m in ('keva', 'card', 'debt')] or ['debt'],
                    'nd_mosad': str(b.get('nd_mosad') or '').strip()[:20],
                    'erech_groups': [str(x) for x in (b.get('erech_groups') or []) if str(x) in known]
@@ -37457,7 +37472,9 @@ MKG_DEFAULT = {'enabled': False, 'groups': [], 'max': 1, 'days': 30, 'say': {}, 
                'phone_cats': [], 'cat_say': {},
                # ⛔ מאיר: "העברתי מנוי ולא חסמת… והוא אמור להגיד גם בטלפון שהוא לא יוכל להיכנס עד שמשלמים" —
                # חוב הפרש מהטלפון: חסימה עד התשלום (נפתחת לבד) + הודעה במסך המכונה, כמו מהכרטיס
-               'debt_block': True, 'debt_screen': True}
+               'debt_block': True, 'debt_screen': True,
+               # 📧 מייל על כל שינוי מנוי בטלפון (ריק = ALERT_EMAIL)
+               'mail_on': True, 'notify_email': ''}
 
 # 🗣️ מאיר: "אני רוצה אפשרות לשנות טקסטים בשלוחה API" — כל מה שהשלוחות של המקווה אומרות. בסוגריים מסולסלים —
 # מה שהמערכת ממלאת לבד (שם, קבוצה, סכום…). מה שלא שונה — ברירת המחדל. נשמר ב-app_kv (mk_ivr_texts).
@@ -37474,16 +37491,17 @@ MK_TEXTS = [
     ('option', 'grp', 'אפשרות בתפריט (המספר נאמר אחרי)', 'ל{group} הקישו'),
     ('option_price', 'grp', 'אפשרות בתפריט עם מחיר (המספר נאמר אחרי)', 'ל{group}, {price} שקלים לחודש, הקישו'),
     ('quote_pay', 'grp', 'הצעת מחיר — יש הפרש לתשלום', 'המעבר ל{group} עולה {price} שקלים לחודש. נשארו לכם {days} ימים במנוי, ולכן ההפרש לתשלום הוא {amount} שקלים. להמשך הקישו 1, לבחירת מנוי אחר הקישו 2'),
+    ('quote_block', 'grp', 'אזהרה בהצעת המחיר — חסימה עד התשלום', 'שימו לב, אם תשלמו במכונה, המנוי ייחסם עד לתשלום החוב'),
     ('quote_credit', 'grp', 'הצעת מחיר — מגיע זיכוי', 'במעבר ל{group} תקבלו זיכוי של {amount} שקלים ביתרה הזמנית, על {days} הימים שנשארו לכם במנוי. לאישור הקישו 1, לבחירת מנוי אחר הקישו 2'),
     ('pay_keva', 'grp', 'תשלום — הוראת קבע', 'לתשלום מהוראת הקבע בכרטיס המסתיים בספרות {last4} הקישו {n}'),
     ('pay_card', 'grp', 'תשלום — כרטיס אשראי', 'לתשלום בכרטיס אשראי הקישו {n}'),
     ('pay_debt', 'grp', 'תשלום — חוב במקווה', 'לרישום חוב במקווה ותשלום במכונה של המקווה הקישו {n}'),
-    ('pay_debt_block', 'grp', 'תשלום — חוב במקווה (עם חסימה עד התשלום)', 'לרישום חוב ותשלום במכונה של המקווה הקישו {n}. עד שתשלמו את החוב לא תוכלו להיכנס'),
+    ('pay_debt_block', 'grp', 'תשלום — חוב במקווה (עם חסימה עד התשלום)', 'לתשלום במכונה של המקווה הקישו {n}. שימו לב, המנוי ייחסם עד לתשלום החוב'),
     ('pay_fail', 'grp', 'החיוב לא עבר', 'החיוב לא עבר'),
     ('pay_cancel', 'grp', 'התשלום בוטל', 'התשלום בוטל, המנוי לא שונה'),
     ('done_paid', 'grp', 'שולם והועבר', 'התשלום של {amount} שקלים התקבל, והמנוי שלכם שונה ל{group}. תודה רבה'),
-    ('done_debt_block', 'grp', 'הועבר עם חוב — חסום עד התשלום', 'המנוי שלכם שונה ל{group}. נרשם לכם חוב של {amount} שקלים. עד שתשלמו אותו במכונה של המקווה, באשראי או במזומן, לא תוכלו להיכנס. אחרי התשלום הכניסה נפתחת מיד'),
-    ('debt_blocked', 'grp', 'מתקשר שחסום עד תשלום חוב הפרש', 'יש לכם חוב הפרש של {amount} שקלים. עד שתשלמו אותו במכונה של המקווה לא תוכלו להיכנס, ואחרי התשלום הכניסה נפתחת מיד'),
+    ('done_debt_block', 'grp', 'הועבר עם חוב — חסום עד התשלום', 'המנוי שלכם שונה ל{group}. נרשם לכם חוב של {amount} שקלים. המנוי שלכם חסום עד לתשלום החוב במכונה של המקווה, באשראי או במזומן. מיד אחרי התשלום המנוי ייפתח'),
+    ('debt_blocked', 'grp', 'מתקשר שחסום עד תשלום חוב הפרש', 'המנוי שלכם חסום עד לתשלום חוב ההפרש של {amount} שקלים במכונה של המקווה. מיד אחרי התשלום המנוי ייפתח'),
     ('done_debt', 'grp', 'הועבר עם חוב', 'המנוי שלכם שונה ל{group}. נרשם לכם חוב של {amount} שקלים, ואפשר לשלם אותו במכונה של המקווה באשראי או במזומן. תודה רבה'),
     ('not_member', 'grp', 'המנוי רק לחברי קהילה', 'המנויים האלה מיועדים לחברי הקהילה בלבד. לפרטים אנא פנו למשרד'),
     ('done_credit', 'grp', 'הועבר עם זיכוי', 'המנוי שלכם שונה ל{group}. זיכינו אתכם על סך {amount} שקלים ביתרה הזמנית. תודה רבה'),
@@ -37631,7 +37649,8 @@ def mkg_quote(cfg, c, gr, tgt):
     import mikveh as _mk
     cur = c.get('groupId')
     sl = _mk.slim(c)
-    old = sl.get('price')
+    fx = _mk.fix_price(c)
+    old = (fx / 100.0) if fx else sl.get('price')
     if old is None:
         old = (gr.get(cur) or {}).get('price') or 0
     if mkg_is_erech(cfg, cur, (gr.get(cur) or {}).get('name')):
@@ -37705,10 +37724,13 @@ def mkg_apply(con, cid, c, gr, cur, tgt, q, method, call_id, phone, conf=''):
     name = (str(c.get('firstName') or '').strip() + ' ' + str(c.get('lastName') or '').strip()).strip()
     amt = q['amount']
     row = [now_iso(), cid, name, c.get('clientCode'), phone, cur, gr[cur]['name'], tgt, gr[tgt]['name'], 0, call_id, amt, method, conf]
+    old_fix = _mk.fix_price(c)
     try:
-        _mk.set_group(cid, tgt)
-        if str(_mk.client(cid).get('groupId')) != str(tgt):
+        _mk.set_group(cid, tgt, clear_fix=True)
+        after_ = _mk.client(cid)
+        if str(after_.get('groupId')) != str(tgt):
             raise RuntimeError('המקווה לא עדכן את הקבוצה')
+        fix_left = _mk.fix_price(after_)
     except Exception as e:
         con.execute("INSERT INTO mkg_log(at,cid,name,code,phone,from_gid,from_name,to_gid,to_name,fee,call_id,amount,method,conf,ok,error,status) "
                     "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,'')", row + [str(e)[:300]])
@@ -37722,7 +37744,7 @@ def mkg_apply(con, cid, c, gr, cur, tgt, q, method, call_id, phone, conf=''):
             cfg_ = mkg_cfg(con)
             mtxt, blk_ = '', False
             if cfg_.get('debt_screen', True):
-                mtxt = MK_DIFF_MSG.format(amount='%g' % amt)
+                mtxt = (MK_DIFF_MSG_BLOCK if cfg_.get('debt_block', True) else MK_DIFF_MSG).format(amount='%g' % amt)
                 full = _mk.client(cid)
                 _mk.update_client(cid, {'message': mk_msg_add(full.get('message'), mtxt)})
             if cfg_.get('debt_block', True):
@@ -37734,14 +37756,23 @@ def mkg_apply(con, cid, c, gr, cur, tgt, q, method, call_id, phone, conf=''):
             _mk.add_credit(cid, int(round(-amt * 100)), temp=True)
     except Exception as e:
         err = 'הקבוצה הוחלפה, אבל %s לא נרשם במקווה: %s' % ('החוב' if method == 'debt' else 'הזיכוי', str(e)[:200])
-    con.execute("INSERT INTO mkg_log(at,cid,name,code,phone,from_gid,from_name,to_gid,to_name,fee,call_id,amount,method,conf,ok,error,status,debt_id) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,'active',?)", row + [err, debt_id])
+    if old_fix and fix_left:
+        err = (err + ' · ' if err else '') + 'המחיר המיוחד ₪%g לא נמחק במקווה' % (fix_left / 100.0)
+    con.execute("INSERT INTO mkg_log(at,cid,name,code,phone,from_gid,from_name,to_gid,to_name,fee,call_id,amount,method,conf,ok,error,status,debt_id,old_fix) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,'active',?,?)", row + [err, debt_id, (old_fix / 100.0) if old_fix else None])
     how = {'debt': ' · נרשם חוב ₪%g במקווה%s' % (amt, ' · ⛔ חסום עד התשלום' if method == 'debt' and amt > 0 and mkg_cfg(con).get('debt_block', True) else ''), 'card': ' · שילם ₪%g באשראי' % amt, 'keva': ' · שילם ₪%g מהוראת הקבע' % amt,
            'credit': ' · זיכוי ₪%g ביתרה הזמנית' % -amt}.get(method, '') if amt else ''
     con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                 (cid, now_iso(), 'group', ('📞 שינה סוג מנוי בטלפון: %s → %s' if call_id and not str(call_id).startswith('req:') else '✓ אושרה הבקשה מהטלפון: %s → %s')
-                 % (gr[cur]['name'], gr[tgt]['name']) + how))
+                 % (gr[cur]['name'], gr[tgt]['name']) + how + (' · 🏷️ המחיר המיוחד ₪%g אופס' % (old_fix / 100.0) if old_fix and not fix_left else '')))
     con.commit()
+    if call_id and not str(call_id).startswith('req:'):
+        mk_change_mail(con, '📞 שינוי סוג מנוי בטלפון', name, c, phone, gr[cur]['name'], gr[tgt]['name'], [
+            ('הפרש', ('₪%g' % amt) if amt else 'אין'),
+            ('תשלום', {'debt': 'חוב במקווה' + (' — המנוי חסום עד התשלום' if amt > 0 and mkg_cfg(con).get('debt_block', True) else ''),
+                       'card': 'אשראי בטלפון', 'keva': 'מהוראת הקבע', 'credit': 'זיכוי ביתרה הזמנית', 'free': 'בלי הפרש'}.get(method, method)),
+            ('מחיר מיוחד', ('₪%g — אופס' % (old_fix / 100.0)) if old_fix and not fix_left else ('₪%g — לא נמחק!' % (fix_left / 100.0)) if fix_left else 'לא היה'),
+            ('תקלה', err or '')])
     return True, err, debt_id
 
 
@@ -37808,7 +37839,7 @@ def mkg_ivr(P):
         cid = str(c.get('id'))
         first = (c.get('firstName') or '').strip()
         name = (first + ' ' + (c.get('lastName') or '').strip()).strip()
-        diff_blocked = bool(c.get('isBlocked') and str(c.get('blockReason') or '').startswith(MK_DIFF_BLOCK))
+        diff_blocked = bool(c.get('isBlocked') and mk_is_diff_block(c.get('blockReason')))
         if c.get('isBlocked') and not diff_blocked:
             return msg('blocked')
         cur = c.get('groupId')
@@ -37908,7 +37939,8 @@ def mkg_ivr(P):
             if P.get('Grp') != '1':
                 return msg('bye')
             try:
-                _mk.set_group(cid, undo['from_gid'])
+                ofx = undo['old_fix'] if 'old_fix' in undo.keys() else None
+                _mk.set_group(cid, undo['from_gid'], fix=int(round(ofx * 100)) if ofx else None)
                 if str(_mk.client(cid).get('groupId')) != str(undo['from_gid']):
                     raise RuntimeError('המקווה לא עדכן את המנוי')
                 _mk.delete_debt(undo['debt_id'])
@@ -37920,6 +37952,8 @@ def mkg_ivr(P):
                         (cid, now_iso(), 'group', '↩️ ביטל בטלפון את השינוי: חזר ל%s, והחוב ₪%g נמחק' % (undo['from_name'], undo['amount'] or 0)))
             con.commit()
             threading.Thread(target=mk_diff_check, daemon=True).start()   # החוב נמחק — מורידים מיד את החסימה וההודעה
+            mk_change_mail(con, '↩️ ביטול שינוי מנוי בטלפון', name, c, phone, undo['to_name'], undo['from_name'],
+                           [('החוב', '₪%g — נמחק' % (undo['amount'] or 0))] + ([('מחיר מיוחד', '₪%g — הוחזר' % undo['old_fix'])] if ('old_fix' in undo.keys() and undo['old_fix']) else []))
             return msg('cancel_done', old=SAY(undo['from_gid'], undo['from_name']))
         if not cat_opts:
             return 'id_list_message=' + '.'.join([hello, S('no_target')]) + END
@@ -38038,6 +38072,10 @@ def mkg_ivr(P):
             if ov is None:
                 if amt > 0:
                     t = T('quote_pay', group=tname, price=price, days=q['days'], amount=A)
+                    if cfg.get('debt_block', True) and 'debt' in (cfg.get('pay_methods') or ['debt']):
+                        warn = T('quote_block')
+                        k_ = t.find('להמשך הקישו')
+                        t = (t[:k_] + warn + '. ' + t[k_:]) if k_ > 0 else (t + '. ' + warn)
                 elif amt < 0:
                     t = T('quote_credit', group=tname, price=price, days=q['days'], amount=A)
                 else:
@@ -38119,6 +38157,28 @@ def mkg_ivr(P):
         return msg('done_paid', group=tname, amount=A)
     finally:
         con.close()
+
+
+def mk_change_mail(con, title, name, c, phone, from_name, to_name, extra=()):
+    """📧 מאיר: "כל שינוי מנוי דרך הטלפון — שישלח מייל". אל: מה שהוגדר בשלוחה, אחרת ALERT_EMAIL / תיבת המערכת"""
+    try:
+        to = (mkg_cfg(con).get('notify_email') or os.environ.get('ALERT_EMAIL') or os.environ.get('GMAIL_USER') or '').strip()
+    except Exception:
+        to = ''
+    if not to or not mkg_cfg(con).get('mail_on', True):
+        return
+    lines = ['%s' % title, '', 'לקוח: %s (#%s)' % (name, c.get('clientCode') or ''), 'טלפון: %s' % phone,
+             'מ: %s' % from_name, 'ל: %s' % to_name, 'זמן: %s' % il_now().strftime('%d/%m/%Y %H:%M')]
+    lines += ['%s: %s' % (k, v) for k, v in extra if v]
+
+    def _go():
+        try:
+            import mailer
+            if mailer.configured():
+                mailer.send(to, '%s — %s: %s → %s' % (title, name, from_name, to_name), '\n'.join(lines), [])
+        except Exception as e:
+            print('  mk change mail error:', e)
+    threading.Thread(target=_go, daemon=True).start()
 
 
 def mkg_paid_fail(con, cid, name, c, phone, gr, cur, tgt, call_id, amt, how):

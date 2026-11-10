@@ -2538,7 +2538,7 @@ const mkMoney=a=>a==null?'':'₪'+(a/100).toLocaleString('he-IL',{maximumFractio
 function mkDiffAsk(cid,gid){return new Promise(async resolve=>{
   const esc_=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const q=await fetch('/api/mikveh/group_quote?id='+encodeURIComponent(cid)+'&group='+encodeURIComponent(gid)).then(x=>x.json()).catch(()=>null);
-  if(q&&q.ok&&!q.amount)return resolve({mode:'none'});            // אין הפרש (אין ימים שנשארו / אותו מחיר)
+  if(q&&q.ok&&!q.amount&&!q.fix)return resolve({mode:'none'});   // אין הפרש ואין מחיר מיוחד — בלי חלון
   const old=document.getElementById('mkdf');if(old)old.remove();
   const ov=document.createElement('div');ov.id='mkdf';
   ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:10050;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -2549,6 +2549,8 @@ function mkDiffAsk(cid,gid){return new Promise(async resolve=>{
     (!q||!q.ok?'<div style="background:#fff4e5;border-radius:10px;padding:10px">⚠️ לא הצלחתי לחשב את ההפרש: '+esc_((q&&q.error)||'אין תשובה')+'</div>':
       '<div style="line-height:1.7">מ<b>'+esc_(q.from_name)+'</b> (₪'+q.old_price+') ל<b>'+esc_(q.to_name)+'</b> (₪'+q.new_price+').<br>נשארו לו <b>'+q.days+'</b> ימים במנוי'+(q.end?' (עד '+dmy(q.end)+')':'')+'.<br>'+
       '<span style="color:#666;font-size:.88rem">('+q.new_price+' − '+q.old_price+') × '+q.days+' ÷ '+q.divisor+' = ₪'+amt+'</span></div>'+
+      (q.fix?'<div style="background:#fff4e5;border-radius:10px;padding:8px 10px">🏷️ יש לו <b>מחיר מיוחד ₪'+q.fix+'</b> — במעבר הוא <b>יימחק</b>, ומהחידוש הבא ישלם את המחיר של המנוי החדש (₪'+q.new_price+').</div>':'')+
+      (!amt?'<div style="color:#555">אין הפרש לתשלום.</div>':'')+
       '<label style="display:flex;gap:8px;align-items:center"><b>'+(up?'הפרש לתשלום':'זיכוי')+' (₪):</b><input data-a type="number" min="0" step="1" value="'+amt+'" style="border:1px solid #ccd;border-radius:8px;padding:6px;font:inherit;width:110px"></label>'+
       (up?'<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="dfm" value="debt" checked> לרשום <b>חוב במקווה</b> — משלם במכונה</label>'+
           '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-inline-start:24px"><input type="checkbox" data-s checked style="margin-top:4px"> <span>להציג לו <b>הודעה במסך המכונה</b> עד שישלם:<br><small style="color:#555">"'+esc_(String(q.msg||'').replace('{amount}',amt))+'"</small></span></label>'+
@@ -3476,6 +3478,7 @@ async function mkSelfGroupOpen(){
       <label class="fld" style="display:block;margin:10px 0"><span>קופת נדרים פלוס לתשלום בטלפון</span><select id="pcnd"><option value="">— לא נבחרה (רק חוב במקווה) —</option>
         ${(r.accounts||[]).map(a=>`<option value="${esc(a.mosad)}"${String(C.nd_mosad||'')===String(a.mosad)?' selected':''}>${esc(a.name)} · ${esc(a.mosad)}${a.mk?' (המקווה)':''}</option>`).join('')}</select></label>
       ${(r.accounts||[]).length?'':'<div class="mksub" style="color:#c0392b">אין חשבונות נדרים פלוס מחוברים למערכת — אפשר רק חוב במקווה.</div>'}
+      <label style="display:flex;gap:8px;align-items:center;margin:10px 0;flex-wrap:wrap"><input type="checkbox" id="pcmail" style="width:20px;height:20px" ${C.mail_on!==false?'checked':''}> <b>📧 מייל על כל שינוי מנוי בטלפון</b> אל: <input id="pcmailto" dir="ltr" value="${esc(C.notify_email||'')}" placeholder="ריק = המייל של המערכת" style="width:220px;display:inline-block"></label>
       <label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" id="pcblk" style="width:20px;height:20px" ${C.debt_block!==false?'checked':''}> <b>⛔ חוב הפרש — לחסום עד שישלם</b> (חסום יכול לשלם חובות במכונה; נפתח לבד תוך כ-10 שניות מהתשלום)</label>
       <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="pcscr" style="width:20px;height:20px" ${C.debt_screen!==false?'checked':''}> <b>📺 הודעה במסך המכונה</b> עד שישלם ("חוב ₪X — הפרש מנוי. לתשלום במכונה.")</label>
       <label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" id="pccancel" style="width:20px;height:20px" ${C.cancel_on!==false?'checked':''}> מי שעבר עם חוב שעוד לא שולם — יוכל לבטל את המעבר בטלפון (הקש 9)</label>
@@ -3514,7 +3517,7 @@ async function mkSelfGroupOpen(){
       max:document.getElementById('sgmax').value,days:document.getElementById('sgdays').value,
       divisor:document.getElementById('pcdiv').value,round:document.getElementById('pcround').value,
       pay_methods:[...rs.querySelectorAll('[data-pm]')].filter(x=>x.checked).map(x=>x.dataset.pm),nd_mosad:document.getElementById('pcnd').value,
-      cancel_on:document.getElementById('pccancel').checked,debt_block:document.getElementById('pcblk').checked,debt_screen:document.getElementById('pcscr').checked,credit_down:document.getElementById('pccredit').checked,say_prices:true,
+      cancel_on:document.getElementById('pccancel').checked,debt_block:document.getElementById('pcblk').checked,debt_screen:document.getElementById('pcscr').checked,mail_on:document.getElementById('pcmail').checked,notify_email:document.getElementById('pcmailto').value.trim(),credit_down:document.getElementById('pccredit').checked,say_prices:true,
       min_keva:document.getElementById('sgminkeva').value,keva_cats:[...rs.querySelectorAll('[data-kc]')].filter(x=>x.checked).map(x=>x.dataset.kc),
       erech_groups:[...rs.querySelectorAll('[data-eg]')].filter(x=>x.checked).map(x=>x.dataset.eg)};
     if(body.pay_methods.some(m=>m!=='debt')&&!body.nd_mosad){uiAlert('לתשלום באשראי / הוראת קבע צריך לבחור קופת נדרים פלוס');return;}
