@@ -5321,6 +5321,55 @@ def ensure_schema():
         con.rollback()
         print('  berger merge v3 error:', e)
 
+    # מאיר: "אני לא רואה… יש רק ברגר, אין שתיים" — כרטיס אחד. מוודאים שבכרטיס שהקבלה השנתית 2025 שלו בנויה מדוח פרידמן
+    # (stmt_items) באמת רשומים 18 התשלומים: מה שחסר — נרשם, מה שרשום בכרטיס אחר — עובר. ובכרטיס נכתב מה נמצא ומה נעשה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='berger_fr_fix_v4'").fetchone():
+            FR4 = [('2023-02-21', 9671, 501), ('2023-04-04', 9700, 360), ('2023-08-29', 9800, 501), ('2023-10-17', 9829, 501),
+                   ('2023-11-15', 9843, 501), ('2023-12-21', 9870, 501), ('2024-01-24', 9887, 8000), ('2024-05-07', 9948, 501),
+                   ('2024-06-18', 9979, 501), ('2024-09-18', 10026, 501), ('2024-10-14', 10044, 501), ('2024-12-30', 10085, 501),
+                   ('2025-02-28', 10115, 501), ('2025-06-19', 10176, 501), ('2025-09-19', 10219, 501), ('2025-11-03', 10243, 1000),
+                   ('2025-11-03', 10244, 3000), ('2025-12-24', 10272, 501)]
+            owners = []
+            for r in con.execute("SELECT k, v FROM app_kv WHERE k LIKE 'stmt_items:%:2025'").fetchall():
+                v_ = r['v'] or ''
+                if '"2025-01-24"' in v_ and '8000' in v_ and '3000' in v_:
+                    try:
+                        owners.append(int(r['k'].split(':')[1]))
+                    except ValueError:
+                        pass
+            owners = [o for o in owners if con.execute("SELECT 1 FROM donors WHERE id=?", (o,)).fetchone()]
+            if len(owners) == 1:
+                did_ = owners[0]
+                here = mv_ = ins_ = 0
+                for od, num, amt in FR4:
+                    tid_ = 'FR%d' % num
+                    nd_ = '2025' + od[4:]
+                    r = con.execute("SELECT id, donor_id FROM donations WHERE tid=?", (tid_,)).fetchone()
+                    if r and r['donor_id'] == did_:
+                        here += 1
+                        continue
+                    if r:
+                        con.execute("UPDATE donations SET donor_id=?, date=? WHERE id=?", (did_, nd_, r['id']))
+                        mv_ += 1
+                        continue
+                    con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,tid,cur,paid) VALUES(?,?,?,?,?,?,?,'$',1)",
+                                (did_, nd_, str(amt), 'הבניין הקדוש' if amt == 8000 else 'כללי', '',
+                                 'פרידמן · Sales Receipt #%d · התקבל %s — נרשם ב-2025 לבקשת מאיר (קבלה אחת על 2023–2025)'
+                                 % (num, datetime.date.fromisoformat(od).strftime('%d/%m/%Y')), tid_))
+                    ins_ += 1
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                            (did_, today_iso(), 'קבלה', '🧾 בדיקה: תשלומי פרידמן ב-2025 בכרטיס הזה — %d מתוך 18 כבר היו כאן, %d עברו מכרטיס אחר, %d נרשמו עכשיו. '
+                             'סה"כ 18 תשלומים, $19,374, הכל בשנת 2025.' % (here, mv_, ins_), '', now_iso()))
+                print('  ברגר v4: היו %d, עברו %d, נרשמו %d' % (here, mv_, ins_))
+                con.execute("INSERT INTO seed_flags(name) VALUES('berger_fr_fix_v4')")
+                con.commit()
+            else:
+                print('  ברגר v4: נמצאו %d כרטיסים עם קבלת 2025 של פרידמן — לא בוצע' % len(owners))
+    except Exception as e:
+        con.rollback()
+        print('  berger v4 error:', e)
+
     # מאיר: "כן, על שם החברה B & C Lead Consultants LLC" — הקבלה השנתית 2025 של ברגר על שם החברה
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_name_v1'").fetchone():
