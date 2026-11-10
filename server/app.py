@@ -5244,6 +5244,31 @@ def ensure_schema():
     except Exception as e:
         print('  lowy statement error:', e)
 
+    # מאיר: "כן, על שם החברה B & C Lead Consultants LLC" — הקבלה השנתית 2025 של ברגר על שם החברה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_name_v1'").fetchone():
+            c_ = con.execute("SELECT id FROM donors WHERE lower(COALESCE(email,'')) LIKE '%mark4realty@verizon.net%'").fetchall()
+            if len(c_) != 1:
+                c_ = con.execute("SELECT id FROM donors WHERE (last LIKE 'ברג%' OR last LIKE 'בערג%') AND (first LIKE '%יצחק%' OR first LIKE '%איצי%')").fetchall()
+            if len(c_) == 1:
+                did_ = c_[0]['id']
+                kv_set(con, 'stmt_name:%d:2025' % did_, 'B & C Lead Consultants LLC')
+                try:
+                    con.execute("UPDATE donors SET business='B & C Lead Consultants LLC' WHERE id=? AND COALESCE(TRIM(business),'')=''", (did_,))
+                except Exception:
+                    pass
+                con.commit()
+                if con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_2025_v1'").fetchone():
+                    try:
+                        statement_save(con, did_, '2025')          # ה-PDF השמור בחלון הקבלות — מחדש, על שם החברה
+                    except Exception as e:
+                        print('  berger name pdf error:', e)
+                con.execute("INSERT INTO seed_flags(name) VALUES('stmt_berger_name_v1')")
+                con.commit()
+    except Exception as e:
+        con.rollback()
+        print('  berger name error:', e)
+
     # מאיר (10.11.2026): "מצורף מה שקיבלתם מפרידמן, את כל התשלומים של יצחק ברגר… תשלב את הכל לשנת 2025, תפזר את זה
     # בשנת 2025… ותכין לו קבלה אמריקאית". דוח פרידמן (B & C Lead Consultants - Berger, 1/1/2023–9/11/2026): 18 תשלומים,
     # $19,374. כל תשלום נרשם בכרטיס באותו יום וחודש ב-2025 (תשלום שכבר רשום — עובר לתאריך החדש, לא נכפל), והקבלה
@@ -10825,6 +10850,8 @@ def statement_data(con, did, year=''):
           ' '.join(x for x in (str(d['city'] or '').strip(), str(d['country'] or '').strip(),
                                str(d['zip'] or '').strip()) if x)]
     name = (d['english'] or '').strip() or ((d['last'] or '') + ' ' + (d['first'] or '')).strip()
+    # מאיר: "כן, על שם החברה B & C Lead Consultants LLC" — שם אחר לקבלה השנתית (לכל השנים, או לשנה מסוימת)
+    name = (kv_get(con, 'stmt_name:%d:%s' % (did, year), '') or kv_get(con, 'stmt_name:%d' % did, '') or name).strip()
     key = 'y%d-%s' % (did, year)               # מספר סידורי קבוע לתורם+שנה
     row = con.execute("SELECT num FROM receipts WHERE rkey=?", (key,)).fetchone()
     if row:
