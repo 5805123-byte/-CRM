@@ -6006,6 +6006,22 @@ def ensure_schema():
     except Exception as e:
         print('  receipt il addr error:', e)
 
+    # מאיר: "למה לא רואים את שמעון דויטש… אמרתי לך מי שלא מהקהילה הוא מהתורמים" — הסימון הגורף "כל מי שנשאר —
+    # לקהילה" (הרבה הוראות באותו רגע) מבוטל; מה שסומן אחד-אחד נשאר. אחר כך כל הוראה שאינה קהילה — לתורמים
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='nd_keva_donors_v1'").fetchone():
+            con.execute("CREATE TABLE IF NOT EXISTS nd_keva_class(keva_id TEXT PRIMARY KEY, cls TEXT, at TEXT)")
+            bulk = [r['at'] for r in con.execute("SELECT at FROM nd_keva_class WHERE cls='comm' GROUP BY at HAVING COUNT(*)>=3")]
+            for at in bulk:
+                con.execute("DELETE FROM nd_keva_class WHERE cls='comm' AND at=?", (at,))
+            n_ad = nd_keva_auto_donors(con)
+            con.execute("INSERT INTO seed_flags(name) VALUES('nd_keva_donors_v1')")
+            con.commit()
+            print('  נדרים → תורמים: %d הוראות נכנסו לתורמים' % n_ad)
+    except Exception as e:
+        con.rollback()
+        print('  nd keva donors error:', e)
+
     # מאיר: "n0504940212@gmail.com זה אימייל של גדליהו נתן טוקצינסקי, וזה התעודת זהות שלו
     # בשביל הקבלה 318754421" — נכנסים לכרטיס התורם ולחבר הקהילה; הקבלה לוקחת משם
     try:
@@ -35412,6 +35428,41 @@ def nd_donor_autolink(con):
     return n
 
 
+def nd_keva_auto_donors(con):
+    """מאיר (10.11.2026): "למה לא רואים את שמעון דויטש — הוא תורם בהוראת קבע בנדרים פלוס כל חודש. אמרתי לך: מי שלא
+    מהקהילה הוא מהתורמים". כל הוראת קבע פעילה שאינה קהילה (לא מקושרת לחבר, הטלפון לא של חבר, לא דמי חבר / מקום /
+    חזקוני / אברך, ולא סומנה ידנית "קהילה") — נכנסת לתורמים לבד: לכרטיס שהטלפון שלו זהה (רק אם יש אחד כזה), או
+    לכרטיס באותו שם בדיוק, או לכרטיס חדש. בלי ניחושים: כמה כרטיסים מתאימים — לא נוגעים, נשאר לשיוך ידני."""
+    mem_ph = set()
+    for m_ in con.execute("SELECT phone FROM members WHERE COALESCE(TRIM(phone),'')<>''").fetchall():
+        mem_ph.update(_phones_of(m_['phone']))
+    owner = {}
+    for d in con.execute("SELECT id, phone FROM donors WHERE COALESCE(TRIM(phone),'')<>''").fetchall():
+        for ph in _phones_of(d['phone']):
+            owner.setdefault(ph, set()).add(d['id'])
+    n = 0
+    for x in nd_donor_keva_cands(con):
+        if x['cls'] or x['donor'] or x['member']:
+            continue
+        k = con.execute("SELECT member_id, phone FROM nd_keva WHERE id=?", (x['id'],)).fetchone()
+        if not k or k['member_id']:
+            continue
+        phs = set(_phones_of(k['phone']))
+        if phs & mem_ph:
+            continue                                   # הטלפון של חבר קהילה — קהילה
+        ids = set()
+        for ph in phs:
+            ids |= owner.get(ph, set())
+        if len(ids) > 1:
+            continue
+        did, res = nd_donor_keva_add(con, x['id'], (next(iter(ids)) if ids else 0))
+        if did:
+            con.execute("INSERT INTO nd_keva_class(keva_id,cls,at) VALUES(?,'donor',?) ON CONFLICT(keva_id) DO UPDATE SET cls='donor', at=excluded.at",
+                        (x['id'], now_iso()))
+            n += 1
+    return n
+
+
 def nd_donor_import(con, did=None):
     """התשלומים בנדרים פלוס (החשבון של הכולל) של התורמים המקושרים → תרומות ב-₪ בכרטיס. בלי כפילויות."""
     links = {}
@@ -35675,6 +35726,11 @@ def nd_history_sync(con):
             nd_donor_autolink(con)
         except Exception as e:
             print('  nd autolink error:', e)
+        try:
+            if nd_keva_auto_donors(con):
+                con.commit()
+        except Exception as e:
+            print('  nd keva auto donors error:', e)
         if nd_donor_import(con):
             con.commit()
     except Exception as e:
