@@ -37491,6 +37491,8 @@ MK_TEXTS = [
     ('option', 'grp', 'אפשרות בתפריט (המספר נאמר אחרי)', 'ל{group} הקישו'),
     ('option_price', 'grp', 'אפשרות בתפריט עם מחיר (המספר נאמר אחרי)', 'ל{group}, {price} שקלים לחודש, הקישו'),
     ('quote_pay', 'grp', 'הצעת מחיר — יש הפרש לתשלום', 'המעבר ל{group} עולה {price} שקלים לחודש. נשארו לכם {days} ימים במנוי, ולכן ההפרש לתשלום הוא {amount} שקלים. להמשך הקישו 1, לבחירת מנוי אחר הקישו 2'),
+    ('hello_fix', 'grp', 'פתיחה — יש לו מחיר מיוחד (נאמר אחרי הפתיחה)', 'במחיר מיוחד של {fix} שקלים לחודש'),
+    ('quote_fix', 'grp', 'הצעת מחיר — המחיר המיוחד יבוטל', 'שימו לב, יש לכם מחיר מיוחד של {fix} שקלים לחודש, והוא יבוטל במעבר. מהחידוש הבא תשלמו {price} שקלים לחודש'),
     ('quote_block', 'grp', 'אזהרה בהצעת המחיר — חסימה עד התשלום', 'שימו לב, אם תשלמו במכונה, המנוי ייחסם עד לתשלום החוב'),
     ('quote_credit', 'grp', 'הצעת מחיר — מגיע זיכוי', 'במעבר ל{group} תקבלו זיכוי של {amount} שקלים ביתרה הזמנית, על {days} הימים שנשארו לכם במנוי. לאישור הקישו 1, לבחירת מנוי אחר הקישו 2'),
     ('pay_keva', 'grp', 'תשלום — הוראת קבע', 'לתשלום מהוראת הקבע בכרטיס המסתיים בספרות {last4} הקישו {n}'),
@@ -37877,6 +37879,10 @@ def mkg_ivr(P):
         cmap_all = mk_group_cat_map(con, gr.values()) if cfg.get('phone_cats') else {}
         SAY = lambda gid, nm: mkg_say_full(cfg, cmap_all, gid, nm)
         hello = S('hello_member' if member else 'hello', name=name or first, group=SAY(cur, gr[cur]['name']))
+        # 🏷️ מאיר: "שיגיד גם בטלפון שיש לו מחיר מיוחד"
+        my_fix = _mk.fix_price(c)
+        if my_fix:
+            hello = hello + '.' + S('hello_fix', fix='%g' % (my_fix / 100.0))
 
         def can_go(g):
             return g != cur and g not in lockg and (member or g not in mgs)
@@ -38080,6 +38086,10 @@ def mkg_ivr(P):
                     t = T('quote_credit', group=tname, price=price, days=q['days'], amount=A)
                 else:
                     t = T('confirm', group=tname)
+                if my_fix:
+                    warn = T('quote_fix', fix='%g' % (my_fix / 100.0), price=price)
+                    ks_ = [x for x in (t.find('להמשך הקישו'), t.find('לאישור')) if x >= 0]
+                    t = (t[:min(ks_)] + warn + '. ' + t[min(ks_):]) if ks_ else (t + '. ' + warn)
                 lead_q = [hello] if (single and rnd == 1 and not multi) else []
                 return 'read=' + '.'.join(lead_q + ['t-' + _ivr_t(t)]) + '=O%s,no,1,1,10,NO,yes,yes,,12,2,,,,no' % sx
             if ov == '1':
