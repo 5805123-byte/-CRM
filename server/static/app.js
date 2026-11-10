@@ -7256,13 +7256,22 @@ function cardDetails(d,body){
     o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:420px;width:96vw"><div class="cm"><b>🧾 קבלה שנתית (PDF, באנגלית)</b></div>
       <label class="fld"><span>שנת מס</span><select id="st_y">${[...new Set([...yrs,cur,prev])].sort().reverse().map(x=>`<option value="${x}"${x===y?' selected':''}>${x}</option>`).join('')}</select></label>
       <button class="btn" id="st_open" style="width:100%;margin:4px 0">📄 לפתוח את הקבלה (PDF)</button>
-      <button class="btn" id="st_send" style="width:100%;margin:4px 0">📤 לשלוח לתורם — קובץ PDF (מייל / וואטסאפ)</button>
+      <button class="btn bqgo" id="st_mail" style="width:100%;margin:4px 0">✉️ לשלוח במייל ישירות${(splitEmails(d.email)[0]||'').trim()?' — <span dir="ltr">'+esc((splitEmails(d.email)[0]||'').trim())+'</span>':''}</button>
+      <button class="btn ghost" id="st_send" style="width:100%;margin:4px 0">📤 לשתף את הקובץ (וואטסאפ / אחר)</button>
       <button class="btn ghost" id="st_edit" style="width:100%;margin:4px 0">✏️ לתקן כתובת / כמה שנים ביחד</button>
       <div class="cbtns"><button class="btn ghost cno">סגור</button></div></div>`;
     document.body.appendChild(o);const yv=()=>o.querySelector('#st_y').value;
     const url=dl=>'/statement.pdf?donor='+d.id+'&year='+yv()+(dl?'&dl=1':'');
     o.querySelector('.cno').onclick=()=>o.remove();o.onclick=e=>{if(e.target===o)o.remove();};
     o.querySelector('#st_open').onclick=()=>{window.open(url(),'_blank');};
+    o.querySelector('#st_mail').onclick=async function(){let em=(splitEmails(d.email)[0]||'').trim();
+      em=((await uiPrompt('לשלוח את הקבלה השנתית '+yv()+' (PDF, באנגלית) למייל:',em))||'').trim();
+      if(!em)return;if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){toast('כתובת מייל לא תקינה');return;}
+      const b=this,t0=b.innerHTML;b.disabled=true;b.textContent='⏳ שולח…';
+      const r=await api('POST','/api/statement/send',{donor:d.id,year:yv(),email:em}).catch(()=>null);
+      b.disabled=false;b.innerHTML=t0;
+      if(r&&r.ok){o.remove();RCPTS=null;toast('✉️ הקבלה השנתית '+yv()+' נשלחה אל '+em+' ✓');}
+      else uiAlert('הקבלה לא נשלחה:\n'+((r&&r.error)||'שגיאה'));};
     o.querySelector('#st_edit').onclick=()=>{o.remove();window.open('/statement?donor='+d.id+'&year='+yv(),'_blank');};
     o.querySelector('#st_send').onclick=async function(){const b=this,t0=b.textContent;b.disabled=true;b.textContent='⏳ מכין את הקובץ…';
       try{const res=await fetch(url()),blob=await res.blob(),cdh=res.headers.get('Content-Disposition')||'';

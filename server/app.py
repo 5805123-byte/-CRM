@@ -27714,6 +27714,26 @@ class H(BaseHTTPRequestHandler):
             con.close()
             bump_data()
             return self._send(200, {'ok': True, 'doc': doc, 'donation_id': did, 'send_error': send_error})
+        if self.path == '/api/statement/send':
+            # מאיר: "למה אין אפשרות לשלוח ישר למייל שלו, ישר מהכרטיס שלו? כמו שהיה תמיד" — הקבלה השנתית (PDF) במייל
+            try:
+                did_ = int(b.get('donor') or 0)
+            except (TypeError, ValueError):
+                did_ = 0
+            year_ = (re.sub(r'[^\d\-.]', '', str(b.get('year') or '')) or '')[:22]
+            con = db()
+            try:
+                rid_ = statement_save(con, did_, year_)
+                if not rid_:
+                    return self._send(200, {'ok': False, 'error': 'אין תרומות בשנה הזו — אין קבלה לשלוח'})
+                res = receipt_send(con, rid_, str(b.get('email') or '').strip())
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'השליחה נכשלה: %s' % str(e)[:160]})
+            finally:
+                con.close()
+            if res.get('ok'):
+                bump_data()
+            return self._send(200, res)
         m = re.match(r'/api/receipts/(\d+)/send$', self.path)
         if m:
             con = db()
