@@ -5244,6 +5244,52 @@ def ensure_schema():
     except Exception as e:
         print('  lowy statement error:', e)
 
+    # מאיר: "איפה שנת 2025? אני לא רואה פה שנת 2025" — 18 התשלומים של פרידמן נכנסו לכרטיס שנמצא לפי המייל, ולא לכרטיס
+    # "בערגער יצחק (איצי)" שמאיר עובד איתו. אם יש בדיוק כרטיס אחד נוסף של איצי ברגר — הכל עובר אליו (התשלומים, הקבלה, השם)
+    try:
+        if con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_2025_v1'").fetchone() and \
+                not con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_move_v1'").fetchone():
+            srcs = [r['donor_id'] for r in con.execute("SELECT DISTINCT donor_id FROM donations WHERE tid LIKE 'FR%' AND note LIKE 'פרידמן · Sales Receipt%'")]
+            _nl = lambda s: re.sub(r'[עיו\s]', '', str(s or ''))
+            tg = [r['id'] for r in con.execute("SELECT id, last, first FROM donors").fetchall()
+                  if _nl(r['last']) == 'ברגר' and ('איצי' in (r['first'] or '') or 'יצחק' in (r['first'] or ''))]
+            if len(srcs) == 1:
+                src = srcs[0]
+                other = [i for i in tg if i != src]
+                if len(other) == 1:
+                    dst = other[0]
+                    con.execute("UPDATE donations SET donor_id=? WHERE donor_id=? AND tid LIKE 'FR%' AND note LIKE 'פרידמן · Sales Receipt%'", (dst, src))
+                    con.execute("UPDATE contacts_log SET donor_id=? WHERE donor_id=? AND summary LIKE '🧾 פרידמן —%'", (dst, src))
+                    for k_ in ('stmt_items:%d:2025', 'stmt_name:%d:2025'):
+                        v_ = kv_get(con, k_ % src, '')
+                        if v_:
+                            kv_set(con, k_ % dst, v_)
+                            con.execute("DELETE FROM app_kv WHERE k=?", (k_ % src,))
+                    try:
+                        con.execute("UPDATE donors SET business='B & C Lead Consultants LLC' WHERE id=? AND COALESCE(TRIM(business),'')=''", (dst,))
+                    except Exception:
+                        pass
+                    # הקבלה השמורה בחלון הקבלות — של הכרטיס הנכון (המספר נשאר אותו מספר)
+                    old_key, new_key = 'y%d-2025' % src, 'y%d-2025' % dst
+                    if not con.execute("SELECT 1 FROM receipts WHERE rkey=?", (new_key,)).fetchone():
+                        con.execute("UPDATE receipts SET rkey=? WHERE rkey=?", (new_key, old_key))
+                    con.execute("UPDATE receipt_docs SET donor_id=? WHERE donor_id=? AND src='statement' AND purpose LIKE '%2025%'", (dst, src))
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                                (dst, today_iso(), 'קבלה', '🔁 18 התשלומים של פרידמן (2023–2025 → 2025) הועברו לכאן מכרטיס #%d — כרטיס נוסף של אותו תורם' % src, '', now_iso()))
+                    con.commit()
+                    try:
+                        statement_save(con, dst, '2025')
+                    except Exception as e:
+                        print('  berger move pdf error:', e)
+                    print('  ברגר: תשלומי פרידמן עברו מ-#%d ל-#%d' % (src, dst))
+                else:
+                    print('  ברגר: כרטיסים נוספים %s — לא הועבר' % other)
+            con.execute("INSERT INTO seed_flags(name) VALUES('stmt_berger_move_v1')")
+            con.commit()
+    except Exception as e:
+        con.rollback()
+        print('  berger move error:', e)
+
     # מאיר: "כן, על שם החברה B & C Lead Consultants LLC" — הקבלה השנתית 2025 של ברגר על שם החברה
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_name_v1'").fetchone():

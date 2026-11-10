@@ -7254,7 +7254,7 @@ function cardDetails(d,body){
     // מאיר: "אני רוצה שהכל יהיה ב-PDF. למה זה בלי PDF?" — הקבלה נפתחת כקובץ PDF (באנגלית), ומשם שולחים
     const o=document.createElement('div');o.className='confirmov';
     o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:420px;width:96vw"><div class="cm"><b>🧾 קבלה שנתית (PDF, באנגלית)</b></div>
-      <label class="fld"><span>שנת מס</span><select id="st_y">${(yrs.length?yrs:[cur]).map(x=>`<option value="${x}"${x===y?' selected':''}>${x}</option>`).join('')}</select></label>
+      <label class="fld"><span>שנת מס</span><select id="st_y">${[...new Set([...yrs,cur,prev])].sort().reverse().map(x=>`<option value="${x}"${x===y?' selected':''}>${x}</option>`).join('')}</select></label>
       <button class="btn" id="st_open" style="width:100%;margin:4px 0">📄 לפתוח את הקבלה (PDF)</button>
       <button class="btn" id="st_send" style="width:100%;margin:4px 0">📤 לשלוח לתורם — קובץ PDF (מייל / וואטסאפ)</button>
       <button class="btn ghost" id="st_edit" style="width:100%;margin:4px 0">✏️ לתקן כתובת / כמה שנים ביחד</button>
