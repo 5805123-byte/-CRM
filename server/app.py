@@ -24587,6 +24587,17 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             return self._send(200, {'ok': True, 'last4': l4 or qtxt, 'amount': amt, 'months': months, 'year': yr, 'rows': rows,
                                     'kupot': [x['name'] for x in _nd.accounts()], 'synced': ah})
+        m = re.match(r'/api/donor/(\d+)/ndkevas$', self.path.split('?')[0])
+        if m:
+            # מאיר: "הוא תורם שקלים בנדרים פלוס אז גם חיוב חד פעמי בשקלים" — הוראות הקבע של התורם בנדרים, לחיוב מיידי
+            con = db()
+            try:
+                ks = [{'id': k['id'], 'last4': k['last4'] or '', 'amount': k['amount'], 'groupe': k['groupe'] or '',
+                       'mosad': k['mosad'] or '', 'error': (k['error'] or '') if 'error' in k.keys() else ''}
+                      for k in klink_kevas(con, 'd', int(m.group(1)))]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'kevas': ks})
         if self.path.split('?')[0] == '/api/nd/donor_kevas':
             con = db()
             try:
@@ -31527,6 +31538,13 @@ class H(BaseHTTPRequestHandler):
                     if ok and not is_bank and fk is not None:
                         cm_debt_pay_explicit(con, mid, amt, 'חויב מהמערכת (אישור %s)' % conf, groupe, fund=fk)
                         ym_mark_paid(con, (k['phone'] or '').split(';')[0], amt, 'חיוב מהמערכת', fund=fk)
+                did_ = int(b.get('donor_id') or 0)
+                if did_ and not mid:
+                    # תורם (לא קהילה) — נרשם ביומן שלו; התרומה עצמה נכנסת לכרטיס בסנכרון הקרוב (ההוראה מקושרת אליו)
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (did_, today_iso(), 'תשלום',
+                                 ('💳 חויב ₪%g בנדרים פלוס מהוראת הקבע (כרטיס ****%s)%s · אישור %s' % (amt, l4, (' עבור ' + groupe) if groupe else '', conf)) if ok
+                                 else ('🔴 חיוב ₪%g בנדרים פלוס נכשל: %s' % (amt, msg)), '', now_iso()))
                 con.commit()
             finally:
                 con.close()

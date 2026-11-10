@@ -16602,6 +16602,9 @@ async function ndDonate(mid,opt){opt=opt||{};
   g('nd_name').oninput=()=>{g('nd_name').dataset.touched=1;};
   g('nd_who').onchange=()=>{fillM();whoChk();};g('nd_who').oninput=whoChk; if(M0)fillM();
   // 💳 מחלון החובות ("חייב עכשיו" בכרטיס אחר): הסכום והייעוד כבר ממולאים, וסגירת החוב מסומנת
+  // תורם (לא חבר קהילה) — מגיע מכרטיס התורם עם הפרטים שלו
+  if(opt.name&&!M0){g('nd_who').value=opt.name;g('nd_name').value=opt.name;g('nd_name').dataset.touched=1;
+    if(opt.phone)g('nd_phone').value=opt.phone;if(opt.mail)g('nd_mail').value=opt.mail;if(opt.addr)g('nd_addr').value=opt.addr;if(opt.city)g('nd_city').value=opt.city;}
   if(opt.amount)g('nd_amt').value=String(opt.amount);
   if(opt.purpose)g('nd_pur').value=opt.purpose;
   if(opt.debt===false)g('nd_debt').checked=false;
@@ -17688,6 +17691,33 @@ async function cmChargeNow(m){
     if(x&&x.ok){o.remove();toast('✅ החיוב עבר · אישור '+(x.confirmation||''));try{cmNdPaint(m);}catch(e){}}
     else{b.disabled=false;b.textContent='⚡ לנסות שוב מהכרטיס הזה';uiAlert('החיוב לא עבר:\n'+((x&&x.error)||'שגיאה')+'\n\nאפשר לחייב "💳 מכרטיס אחר", או לשלוח לו קישור לעדכון כרטיס.');}});
   o.querySelector('#cq_other').onclick=()=>{const a=amtNum(A.value);o.remove();ndDonate(m.id,{amount:a>0?a:'',purpose:F.value.trim()||'תרומה',kevas:K});};
+}
+// 💳 תורם בשקלים — חיוב בנדרים פלוס: מהכרטיס שבהוראת הקבע שלו, או מכרטיס אחר (הטופס המאובטח של נדרים)
+async function dnChargeNis(d,btn){
+  const r=await api('GET','/api/donor/'+d.id+'/ndkevas').catch(()=>null);
+  const K=((r&&r.kevas)||[]).filter(k=>!(k.mosad||''));
+  const nm=((d.last||'')+' '+(d.first||'')).trim();
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:460px;width:96vw"><div class="cm">💳 תרומה בשקלים — ${esc(nm)}</div>
+    <label class="fld"><span>כמה לחייב (₪)</span><input id="cq_amt" class="cinp" inputmode="decimal" placeholder="סכום ב-₪"></label>
+    <label class="fld"><span>עבור מה</span><input id="cq_for" value="תרומה"></label>
+    ${K.map(k=>`<button class="btn" data-cqk="${esc(k.id)}" style="width:100%;margin:4px 0">⚡ מהכרטיס שבהוראת הקבע ****${esc(k.last4||'')}${k.error?` <small>(🔴 ${esc(String(k.error).slice(0,40))})</small>`:''}</button>`).join('')}
+    <button class="btn ${K.length?'ghost':''}" id="cq_other" style="width:100%;margin:4px 0">💳 ${K.length?'מכרטיס אחר / ביט':'לחייב בכרטיס — טופס מאובטח של נדרים פלוס'}</button>
+    <div class="mksub" style="margin:6px 0">החיוב נעשה בנדרים פלוס בשקלים, והתרומה נכנסת לכרטיס שלו בסנכרון.</div>
+    <div class="cbtns"><button class="btn ghost" id="cq_usd">💲 בדולרים במקום</button><button class="btn ghost cno">ביטול</button></div></div>`;
+  document.body.appendChild(o);const A=o.querySelector('#cq_amt'),F=o.querySelector('#cq_for');A.focus();
+  o.querySelector('.cno').onclick=()=>o.remove();o.onclick=e=>{if(e.target===o)o.remove();};
+  o.querySelector('#cq_usd').onclick=()=>{o.remove();window._dnUsd=true;btn.click();};
+  o.querySelectorAll('[data-cqk]').forEach(b=>b.onclick=async()=>{const a=amtNum(A.value);if(!(a>0)){toast('סכום לא תקין');A.focus();return;}
+    const k=K.find(x=>String(x.id)===b.dataset.cqk);
+    if(!await uiConfirm('לחייב עכשיו '+cdMoney(a)+' מהכרטיס ****'+(k&&k.last4||'')+'?','⚡ כן, לחייב','ביטול'))return;
+    b.disabled=true;b.textContent='⏳ מחייב…';
+    const x=await api('POST','/api/nd/keva/'+encodeURIComponent(b.dataset.cqk)+'/charge',{amount:a,groupe:F.value.trim()||'תרומה',donor_id:d.id}).catch(()=>null);
+    if(x&&x.ok){o.remove();toast('✅ החיוב עבר · אישור '+(x.confirmation||'')+' · התרומה תיכנס לכרטיס בסנכרון');}
+    else{b.disabled=false;b.textContent='⚡ לנסות שוב מהכרטיס הזה';uiAlert('החיוב לא עבר:\n'+((x&&x.error)||'שגיאה')+'\n\nאפשר לחייב "💳 מכרטיס אחר", או לשלוח לו קישור אישי לעדכון כרטיס.');}});
+  o.querySelector('#cq_other').onclick=()=>{const a=amtNum(A.value);o.remove();
+    ndDonate(null,{amount:a>0?a:'',purpose:F.value.trim()||'תרומה',name:nm,phone:String(d.phone||'').split(/[,;\/]+/)[0].trim(),
+      mail:(String(d.email||'').split(/[,;\s]+/).find(x=>x.includes('@'))||''),addr:d.addr||d.address||'',city:d.city||''});};
 }
 function cdNoteAdd(g){
   const deb=g.items.filter(d=>!d._req&&d.status==='open');
@@ -20311,6 +20341,9 @@ async function rcSendApprove(em,don){
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('.dnqc');if(!b)return;
   e.preventDefault();e.stopPropagation();
   const d=DB.find(x=>x.id==b.dataset.did);if(!d)return;
+  // מאיר: "הוא תורם שקלים בנדרים פלוס אז גם חיוב חד פעמי בשקלים" — תורם בשקלים: חיוב בנדרים פלוס (דולר — רק אם בוחרים)
+  if((cmCur(d)==='₪'||d.region==='il')&&!window._dnUsd){dnChargeNis(d,b);return;}
+  window._dnUsd=false;
   const nm=((d.last||'')+' '+(d.first||'')).trim(), em0=((d.email||'').split(/[,;\s]+/).find(x=>x.includes('@'))||'');
   const o=document.createElement('div');o.className='confirmov';let kind='once';
   o.innerHTML=`<div class="confirmbox qcbox"><div class="cm"><b>💳 תרומה באשראי — ${esc(nm)}</b></div>
