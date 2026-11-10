@@ -7251,7 +7251,27 @@ function cardDetails(d,body){
     const yrs=[...new Set((d.donations||[]).map(x=>String(x.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort().reverse();
     const cur=String(new Date().getFullYear()), prev=String(+cur-1);
     const y=yrs.includes(prev)?prev:(yrs[0]||cur);     // ברירת מחדל: השנה שעברה (עונת המס), אם יש בה תרומות
-    window.open('/statement?donor='+d.id+'&year='+y,'_blank');};
+    // מאיר: "אני רוצה שהכל יהיה ב-PDF. למה זה בלי PDF?" — הקבלה נפתחת כקובץ PDF (באנגלית), ומשם שולחים
+    const o=document.createElement('div');o.className='confirmov';
+    o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:420px;width:96vw"><div class="cm"><b>🧾 קבלה שנתית (PDF, באנגלית)</b></div>
+      <label class="fld"><span>שנת מס</span><select id="st_y">${(yrs.length?yrs:[cur]).map(x=>`<option value="${x}"${x===y?' selected':''}>${x}</option>`).join('')}</select></label>
+      <button class="btn" id="st_open" style="width:100%;margin:4px 0">📄 לפתוח את הקבלה (PDF)</button>
+      <button class="btn" id="st_send" style="width:100%;margin:4px 0">📤 לשלוח לתורם — קובץ PDF (מייל / וואטסאפ)</button>
+      <button class="btn ghost" id="st_edit" style="width:100%;margin:4px 0">✏️ לתקן כתובת / כמה שנים ביחד</button>
+      <div class="cbtns"><button class="btn ghost cno">סגור</button></div></div>`;
+    document.body.appendChild(o);const yv=()=>o.querySelector('#st_y').value;
+    const url=dl=>'/statement.pdf?donor='+d.id+'&year='+yv()+(dl?'&dl=1':'');
+    o.querySelector('.cno').onclick=()=>o.remove();o.onclick=e=>{if(e.target===o)o.remove();};
+    o.querySelector('#st_open').onclick=()=>{window.open(url(),'_blank');};
+    o.querySelector('#st_edit').onclick=()=>{o.remove();window.open('/statement?donor='+d.id+'&year='+yv(),'_blank');};
+    o.querySelector('#st_send').onclick=async function(){const b=this,t0=b.textContent;b.disabled=true;b.textContent='⏳ מכין את הקובץ…';
+      try{const res=await fetch(url()),blob=await res.blob(),cdh=res.headers.get('Content-Disposition')||'';
+        const fname=(/filename="([^"]+)"/.exec(cdh)||[])[1]||('Receipt '+yv()+' - '+(((d.english||'')+'').trim()||((d.last||'')+' '+(d.first||'')).trim())+'.pdf');
+        const file=new File([blob],fname,{type:'application/pdf'});
+        if(navigator.canShare&&navigator.canShare({files:[file]}))await navigator.share({files:[file],title:fname});
+        else{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fname;a.click();}}
+      catch(e){if(!(e&&e.name==='AbortError'))window.open(url(),'_blank');}
+      b.disabled=false;b.textContent=t0;};};
   // 🧾 הפקת קבלה על התרומה — נשמרת בחלון הקבלות ונפתחת לצפייה
   // מאיר: "כשאני כותב לו הפק קבלה — שהוא יקבל את זה באימייל שלו": ההפקה גם שולחת.
   // אם אין מייל בכרטיס, שואלים לאיזו כתובת (אפשר להשאיר ריק — אז רק נשמרת).
