@@ -5244,6 +5244,90 @@ def ensure_schema():
     except Exception as e:
         print('  lowy statement error:', e)
 
+    # מאיר (10.11.2026): "מצורף מה שקיבלתם מפרידמן, את כל התשלומים של יצחק ברגר… תשלב את הכל לשנת 2025, תפזר את זה
+    # בשנת 2025… ותכין לו קבלה אמריקאית". דוח פרידמן (B & C Lead Consultants - Berger, 1/1/2023–9/11/2026): 18 תשלומים,
+    # $19,374. כל תשלום נרשם בכרטיס באותו יום וחודש ב-2025 (תשלום שכבר רשום — עובר לתאריך החדש, לא נכפל), והקבלה
+    # השנתית 2025 היא בדיוק 18 התשלומים האלה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_2025_v1'").fetchone():
+            c_ = con.execute("SELECT id FROM donors WHERE lower(COALESCE(email,'')) LIKE '%mark4realty@verizon.net%'").fetchall()
+            if len(c_) != 1:
+                c_ = con.execute("SELECT id FROM donors WHERE (last LIKE 'ברג%' OR last LIKE 'בערג%') AND (first LIKE '%יצחק%' OR first LIKE '%איצי%')").fetchall()
+            if len(c_) == 1:
+                did_ = c_[0]['id']
+                FR = [('2023-02-21', 9671, 501), ('2023-04-04', 9700, 360), ('2023-08-29', 9800, 501), ('2023-10-17', 9829, 501),
+                      ('2023-11-15', 9843, 501), ('2023-12-21', 9870, 501), ('2024-01-24', 9887, 8000), ('2024-05-07', 9948, 501),
+                      ('2024-06-18', 9979, 501), ('2024-09-18', 10026, 501), ('2024-10-14', 10044, 501), ('2024-12-30', 10085, 501),
+                      ('2025-02-28', 10115, 501), ('2025-06-19', 10176, 501), ('2025-09-19', 10219, 501), ('2025-11-03', 10243, 1000),
+                      ('2025-11-03', 10244, 3000), ('2025-12-24', 10272, 501)]
+                _a = lambda v: float(re.sub(r'[^\d.]', '', str(v or '')) or 0)
+                _d = lambda s: datetime.date.fromisoformat(str(s)[:10])
+                ex_ = [dict(r) for r in con.execute(
+                    "SELECT id, date, amount, tid, note FROM donations WHERE donor_id=? AND substr(date,1,10) BETWEEN '2022-11-01' AND '2026-02-28' "
+                    "AND COALESCE(cur,'$') IN ('$','','USD') ORDER BY date", (did_,))]
+                # התאמה: כל תשלום רשום — לתשלום של פרידמן הכי קרוב אליו בתאריך (אותו סכום, עד 60 יום), הקרובים קודם
+                pairs = []
+                for fi, (od, num, amt) in enumerate(FR):
+                    for r in ex_:
+                        if abs(_a(r['amount']) - amt) > 1.01:
+                            continue
+                        try:
+                            gap = abs((_d(r['date']) - _d(od)).days)
+                        except ValueError:
+                            continue
+                        if gap <= 60:
+                            pairs.append((gap, fi, r['id']))
+                match, used = {}, set()
+                for gap, fi, rid in sorted(pairs):
+                    if fi not in match and rid not in used:
+                        match[fi] = rid
+                        used.add(rid)
+                byid = {r['id']: r for r in ex_}
+                moved, added, items_ = [], 0, []
+                for fi, (od, num, amt) in enumerate(FR):
+                    nd_ = '2025' + od[4:]
+                    cat = 'הבניין הקדוש' if amt == 8000 else 'כללי'
+                    note = 'פרידמן · Sales Receipt #%d · התקבל %s — נרשם ב-2025 לבקשת מאיר (קבלה אחת על 2023–2025)' % (num, _d(od).strftime('%d/%m/%Y'))
+                    if fi in match:
+                        r = byid[match[fi]]
+                        con.execute("UPDATE donations SET date=?, amount=?, cur='$', paid=1, category=COALESCE(NULLIF(TRIM(category),''),?), "
+                                    "note=TRIM(COALESCE(note,'') || ' · ' || ?, ' ·'), tid=COALESCE(NULLIF(tid,''),?) WHERE id=?",
+                                    (nd_, str(amt), cat, note, 'FR%d' % num, r['id']))
+                        if (r['date'] or '')[:10] != nd_:
+                            moved.append('%s $%s' % ((r['date'] or '')[:10], r['amount']))
+                    else:
+                        con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,tid,cur,paid) VALUES(?,?,?,?,?,?,?,'$',1)",
+                                    (did_, nd_, str(amt), cat, '', note, 'FR%d' % num))
+                        added += 1
+                    items_.append({'date': nd_, 'amount': amt, 'category': cat})
+                items_.sort(key=lambda x: x['date'])
+                kv_set(con, 'stmt_items:%d:2025' % did_, json.dumps(items_))
+                rest = [r for r in ex_ if r['id'] not in used]
+                summ = ('🧾 פרידמן — 18 תשלומים של B & C Lead Consultants (2023–2025), $19,374 — נרשמו כולם ב-2025 (באותו יום וחודש): '
+                        '%d עברו מתאריך קודם, %d נוספו, השאר כבר היו ב-2025. הקבלה השנתית 2025 מוכנה — בדיוק 18 התשלומים, $19,374.'
+                        % (len(moved), added))
+                if rest:
+                    summ += ' ⚠️ בכרטיס יש עוד %d תרומות בדולרים מ-2023–2025 שאינן בדוח פרידמן (נשארו בתאריך שלהן ולא נכנסו לקבלה): %s' % (
+                        len(rest), ', '.join('%s $%s' % ((r['date'] or '')[:10], r['amount']) for r in rest[:12]))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                            (did_, today_iso(), 'קבלה', summ, '', now_iso()))
+                con.commit()
+                try:
+                    rid_ = statement_save(con, did_, '2025')
+                    if rid_:
+                        con.execute("UPDATE receipt_docs SET note=? WHERE id=?",
+                                    ('קבלה שנתית 2025 · לפי דוח פרידמן: 18 תשלומים מ-2023–2025, $19,374 — הכל נרשם ב-2025', rid_))
+                except Exception as e:
+                    print('  berger statement pdf error:', e)
+                print('  ברגר: 18 תשלומי פרידמן ב-2025 (%d הועברו, %d נוספו, %d נשארו בחוץ)' % (len(moved), added, len(rest)))
+                con.execute("INSERT INTO seed_flags(name) VALUES('stmt_berger_2025_v1')")
+                con.commit()
+            else:
+                print('  ברגר: נמצאו %d כרטיסים — לא בוצע' % len(c_))
+    except Exception as e:
+        con.rollback()
+        print('  berger statement error:', e)
+
     # מאיר: "זה אמור להיות kleper" (מרדכי קלפר) — תיקון הגייה קבוע באנגלית, נכנס לתוך הטקסט שנשלח לקול
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='pron_kleper_v1'").fetchone():
