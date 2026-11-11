@@ -21118,6 +21118,13 @@ MCP_TOOLS = [
     {'name': 'mark_done',
      'description': 'מסמן משימה ביומן כבוצעה, עם הערה (רשות).',
      'inputSchema': {'type': 'object', 'properties': {'id': {'type': 'integer'}, 'note': {'type': 'string'}}, 'required': ['id']}},
+    {'name': 'search_nedarim',
+     'description': 'חיפוש בתשלומים של נדרים פלוס ששמורים במערכת (קריאה בלבד): לפי סכום, ו/או מילה בהערות / ייעוד / שם '
+                    '(למשל "מירון"), ובטווח תאריכים YYYY-MM-DD (ברירת מחדל: 60 הימים האחרונים).',
+     'inputSchema': {'type': 'object', 'properties': {
+         'amount': {'type': 'number', 'description': 'סכום מדויק בש"ח — רשות'},
+         'text': {'type': 'string', 'description': 'מילה לחיפוש בשם / הערות / ייעוד — רשות'},
+         'date_from': {'type': 'string'}, 'date_to': {'type': 'string'}}}},
     {'name': 'today',
      'description': 'התאריך של היום בישראל — לועזי, עברי ויום בשבוע.',
      'inputSchema': {'type': 'object', 'properties': {}}},
@@ -21173,6 +21180,30 @@ def mcp_tool(name, a):
             con.commit()
             bump_data()
             return '✓ נכנס ליומן (מס׳ %d): %s%s — %s%s' % (cur.lastrowid, _mcp_day(date), (' בשעה ' + tm) if tm else '', title, (' · 📍 ' + place) if place else '')
+        if name == 'search_nedarim':
+            td = il_now().date()
+            f = str(a.get('date_from') or '')[:10] or (td - datetime.timedelta(days=60)).isoformat()
+            t = str(a.get('date_to') or '')[:10] or td.isoformat()
+            q = "SELECT time,iso,name,phone,amount,groupe,comments,type,keva,last4 FROM nd_tx WHERE substr(COALESCE(iso,''),1,10) BETWEEN ? AND ?"
+            ps = [f, t]
+            if a.get('amount') not in (None, ''):
+                try:
+                    q += " AND ABS(amount-?)<0.01"; ps.append(float(a.get('amount')))
+                except (TypeError, ValueError):
+                    pass
+            tx = str(a.get('text') or '').strip()
+            if tx:
+                q += " AND (COALESCE(name,'')||' '||COALESCE(groupe,'')||' '||COALESCE(comments,'')) LIKE ?"; ps.append('%' + tx + '%')
+            rows = con.execute(q + " ORDER BY iso LIMIT 300", ps).fetchall()
+            if not rows:
+                return 'לא נמצאו תשלומים בנדרים פלוס בין %s ל-%s לפי החיפוש.' % (f, t)
+            out = ['%d תשלומים (%s עד %s):' % (len(rows), f, t)]
+            for r in rows:
+                out.append('• %s · %s · %s₪%s%s%s' % ((r['iso'] or r['time'] or '')[:16].replace('T', ' '), (r['name'] or '').strip() or '—',
+                           ('%g' % r['amount']) if r['amount'] is not None else '?',
+                           (' · ' + r['groupe']) if r['groupe'] else '', (' · ' + r['comments']) if r['comments'] else '',
+                           ' · הו"ק' if r['keva'] else ''))
+            return '\n'.join(out)
         if name == 'list_calendar':
             f = str(a.get('date_from') or '')[:10] or il_now().date().isoformat()
             t = str(a.get('date_to') or '')[:10] or (datetime.date.fromisoformat(f) + datetime.timedelta(days=7)).isoformat()
