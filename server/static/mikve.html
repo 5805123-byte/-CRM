@@ -659,15 +659,19 @@ async function mkRecentFill(cid,el){if(!el)return;
     :'<div style="color:#888;font-size:.85rem;margin:6px 0">🕘 אין שינויים, הודעות או בקשות ב-60 הימים האחרונים</div>';}
 // 📡 מאיר: "שיראו מקום באתר אם יש כעת חובות ואם המערכת בודקת, ואני רוצה לקבל מידע מלא — מי התקשר לקו, עדכונים מלאים"
 // משותף לשני האתרים: ממלא את el ומתרענן לבד כל 15 שניות כל עוד הוא על המסך
-let MKMON_T=null,MKMON_TAB='calls';
+let MKMON_T=null,MKMON_TAB='calls',MKMON_PF='';
 async function mkMonitorInto(el,openClient){
   const esc_=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const dmy=s=>s?String(s).slice(8,10)+'.'+String(s).slice(5,7)+' '+String(s).slice(11,16):'';
   const ago=s=>{if(!s)return '';const d=(Date.now()-new Date(String(s).replace(' ','T')).getTime())/1000;
     return d<60?'לפני '+Math.max(0,Math.round(d))+' שניות':d<3600?'לפני '+Math.round(d/60)+' דקות':d<86400?'לפני '+Math.round(d/3600)+' שעות':'לפני '+Math.round(d/86400)+' ימים';};
   const LINE={grp:'שינוי סוג מנוי',vm:'הודעה קולית'};
-  const r=await fetch('/api/mikveh/monitor').then(x=>x.json()).catch(()=>null);
+  // 💳 מאיר: "במערכת הטלפונית יש רכישות שזה עובד על SMT, והשני זה פיתוח שלנו" — הרכישות בקו של SMT
+  const [r,pp]=await Promise.all([fetch('/api/mikveh/monitor').then(x=>x.json()).catch(()=>null),fetch('/api/mikveh/phone_pay').then(x=>x.json()).catch(()=>null)]);
   if(!document.body.contains(el))return;
+  const PP=(pp&&pp.rows)||[],jlm=s=>{try{return new Date(s).toLocaleString('he-IL',{timeZone:'Asia/Jerusalem',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}catch(e){return String(s||'');}};
+  const jday=s=>{try{return new Date(s).toLocaleDateString('en-CA',{timeZone:'Asia/Jerusalem'});}catch(e){return '';}};
+  const ppT=PP.filter(x=>jday(x.date)===(pp&&pp.today)),ppOk=ppT.filter(x=>x.ok),ppSum=ppOk.reduce((a,x)=>a+(+x.amount||0),0);
   if(!r||!r.ok){el.innerHTML='<div style="background:#fdecec;border-radius:10px;padding:10px">⚠️ '+esc_((r&&r.error)||'אין תשובה מהשרת')+'</div>';return;}
   const k=r.check||{},calls=r.calls||[],open_=r.open||[],closed=r.closed||[];
   const live=k.alive;
@@ -676,10 +680,11 @@ async function mkMonitorInto(el,openClient){
     card('הבדיקה האוטומטית',live?'🟢 פועלת':'🔴 לא פועלת',live?'רצה עכשיו · כל '+k.fast+' שניות למי שחסום, כל 5 דקות לכל השאר':'השרת לא בודק כרגע — אולי עלה זה עתה, או שהוא כבוי',live?'#1e7a3c':'#c0392b')+
     card('חובות הפרש פתוחים',open_.length,open_.length?(k.waiting?k.waiting+' חסומים עד שישלמו':'אף אחד לא חסום'):'אין חובות פתוחים','#b9770e')+
     card('שיחות לשלוחות',calls.length,calls.length?'אחרונה '+ago(calls[0].last_at):'עוד לא התקשרו','#2f6fb0')+
+    (pp&&pp.configured?card('רכישות בטלפון היום (SMT)','₪'+Math.round(ppSum),ppOk.length+' הצליחו'+(ppT.length-ppOk.length?' · '+(ppT.length-ppOk.length)+' נדחו':''),'#1e7a3c'):'')+
     card('שולמו / נסגרו',closed.length,k.closed?'מאז שהשרת עלה: '+k.closed:'ב-50 האחרונים','#6b4bc4')+'</div>'+
     (k.last_error?'<div style="background:#fff4e5;border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:.88rem">⚠️ תקלה אחרונה בבדיקה ('+dmy(k.error_at)+'): '+esc_(k.last_error)+'</div>':'')+
     '<div style="color:#888;font-size:.8rem;margin-bottom:10px">בדיקה מלאה אחרונה: '+(k.last_full?dmy(k.last_full)+' ('+ago(k.last_full)+')':'—')+(k.last_fast?' · בדיקה מהירה אחרונה: '+ago(k.last_fast):'')+' · מתרענן לבד כל 15 שניות</div>'+
-    '<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">'+[['calls','📞 שיחות ('+calls.length+')'],['debts','💲 חובות הפרש ('+open_.length+')'],['closed','✓ שולמו ('+closed.length+')']].map(([t,l])=>
+    '<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">'+[['calls','📞 שיחות ('+calls.length+')'],['pay','💳 רכישות בטלפון — SMT ('+PP.length+')'],['debts','💲 חובות הפרש ('+open_.length+')'],['closed','✓ שולמו ('+closed.length+')']].map(([t,l])=>
       '<button data-mt="'+t+'" style="border:1px solid '+(MKMON_TAB===t?'#2f6fb0':'#dde3ee')+';background:'+(MKMON_TAB===t?'#2f6fb0':'#fff')+';color:'+(MKMON_TAB===t?'#fff':'#333')+';border-radius:20px;padding:5px 14px;cursor:pointer;font:inherit">'+l+'</button>').join('')+'</div>';
   const who=(names,cids,phone)=>(names&&names.length?names.map((n,i)=>'<a href="#" data-oc="'+esc_(cids[i])+'" style="font-weight:700">'+esc_(n)+'</a>').join(' / '):'<span style="color:#999">לא מזוהה</span>')+' <span dir="ltr" style="color:#888;font-size:.85rem">'+esc_(phone)+'</span>';
   if(MKMON_TAB==='calls'){
@@ -693,6 +698,23 @@ async function mkMonitorInto(el,openClient){
           (Object.keys(s.pressed||{}).length?'<span style="background:#fff3c4;border-radius:6px;padding:0 6px;margin-inline-end:6px">הקיש: '+Object.entries(s.pressed).map(([kk,v])=>esc_(v)).join(', ')+'</span>':'')+
           '<span style="color:#444">'+esc_(s.heard||'')+'</span></div>').join('')+'</div></div>';}).join('')
       :'<div style="color:#888;padding:20px;text-align:center">עוד לא נרשמו שיחות. כל שיחה חדשה לשלוחות המקווה תופיע כאן.</div>';}
+  else if(MKMON_TAB==='pay'){
+    if(!pp||!pp.configured){h+='<div style="background:#fff;border:1px solid #e3e7ee;border-radius:12px;padding:14px"><b>🔑 חיבור לקו הרכישות של SMT</b>'+
+        '<div style="color:#666;font-size:.86rem;margin:4px 0 8px">מדביקים כאן פעם אחת את המפתח (מתחיל ב-mk_live_). הוא נשמר בהגדרות של השרת, לא בקוד.</div>'+
+        '<input id="smk" dir="ltr" placeholder="mk_live_…" style="width:100%;max-width:460px;padding:7px 10px;border:1px solid #ccd;border-radius:8px;font:inherit"> '+
+        '<button id="smksave" style="background:#2f6fb0;color:#fff;border:0;border-radius:8px;padding:7px 16px;cursor:pointer;font:inherit;margin-top:6px">לחבר</button><div id="smkmsg" style="margin-top:6px"></div></div>';}
+    else{const L=PP.filter(x=>MKMON_PF!=='bad'||!x.ok);
+      h+=(pp.error?'<div style="background:#fff4e5;border-radius:10px;padding:8px 12px;margin-bottom:10px">⚠️ SMT: '+esc_(pp.error)+'</div>':'')+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:.86rem;color:#666">60 הימים האחרונים · '+PP.filter(x=>x.ok).length+' הצליחו · '+PP.filter(x=>!x.ok).length+' נדחו'+
+        ' <label style="cursor:pointer"><input type="checkbox" id="ppbad" '+(MKMON_PF==='bad'?'checked':'')+'> רק נדחו</label> <a href="#" id="smkchg" style="margin-inline-start:auto;color:#888">🔑 מפתח SMT</a></div>'+
+        (L.length?'<table style="border-collapse:collapse;width:100%;font-size:.88rem"><tr style="background:#f3f5f8"><th style="padding:6px">מתי</th><th style="text-align:right;padding:6px">לקוח</th><th style="padding:6px">התקשר מ</th><th style="text-align:right;padding:6px">מה</th><th style="padding:6px">סכום</th><th style="text-align:right;padding:6px">תוצאה</th></tr>'+
+          L.map(x=>'<tr style="border-top:1px solid #eef0f4;'+(x.ok?'':'background:#fdf2f2')+'"><td style="padding:6px;white-space:nowrap;text-align:center">'+esc_(jlm(x.date))+'</td>'+
+            '<td style="padding:6px">'+(x.cid?'<a href="#" data-oc="'+esc_(x.cid)+'" style="font-weight:700">'+esc_(x.name||'—')+'</a>':esc_(x.name||'—'))+'</td>'+
+            '<td style="padding:6px;text-align:center" dir="ltr">'+esc_(x.caller||x.phone||'')+'</td>'+
+            '<td style="padding:6px">'+esc_(x.item||({credit:'טעינת פעימות',subscription:'חידוש מנוי',license:'חידוש רישיון'}[x.type])||'—')+(x.end?' <small style="color:#888">עד '+esc_(String(x.end).slice(8,10)+'/'+String(x.end).slice(5,7))+'</small>':'')+'</td>'+
+            '<td style="padding:6px;text-align:center;font-weight:800">₪'+(+x.amount||0)+'</td>'+
+            '<td style="padding:6px">'+(x.ok?'<span style="color:#1e7a3c">✓ שולם</span>':'<span style="color:#c0392b">✗ נדחה</span> <small style="color:#555">'+esc_(x.msg)+'</small>')+(x.last4?' <small style="color:#888">💳 '+esc_(x.last4)+'</small>':'')+'</td></tr>').join('')+'</table>'
+          :'<div style="color:#888;padding:20px;text-align:center">'+(MKMON_PF==='bad'?'✓ אין רכישות שנדחו':'אין רכישות ב-60 הימים האחרונים')+'</div>');}}
   else{const L=MKMON_TAB==='debts'?open_:closed;
     h+=L.length?'<table style="border-collapse:collapse;width:100%;font-size:.88rem"><tr style="background:#f3f5f8"><th style="text-align:right;padding:6px">לקוח</th><th style="padding:6px">סכום</th><th style="text-align:right;padding:6px">שינוי</th><th style="padding:6px">מתי</th><th style="padding:6px">'+(MKMON_TAB==='debts'?'מצב':'נסגר')+'</th></tr>'+
       L.map(x=>'<tr style="border-top:1px solid #eef0f4"><td style="padding:6px"><a href="#" data-oc="'+esc_(x.cid)+'" style="font-weight:700">'+esc_(x.name||'—')+'</a> <small style="color:#888">#'+esc_(x.code||'')+'</small></td>'+
@@ -702,6 +724,14 @@ async function mkMonitorInto(el,openClient){
       :'<div style="color:#888;padding:20px;text-align:center">'+(MKMON_TAB==='debts'?'✓ אין חובות הפרש פתוחים':'עוד לא שולם חוב הפרש')+'</div>';}
   el.innerHTML=h;
   el.querySelectorAll('[data-mt]').forEach(b=>b.onclick=()=>{MKMON_TAB=b.dataset.mt;mkMonitorInto(el,openClient);});
+  const pb_=el.querySelector('#ppbad');if(pb_)pb_.onchange=()=>{MKMON_PF=pb_.checked?'bad':'';mkMonitorInto(el,openClient);};
+  const sv_=el.querySelector('#smksave');if(sv_)sv_.onclick=async()=>{const k=el.querySelector('#smk').value.trim();if(!k)return;sv_.disabled=true;
+    const y=await fetch('/api/mikveh/smti_key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k})}).then(x=>x.json()).catch(()=>null);
+    if(y&&y.ok){mkMonitorInto(el,openClient);}else{sv_.disabled=false;el.querySelector('#smkmsg').innerHTML='<span style="color:#c0392b">⚠️ '+esc_((y&&y.error)||'לא נשמר')+'</span>';}};
+  const ch_=el.querySelector('#smkchg');if(ch_)ch_.onclick=async e=>{e.preventDefault();const i=await fetch('/api/mikveh/smti_key').then(x=>x.json()).catch(()=>null);
+    const k=prompt('מפתח SMT'+(i&&i.configured?' (עכשיו: '+i.masked+(i.info&&i.info.scopes?' · הרשאות: '+i.info.scopes.join(', '):'')+')':'')+'\nלהחליף — מדביקים מפתח חדש. למחוק — ריק.','');if(k===null)return;
+    const y=await fetch('/api/mikveh/smti_key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k.trim()})}).then(x=>x.json()).catch(()=>null);
+    if(!y||!y.ok)alert('⚠️ '+((y&&y.error)||'לא נשמר'));mkMonitorInto(el,openClient);};
   el.querySelectorAll('[data-cx]').forEach(b=>b.onclick=e=>{if(e.target.closest('[data-oc]'))return;const d=el.querySelector('[data-cs="'+b.dataset.cx+'"]');d.style.display=d.style.display==='none'?'':'none';});
   el.querySelectorAll('[data-oc]').forEach(a=>a.onclick=e=>{e.preventDefault();if(openClient)openClient(a.dataset.oc);});
   clearTimeout(MKMON_T);MKMON_T=setTimeout(()=>{if(document.body.contains(el)&&!el.querySelector('[data-cs]:not([style*="none"])'))mkMonitorInto(el,openClient);

@@ -19774,6 +19774,70 @@ def mk_diff_check(only_blocked=False):
     return done
 
 
+# 💳 מאיר: "במערכת הטלפונית יש רכישות שזה עובד על SMT, והשני זה פיתוח שלנו" — היסטוריית הרכישות בקו של SMT
+# (API של smti.uk, הרשאה history:purchases). המפתח נשמר בהגדרות (בבסיס הנתונים) — לא בקוד ולא ב-GitHub.
+SMTI_BASE = 'https://smti.uk/mikve/api/v1'
+SMTI_CACHE = {'at': 0.0, 'rows': [], 'error': '', 'days': 0}
+
+
+def smti_call(key, path, params=None):
+    import urllib.request
+    import urllib.error
+    url = SMTI_BASE + path + (('?' + urllib.parse.urlencode(params)) if params else '')
+    req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + key, 'Accept': 'application/json', 'User-Agent': 'crm'})
+    try:
+        with urllib.request.urlopen(req, timeout=25) as r_:
+            d = json.loads(r_.read().decode('utf-8') or '{}')
+    except urllib.error.HTTPError as e:
+        try:
+            d = json.loads(e.read().decode('utf-8') or '{}')
+        except Exception:
+            d = {}
+        raise RuntimeError(((d.get('error') or {}).get('message')) or ('HTTP %s' % e.code))
+    if not d.get('success'):
+        raise RuntimeError(((d.get('error') or {}).get('message')) or 'תשובה לא תקינה מ-SMT')
+    return d
+
+
+def smti_key_get(con):
+    return (kv_get(con, 'smti_key', '') or '').strip()
+
+
+def smti_purchases(days=60, force=False):
+    """כל הרכישות בקו של SMT ב-X הימים האחרונים (זיכרון של דקה). בלי ת"ז — לא נשלחת לדפדפן."""
+    if not force and SMTI_CACHE['rows'] is not None and SMTI_CACHE['days'] >= days and time.time() - SMTI_CACHE['at'] < 60:
+        return SMTI_CACHE
+    con = db()
+    try:
+        key = smti_key_get(con)
+    finally:
+        con.close()
+    if not key:
+        SMTI_CACHE.update(at=0.0, rows=[], error='no_key', days=0)
+        return SMTI_CACHE
+    frm = (il_now() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
+    out, off = [], 0
+    try:
+        while True:
+            d = smti_call(key, '/history/purchases', {'from': frm, 'limit': 1000, 'offset': off})
+            ps = d.get('purchases') or []
+            for x in ps:
+                cl, it, am, pay, src = (x.get('client') or {}), (x.get('item') or {}), (x.get('amount') or {}), (x.get('payment') or {}), (x.get('source') or {})
+                out.append({'id': x.get('id'), 'date': x.get('date') or '', 'cid': str(cl.get('id') or ''), 'name': cl.get('name') or '',
+                            'phone': cl.get('phone') or '', 'caller': src.get('caller_phone') or '', 'channel': src.get('channel') or '',
+                            'type': it.get('type') or '', 'item': it.get('name') or '', 'start': it.get('start_date') or '', 'end': it.get('end_date') or '',
+                            'amount': (am.get('agorot') or 0) / 100.0, 'ok': bool(pay.get('success')), 'msg': pay.get('message') or '',
+                            'last4': pay.get('card_last4') or ''})
+            off += len(ps)
+            if not ps or off >= int(d.get('total') or 0) or off > 20000:
+                break
+        out.sort(key=lambda r: r['date'], reverse=True)
+        SMTI_CACHE.update(at=time.time(), rows=out, error='', days=days)
+    except Exception as e:
+        SMTI_CACHE.update(error=str(e)[:200], at=time.time())
+    return SMTI_CACHE
+
+
 MK_DIFF_FAST = 10       # שניות — מאיר: "אפשר גם פחות מדקה?"
 MK_DIFF_STATE = {'started': '', 'last_full': '', 'last_fast': '', 'last_error': '', 'error_at': '', 'closed': 0, 'beat': 0.0}
 
@@ -25511,6 +25575,27 @@ class H(BaseHTTPRequestHandler):
             txt = 'קבצים: %s\n\nנתיבים: %s\n\n' % (', '.join(r['files']), ', '.join(r['paths']) or '—')
             txt += '\n\n---\n\n'.join(r['hits'])
             return self._send(200, txt.encode('utf-8'), 'text/plain; charset=utf-8')
+        if self.path.split('?')[0] == '/api/mikveh/phone_pay':
+            # 💳 רכישות בקו הטלפון של SMT — לכולם או ללקוח אחד (?cid=)
+            qs_ = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            cid = (qs_.get('cid') or [''])[0]
+            try:
+                days = max(1, min(365, int((qs_.get('days') or ['60'])[0])))
+            except ValueError:
+                days = 60
+            c_ = smti_purchases(days, force=(qs_.get('fresh') or [''])[0] == '1')
+            rows = [r for r in c_['rows'] if not cid or r['cid'] == cid]
+            today = il_now().strftime('%Y-%m-%d')
+            return self._send(200, {'ok': True, 'configured': c_['error'] != 'no_key', 'error': '' if c_['error'] == 'no_key' else c_['error'],
+                                    'rows': rows[:500], 'today': today, 'at': c_['at']})
+        if self.path.split('?')[0] == '/api/mikveh/smti_key':
+            con = db()
+            try:
+                k_ = smti_key_get(con)
+                info = json.loads(kv_get(con, 'smti_info', '') or '{}') if k_ else {}
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'configured': bool(k_), 'masked': (k_[:8] + '…' + k_[-4:]) if k_ else '', 'info': info})
         if self.path.split('?')[0] == '/api/mikveh/monitor':
             # 📡 מאיר: "שיראו מקום באתר אם יש כעת חובות ואם המערכת בודקת, ומידע מלא — מי התקשר לקו, עדכונים מלאים"
             import mikveh as _mk
@@ -28765,6 +28850,32 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 pass
             return self._send(200, {'ok': True, 'debt_paid': used})
+        if self.path == '/api/mikveh/smti_key':
+            # 🔑 המפתח של SMT — נבדק מול /me ונשמר בהגדרות
+            k_ = str(b.get('key') or '').strip()
+            con = db()
+            try:
+                if not k_:
+                    kv_set(con, 'smti_key', '')
+                    kv_set(con, 'smti_info', '')
+                    con.commit()
+                    SMTI_CACHE.update(at=0.0, rows=[], error='no_key', days=0)
+                    return self._send(200, {'ok': True, 'removed': True})
+                if not re.fullmatch(r'mk_live_[A-Za-z0-9]{20,100}', k_):
+                    return self._send(200, {'ok': False, 'error': 'המפתח צריך להתחיל ב-mk_live_'})
+                try:
+                    me = smti_call(k_, '/me')
+                except Exception as e:
+                    return self._send(200, {'ok': False, 'error': 'SMT דחה את המפתח: %s' % e})
+                info = {'name': (me.get('key') or {}).get('name') or '', 'scopes': (me.get('key') or {}).get('scopes') or [],
+                        'label': (me.get('system') or {}).get('label') or '', 'club': (me.get('system') or {}).get('club_id') or ''}
+                kv_set(con, 'smti_key', k_)
+                kv_set(con, 'smti_info', json.dumps(info, ensure_ascii=False))
+                con.commit()
+            finally:
+                con.close()
+            SMTI_CACHE.update(at=0.0, days=0)
+            return self._send(200, {'ok': True, 'info': info})
         if self.path == '/api/mikveh/client_phone':
             # 📞 מאיר: "יש לקוחות שמכניסים בפנייה טלפון אחר ממה שמעודכן במקווה… שתהיה אפשרות עדכון טלפון במקווה"
             import mikveh as _mk
