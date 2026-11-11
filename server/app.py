@@ -19838,6 +19838,58 @@ def smti_purchases(days=60, force=False):
     return SMTI_CACHE
 
 
+def smti_mark(cid, rows, at_of, add_failed=False):
+    """📞 מאיר: "אם רואים שזה אותו מזהה רכישה — שיהיה כתוב שזה בטלפון, כי רואים את זה באתר המקווה".
+    SMT לא מחזיר מספר אישור / מזהה של המקווה, ולכן ההתאמה: אותו לקוח + אותו סכום + עד 10 דקות הפרש.
+    שורה שהותאמה מקבלת phone_pay; רכישות טלפון שנדחו (לא מגיעות למקווה) נוספות כשורות משלהן אם add_failed."""
+    try:
+        c_ = smti_purchases(365)
+    except Exception:
+        return rows
+    mine = [x for x in (c_.get('rows') or []) if x['cid'] == str(cid)]
+    if not mine:
+        return rows
+    def loc(x):
+        try:
+            u = datetime.datetime.fromisoformat(x['date'].replace('Z', '+00:00'))
+            if IL_TZ is not None:
+                return u.astimezone(IL_TZ).replace(tzinfo=None)
+            u = u.replace(tzinfo=None)
+            return u + datetime.timedelta(hours=3 if _il_dst(u) else 2)
+        except Exception:
+            return None
+    used = set()
+    for r in rows:
+        try:
+            t = datetime.datetime.strptime(at_of(r)[:16], '%Y-%m-%d %H:%M')
+        except Exception:
+            continue
+        amt = float(r.get('amount') or 0)
+        best = None
+        for x in mine:
+            if x['id'] in used or not x['ok'] or abs(float(x['amount']) - amt) > 0.01:
+                continue
+            lt = loc(x)
+            if lt is None:
+                continue
+            d = abs((lt - t).total_seconds())
+            if d <= 600 and (best is None or d < best[0]):
+                best = (d, x)
+        if best:
+            used.add(best[1]['id'])
+            r['phone_pay'] = {'caller': best[1]['caller'], 'smt_id': best[1]['id'], 'item': best[1]['item']}
+    if add_failed:
+        for x in mine:
+            if not x['ok'] and x['id'] not in used:
+                lt = loc(x)
+                if lt is None:
+                    continue
+                r = add_failed(x, lt)
+                if r:
+                    rows.append(r)
+    return rows
+
+
 MK_DIFF_FAST = 10       # שניות — מאיר: "אפשר גם פחות מדקה?"
 MK_DIFF_STATE = {'started': '', 'last_full': '', 'last_fast': '', 'last_error': '', 'error_at': '', 'closed': 0, 'beat': 0.0}
 
@@ -25584,7 +25636,8 @@ class H(BaseHTTPRequestHandler):
             except ValueError:
                 days = 60
             c_ = smti_purchases(days, force=(qs_.get('fresh') or [''])[0] == '1')
-            rows = [r for r in c_['rows'] if not cid or r['cid'] == cid]
+            cut_ = (il_now() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
+            rows = [r for r in c_['rows'] if (not cid or r['cid'] == cid) and (r['date'] or '')[:10] >= cut_]
             today = il_now().strftime('%Y-%m-%d')
             return self._send(200, {'ok': True, 'configured': c_['error'] != 'no_key', 'error': '' if c_['error'] == 'no_key' else c_['error'],
                                     'rows': rows[:500], 'today': today, 'at': c_['at']})
@@ -26238,6 +26291,11 @@ class H(BaseHTTPRequestHandler):
                 tx, src, keys = _mk.payments(cid)
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            tx = smti_mark(cid, tx, lambda r: (r.get('iso') or '') + ' ' + (r.get('time') or ''),
+                           add_failed=lambda x, lt: {'iso': lt.strftime('%Y-%m-%d'), 'time': lt.strftime('%H:%M'), 'amount': x['amount'],
+                                                     'desc': x['item'] or 'רכישה בטלפון', 'how': 'אשראי בטלפון', 'failed': True,
+                                                     'phone_pay': {'caller': x['caller'], 'smt_id': x['id'], 'failed': x['msg']}})
+            tx.sort(key=lambda x: (x['iso'], x['time']), reverse=True)
             paid = [t for t in tx if not t['failed'] and (t['amount'] or 0) > 0]
             return self._send(200, {'ok': True, 'tx': tx, 'src': src, 'keys': keys, 'diag': _mk.PAYDIAG.get(cid) or {},
                                     'sum': round(sum(t['amount'] for t in paid), 2), 'count': len(paid),
@@ -26374,6 +26432,12 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
             if rows is None:
                 return self._send(200, {'ok': False, 'error': 'יומן הפעילות של המקווה לא ענה'})
+            rows = smti_mark(m.group(1), rows, lambda r: r.get('at') or '',
+                             add_failed=lambda x, lt: {'at': lt.strftime('%Y-%m-%d %H:%M'), 'kind': 'pay',
+                                                       'text': 'רכישה בטלפון · ✗ נדחתה' + (': ' + x['msg'] if x['msg'] else ''),
+                                                       'amount': x['amount'], 'method': 'אשראי בטלפון', 'extra': {},
+                                                       'phone_pay': {'caller': x['caller'], 'smt_id': x['id'], 'failed': x['msg']}})
+            rows.sort(key=lambda x: x['at'], reverse=True)
             return self._send(200, {'ok': True, 'rows': rows[:400], 'total': len(rows)})
         if self.path.split('?')[0] == '/api/mikveh/get':
             # רק קריאה (GET), רק למנהל — כדי לבדוק נתיבים של המקווה מהשרת, בלי לשנות שם כלום

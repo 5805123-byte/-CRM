@@ -3161,7 +3161,7 @@ function mkActHTML(cid){const A=MKACT[cid];if(!A)return '';
   if(!(A.rows||[]).length)return '<div class="mksub">אין לו פעילות ביומן המקווה בשנה האחרונה.</div><button class="btn sm ghost" id="mkactagain" style="margin-top:6px">🔄 לבדוק שוב</button>';
   return `<div class="mksub" style="margin:4px 2px 8px">${A.total} פעולות בשנה האחרונה${A.total>(A.rows||[]).length?' (מוצגות '+A.rows.length+' האחרונות)':''}</div>
     <div class="mklist">${A.rows.map(x=>`<div class="mkrow schrow ${x.kind==='entry_fail'?'bad':''}" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(d(x.at))} · ${esc(KN[x.kind]||x.kind)}</b>
-      <div class="mksub">${esc(x.text||'')}${x.method?' · '+esc(x.method):''}${Object.keys(x.extra||{}).filter(k=>x.extra[k]).map(k=>' · '+esc(xl(k))+' '+esc(String(x.extra[k]))).join('')}</div></div>
+      <div class="mksub">${esc(x.text||'')}${(x.phone_pay?' <span title="זוהה ברכישות של קו הטלפון (SMT): אותו לקוח, אותו סכום, עד 10 דקות הפרש" style="background:#e8f5e9;color:#1e7a3c;border-radius:10px;padding:0 7px;font-size:.78rem;font-weight:700;white-space:nowrap">📞 בטלפון'+(x.phone_pay.caller?' <span dir="ltr">'+esc(x.phone_pay.caller)+'</span>':'')+'</span>':'')}${x.method?' · '+esc(x.method):''}${Object.keys(x.extra||{}).filter(k=>x.extra[k]).map(k=>' · '+esc(xl(k))+' '+esc(String(x.extra[k]))).join('')}</div></div>
       <b style="${x.kind==='entry_fail'?'color:#c0392b':''}">${x.amount!=null&&x.amount!==0?esc(mkNis(x.amount)):''}</b></div>`).join('')}</div>
     <button class="btn sm ghost" id="mkactagain">🔄 לרענן מהמקווה</button>`;}
 // 💳 מה ששילם במקווה עצמו (לא נדרים פלוס) — סכום 30 הימים האחרונים והתשלום האחרון
@@ -3678,7 +3678,7 @@ function mkPayHTML(cid){const P=MKPAY[cid];if(!P)return '<div class="mksub">⏳ 
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn sm" onclick="mkPayLoad('${esc(cid)}',true)">🔄 לבדוק שוב במקווה</button></div>
     ${(P.keys||[]).length?`<details style="margin-top:6px"><summary class="mksub">שמות השדות של הלקוח במקווה</summary><small dir="ltr" style="word-break:break-all">${esc(P.keys.join(', '))}</small></details>`:''}`;
   return (P.tx||[]).length?`<div class="mksub" style="margin:4px 2px 8px">שילם <b>${P.count}</b> פעמים · סה״כ <b>${esc(mkNis(P.sum))}</b>${P.since?' · מאז '+d({iso:P.since}):''}</div>
-    <div class="mklist">${P.tx.map(t=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${d(t)}${t.time?' '+esc(t.time):''}${t.failed?' · ✗ נכשל':''}</b>
+    <div class="mklist">${P.tx.map(t=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${d(t)}${t.time?' '+esc(t.time):''}${t.failed?' · ✗ נכשל':''}${(t.phone_pay?' <span title="זוהה ברכישות של קו הטלפון (SMT): אותו לקוח, אותו סכום, עד 10 דקות הפרש" style="background:#e8f5e9;color:#1e7a3c;border-radius:10px;padding:0 7px;font-size:.78rem;font-weight:700;white-space:nowrap">📞 בטלפון'+(t.phone_pay.caller?' <span dir="ltr">'+esc(t.phone_pay.caller)+'</span>':'')+'</span>':'')}</b>
       <div class="mksub">${esc([t.desc,t.how].filter(Boolean).join(' · '))}</div></div><b style="${t.failed||(+t.amount||0)<0?'color:#c0392b':''}">${esc(mkNis(t.amount))}</b></div>`).join('')}</div>`
     :`<div class="mksub">ביומן המקווה אין לו שורות תשלום.</div>${why}<button class="btn sm" onclick="mkPayLoad('${esc(cid)}',true)" style="margin-top:6px">🔄 לבדוק שוב במקווה</button>`;}
 // הכרטיס פתוח על אותו לקוח — מעדכנים בו את שורת "הודעה אחרונה"
