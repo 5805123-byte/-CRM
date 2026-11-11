@@ -38134,6 +38134,10 @@ def mkg_ivr(P):
             gr = {g['id']: g for g in _mk.groups()}
             mine_all = _mk.clients()
             mine = [c for c in mine_all if _mk.visible(c) and phone in _mkg_phones(c)]
+            if not mine:
+                # 📞 רשימת הלקוחות נשמרת 2 דקות — טלפון שעודכן הרגע בכרטיס לא היה מזוהה. לא נמצא → בודקים שוב מהמקווה
+                mine_all = _mk.clients(fresh=True)
+                mine = [c for c in mine_all if _mk.visible(c) and phone in _mkg_phones(c)]
         except Exception as e:
             print('  mkg ivr mikveh error:', e)
             return msg('no_conn')
