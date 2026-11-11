@@ -21125,6 +21125,11 @@ MCP_TOOLS = [
          'amount': {'type': 'number', 'description': 'סכום מדויק בש"ח — רשות'},
          'text': {'type': 'string', 'description': 'מילה לחיפוש בשם / הערות / ייעוד — רשות'},
          'date_from': {'type': 'string'}, 'date_to': {'type': 'string'}}}},
+    {'name': 'lookup_phone',
+     'description': 'מי זה לפי מספר טלפון — מחפש באברכים, בחברי הקהילה, בתורמים ובתשלומי נדרים פלוס שבמערכת (קריאה בלבד). '
+                    'אפשר כמה מספרים מופרדים בפסיק.',
+     'inputSchema': {'type': 'object', 'properties': {'phones': {'type': 'string', 'description': 'מספר אחד או כמה, מופרדים בפסיק'}},
+                     'required': ['phones']}},
     {'name': 'today',
      'description': 'התאריך של היום בישראל — לועזי, עברי ויום בשבוע.',
      'inputSchema': {'type': 'object', 'properties': {}}},
@@ -21180,6 +21185,35 @@ def mcp_tool(name, a):
             con.commit()
             bump_data()
             return '✓ נכנס ליומן (מס׳ %d): %s%s — %s%s' % (cur.lastrowid, _mcp_day(date), (' בשעה ' + tm) if tm else '', title, (' · 📍 ' + place) if place else '')
+        if name == 'lookup_phone':
+            def _d(x):
+                x = re.sub(r'\D', '', str(x or ''))
+                return x[-9:] if len(x) >= 9 else ''
+            NORM = "REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(%s,''),'-',''),' ',''),'+',''),'.','')"
+            out = []
+            for raw in re.split(r'[,;\n]+', str(a.get('phones') or '')):
+                k = _d(raw)
+                if not k:
+                    continue
+                hits = []
+                for sql, lab in (("SELECT last,first,name,COALESCE(ended,'') e FROM avreichim WHERE " + NORM % 'phone' + " LIKE ?", 'אברך'),
+                                 ("SELECT last,first,'' name,'' e FROM members WHERE " + NORM % 'phone' + " LIKE ?", 'חבר קהילה'),
+                                 ("SELECT last,first,'' name,'' e FROM donors WHERE " + NORM % 'phone' + " LIKE ?", 'תורם'),
+                                 ("SELECT name last,'' first,'' name,'' e FROM nd_tx WHERE COALESCE(name,'')<>'' AND name NOT LIKE '%מזדמן%' AND " + NORM % 'phone' + " LIKE ? GROUP BY name", 'נדרים פלוס'),
+                                 ("SELECT name last,'' first,'' name,'' e FROM nd_torem WHERE " + NORM % 'phones' + " LIKE ?", 'תורם בנדרים')):
+                    try:
+                        for r in con.execute(sql + " LIMIT 5", ('%' + k + '%',)).fetchall():
+                            nm = ((r['last'] or '') + ' ' + (r['first'] or '')).strip() or (r['name'] or '')
+                            if nm:
+                                hits.append('%s: %s%s' % (lab, nm, ' (סיים)' if r['e'] else ''))
+                    except Exception:
+                        pass
+                seen = []
+                for h in hits:
+                    if h not in seen:
+                        seen.append(h)
+                out.append('%s → %s' % (raw.strip(), ' · '.join(seen) if seen else 'לא נמצא במערכת'))
+            return '\n'.join(out) or '⚠️ חסר מספר'
         if name == 'search_nedarim':
             td = il_now().date()
             f = str(a.get('date_from') or '')[:10] or (td - datetime.timedelta(days=60)).isoformat()
@@ -21202,7 +21236,7 @@ def mcp_tool(name, a):
                 out.append('• %s · %s · %s₪%s%s%s' % ((r['iso'] or r['time'] or '')[:16].replace('T', ' '), (r['name'] or '').strip() or '—',
                            ('%g' % r['amount']) if r['amount'] is not None else '?',
                            (' · ' + r['groupe']) if r['groupe'] else '', (' · ' + r['comments']) if r['comments'] else '',
-                           ' · הו"ק' if r['keva'] else ''))
+                           ' · הו"ק' if r['keva'] else '') + ((' · ☎ ' + r['phone']) if r['phone'] else ''))
             return '\n'.join(out)
         if name == 'list_calendar':
             f = str(a.get('date_from') or '')[:10] or il_now().date().isoformat()
