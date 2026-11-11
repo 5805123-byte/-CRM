@@ -1842,10 +1842,43 @@ async function mkUnpaidOpen(start){
     const csv=['שם,טלפון,מספר לקוח,קבוצה,כניסה אחרונה,מנוי עד,תשלום אחרון,סכום'].concat(L.map(x=>[x.name,x.phone,x.code||'',x.group,x.last_in.replace('T',' '),x.sub_end,x.last_pay,x.last_amt||''].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='נכנס ולא שילם.csv';document.body.appendChild(a);a.click();a.remove();};
   if(r.running||start)setTimeout(()=>{if(document.getElementById('remov').classList.contains('show')&&rs.querySelector('h2')&&rs.querySelector('h2').textContent==='נכנס ולא שילם')mkUnpaidOpen();},2500);}
+// 🔎 מאיר: "יש לקוחות שמכניסים טלפונים אחרים ממה שמעודכן במקווה — שיהיה חכם ויבדוק אם יש שם דומה ויציע,
+// שיראו שהוא לא קיים וזה רק הצעה, או שיבדוק לפי מייל וכו'". exact = אותו טלפון בדיוק; sug = הצעות בלבד, עם הסיבה
+const mkN9=p=>{const d=String(p||'').replace(/\D/g,'').replace(/^972/,'0');return d.length>=9&&d.length<=10?d.slice(-9):'';};
+const mkCPh=c=>String(c.phone||'').split(/[;,/|\s]+/).map(mkN9).filter(Boolean);
+const mkNm=s=>String(s||'').replace(/["'׳״`\-.()]/g,'').replace(/^(הרב|הר|ר|רבי)\s+/,'').replace(/\s+/g,' ').trim();
+const mkLev=(a,b)=>{if(a===b)return 0;if(Math.abs(a.length-b.length)>2)return 9;let p=[...Array(b.length+1).keys()];
+  for(let i=1;i<=a.length;i++){const q=[i];for(let j=1;j<=b.length;j++)q[j]=Math.min(p[j]+1,q[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=q;}return p[b.length];};
+const mkNear=(a,b)=>!!a&&!!b&&(a===b||(a.length>=3&&b.length>=3&&(mkLev(a,b)<=1||a.startsWith(b)||b.startsWith(a))));
+function mkReqMatch(x,CL,q){
+  CL=CL||[];const D=x.details||[],me=mkN9(x.phone);
+  const oth=[...new Set(D.map(d=>String(d.value||'').trim()).filter(v=>/^[\d\-+ ()]{9,16}$/.test(v)).map(mkN9).filter(p=>p&&p!==me))];
+  const mails=[...new Set(D.map(d=>(String(d.value||'').match(/[\w.+-]+@[\w-]+\.[\w.-]+/)||[''])[0].toLowerCase()).filter(Boolean))];
+  const exact=me?CL.find(c=>mkCPh(c).includes(me)):null;
+  const f=mkNm(x.first),l=mkNm(x.last),S={};
+  const add=(c,sc,why)=>{const k=c.id;if(exact&&exact.id===k)return;const o=S[k]||(S[k]={c,sc:0,why:[]});o.sc+=sc;if(!o.why.includes(why))o.why.push(why);};
+  const lastOnly=[];
+  CL.forEach(c=>{const ph=mkCPh(c);
+    if(mails.length&&c.email&&mails.includes(String(c.email).toLowerCase()))add(c,100,'אותו מייל');
+    oth.forEach(p=>{if(ph.includes(p))add(c,90,'טלפון אחר שכתוב בטופס');});
+    if(me)ph.forEach(p=>{if(p!==me&&(p.slice(-7)===me.slice(-7)||(p.length===me.length&&[...p].filter((d,i)=>d!==me[i]).length===1)))add(c,60,'טלפון דומה');});
+    const cf=mkNm(c.first),cl=mkNm(c.last);if(!l&&!f)return;
+    if(f&&l&&cf===f&&cl===l)add(c,80,'אותו שם');
+    else if(f&&l&&cf===l&&cl===f)add(c,75,'אותו שם (הפוך בכרטיס)');
+    else if(l&&cl===l&&mkNear(cf,f))add(c,55,'שם דומה');
+    else if(f&&l&&((mkNear(cl,l)&&mkNear(cf,f))||(mkNear(cl,f)&&mkNear(cf,l))))add(c,45,'שם דומה');
+    else if(l&&(cl===l||cf===l))lastOnly.push(c);});
+  if(lastOnly.length<=4)lastOnly.forEach(c=>add(c,20,'אותו שם משפחה'));
+  if(q){const t=mkNm(q).toLowerCase(),d=String(q).replace(/\D/g,'');
+    CL.filter(c=>(d.length>=3&&(String(c.phone||'').replace(/\D/g,'').includes(d)||String(c.code||'')===d))||(t.length>=2&&!/^\d+$/.test(t)&&(mkNm(c.first)+' '+mkNm(c.last)+' '+mkNm(c.last)+' '+mkNm(c.first)+' '+String(c.email||'')).toLowerCase().includes(t)))
+      .slice(0,8).forEach(c=>add(c,30,'חיפוש: '+q));}
+  return {exact,me,sug:Object.values(S).sort((a,b)=>b.sc-a.sc).slice(0,q?10:5)};}
 let MKREQ=null;
 // 📥 מאיר: "בפניות צריך לראות את כל הפרטים המלאים מנדרים פלוס, וכפתורים לעדכון… הכל באופן מפורט"
 const MKRQ_ST={new:['🆕 חדשה','#e74c3c'],wip:['⏳ בטיפול','#e67e22'],done:['✓ טופלה','#27ae60'],rejected:['✗ נדחתה','#7f8c8d']};
 let MKRQ_F='open';
+const MKRQ_Q={};   // חיפוש ידני של לקוח לפנייה
+let MK_BACK=null;  // 🔙 מאיר: "אני פותח את הכרטיס של הלקוח ואחרי זה הוא לא מחזיר אותו לפניות איפה שאחזתי"
 async function mkReqOpen(sync=true){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   const paint=(msg)=>{const R=(MKREQ&&MKREQ.rows)||[];
@@ -1855,12 +1888,28 @@ async function mkReqOpen(sync=true){
     const dt=s=>s?String(s).slice(8,10)+'/'+String(s).slice(5,7)+'/'+String(s).slice(0,4)+' '+String(s).slice(11,16):'';
     const wa=p=>'https://wa.me/972'+String(p).replace(/\D/g,'').replace(/^0/,'');
     const cli=x=>{const d=String(x.phone||'').replace(/\D/g,'');return d.length>=9&&MK&&MK.ok?MK.clients.find(c=>String(c.phone||'').replace(/\D/g,'').endsWith(d.slice(-9))):null;};
-    const card=x=>{const c=cli(x),st=MKRQ_ST[x.status]||MKRQ_ST.new,D=x.details||[];
+    const gname=id=>((MK&&MK.groups||[]).find(g=>g.id===id)||{}).name||'';
+    const box=(x,M)=>{const c=M.exact;
+      if(c)return `<div style="background:#eafaf1;border-radius:8px;padding:5px 10px;margin:6px 0">✓ <b>נמצא במקווה לפי הטלפון:</b> ${esc(mkName(c))} · #${esc(c.code||'')} · ${esc(gname(c.group))}</div>`;
+      if(!MK||!MK.ok)return '';
+      const row=o=>{const z=o.c;return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid #eee;border-radius:8px;padding:6px 8px;margin-top:6px">
+        <div style="flex:1;min-width:180px"><b>${esc(mkName(z))}</b> <span class="mksub">#${esc(z.code||'')} · ${esc(gname(z.group))}</span>
+          <div class="mksub">טלפון במקווה: <span dir="ltr">${esc(z.phone||'— אין —')}</span>${z.email?' · '+esc(z.email):''}</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">${o.why.map(w=>`<span style="background:#fdebd0;color:#935116;border-radius:10px;padding:0 8px;font-size:.78rem">${esc(w)}</span>`).join('')}</div></div>
+        <button class="btn sm ghost" data-rqc="${esc(z.id)}">🛁 כרטיס</button>
+        ${M.me?`<button class="btn sm" data-rqph="${esc(z.id)}" data-rq="${esc(x.id)}" data-ph="${esc(x.phone)}">📞 זה הוא — לעדכן במקווה את הטלפון ל-<span dir="ltr">${esc(x.phone)}</span></button>`:''}</div>`;};
+      return `<div style="background:#fff8e1;border:1px dashed #e0a800;border-radius:10px;padding:8px 10px;margin:6px 0">
+        <b style="color:#b9770e">⚠️ ${x.phone?'הטלפון <span dir="ltr">'+esc(x.phone)+'</span> לא רשום אצל אף לקוח במקווה':'אין טלפון בפנייה'}</b>
+        ${M.sug.length?`<div class="mksub" style="margin-top:3px">אולי זה אחד מאלה? <b style="color:#c0392b">הצעה בלבד — לא בטוח שזה הוא, תבדוק לפני שמעדכנים</b></div>${M.sug.map(row).join('')}`
+          :'<div class="mksub" style="margin-top:3px">לא נמצא לקוח עם שם / מייל / טלפון דומה</div>'}
+        <div style="margin-top:6px"><button class="btn sm ghost" data-rqq="${esc(x.id)}">🔎 לחפש לקוח אחר${MKRQ_Q[x.id]?' (חיפשת: '+esc(MKRQ_Q[x.id])+')':''}</button></div></div>`;};
+    const card=x=>{const M=mkReqMatch(x,MK&&MK.ok?MK.clients:[],MKRQ_Q[x.id]),c=M.exact,st=MKRQ_ST[x.status]||MKRQ_ST.new,D=x.details||[];
       const btn=(v,t,cls)=>x.status===v?'':`<button class="btn sm ${cls||'ghost'}" data-rqs="${esc(x.id)}" data-v="${v}">${t}</button>`;
       return `<div class="mkrow" style="grid-template-columns:1fr;cursor:default;border-inline-start:4px solid ${st[1]};${x.status==='done'||x.status==='rejected'?'opacity:.8':''}">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><b style="font-size:1.05rem">${esc(((x.first||'')+' '+(x.last||'')).trim()||'—')}</b>
         <span style="background:${st[1]};color:#fff;border-radius:12px;padding:1px 10px;font-size:.8rem;font-weight:700">${st[0]}</span></div>
       <div class="mksub" style="display:flex;gap:10px;flex-wrap:wrap">${x.phone?`<span dir="ltr">📞 ${esc(x.phone)}</span>`:''}<span>🕒 ${esc(dt(x.at))}</span>${x.kind?`<span>🏷️ ${esc(x.kind)}</span>`:''}${x.form_no?`<span>#${esc(x.form_no)}</span>`:''}<span>מקור: ${esc(x.via||'')}</span>${x.handled_at?`<span>טופל ${esc(dt(x.handled_at))}</span>`:''}</div>
+      ${box(x,M)}
       ${x.text?`<div style="white-space:pre-wrap;margin:8px 0;line-height:1.6;background:#f7f9fc;border-radius:8px;padding:8px 10px">${esc(x.text)}</div>`:''}
       ${D.length?`<details ${x.status==='new'||x.status==='wip'?'open':''} style="margin:4px 0"><summary class="mksub" style="cursor:pointer;font-weight:700">🗂️ כל הפרטים מנדרים פלוס (${D.length})</summary>
         <table class="tbl" style="font-size:.85rem;margin-top:6px;width:100%">${D.map(d=>`<tr><th style="text-align:start;white-space:nowrap;width:1%;color:#555">${esc(d.label)}</th><td style="white-space:pre-wrap">${esc(d.value)}</td></tr>`).join('')}</table></details>`
@@ -1871,7 +1920,7 @@ async function mkReqOpen(sync=true){
         ${btn('wip','⏳ בטיפול')}${btn('done','✓ טופל','')}${btn('rejected','✗ נדחה')}${x.status!=='new'?btn('new','↩️ להחזיר לחדשה'):''}
         <button class="btn sm ghost" data-rqn="${esc(x.id)}">📝 ${x.note?'לערוך הערה':'הערה'}</button>
         ${x.phone?`<a class="btn sm ghost" href="tel:${esc(x.phone)}">📞 חיוג</a><a class="btn sm ghost" href="${wa(x.phone)}" target="_blank" rel="noopener">💬 וואטסאפ</a>`:''}
-        ${c?`<button class="btn sm ghost" data-rqc="${esc(c.id)}">🛁 כרטיס במקווה</button><button class="btn sm ghost" data-rqm="${esc(c.id)}">✉️ לשלוח הודעה</button>`:(x.phone?'<span class="mksub">לא נמצא לקוח במקווה עם הטלפון הזה</span>':'')}</div></div>`;};
+        ${c?`<button class="btn sm ghost" data-rqc="${esc(c.id)}">🛁 כרטיס במקווה</button><button class="btn sm ghost" data-rqm="${esc(c.id)}">✉️ לשלוח הודעה</button>`:''}</div></div>`;};
     const F=[['open','לטיפול'],['new','חדשות'],['wip','בטיפול'],['done','טופלו'],['rejected','נדחו'],['all','הכל']];
     rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📥</div><div><h2>פניות</h2>
         <div class="mksub">טופס הפניות בנדרים פלוס${MKREQ&&MKREQ.box?' · '+esc(MKREQ.box):''}${MKREQ&&MKREQ.last&&MKREQ.last.at?' · נבדק '+esc(MKREQ.last.at.slice(11))+(MKREQ.last.new?' · '+MKREQ.last.new+' חדשות':''):''}</div>
@@ -1880,8 +1929,16 @@ async function mkReqOpen(sync=true){
       <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm ghost" id="rqsync">🔄 לבדוק עכשיו</button><button class="btn sm ghost" id="rqapi">⚙️ חיבור ושמות השדות</button></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${F.map(([k,t])=>`<button class="btn sm ${MKRQ_F===k?'':'ghost'}" data-rqf="${k}">${t} (${cnt[k]})</button>`).join('')}</div>
       <div class="mklist">${L.map(card).join('')||'<div class="hintxt">אין פניות כאן 👍</div>'}</div>`;
-    document.getElementById('rx').onclick=()=>{remov.classList.remove('show');if(tab==='mikveh')renderMikveh();};
+    document.getElementById('rx').onclick=()=>{MK_BACK=null;remov.classList.remove('show');if(tab==='mikveh')renderMikveh();};
     document.getElementById('rqsync').onclick=()=>mkReqOpen(true);
+    rs.querySelectorAll('[data-rqq]').forEach(b=>b.onclick=async()=>{const id=b.dataset.rqq;const v=await uiPrompt('לחפש לקוח במקווה — שם, טלפון, מייל או מספר לקוח',MKRQ_Q[id]||'');if(v===null)return;
+      if(v.trim())MKRQ_Q[id]=v.trim();else delete MKRQ_Q[id];const sc=rs.scrollTop;paint();rs.scrollTop=sc;});
+    rs.querySelectorAll('[data-rqph]').forEach(b=>b.onclick=async()=>{const z=MK.clients.find(c=>c.id===b.dataset.rqph);if(!z)return;
+      if(!await uiConfirm('לעדכן במערכת המקווה את הטלפון של '+mkName(z)+'?\n\nעכשיו: '+(z.phone||'— אין —')+'\nחדש: '+b.dataset.ph+'\n\n(רק אם בדקת שזה באמת הוא)'))return;
+      b.disabled=true;const y=await api('POST','/api/mikveh/client_phone',{id:z.id,phone:b.dataset.ph,req:b.dataset.rq}).catch(()=>null);
+      if(!y||!y.ok){b.disabled=false;uiAlert('⚠️ '+((y&&y.error)||'לא עודכן'));return;}
+      z.phone=y.phone;const x=MKREQ.rows.find(q=>q.id===b.dataset.rq);if(x)(x.hist=x.hist||[]).push({at:new Date().toISOString(),what:'הטלפון במקווה עודכן: '+(y.old||'(ריק)')+' → '+y.phone});
+      toast('✓ הטלפון עודכן במקווה');const sc=rs.scrollTop;paint();rs.scrollTop=sc;});
     document.getElementById('rqapi').onclick=()=>mkReqApiSetup();
     rs.querySelectorAll('[data-rqf]').forEach(b=>b.onclick=()=>{MKRQ_F=b.dataset.rqf;paint();});
     rs.querySelectorAll('[data-rqs]').forEach(b=>b.onclick=async()=>{const v=b.dataset.v;let note=null;
@@ -1893,7 +1950,8 @@ async function mkReqOpen(sync=true){
       MKREQ.new=MKREQ.rows.filter(z=>z.status==='new').length;toast(MKRQ_ST[v][0]);paint();mkPendLoad();});
     rs.querySelectorAll('[data-rqn]').forEach(b=>b.onclick=async()=>{const x=MKREQ.rows.find(z=>z.id===b.dataset.rqn);const v=await uiPrompt('הערה לפנייה',x&&x.note||'');if(v===null)return;
       const y=await api('POST','/api/mikveh/requests/'+encodeURIComponent(b.dataset.rqn),{note:v}).catch(()=>null);if(x){x.note=v;if(y&&y.hist)x.hist=y.hist;}paint();});
-    rs.querySelectorAll('[data-rqc]').forEach(b=>b.onclick=()=>{const c=MK.clients.find(z=>z.id===b.dataset.rqc);if(c)mkOpen(c);});
+    rs.querySelectorAll('[data-rqc]').forEach(b=>b.onclick=()=>{const c=MK.clients.find(z=>z.id===b.dataset.rqc);if(!c)return;
+      const sc=rs.scrollTop;MK_BACK={cid:c.id,go:()=>{mkReqOpen(false);rs.scrollTop=sc;}};mkOpen(c);});
     rs.querySelectorAll('[data-rqm]').forEach(b=>b.onclick=()=>{const c=MK.clients.find(z=>z.id===b.dataset.rqm);if(c)mkNotify(c,'free');});};
   remov.classList.add('show');
   if(!MKREQ||!MKREQ.rows){MKREQ={rows:[],new:0};}
@@ -2774,7 +2832,9 @@ function mkOpen(c){
     if(!(c.id in MKLOCK))api('GET','/api/mikveh/selfgroup_lock?id='+encodeURIComponent(c.id)).then(r=>{if(r&&r.ok){MKLOCK[c.id]=!!r.locked;if(r.locked)draw();}}).catch(()=>{});
     const _al=document.getElementById('mkactload'); if(_al)_al.onclick=()=>mkActLoad(c.id);
     if(c.ident){const idb=document.getElementById('mkident');if(idb)idb.onclick=e=>{e.preventDefault();idb.textContent='🪪 ת.ז. '+c.ident;};}
-    document.getElementById('rx').onclick=()=>{if(!busy)remov.classList.remove('show');};
+    document.getElementById('rx').onclick=()=>{if(busy)return;
+      if(MK_BACK&&MK_BACK.cid===c.id){const b=MK_BACK;MK_BACK=null;b.go();return;}   // 🔙 חזרה לפניות, לאותו מקום
+      remov.classList.remove('show');};
     document.getElementById('mkmsg1').onclick=()=>mkNotify(c,'free');
     document.getElementById('mkrenew').onclick=()=>mkRenewOpen(c);
     document.getElementById('mkprice').onclick=()=>mkPriceEdit(c);

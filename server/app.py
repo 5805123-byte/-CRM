@@ -28765,6 +28765,43 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 pass
             return self._send(200, {'ok': True, 'debt_paid': used})
+        if self.path == '/api/mikveh/client_phone':
+            # 📞 מאיר: "יש לקוחות שמכניסים בפנייה טלפון אחר ממה שמעודכן במקווה… שתהיה אפשרות עדכון טלפון במקווה"
+            import mikveh as _mk
+            import yemot as _ym
+            cid = str(b.get('id') or '')
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                return self._send(200, {'ok': False, 'error': 'לקוח לא תקין'})
+            ph = _ym.norm_phone(b.get('phone') or '')
+            if not ph:
+                return self._send(200, {'ok': False, 'error': 'מספר טלפון לא תקין'})
+            try:
+                old = str((_mk.client(cid, max_age=0) or {}).get('phone') or '').strip()
+                _mk.update_client(cid, {'phone': ph})
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:200]})
+            for c_ in (_mk._CL.get('rows') or []):
+                if str(c_.get('id')) == cid:
+                    c_['phone'] = ph
+            rid = str(b.get('req') or '')
+            con = db()
+            try:
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'phone', '📞 הטלפון במקווה עודכן: %s → %s%s' % (old or '(ריק)', ph, ' (מפנייה מנדרים פלוס)' if rid else '')))
+                if rid:
+                    mkreq_cols(con)
+                    row = con.execute("SELECT hist FROM mk_req WHERE id=?", (rid,)).fetchone()
+                    if row:
+                        try:
+                            hist = json.loads(row['hist'] or '[]')
+                        except Exception:
+                            hist = []
+                        hist.append({'at': now_iso(), 'what': 'הטלפון במקווה עודכן: %s → %s' % (old or '(ריק)', ph)})
+                        con.execute("UPDATE mk_req SET hist=? WHERE id=?", (json.dumps(hist[-50:], ensure_ascii=False), rid))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'old': old, 'phone': ph})
         if self.path == '/api/mikveh/requests/sync':
             return self._send(200, mk_req_sync(days=90))
         m = re.match(r'/api/mikveh/requests/([^/]+)$', self.path)
