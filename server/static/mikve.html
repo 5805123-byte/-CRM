@@ -786,6 +786,14 @@ async function cAction(a){const c=CUR;if(!c)return;
 
 // ---------- שליחת הודעה (אותו /api/mikveh/notify של האתר הרגיל) ----------
 let TPL=null;
+// ✍️ מאיר: "בכל הודעה של המקווה יתווסף לטקסט (כמובן שניתן למחוק או לערוך) כאן מקווה כולל חצות (אחרי השם)"
+const MK_SIG='כאן מקווה כולל חצות';
+function mkSig(t,nm){t=String(t||'');if(t.includes(MK_SIG))return t;
+  for(const k of ['{שם מלא}','{שם}'].concat(nm?[nm]:[])){const i=t.indexOf(k);if(i<0)continue;
+    let j=i+k.length;const m=t.slice(j).match(/^\s*,?/);j+=m[0].length;
+    return t.slice(0,j).replace(/\s+$/,'')+(m[0].includes(',')?' ':', ')+MK_SIG+'. '+t.slice(j).replace(/^\s+/,'');}
+  const g=t.match(/^\s*שלום\s*,?/);if(g)return 'שלום, '+MK_SIG+'. '+t.slice(g[0].length).replace(/^\s+/,'');
+  return MK_SIG+'. '+t;}
 let SM_C=null;
 // 📞 הודעה אחרי עדכון טלפון / תשובה להודעה מוקלטת
 const PHONE_TXT=c=>'שלום '+(c.first||'')+', מספר הטלפון שלך במקווה עודכן ל-'+(c.phone||'')+'. מעכשיו ההודעות מהמקווה יגיעו למספר הזה.';
@@ -802,7 +810,7 @@ async function sendMsg(c,tid,names,text0){if(!TPL){const r=await api('GET','/api
   const whoH=()=>`<div class="fld"><span>לפנות בשם — השם בפנייה שונה מבעל הכרטיס (למשל מישהו ששלח מהטלפון של אבא שלו)</span><div class="seg" id="mwho" style="flex-wrap:wrap">${SM_C._names.map((n,i)=>`<button data-w="${i}" class="${SM_C._w===i?'on':''}">${esc(n.full)} <small style="opacity:.7">${esc(n.label||'')}</small></button>`).join('')}<button data-w="new">✏️ שם אחר</button></div></div>`;
   const v=await modal('הודעה ל'+esc(cName(c)),`${names.length>1?'<div id="mwhob">'+whoH()+'</div>':''}<div class="seg" id="mch" style="margin-bottom:12px"><button data-c="sms" class="on">💬 SMS</button><button data-c="voice">📞 שיחה קולית</button></div>
     <label class="fld"><span>נושא</span><select id="mt">${TPL.map(x=>`<option value="${esc(x.id)}"${x.id===t0.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
-    <label class="fld"><span>הטקסט</span><textarea id="mtx" rows="4">${esc(text0!=null?text0:fill(t0.text))}</textarea></label>
+    <label class="fld"><span>הטקסט</span><textarea id="mtx" rows="4">${esc(text0!=null?mkSig(text0,SM_C.first):fill(mkSig(t0.text)))}</textarea></label>
     <label class="fld"><span>לשלוח מאוחר יותר (לא חובה)</span><input type="datetime-local" id="mat"></label><div class="mut" style="font-size:.82rem">ל: <span dir="ltr">${esc(c.phone||'')}</span></div>`,
     [{t:'לשלוח',cls:'p',run:async b=>{const ch=b.querySelector('#mch .on').dataset.c,text=b.querySelector('#mtx').value.trim();if(!text)return false;
       const r=await api('POST','/api/mikveh/notify',{channel:ch,text,phone:c.phone,name:cName(c),cid:c.id,send_at:b.querySelector('#mat').value,cat:(TPL.find(x=>x.id===b.querySelector('#mt').value)||{}).name});
@@ -820,7 +828,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('#mwho [dat
   $$('#mwho [data-w]').forEach(x=>x.classList.toggle('on',x.dataset.w===String(i)));
   if(b.dataset.w==='new')b.insertAdjacentHTML('beforebegin',`<button data-w="${i}" class="on">${esc(n.full)} <small style="opacity:.7">${esc(n.label)}</small></button>`);});
 document.addEventListener('change',e=>{if(e.target.id==='mt'&&(SM_C||CUR)&&TPL){const t=TPL.find(x=>x.id===e.target.value);if(t){const c=SM_C||CUR,g=S.G[c.group]||{};
-  $('#mtx').value=String(t.text||'').replace(/\{שם\}/g,c.first||'').replace(/\{שם מלא\}/g,c._full||cName(c)).replace(/\{קבוצה\}/g,(g.name||'').replace(/^\s*\d+\s*[.\-)]\s*/,'')).replace(/\{מנוי עד\}/g,dmy(c.sub_end)).replace(/\{רישיון עד\}/g,dmy(c.lic_exp)).replace(/\{מספר לקוח\}/g,c.code||'');}}});
+  $('#mtx').value=mkSig(String(t.text||'')).replace(/\{שם\}/g,c.first||'').replace(/\{שם מלא\}/g,c._full||cName(c)).replace(/\{קבוצה\}/g,(g.name||'').replace(/^\s*\d+\s*[.\-)]\s*/,'')).replace(/\{מנוי עד\}/g,dmy(c.sub_end)).replace(/\{רישיון עד\}/g,dmy(c.lic_exp)).replace(/\{מספר לקוח\}/g,c.code||'');}}});
 
 // ---------- כניסות ליום ----------
 async function vEntr(day,frm){day=day||TODAY;frm=frm||'00:00';

@@ -1887,6 +1887,14 @@ function mkVmReply(x){const c=x.cid&&MK&&MK.clients.find(z=>z.id===x.cid);
   if(c)return mkNotify(c,'free',{text:MK_VMREPLY_TXT});
   // מספר שלא רשום במקווה — שולחים לטלפון שממנו השאירו את ההודעה, בלי שם
   mkNotify({id:'',first:'',last:'(מספר שלא רשום במקווה)',code:'',phone:x.phone},'free',{text:'שלום, קיבלנו את ההודעה שהשארת במקווה. ',who:{first:'',full:''}});}
+// ✍️ מאיר: "בכל הודעה של המקווה יתווסף לטקסט (כמובן שניתן למחוק או לערוך) כאן מקווה כולל חצות (אחרי השם)"
+const MK_SIG='כאן מקווה כולל חצות';
+function mkSig(t,nm){t=String(t||'');if(t.includes(MK_SIG))return t;
+  for(const k of ['{שם מלא}','{שם}'].concat(nm?[nm]:[])){const i=t.indexOf(k);if(i<0)continue;
+    let j=i+k.length;const m=t.slice(j).match(/^\s*,?/);j+=m[0].length;
+    return t.slice(0,j).replace(/\s+$/,'')+(m[0].includes(',')?' ':', ')+MK_SIG+'. '+t.slice(j).replace(/^\s+/,'');}
+  const g=t.match(/^\s*שלום\s*,?/);if(g)return 'שלום, '+MK_SIG+'. '+t.slice(g[0].length).replace(/^\s+/,'');
+  return MK_SIG+'. '+t;}
 let MKREQ=null;
 // 📥 מאיר: "בפניות צריך לראות את כל הפרטים המלאים מנדרים פלוס, וכפתורים לעדכון… הכל באופן מפורט"
 const MKRQ_ST={new:['🆕 חדשה','#e74c3c'],wip:['⏳ בטיפול','#e67e22'],done:['✓ טופלה','#27ae60'],rejected:['✗ נדחתה','#7f8c8d']};
@@ -2994,7 +3002,7 @@ async function mkNotify(target,tplId,ctx){
   const close=()=>{try{const a=o.querySelector('audio');if(a)a.pause();}catch(e){}o.remove();};
   if(ctx&&(ctx.names||[]).length&&!ctx.who)ctx.who=ctx.names[0];
   const pc=()=>{const L=ok();return L.length?L[((pi%L.length)+L.length)%L.length]:one;};
-  const load=()=>{ta.value=mkTplTxt(cur,ch);sj.value=mkTplSubj(cur);};
+  const load=()=>{ta.value=mkSig(mkTplTxt(cur,ch));sj.value=mkTplSubj(cur);};
   const paintW=()=>{const w=o.querySelector('#mkwho');if(!w)return;
     w.innerHTML=ctx.names.map((n,i)=>`<button class="mkchip${ctx.who===n?' on':''}" data-w="${i}">${esc(n.full)} <small style="opacity:.7">${esc(n.label||'')}</small></button>`).join('')+'<button class="mkchip" data-w="new">✏️ שם אחר</button>';
     w.querySelectorAll('[data-w]').forEach(b=>b.onclick=async()=>{if(b.dataset.w==='new'){const v=await uiPrompt('לפנות בשם (שם פרטי ומשפחה)','');if(!v)return;
@@ -3034,7 +3042,7 @@ async function mkNotify(target,tplId,ctx){
     const sh=()=>{if(a.dataset.w)a.innerHTML='<div class="mksub">⏳ Gemini מייצר את הקול… '+Math.round((Date.now()-t0)/1000)+' שנ׳</div>';};a.dataset.w=1;sh();const tk=setInterval(sh,500);
     const r=await api('POST','/api/yemot/sample',{text:txt});clearInterval(tk);delete a.dataset.w;if(!o.isConnected)return;
     a.innerHTML=r&&r.ok?`<audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%;margin-top:6px"></audio>`:`<div class="mksub">לא נוצר קול: ${esc((r&&r.error)||'')}</div>`;};
-  load(); if(ctx&&ctx.text)ta.value=ctx.text; paintT(); paintW(); upd();
+  load(); if(ctx&&ctx.text)ta.value=mkSig(ctx.text); paintT(); paintW(); upd();
   ta.oninput=upd; sj.oninput=upd; o.querySelector('#mkhear').onclick=hear;
   const pp=o.querySelector('#mkpp'),pn=o.querySelector('#mkpnx');if(pp){pp.onclick=()=>{pi--;upd();};pn.onclick=()=>{pi++;upd();};}
   o.querySelectorAll('.mkchan button').forEach(b=>b.onclick=()=>{if(ch===b.dataset.c)return;
