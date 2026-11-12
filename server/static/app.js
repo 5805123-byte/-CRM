@@ -2960,6 +2960,8 @@ async function mkNotify(target,tplId,ctx){
   const multi=cs.length>1, one=cs[0];
   const tpls=await mkTplLoad();
   let cur=tpls.find(t=>t.id===tplId)||tpls.find(t=>t.id==='free')||tpls[0]||{id:'',name:'',text:'שלום {שם}, '};
+  // 📤 מאיר: "שיראו לפני ששולחים הודעה שזה נשלח מהמקווה, או מהראשי, וזה ניתן יהיה לשינוי"
+  let line=(ctx&&ctx.line)||'mk';
   let later=false, pi=0, ch=(()=>{try{return localStorage.getItem('mk_ch')||'sms';}catch(e){return 'sms';}})();
   const msnd='neder';   // מאיר: "רק מנדר 18" — כל המיילים של המקווה יוצאים מ-neder1818
   if(!['sms','voice','mail'].includes(ch))ch='sms';
@@ -2977,6 +2979,7 @@ async function mkNotify(target,tplId,ctx){
       <div class="mklbl"><span>איך לשלוח</span></div>
       <div class="mkchan" style="grid-template-columns:1fr 1fr 1fr"><button data-c="sms">💬 SMS</button><button data-c="voice">📞 שיחה</button><button data-c="mail">✉️ מייל</button></div>
       <div class="mksub" id="mkcnt" style="margin-top:6px"></div>
+      <div id="mkline" style="margin-top:8px"></div>
       <div class="mklbl"><span>📂 עבור מה?</span><span><button class="mkx" id="mknew" title="קטגוריה חדשה עם הנוסח שכאן">➕ קטגוריה חדשה</button><button class="mkx" id="mksave" title="לשמור את הנוסח שכאן בקטגוריה שנבחרה">💾 לשמור</button><button class="mkx" id="mkdel" title="למחוק את הקטגוריה שנבחרה">🗑️</button></span></div>
       <div class="mktpl" id="mkt"></div>
       <div id="mkmail" class="hidden"><div class="mklbl"><span>נושא המייל</span></div><input id="mksj" style="width:100%;box-sizing:border-box">
@@ -3025,6 +3028,15 @@ async function mkNotify(target,tplId,ctx){
     o.querySelector('#mklen').textContent=ch==='sms'&&txt?txt.length+' תווים'+(txt.length>70?' · '+Math.ceil(txt.length/67)+' הודעות':''):'';
     o.querySelector('#mkmeta').textContent=ch==='sms'?'💬 SMS':ch==='voice'?'📞 תוקרא בשיחה':'✉️ מייל · יוצא מנדר 18';
     o.querySelectorAll('.mkchan button').forEach(b=>b.classList.toggle('on',b.dataset.c===ch));
+    const ln=o.querySelector('#mkline');
+    if(ln){ln.innerHTML=ch==='voice'?`<div class="mklbl"><span>📤 השיחה יוצאת מ</span></div><div class="mktpl" style="flex-wrap:wrap">
+        <button class="mkchip${line==='mk'?' on':''}" data-ln="mk">🛁 המקווה <small dir="ltr">0773412906</small> <small>· שלוחה 999</small></button>
+        <button class="mkchip${line==='main'?' on':''}" data-ln="main">🏠 הראשי <small>· הזיהוי הרגיל</small></button>
+        ${line==='mk'?'<button class="mkx" data-blk="1" title="מה כתוב עכשיו בקובץ בימות">📋 מה ברשימה 999/BlackList.ini</button>':''}</div>`
+        :(ch==='sms'?'<div class="mksub">📤 SMS יוצא תמיד מ-<span dir="ltr">025803545</span></div>':'');
+      ln.querySelectorAll('[data-ln]').forEach(b=>b.onclick=()=>{line=b.dataset.ln;upd();});
+      const bk=ln.querySelector('[data-blk]');if(bk)bk.onclick=async()=>{const r=await api('GET','/api/mikveh/blacklist').catch(()=>null);
+        uiAlert(!r||!r.ok?'⚠️ לא הצלחתי לקרוא את הקובץ: '+((r&&r.error)||'אין תשובה'):(r.path+'\n'+(r.lines.length?r.lines.length+' מספרים:\n'+r.lines.join('\n'):'הקובץ ריק')));};}
     o.querySelector('#mklt').classList.toggle('hidden',!later);o.querySelector('#mklater').classList.toggle('on',later);
     const n=multi?' ל־'+L.length:'';
     go.disabled=!L.length;
@@ -3089,10 +3101,10 @@ async function mkNotify(target,tplId,ctx){
       toast('✉️ '+(r.count===1?'המייל יוצא ל'+mkName(L[0]):r.count+' מיילים יוצאים — אחד־אחד')+(r.skipped?' · '+r.skipped+' דולגו':''));
       if(!multi){one.sent={ch:'mail',st:'sent',at:new Date()};mkCardRefresh(one);setTimeout(()=>mkHistLoad(one.id),4000);}
       return;}
-    if(!multi){close();return mkSend(one,mkFill(ta.value,one,ctx).trim(),ch,later?dt.value:'',cat);}
+    if(!multi){close();return mkSend(one,mkFill(ta.value,one,ctx).trim(),ch,later?dt.value:'',cat,line);}
     if(!await uiConfirm((ch==='sms'?'לשלוח SMS':'להתקשר')+' ל־'+L.length+' לקוחות'+(later?' ב'+mkDTLabel(dt.value):'')+'?\nכל אחד מקבל את ההודעה עם השם שלו.',ch==='sms'?'💬 לשלוח':'📞 להתקשר','ביטול'))return;
     close();
-    const r=await api('POST','/api/mikveh/notify_bulk',{channel:ch,cat,send_at:later?dt.value:'',items:L.map(c=>({cid:c.id,name:mkName(c),phone:c.phone,text:mkFill(ta.value,c,ctx).trim()}))});
+    const r=await api('POST','/api/mikveh/notify_bulk',{channel:ch,cat,line,send_at:later?dt.value:'',items:L.map(c=>({cid:c.id,name:mkName(c),phone:c.phone,text:mkFill(ta.value,c,ctx).trim()}))});
     if(!r||!r.ok)return uiAlert('לא נשלח:\n'+((r&&r.error)||'שגיאה'));
     mkSchedCount();
     toast((r.send_at?'⏰ '+r.count+' הודעות יצאו '+mkDTLabel(r.send_at.replace(' ','T')):(ch==='sms'?'💬 ':'📞 ')+r.count+' הודעות יוצאות')+(r.skipped?' · '+r.skipped+' דולגו':'')+' — רואים הכל ב"📜 הודעות שנשלחו"');
@@ -3100,11 +3112,11 @@ async function mkNotify(target,tplId,ctx){
   o.onkeydown=e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();go.click();} if(e.key==='Escape')close();};
   setTimeout(()=>{ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);},30);
 }
-async function mkSend(c,text,ch,when,cat){
+async function mkSend(c,text,ch,when,cat,line){
   const what=ch==='sms'?'💬 SMS':'📞 הודעה קולית', who=mkName(c);
   toast(what+' ל'+who+(when?' — מתוזמנת':' — יוצא…'));
   c.sent={ch,st:when?'sched':'sending',at:when?new Date(when):new Date()}; mkCardRefresh(c);
-  const r=await api('POST','/api/mikveh/notify',{phone:c.phone,name:who,text,channel:ch,send_at:when||'',cid:c.id,cat:cat||''});
+  const r=await api('POST','/api/mikveh/notify',{phone:c.phone,name:who,text,channel:ch,send_at:when||'',cid:c.id,cat:cat||'',line:line||'mk'});
   mkHistLoad(c.id);
   if(!r||!r.ok){c.sent.st='failed';mkCardRefresh(c);return uiAlert(what+' ל'+who+' לא נשלחה:\n'+((r&&r.error)||'שגיאה'));}
   if(r.send_at){c.sent.at=new Date(r.send_at.replace(' ','T'));mkCardRefresh(c);mkSchedCount();

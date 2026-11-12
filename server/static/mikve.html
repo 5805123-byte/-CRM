@@ -809,16 +809,21 @@ async function sendMsg(c,tid,names,text0){if(!TPL){const r=await api('GET','/api
   const t0=TPL.find(x=>x.id===tid)||TPL.find(x=>x.id==='free')||TPL[0]||{text:'שלום {שם}, '};
   const whoH=()=>`<div class="fld"><span>לפנות בשם — השם בפנייה שונה מבעל הכרטיס (למשל מישהו ששלח מהטלפון של אבא שלו)</span><div class="seg" id="mwho" style="flex-wrap:wrap">${SM_C._names.map((n,i)=>`<button data-w="${i}" class="${SM_C._w===i?'on':''}">${esc(n.full)} <small style="opacity:.7">${esc(n.label||'')}</small></button>`).join('')}<button data-w="new">✏️ שם אחר</button></div></div>`;
   const v=await modal('הודעה ל'+esc(cName(c)),`${names.length>1?'<div id="mwhob">'+whoH()+'</div>':''}<div class="seg" id="mch" style="margin-bottom:12px"><button data-c="sms" class="on">💬 SMS</button><button data-c="voice">📞 שיחה קולית</button></div>
+    <div class="fld" id="mlnw" style="display:none"><span>📤 השיחה יוצאת מ</span><div class="seg" id="mln"><button data-l="mk" class="on">🛁 המקווה · <span dir="ltr">0773412906</span> · שלוחה 999</button><button data-l="main">🏠 הראשי · הזיהוי הרגיל</button></div><a href="#" id="mblk" style="font-size:.82rem">📋 מה ברשימה 999/BlackList.ini</a></div>
+    <div class="mut" id="mlns" style="font-size:.82rem;margin:-6px 0 10px">📤 SMS יוצא תמיד מ-<span dir="ltr">025803545</span></div>
     <label class="fld"><span>נושא</span><select id="mt">${TPL.map(x=>`<option value="${esc(x.id)}"${x.id===t0.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
     <label class="fld"><span>הטקסט</span><textarea id="mtx" rows="4">${esc(text0!=null?mkSig(text0,SM_C.first):fill(mkSig(t0.text)))}</textarea></label>
     <label class="fld"><span>לשלוח מאוחר יותר (לא חובה)</span><input type="datetime-local" id="mat"></label><div class="mut" style="font-size:.82rem">ל: <span dir="ltr">${esc(c.phone||'')}</span></div>`,
     [{t:'לשלוח',cls:'p',run:async b=>{const ch=b.querySelector('#mch .on').dataset.c,text=b.querySelector('#mtx').value.trim();if(!text)return false;
-      const r=await api('POST','/api/mikveh/notify',{channel:ch,text,phone:c.phone,name:cName(c),cid:c.id,send_at:b.querySelector('#mat').value,cat:(TPL.find(x=>x.id===b.querySelector('#mt').value)||{}).name});
+      const r=await api('POST','/api/mikveh/notify',{channel:ch,line:(b.querySelector('#mln .on')||{dataset:{l:'mk'}}).dataset.l,text,phone:c.phone,name:cName(c),cid:c.id,send_at:b.querySelector('#mat').value,cat:(TPL.find(x=>x.id===b.querySelector('#mt').value)||{}).name});
       if(!r.ok){alertBox('לא נשלח',r.error);return false;}return r;}},{t:'ביטול',v:null}]);
   const b=$('#mbox');
   if(v)toast(v.send_at?'ההודעה תצא ב-'+v.send_at:'ההודעה יוצאת');
   setTimeout(()=>{},0);}
-document.addEventListener('click',e=>{const b=e.target.closest('#mch [data-c]');if(b){$$('#mch button').forEach(x=>x.classList.toggle('on',x===b));}
+document.addEventListener('click',e=>{const b=e.target.closest('#mch [data-c]');if(b){$$('#mch button').forEach(x=>x.classList.toggle('on',x===b));
+    const v_=b.dataset.c==='voice';if($('#mlnw'))$('#mlnw').style.display=v_?'':'none';if($('#mlns'))$('#mlns').style.display=v_?'none':'';}
+  if(e.target.closest('#mblk')){e.preventDefault();api('GET','/api/mikveh/blacklist').then(r=>{const el=$('#mblk');if(el)el.outerHTML='<div class="mut" style="font-size:.82rem;white-space:pre-wrap;max-height:120px;overflow:auto">'+(r.ok?esc(r.path)+'\n'+(r.lines.length?esc(r.lines.join('\n')):'הקובץ ריק'):'⚠️ '+esc(r.error||''))+'</div>';});}
+  const l_=e.target.closest('#mln [data-l]');if(l_){$$('#mln button').forEach(x=>x.classList.toggle('on',x===l_));}
   const s=e.target.closest('#mt');});
 // 👤 בחירת השם — מחליפים בטקסט את השם הקודם בחדש
 document.addEventListener('click',async e=>{const b=e.target.closest('#mwho [data-w]');if(!b||!SM_C)return;const N=SM_C._names,old=N[SM_C._w];let i;

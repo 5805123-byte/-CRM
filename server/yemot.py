@@ -86,7 +86,13 @@ def blacklist_add(phone, path=MK_BLACKLIST):
         body = raw.rstrip('\r\n')
         body = (body + '\n' if body else '') + phone + '\n'
         ok, res = call('UploadTextFile', {'what': path, 'contents': body})
-        return (True, 'added') if ok else (False, 'הוספה ל-%s נכשלה — %s' % (path, res))
+        if not ok:
+            return False, 'הוספה ל-%s נכשלה — %s' % (path, res)
+        # בדיקה: קוראים שוב — המספר באמת בקובץ?
+        ok2, raw2 = download(path)
+        if not ok2 or not any(l.strip().split('=')[0].strip() == phone for l in str(raw2).replace('\r', '').split('\n')):
+            return False, 'המספר לא נמצא ב-%s אחרי ההוספה — %s' % (path, raw2 if not ok2 else 'הקובץ לא השתנה')
+        return True, 'added'
 # מאיר: "שרק כשהוא שולח SMS יצא עם זיהוי של 025803545 (זה מאושר כבר בימות המשיח)"
 SMS_FROM_DEFAULT = '025803545'
 UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 KollelChatzosCRM/1.0'

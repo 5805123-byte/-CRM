@@ -1012,6 +1012,9 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE ym_msg ADD COLUMN mk_cid TEXT")
     except Exception: pass
+    # 📤 מאיר: "שיראו לפני ששולחים הודעה שזה נשלח מהמקווה, או מהראשי, וזה ניתן יהיה לשינוי" — mk / main (ריק = לפי סוג ההודעה)
+    try: con.execute("ALTER TABLE ym_msg ADD COLUMN line TEXT")
+    except Exception: pass
     # ✉️ מיילים מלשונית המקווה — מאיר: "שבמקווה יהיה גם את האפשרות של שליחה במייל או טלפון וכו' כמו בקהילה".
     # רק מה שנשלח (לא נתונים מהמקווה): למי, מה ומתי — כמו ym_msg לשיחות ול-SMS
     try:
@@ -19477,8 +19480,9 @@ def ym_redial(con, jid, lst, label):
                 (now_iso(), 'voice', j0['text'], j0['amount'] or '', len(lst), label, j0['bill_path'] or '', jid))
     nj = con.execute("SELECT last_insert_rowid()").fetchone()[0]
     for r in lst:
-        con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,retry_of,fund) VALUES(?,?,?,?,?,?,'queued',?,?,?,?)",
-                    (nj, r['kind'], r['ref_id'], r['name'], r['phone'], r['text'], r['amount'] or '', r['req_off'], r['id'], r['fund'] if 'fund' in r.keys() else ''))
+        con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,retry_of,fund,line) VALUES(?,?,?,?,?,?,'queued',?,?,?,?,?)",
+                    (nj, r['kind'], r['ref_id'], r['name'], r['phone'], r['text'], r['amount'] or '', r['req_off'], r['id'], r['fund'] if 'fund' in r.keys() else '',
+                     r['line'] if 'line' in r.keys() else None))
         con.execute("UPDATE ym_msg SET retried=?, retry_at=? WHERE id=?",
                     (con.execute("SELECT last_insert_rowid()").fetchone()[0], il_now().strftime('%Y-%m-%d %H:%M'), r['id']))
     con.commit()
@@ -21121,7 +21125,7 @@ def ym_worker(job_id, wait=True):
                                            # 🛁 הודעה של המקווה: זיהוי 0773412906, לשלוחה 999, ולפני השיחה — המספר ל-999/BlackList.ini
                                            **({'ivr_path': _ym.MK_IVR_PATH, 'caller_id': _ym.MK_CALLER_ID,
                                                'pre_call': (lambda ph_=m['phone']: _ym.blacklist_add(ph_))}
-                                              if (m['req_off'] or '') == 'mikveh' or m['kind'] == 'k' else {}))
+                                              if ((m['line'] if 'line' in m.keys() else '') or ('mk' if ((m['req_off'] or '') == 'mikveh' or m['kind'] == 'k') else 'main')) == 'mk' else {}))
                     if ok and isinstance(res, dict) and res.get('engine') == 'reuse':
                         res['engine'] = (prev_['engine'] or '') + ' (אותה הקלטה)'
                         try:
@@ -25697,6 +25701,14 @@ class H(BaseHTTPRequestHandler):
             txt = 'קבצים: %s\n\nנתיבים: %s\n\n' % (', '.join(r['files']), ', '.join(r['paths']) or '—')
             txt += '\n\n---\n\n'.join(r['hits'])
             return self._send(200, txt.encode('utf-8'), 'text/plain; charset=utf-8')
+        if self.path.split('?')[0] == '/api/mikveh/blacklist':
+            # 📋 מאיר: "אתה בטוח שהוא מצליח לשים את המספר ברשימה 999/BlackList.ini?" — מה כתוב בקובץ עכשיו, ישירות מימות
+            import yemot as _ym
+            if not _ym.configured():
+                return self._send(200, {'ok': False, 'error': 'ימות המשיח לא מוגדר'})
+            ok_, raw_ = _ym.download(_ym.MK_BLACKLIST)
+            return self._send(200, {'ok': bool(ok_), 'path': _ym.MK_BLACKLIST, 'text': raw_ if ok_ else '', 'error': '' if ok_ else str(raw_)[:300],
+                                    'lines': [l.strip() for l in str(raw_ or '').replace('\r', '').split('\n') if l.strip()] if ok_ else []})
         if self.path.split('?')[0] == '/api/mikveh/phone_pay':
             # 💳 רכישות בקו הטלפון של SMT — לכולם או ללקוח אחד (?cid=)
             qs_ = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -29331,8 +29343,9 @@ class H(BaseHTTPRequestHandler):
                 # kind='k' — לקוח מקווה: לא נרשם אצל אף חבר קהילה (מערכת נפרדת); mk_cid — הלקוח במקווה
                 mkc = str(b.get('cid') or '').strip()
                 mkc = mkc if re.fullmatch(r'[0-9a-fA-F-]{36}', mkc) else ''
-                mid_ = con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,mk_cid) VALUES(?,?,?,?,?,?,'queued','','mikveh',?)",
-                                   (jid, 'k', 0, name, phone, text, mkc)).lastrowid
+                line_ = 'main' if b.get('line') == 'main' else 'mk'
+                mid_ = con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,mk_cid,line) VALUES(?,?,?,?,?,?,'queued','','mikveh',?,?)",
+                                   (jid, 'k', 0, name, phone, text, mkc, line_)).lastrowid
                 if mkc:
                     con.execute("INSERT INTO mk_log(cid,at,kind,summary,msg_id) VALUES(?,?,?,?,?)",
                                 (mkc, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'msg', ('💬 SMS' if ch == 'sms' else '📞 הודעה קולית') +
@@ -29959,7 +29972,7 @@ class H(BaseHTTPRequestHandler):
                 jid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
                 at = il_now().strftime('%Y-%m-%d %H:%M:%S')
                 for cid, nm, ph, tx in items:
-                    mid_ = con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,mk_cid) VALUES(?,?,?,?,?,?,'queued','','mikveh',?)",
+                    mid_ = con.execute("INSERT INTO ym_msg(job,kind,ref_id,name,phone,text,status,amount,req_off,mk_cid,line) VALUES(?,?,?,?,?,?,'queued','','mikveh',?,'%s')" % ('main' if b.get('line') == 'main' else 'mk'),
                                        (jid, 'k', 0, nm, ph, tx, cid)).lastrowid
                     con.execute("INSERT INTO mk_log(cid,at,kind,summary,msg_id) VALUES(?,?,?,?,?)",
                                 (cid, at, 'msg', ('💬 SMS' if ch == 'sms' else '📞 הודעה קולית') + (' · ' + cat if cat else '') +
