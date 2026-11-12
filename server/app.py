@@ -11006,7 +11006,7 @@ def statement_lines(items):
     12 × $101.00", כדי ש-36 תשלומים ייכנסו בעמוד אחד."""
     groups = {}
     for it in items:
-        k = ((it['date'] or '')[:4], _st_map(_ST_PURPOSE, it['category'], 'General Donation'), _st_map(_ST_METHOD, it['method'], ''))
+        k = ((it['date'] or '')[:4], _st_map(_ST_PURPOSE, it['category'], 'General Donation'), _st_meth(it['method']))
         groups.setdefault(k, []).append(it)
     out = []
     for (yr, purp, meth), lst in sorted(groups.items()):
@@ -11031,6 +11031,15 @@ _ST_METHOD = [(r'אשראי|credit|authorize|banquest|בנק ווסט|אונלי
               (r'צק|צ׳ק|המחאה|check|cheque', 'Check'), (r'מזומן|cash', 'Cash'),
               (r'בנק|bank|wire|zelle|העברה', 'Bank Transfer'), (r'דונרס|donors\s*fund|daf|ojc', 'Donor Advised Fund'),
               (r'paypal', 'PayPal'), (r'נדרים|nedarim', 'Nedarim Plus')]
+
+
+def _st_meth(v):
+    """שיטת התשלום בקבלה. מאיר (איצי ברגר): "מבקש שירשמו על הקבלה מספרי שיקים" — טקסט באנגלית עם מספר
+    ("Check #7313", "Zelle / Credit Card") נכתב כמו שהוא; כל השאר — לפי הטבלה."""
+    v = (v or '').strip()
+    if v and not re.search(r'[\u0590-\u05ff]', v) and (re.search(r'\d{3,}', v) or '/' in v):
+        return v
+    return _st_map(_ST_METHOD, v, '')
 
 
 def _st_map(table, v, default):
@@ -11368,7 +11377,7 @@ def statement_file(con, did, year, fmt='pdf'):
             dd, des, met = it['date_label'], it['designation'], it['method']
         else:
             dd = datetime.date.fromisoformat(it['date'][:10]).strftime('%b %-d, %Y') if re.match(r'\d{4}-\d{2}-\d{2}', it['date'] or '') else (it['date'] or '')
-            des, met = _st_map(_ST_PURPOSE, it['category'], 'General Donation'), _st_map(_ST_METHOD, it['method'], '')
+            des, met = _st_map(_ST_PURPOSE, it['category'], 'General Donation'), _st_meth(it['method'])
         dr.text((cols[0], ty), dd, font=fr, fill=INK)
         dr.text((cols[1], ty), des, font=fr, fill=INK)
         dr.text((cols[2], ty), met, font=fr, fill=SOFT)
