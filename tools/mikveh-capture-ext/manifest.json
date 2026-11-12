@@ -1,15 +1,16 @@
 {
   "manifest_version": 3,
   "name": "מקליט בקשות המקווה",
-  "version": "1.0",
-  "description": "מקליט את הבקשות של מסך הניהול של המקווה בכל הכרטיסיות, ומוריד אותן לקובץ. לא שולח שום דבר לשום מקום.",
+  "version": "2.0",
+  "description": "מקליט את הבקשות של מסך הניהול של המקווה בכל הכרטיסיות — כולל חיבורים חיים, וידאו וצפייה מרחוק — ומוריד אותן לקובץ. לא שולח שום דבר לשום מקום.",
   "content_scripts": [
     {
-      "matches": ["https://prod.xn--8dbba8a7b.com/*", "https://*.xn--8dbba8a7b.com/*"],
+      "matches": ["<all_urls>"],
       "js": ["capture.js"],
       "run_at": "document_start",
       "world": "MAIN",
-      "all_frames": true
+      "all_frames": true,
+      "match_origin_as_fallback": true
     }
   ]
 }
