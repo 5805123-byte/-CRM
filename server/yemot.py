@@ -242,35 +242,17 @@ def speakable(text, pron='', keep=False):
     return re.sub(r'\s{2,}', ' ', t).strip()
 
 
-# 🔂 מאיר: "אני רוצה שישמעו את ההודעה האחרונה בלבד" — מהשרשור של ימות על מודול השמעת קבצים (playfile):
-# ברירת המחדל start=max מתחילה מהקובץ החדש (המספר הגבוה) ויורדת לישנים; "ליציאה מהשלוחה לאחר מספר השמעות שהסתיימו
-# בהצלחה: after_play=return_amount, את כמות ההשמעות יש להכניס בערך return_amount" — 1 = רק ההודעה האחרונה
-ONLY_LAST = {'after_play': 'return_amount', 'return_amount': '1'}
-
-
-def only_last(phone, ext_ini=None, voice=''):
-    """מוודא שבתיקיית הטלפון מוגדר להשמיע רק את ההודעה האחרונה (פעם אחת לכל תיקייה — לפי ה-extIni שכבר נקרא)"""
-    ini = ext_ini or {}
-    if all(str(ini.get(k) or '') == v for k, v in ONLY_LAST.items()):
-        return True, ''
-    p = dict({'path': 'ivr2:/Phone/' + phone, 'type': 'playfile'}, **ONLY_LAST)
-    v = voice or str(ini.get('tts_voice') or '')
-    if v:
-        p['tts_voice'] = v
-    return call('UpdateExtension', p)
-
-
 def set_voice(phone, voice):
     """הקול בתיקייה של הטלפון (tts_voice ב-ext.ini שלה)."""
     if not voice:
         return True, ''
-    return call('UpdateExtension', dict({'path': 'ivr2:/Phone/' + phone, 'type': 'playfile', 'tts_voice': voice}, **ONLY_LAST))
+    return call('UpdateExtension', {'path': 'ivr2:/Phone/' + phone, 'type': 'playfile', 'tts_voice': voice})
 
 
 def ensure_phone_dir(phone, voice=''):
     """מאיר: "למספרים שעדיין אין להם הודעה, התיקייה של המספר שלהם לא נוצרה עדיין, ולכן
     לא שמעתי את ההודעה" — יוצרים את השלוחה Phone/<טלפון> (השמעת הודעות) ובודקים שקמה."""
-    p = dict({'path': 'ivr2:/Phone/' + phone, 'type': 'playfile'}, **ONLY_LAST)
+    p = {'path': 'ivr2:/Phone/' + phone, 'type': 'playfile'}
     if voice:
         p['tts_voice'] = voice
     ok, res = call('UpdateExtension', p)
@@ -295,8 +277,6 @@ def next_msg_num(phone, voice=''):
         return False, res
     if voice and str((res.get('extIni') or {}).get('tts_voice') or '') != voice:
         set_voice(phone, voice)            # תיקייה קיימת — מעדכנים רק את הקול
-    else:
-        only_last(phone, res.get('extIni'))   # תיקייה ישנה — מוסיפים "רק ההודעה האחרונה"
     nums = []
     for f in (res.get('files') or []):
         m = re.match(r'^(\d+)\.', str(f.get('name') or ''))
@@ -343,7 +323,6 @@ def last_file(phone):
     ok, res = call('GetIVR2Dir', {'path': '/Phone/' + phone})
     if not ok:
         return ''
-    only_last(phone, res.get('extIni'))
     best = (-1, '')
     for f in (res.get('files') or []):
         nm = str(f.get('name') or '')
