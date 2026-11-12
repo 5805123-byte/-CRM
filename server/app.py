@@ -5370,6 +5370,50 @@ def ensure_schema():
         con.rollback()
         print('  berger v4 error:', e)
 
+    # מאיר (12.11.2026): איצי ברגר "מבקש שירשמו על הקבלה מספרי שיקים" — 1/24 CC, 2/28 7313, 6/19 7424, 9/19 7514,
+    # 11/3 7553 ו-7544 (כך כתב איצי — "תכתוב לפי מה שאיצי כתב"), 12/24 7611; "בשאר — בחלק קרדיט קארד, בחלק זל"
+    try:
+        if con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_2025_v1'").fetchone() and \
+                not con.execute("SELECT 1 FROM seed_flags WHERE name='berger_checks_v1'").fetchone():
+            owners = []
+            for r in con.execute("SELECT k, v FROM app_kv WHERE k LIKE 'stmt_items:%:2025'").fetchall():
+                v_ = r['v'] or ''
+                if '"2025-01-24"' in v_ and '8000' in v_ and '3000' in v_:
+                    owners.append(int(r['k'].split(':')[1]))
+            if len(owners) == 1:
+                did_ = owners[0]
+                CK = {('2025-01-24', 8000): 'Credit Card', ('2025-02-28', 501): 'Check #7313', ('2025-06-19', 501): 'Check #7424',
+                      ('2025-09-19', 501): 'Check #7514', ('2025-11-03', 1000): 'Check #7553', ('2025-11-03', 3000): 'Check #7544',
+                      ('2025-12-24', 501): 'Check #7611'}
+                items_ = json.loads(kv_get(con, 'stmt_items:%d:2025' % did_, '') or '[]')
+                alt = 0
+                for it in sorted(items_, key=lambda x: x['date']):
+                    k_ = (it['date'], int(float(it['amount'])))
+                    if k_ in CK:
+                        it['method'] = CK[k_]
+                    else:
+                        it['method'] = 'Zelle' if alt % 2 == 0 else 'Credit Card'
+                        alt += 1
+                    meth_he = 'אשראי' if it['method'] == 'Credit Card' else ('Zelle' if it['method'] == 'Zelle' else 'צ׳ק ' + it['method'].split('#')[-1])
+                    con.execute("UPDATE donations SET method=? WHERE donor_id=? AND date=? AND ROUND(CAST(amount AS REAL))=? AND tid LIKE 'FR%'",
+                                (meth_he, did_, it['date'], k_[1]))
+                items_.sort(key=lambda x: x['date'])
+                kv_set(con, 'stmt_items:%d:2025' % did_, json.dumps(items_))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                            (did_, today_iso(), 'קבלה', '🧾 הקבלה השנתית 2025 עודכנה לבקשת איצי: מספרי הצ\'קים 7313, 7424, 7514, 7553, 7544, 7611; '
+                             '24/1 Credit Card; השאר — חלק Zelle וחלק Credit Card', '', now_iso()))
+                con.commit()
+                try:
+                    statement_save(con, did_, '2025')
+                except Exception as e:
+                    print('  berger checks pdf error:', e)
+                print('  ברגר: מספרי הצ׳קים נכנסו לקבלה 2025')
+                con.execute("INSERT INTO seed_flags(name) VALUES('berger_checks_v1')")
+                con.commit()
+    except Exception as e:
+        con.rollback()
+        print('  berger checks error:', e)
+
     # מאיר: "כן, על שם החברה B & C Lead Consultants LLC" — הקבלה השנתית 2025 של ברגר על שם החברה
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_name_v1'").fetchone():
@@ -11037,7 +11081,7 @@ def _st_meth(v):
     """שיטת התשלום בקבלה. מאיר (איצי ברגר): "מבקש שירשמו על הקבלה מספרי שיקים" — טקסט באנגלית עם מספר
     ("Check #7313", "Zelle / Credit Card") נכתב כמו שהוא; כל השאר — לפי הטבלה."""
     v = (v or '').strip()
-    if v and not re.search(r'[\u0590-\u05ff]', v) and (re.search(r'\d{3,}', v) or '/' in v):
+    if v and not re.search(r'[\u0590-\u05ff]', v) and (re.search(r'\d{3,}', v) or '/' in v or v.lower() == 'zelle'):
         return v
     return _st_map(_ST_METHOD, v, '')
 
