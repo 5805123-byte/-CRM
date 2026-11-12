@@ -21117,7 +21117,11 @@ def ym_worker(job_id, wait=True):
                     ok, res = _ym.send_tts(m['phone'], vt_, voice=ym_voice,
                                            engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True, gmodel=ym_gm,
                                            hints=pron_en_for(ym_en, vt_, ym_pron) or pron_en_for(ym_en, m['text']),
-                                           gtries=1 if big_job else 3, reuse=reuse_)
+                                           gtries=1 if big_job else 3, reuse=reuse_,
+                                           # 🛁 הודעה של המקווה: זיהוי 0773412906, לשלוחה 999, ולפני השיחה — המספר ל-999/BlackList.ini
+                                           **({'ivr_path': _ym.MK_IVR_PATH, 'caller_id': _ym.MK_CALLER_ID,
+                                               'pre_call': (lambda ph_=m['phone']: _ym.blacklist_add(ph_))}
+                                              if (m['req_off'] or '') == 'mikveh' or m['kind'] == 'k' else {}))
                     if ok and isinstance(res, dict) and res.get('engine') == 'reuse':
                         res['engine'] = (prev_['engine'] or '') + ' (אותה הקלטה)'
                         try:

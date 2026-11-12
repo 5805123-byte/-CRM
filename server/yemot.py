@@ -60,6 +60,33 @@ DEF_BASE = 'https://www.call2all.co.il/ym/api/'
 # 📞 מאיר: "שנשלחת הודעה — שישלח לשלוחה CallExtensionBridging, ששם הגדרתי שזה יהיה מוגבל ל-5 דקות על הקו"
 # (קודם: ivr2:/ — השורש של המערכת). אפשר לשנות ב-Render עם YEMOT_BRIDGE_PATH
 BRIDGE_PATH = (os.environ.get('YEMOT_BRIDGE_PATH') or 'ivr2:/CallExtensionBridging').strip()
+# 🛁 מאיר: "הודעות שנשלחות בנוגע למקווה ישלחו עם זיהוי 0773412906, והשיחות ישלחו ל-ivr2:/999/CallExtensionBridging
+# (משמיע הודעות מ-/ אבל הגדרות שונות), ולפני ששולחים מכניסים את המספר לרשימה 999/BlackList.ini בשורה חדשה —
+# כשהמספר שומע את ההודעה זה מוציא אוטומטית מהרשימה". רק בשיחות של המקווה; שאר ההודעות — בלי שינוי
+MK_CALLER_ID = '0773412906'
+MK_IVR_PATH = 'ivr2:/999/CallExtensionBridging'
+MK_BLACKLIST = 'ivr2:/999/BlackList.ini'
+_BL_LOCK = threading.Lock()
+
+
+def blacklist_add(phone, path=MK_BLACKLIST):
+    """מוסיף את הטלפון בשורה חדשה בסוף הקובץ (קוראים את הקובץ, מוסיפים, ומעלים את כולו). אם כבר שם — לא נוגעים.
+    אם הקובץ לא נקרא (לא בגלל שהוא לא קיים) — לא מעלים כלום, כדי לא למחוק את מה שכבר כתוב בו."""
+    with _BL_LOCK:
+        ok, raw = download(path)
+        if not ok:
+            low = str(raw).lower()
+            if 'not exist' in low or 'not found' in low or 'לא קיים' in str(raw) or 'לא נמצא' in str(raw):
+                raw = ''
+            else:
+                return False, 'לא הצלחתי לקרוא את %s, ולכן לא נשלח — %s' % (path, raw)
+        raw = str(raw or '')
+        if any(l.strip().split('=')[0].strip() == phone for l in raw.replace('\r', '').split('\n') if l.strip()):
+            return True, 'already'
+        body = raw.rstrip('\r\n')
+        body = (body + '\n' if body else '') + phone + '\n'
+        ok, res = call('UploadTextFile', {'what': path, 'contents': body})
+        return (True, 'added') if ok else (False, 'הוספה ל-%s נכשלה — %s' % (path, res))
 # מאיר: "שרק כשהוא שולח SMS יצא עם זיהוי של 025803545 (זה מאושר כבר בימות המשיח)"
 SMS_FROM_DEFAULT = '025803545'
 UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 KollelChatzosCRM/1.0'
@@ -332,19 +359,34 @@ def last_file(phone):
     return best[1]
 
 
-def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='', fallback=True, gmodel='', hints=None, gtries=3, reuse=''):
+def _bridge(phone, timeout, ivr_path='', caller_id='', pre_call=None):
+    if pre_call:
+        okp, err = pre_call()
+        if not okp:
+            return False, err
+    p = {'phones': phone, 'ivrPath': ivr_path or BRIDGE_PATH, 'callsTimeOut': str(timeout)}
+    if caller_id:
+        p['callerId'] = caller_id
+    ok, res = call('CallExtensionBridging', p)
+    if not ok:
+        return False, 'השיחה לא יצאה — ' + str(res)
+    errs = res.get('errors') or {}
+    if errs:
+        return False, 'השיחה לא יצאה — %s' % json.dumps(errs, ensure_ascii=False)[:160]
+    return True, res
+
+
+def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='', fallback=True, gmodel='', hints=None, gtries=3, reuse='',
+             ivr_path='', caller_id='', pre_call=None):
     """הודעה קולית: מעלה את ההודעה לתיקיית הטלפון ומתקשר אליו.
     engine='gemini' — קול אנושי מ-Gemini (קובץ WAV); אחרת קובץ TTS של ימות.
     reuse — 🔁 מאיר: "שולחים הודעה והוא לא ענה — לא צריך ליצור בגימני שוב; אם לא נשלחה הודעה נוספת הוא ישמע את
     האחרונה. אפשר לבדוק לפני השליחה אם ההודעה האחרונה זה מה שיצרנו" — אם הקובץ האחרון בתיקייה הוא הקובץ הזה: רק מתקשרים."""
     if reuse and last_file(phone) == reuse:
         name, used = reuse, 'reuse'
-        ok, res = call('CallExtensionBridging', {'phones': phone, 'ivrPath': BRIDGE_PATH, 'callsTimeOut': str(timeout)})
+        ok, res = _bridge(phone, timeout, ivr_path, caller_id, pre_call)
         if not ok:
-            return False, 'השיחה לא יצאה — ' + str(res)
-        errs = res.get('errors') or {}
-        if errs:
-            return False, 'השיחה לא יצאה — %s' % json.dumps(errs, ensure_ascii=False)[:160]
+            return False, res
         return True, {'file': name, 'campaignId': res.get('campaignId') or '', 'callerId': res.get('callerId') or '', 'engine': used, 'wav': None}
     ok, n = next_msg_num(phone, voice)
     if not ok:
@@ -367,12 +409,9 @@ def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='',
         ok, res = call('UploadTextFile', {'what': 'ivr2:/Phone/%s/%s' % (phone, name), 'contents': text})
         if not ok:
             return False, 'העלאת ההודעה נכשלה — ' + str(res)
-    ok, res = call('CallExtensionBridging', {'phones': phone, 'ivrPath': BRIDGE_PATH, 'callsTimeOut': str(timeout)})
+    ok, res = _bridge(phone, timeout, ivr_path, caller_id, pre_call)
     if not ok:
-        return False, 'השיחה לא יצאה — ' + str(res)
-    errs = res.get('errors') or {}
-    if errs:
-        return False, 'השיחה לא יצאה — %s' % json.dumps(errs, ensure_ascii=False)[:160]
+        return False, res
     return True, {'file': name, 'campaignId': res.get('campaignId') or '', 'callerId': res.get('callerId') or '', 'engine': used,
                   'wav': wav if used == 'gemini' else None}
 
