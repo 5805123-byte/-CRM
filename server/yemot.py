@@ -15,7 +15,7 @@
      אם לטלפון אין עדיין תיקייה: "extension does not exist" — יוצרים אותה
      (UpdateExtension path=ivr2:/Phone/<טלפון> type=playfile), ומתחילים מ-000.
   2. UploadTextFile?what=ivr2:/Phone/<טלפון>/<NNN>.tts&contents=<הטקסט> — ההודעה הבאה.
-  3. CallExtensionBridging?phones=<טלפון>&ivrPath=ivr2:/&callsTimeOut=35 — השיחה עצמה.
+  3. CallExtensionBridging?phones=<טלפון>&ivrPath=ivr2:/CallExtensionBridging&callsTimeOut=35 — השיחה עצמה (לשלוחה שמוגבלת ל-5 דקות).
 אופציונלי:
     YEMOT_SMS_FROM    מספר השולח ב-SMS (ברירת מחדל 025803545 — מאושר בימות)
     YEMOT_CALLER_ID   המספר שיוצג בשיחה הקולית
@@ -57,6 +57,9 @@ def _trace(method, params, ok, raw, ms):
                 'ok': bool(ok), 'response': (raw or '')[:3000], 'ms': int(ms)})
 
 DEF_BASE = 'https://www.call2all.co.il/ym/api/'
+# 📞 מאיר: "שנשלחת הודעה — שישלח לשלוחה CallExtensionBridging, ששם הגדרתי שזה יהיה מוגבל ל-5 דקות על הקו"
+# (קודם: ivr2:/ — השורש של המערכת). אפשר לשנות ב-Render עם YEMOT_BRIDGE_PATH
+BRIDGE_PATH = (os.environ.get('YEMOT_BRIDGE_PATH') or 'ivr2:/CallExtensionBridging').strip()
 # מאיר: "שרק כשהוא שולח SMS יצא עם זיהוי של 025803545 (זה מאושר כבר בימות המשיח)"
 SMS_FROM_DEFAULT = '025803545'
 UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 KollelChatzosCRM/1.0'
@@ -336,7 +339,7 @@ def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='',
     האחרונה. אפשר לבדוק לפני השליחה אם ההודעה האחרונה זה מה שיצרנו" — אם הקובץ האחרון בתיקייה הוא הקובץ הזה: רק מתקשרים."""
     if reuse and last_file(phone) == reuse:
         name, used = reuse, 'reuse'
-        ok, res = call('CallExtensionBridging', {'phones': phone, 'ivrPath': 'ivr2:/', 'callsTimeOut': str(timeout)})
+        ok, res = call('CallExtensionBridging', {'phones': phone, 'ivrPath': BRIDGE_PATH, 'callsTimeOut': str(timeout)})
         if not ok:
             return False, 'השיחה לא יצאה — ' + str(res)
         errs = res.get('errors') or {}
@@ -364,7 +367,7 @@ def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='',
         ok, res = call('UploadTextFile', {'what': 'ivr2:/Phone/%s/%s' % (phone, name), 'contents': text})
         if not ok:
             return False, 'העלאת ההודעה נכשלה — ' + str(res)
-    ok, res = call('CallExtensionBridging', {'phones': phone, 'ivrPath': 'ivr2:/', 'callsTimeOut': str(timeout)})
+    ok, res = call('CallExtensionBridging', {'phones': phone, 'ivrPath': BRIDGE_PATH, 'callsTimeOut': str(timeout)})
     if not ok:
         return False, 'השיחה לא יצאה — ' + str(res)
     errs = res.get('errors') or {}
