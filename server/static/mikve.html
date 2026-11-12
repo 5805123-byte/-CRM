@@ -571,6 +571,7 @@ function drawClient(keepTab){const c=CUR;if(!c)return;const g=S.G[c.group],pr=c.
       <div class="acts">
         <button class="btn p" data-a="grp">${ic('swap')}שינוי סוג מנוי</button>
         <button class="btn" data-a="msg">${ic('msg')}הודעה</button>
+        <button class="btn" data-a="phone">${ic('phone')}תיקון טלפון</button>
         <button class="btn" data-a="sub">${ic('cal')}תאריכי מנוי</button>
         <button class="btn" data-a="debt">${ic('plus')}חוב</button>
         <button class="btn ${c.blocked?'':'r'}" data-a="blk">${ic('ban')}${c.blocked?'ביטול חסימה':'חסימה'}</button>
@@ -598,7 +599,8 @@ async function cTab(){const c=CUR,el=$('#ctab');if(!c)return;el.innerHTML='<div 
     el.innerHTML=(r.rows||[]).length?`<div class="list">${r.rows.map(x=>`<div class="it"><div class="m"><b>${dmyhm(x.at)}</b><small>${esc(x.summary||'')}${x.y_st?' · '+esc(x.y_st==='sent'?'יצאה':x.y_st==='failed'?'לא יצאה':x.y_st):''}</small></div>${x.can_del?`<button class="btn sm" data-hd="${x.id}">${ic('trash')}</button>`:''}</div>`).join('')}</div>`:'<div class="empty">אין היסטוריה</div>';
     $$('#ctab [data-hd]').forEach(b=>b.onclick=async()=>{if(!await confirmBox('מחיקה מהיומן','למחוק את השורה? במקווה לא משתנה כלום.'))return;await api('POST','/api/mikveh/log_del',{id:+b.dataset.hd});cTab();});}
   else if(CTAB==='vm'){const r=await api('GET','/api/mikveh/vm?cid='+id);if(CUR!==c)return;
-    el.innerHTML=(r.rows||[]).length?`<div class="list">${r.rows.map(x=>`<div class="it" style="display:block"><b>${dmyhm(x.at)}</b><audio controls preload="none" src="/api/mikveh/vm/${x.id}.wav" style="width:100%;margin:6px 0"></audio><div class="mut" style="font-size:.88rem">${esc(x.transcript||'')}</div></div>`).join('')}</div>`:'<div class="empty">לא השאיר הודעות</div>';}
+    el.innerHTML=(r.rows||[]).length?`<div class="list">${r.rows.map(x=>`<div class="it" style="display:block"><b>${dmyhm(x.at)}</b><audio controls preload="none" src="/api/mikveh/vm/${x.id}.wav" style="width:100%;margin:6px 0"></audio><div class="mut" style="font-size:.88rem">${esc(x.transcript||'')}</div><button class="btn sm" data-rp="${x.id}" style="margin-top:6px">${ic('send')}לשלוח לו הודעה בחזרה</button></div>`).join('')}</div>`:'<div class="empty">לא השאיר הודעות</div>';
+    $$('#ctab [data-rp]').forEach(b=>b.onclick=()=>sendMsg(c,undefined,[],'שלום '+(c.first||'')+', קיבלנו את ההודעה שהשארת במקווה. '));}
 }
 // 💲 מאיר: "אם הוא עובר עכשיו מנוי, הוא צריך לשלם את ההפרש… ופעם הבאה שהוא רוצה להיכנס יהיה כתוב לו שהוא צריך
 // לשלם את ההפרש" — לפני שינוי מנוי מהכרטיס: חישוב ההפרש (כמו בשלוחה), ובחירה: חוב במקווה + הודעה במסך / זיכוי / בלי.
@@ -741,6 +743,9 @@ async function vMon(){
   mkMonitorInto($('#monb'),id=>openClient(id));}
 async function cAction(a){const c=CUR;if(!c)return;
   const refresh=async(upd)=>{if(upd)Object.assign(c,upd);drawClient(true);cTab();};
+  if(a==='phone'){const v=await promptBox('הטלפון של '+esc(cName(c))+' במקווה','מספר טלפון',c.phone||'');if(v===null||!String(v).trim())return;
+    const r=await api('POST','/api/mikveh/phone',{id:c.id,phone:String(v).trim()});if(!r.ok){alertBox('הטלפון לא עודכן',r.error||'');return;}
+    toast('הטלפון עודכן במקווה: '+r.phone);await refresh({phone:r.phone});phoneMsgAsk(c);return;}
   if(a==='grp'){const cur=c.group;
     setTimeout(()=>mkRecentFill(c.id,document.getElementById('cgrecent')),0);
     const v=await modal('שינוי סוג מנוי — '+esc(cName(c)),`<div class="hint">נוכחית: <b>${esc((S.G[cur]||{}).name||'—')}</b>. השינוי נעשה במקווה מיד; אם נשארו ימים במנוי — יחושב הפרש.</div><div id="cgrecent"></div>
@@ -781,8 +786,14 @@ async function cAction(a){const c=CUR;if(!c)return;
 
 // ---------- שליחת הודעה (אותו /api/mikveh/notify של האתר הרגיל) ----------
 let TPL=null;
-let SM_C=null;   // למי ההודעה (עם השם שבחרו לפנות אליו)
-async function sendMsg(c,tid,names){if(!TPL){const r=await api('GET','/api/mikveh/templates');TPL=r.templates||[];}
+let SM_C=null;
+// 📞 הודעה אחרי עדכון טלפון / תשובה להודעה מוקלטת
+const PHONE_TXT=c=>'שלום '+(c.first||'')+', מספר הטלפון שלך במקווה עודכן ל-'+(c.phone||'')+'. מעכשיו ההודעות מהמקווה יגיעו למספר הזה.';
+async function phoneMsgAsk(c){if(!c||!c.phone)return;if(await confirmBox('לשלוח הודעה?','הטלפון עודכן. לשלוח ל<b>'+esc(cName(c))+'</b> הודעה על זה?'))sendMsg(c,undefined,[],PHONE_TXT(c));}
+function vmReply(x){const c=x.cid&&S.mk&&S.mk.clients.find(z=>z.id===x.cid);
+  if(c)return sendMsg(c,undefined,[],'שלום '+(c.first||'')+', קיבלנו את ההודעה שהשארת במקווה. ');
+  sendMsg({id:'',first:'',last:'(מספר שלא רשום במקווה)',code:'',group:'',phone:x.phone},undefined,[],'שלום, קיבלנו את ההודעה שהשארת במקווה. ');}   // למי ההודעה (עם השם שבחרו לפנות אליו)
+async function sendMsg(c,tid,names,text0){if(!TPL){const r=await api('GET','/api/mikveh/templates');TPL=r.templates||[];}
   const g=S.G[c.group]||{};names=(names||[]).slice();
   const W=n=>n?Object.assign({},c,{first:n.first,last:n.full.split(/\s+/).slice(1).join(' '),_full:n.full}):c;
   SM_C=Object.assign(W(names[0]),{_names:names,_w:0});
@@ -791,7 +802,7 @@ async function sendMsg(c,tid,names){if(!TPL){const r=await api('GET','/api/mikve
   const whoH=()=>`<div class="fld"><span>לפנות בשם — השם בפנייה שונה מבעל הכרטיס (למשל מישהו ששלח מהטלפון של אבא שלו)</span><div class="seg" id="mwho" style="flex-wrap:wrap">${SM_C._names.map((n,i)=>`<button data-w="${i}" class="${SM_C._w===i?'on':''}">${esc(n.full)} <small style="opacity:.7">${esc(n.label||'')}</small></button>`).join('')}<button data-w="new">✏️ שם אחר</button></div></div>`;
   const v=await modal('הודעה ל'+esc(cName(c)),`${names.length>1?'<div id="mwhob">'+whoH()+'</div>':''}<div class="seg" id="mch" style="margin-bottom:12px"><button data-c="sms" class="on">💬 SMS</button><button data-c="voice">📞 שיחה קולית</button></div>
     <label class="fld"><span>נושא</span><select id="mt">${TPL.map(x=>`<option value="${esc(x.id)}"${x.id===t0.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
-    <label class="fld"><span>הטקסט</span><textarea id="mtx" rows="4">${esc(fill(t0.text))}</textarea></label>
+    <label class="fld"><span>הטקסט</span><textarea id="mtx" rows="4">${esc(text0!=null?text0:fill(t0.text))}</textarea></label>
     <label class="fld"><span>לשלוח מאוחר יותר (לא חובה)</span><input type="datetime-local" id="mat"></label><div class="mut" style="font-size:.82rem">ל: <span dir="ltr">${esc(c.phone||'')}</span></div>`,
     [{t:'לשלוח',cls:'p',run:async b=>{const ch=b.querySelector('#mch .on').dataset.c,text=b.querySelector('#mtx').value.trim();if(!text)return false;
       const r=await api('POST','/api/mikveh/notify',{channel:ch,text,phone:c.phone,name:cName(c),cid:c.id,send_at:b.querySelector('#mat').value,cat:(TPL.find(x=>x.id===b.querySelector('#mt').value)||{}).name});
@@ -945,7 +956,7 @@ async function vReqs(){
     $$('#rb [data-ph]').forEach(b=>b.onclick=async()=>{const z=S.mk.clients.find(c=>c.id===b.dataset.ph);if(!z)return;
       if(!await confirmBox('לעדכן טלפון במקווה','לעדכן במערכת המקווה את הטלפון של <b>'+esc(cName(z))+'</b>?<br>עכשיו: <span dir="ltr">'+esc(z.phone||'— אין —')+'</span><br>חדש: <b dir="ltr">'+esc(b.dataset.v)+'</b><br><span class="red">רק אם בדקת שזה באמת הוא</span>'))return;
       b.disabled=true;const y=await api('POST','/api/mikveh/client_phone',{id:z.id,phone:b.dataset.v,req:b.dataset.rq});
-      if(!y.ok){b.disabled=false;alertBox('לא עודכן',y.error);return;}z.phone=y.phone;toast('הטלפון עודכן במקווה');RQ_Y=scrollY;vReqs();});
+      if(!y.ok){b.disabled=false;alertBox('לא עודכן',y.error);return;}z.phone=y.phone;toast('הטלפון עודכן במקווה');RQ_Y=scrollY;await vReqs();phoneMsgAsk(z);});
     $$('#rb [data-c]').forEach(e=>e.onclick=ev=>{ev.preventDefault();openClient(e.dataset.c);});
     $$('#rb [data-m]').forEach(e=>e.onclick=()=>{const c=S.mk.clients.find(z=>z.id===e.dataset.m);if(!c)return;const x=R.find(q=>q.id===e.dataset.rq);sendMsg(c,undefined,x?mkReqNames(x,c):[]);});
     $$('#rb [data-s]').forEach(b=>b.onclick=async()=>{const v=b.dataset.v,body={status:v};
@@ -962,12 +973,13 @@ async function vVm(sync){
   S.vmBadge=r.new||0;navPaint();const blk=new Set(r.blocked||[]);
   const card=x=>`<div class="card pad" style="margin-bottom:10px;${x.done?'opacity:.65':''}"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">${x.heard||x.done?'':'<span class="tag r">חדש</span>'}<b>${x.cid?`<a href="#" data-c="${esc(x.cid)}">${esc(x.cname||'')}</a>`:'<span class="mut">לא מזוהה</span>'}</b><span dir="ltr" class="mut">${esc(x.phone||'')}</span><span class="grow" style="flex:1"></span><span class="mut">${dmyhm(x.at)}</span></div>
     <audio controls preload="none" src="/api/mikveh/vm/${x.id}.wav" style="width:100%;margin:8px 0" data-p="${x.id}"></audio><div style="line-height:1.6">${x.transcript?esc(x.transcript):x.transcript===''?'<span class="mut">(לא תומלל)</span>':'<span class="mut">מתמלל…</span>'}</div>${x.note?'<div class="mut">📝 '+esc(x.note)+'</div>':''}
-    <div class="acts" style="margin-bottom:0"><button class="btn sm ${x.done?'':'g'}" data-d="${x.id}" data-v="${x.done?0:1}">${x.done?'להחזיר':'✓ טופל'}</button><button class="btn sm" data-n="${x.id}">הערה</button>${x.phone?(blk.has(x.phone)?`<button class="btn sm" data-ub="${esc(x.phone)}">ביטול חסימה</button>`:`<button class="btn sm r" data-b="${esc(x.phone)}">${ic('ban')}חסימה</button>`):''}</div></div>`;
+    <div class="acts" style="margin-bottom:0"><button class="btn sm ${x.done?'':'g'}" data-d="${x.id}" data-v="${x.done?0:1}">${x.done?'להחזיר':'✓ טופל'}</button><button class="btn sm" data-n="${x.id}">הערה</button>${x.phone?`<button class="btn sm" data-rp="${x.id}">${ic('send')}לשלוח לו הודעה בחזרה</button>`:''}${x.phone?(blk.has(x.phone)?`<button class="btn sm" data-ub="${esc(x.phone)}">ביטול חסימה</button>`:`<button class="btn sm r" data-b="${esc(x.phone)}">${ic('ban')}חסימה</button>`):''}</div></div>`;
   const R=r.rows||[],op=R.filter(x=>!x.done),dn=R.filter(x=>x.done);
   $('#vb').innerHTML=(op.length?op.map(card).join(''):'<div class="card empty">אין הודעות שמחכות</div>')+(dn.length?`<h3 style="margin:22px 0 10px">טופלו (${dn.length})</h3>${dn.map(card).join('')}`:'')+
     `<div class="card pad" style="margin-top:20px"><h3>${ic('ban')} מספרים חסומים</h3>${[...blk].map(p=>`<div class="it" style="display:flex;gap:10px;align-items:center;margin:6px 0"><span dir="ltr">${esc(p)}</span><button class="btn sm" data-ub="${esc(p)}">ביטול חסימה</button></div>`).join('')||'<div class="mut">אין</div>'}
       <div class="toolbar" style="margin:10px 0 0"><input id="vbn" dir="ltr" placeholder="מספר לחסימה"><button class="btn" id="vbadd">חסימה</button></div></div>`;
   $$('#vb [data-c]').forEach(e=>e.onclick=ev=>{ev.preventDefault();openClient(e.dataset.c);});
+  $$('#vb [data-rp]').forEach(b=>b.onclick=()=>{const x=R.find(z=>z.id==b.dataset.rp);if(x)vmReply(x);});
   $$('#vb [data-p]').forEach(a=>a.onplay=()=>{const x=R.find(z=>z.id==a.dataset.p);if(x&&!x.heard){x.heard=1;api('POST','/api/mikveh/vm/'+x.id,{heard:1});}});
   $$('#vb [data-d]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/vm/'+b.dataset.d,{done:b.dataset.v==='1',heard:1});vVm();});
   $$('#vb [data-n]').forEach(b=>b.onclick=async()=>{const x=R.find(z=>z.id==b.dataset.n);const v=await promptBox('הערה','הערה',x&&x.note||'');if(v===null)return;await api('POST','/api/mikveh/vm/'+b.dataset.n,{note:v});vVm();});

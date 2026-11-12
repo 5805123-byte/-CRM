@@ -315,9 +315,34 @@ def upload_file(path, data, filename='msg.wav', timeout=60):
     return (True, res) if ok else (False, 'ימות המשיח: %s' % (res.get('message') or raw[:160]))
 
 
-def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='', fallback=True, gmodel='', hints=None, gtries=3):
+def last_file(phone):
+    """שם הקובץ האחרון (המספר הכי גבוה) בתיקיית הטלפון — מה שהוא ישמע בשיחה. '' אם אין / לא ענה"""
+    ok, res = call('GetIVR2Dir', {'path': '/Phone/' + phone})
+    if not ok:
+        return ''
+    best = (-1, '')
+    for f in (res.get('files') or []):
+        nm = str(f.get('name') or '')
+        m = re.match(r'^(\d+)\.', nm)
+        if m and int(m.group(1)) > best[0]:
+            best = (int(m.group(1)), nm)
+    return best[1]
+
+
+def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='', fallback=True, gmodel='', hints=None, gtries=3, reuse=''):
     """הודעה קולית: מעלה את ההודעה לתיקיית הטלפון ומתקשר אליו.
-    engine='gemini' — קול אנושי מ-Gemini (קובץ WAV); אחרת קובץ TTS של ימות."""
+    engine='gemini' — קול אנושי מ-Gemini (קובץ WAV); אחרת קובץ TTS של ימות.
+    reuse — 🔁 מאיר: "שולחים הודעה והוא לא ענה — לא צריך ליצור בגימני שוב; אם לא נשלחה הודעה נוספת הוא ישמע את
+    האחרונה. אפשר לבדוק לפני השליחה אם ההודעה האחרונה זה מה שיצרנו" — אם הקובץ האחרון בתיקייה הוא הקובץ הזה: רק מתקשרים."""
+    if reuse and last_file(phone) == reuse:
+        name, used = reuse, 'reuse'
+        ok, res = call('CallExtensionBridging', {'phones': phone, 'ivrPath': 'ivr2:/', 'callsTimeOut': str(timeout)})
+        if not ok:
+            return False, 'השיחה לא יצאה — ' + str(res)
+        errs = res.get('errors') or {}
+        if errs:
+            return False, 'השיחה לא יצאה — %s' % json.dumps(errs, ensure_ascii=False)[:160]
+        return True, {'file': name, 'campaignId': res.get('campaignId') or '', 'callerId': res.get('callerId') or '', 'engine': used, 'wav': None}
     ok, n = next_msg_num(phone, voice)
     if not ok:
         return False, n

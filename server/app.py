@@ -21105,12 +21105,25 @@ def ym_worker(job_id, wait=True):
                 else:
                     # מאיר: "שיהיה יותר אנושי, ויותר נורמלי בלי טעויות" — הקול שנבחר, וטקסט
                     # שימות מקריא נכון (סכומים במילים, טלפונים ספרה-ספרה, מילון הגייה)
-                    vt_ = ym_voice_text(m['text'], ym_pron, ym_engine == 'gemini' and ym_nik, trace=_ym._trace,
-                                        en=ym_en if ym_engine == 'gemini' else None)
+                    # 🔁 אותו נוסח בדיוק כמו ההודעה האחרונה שיצאה לטלפון הזה — לא יוצרים שוב (Gemini), רק מתקשרים,
+                    # אם הקובץ שלה עדיין האחרון בתיקייה שלו בימות (send_tts בודק)
+                    prev_ = con.execute("SELECT id, text, ym_file, engine FROM ym_msg WHERE phone=? AND id<>? AND status='sent' AND COALESCE(ym_file,'')<>'' "
+                                        "ORDER BY id DESC LIMIT 1", (m['phone'], m['id'])).fetchone()
+                    reuse_ = prev_['ym_file'] if prev_ and (prev_['text'] or '') == (m['text'] or '') else ''
+                    if reuse_ and _ym.last_file(m['phone']) != reuse_:
+                        reuse_ = ''      # נשלחה לו בינתיים הודעה אחרת — יוצרים מחדש
+                    vt_ = m['text'] if reuse_ else ym_voice_text(m['text'], ym_pron, ym_engine == 'gemini' and ym_nik, trace=_ym._trace,
+                                                                  en=ym_en if ym_engine == 'gemini' else None)
                     ok, res = _ym.send_tts(m['phone'], vt_, voice=ym_voice,
                                            engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True, gmodel=ym_gm,
                                            hints=pron_en_for(ym_en, vt_, ym_pron) or pron_en_for(ym_en, m['text']),
-                                           gtries=1 if big_job else 3)
+                                           gtries=1 if big_job else 3, reuse=reuse_)
+                    if ok and isinstance(res, dict) and res.get('engine') == 'reuse':
+                        res['engine'] = (prev_['engine'] or '') + ' (אותה הקלטה)'
+                        try:
+                            con.execute("INSERT OR REPLACE INTO ym_audio(msg_id,at,wav) SELECT ?, ?, wav FROM ym_audio WHERE msg_id=?", (m['id'], now_iso(), prev_['id']))
+                        except Exception:
+                            pass
                     if ok and isinstance(res, dict) and ym_engine == 'gemini' and res.get('engine') == 'yemot' and big_job:
                         ym_engine = ''
                         print('  ימות: Gemini לא ענה — שאר המשלוח %s יוצא בקול של ימות' % job_id)

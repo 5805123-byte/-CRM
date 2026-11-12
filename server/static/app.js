@@ -1878,6 +1878,15 @@ function mkReqNames(x,c){const rq=((x.first||'')+' '+(x.last||'')).trim(),cn=((c
   const k=s=>mkNm(s).split(' ').sort().join(' ');
   if(!rq||!cn||k(rq)===k(cn))return [];
   return [{first:(x.first||'').trim()||rq.split(' ')[0],full:rq,label:'מי ששלח את הפנייה'},{first:(c.first||'').trim()||cn.split(' ')[0],full:cn,label:'בעל הכרטיס במקווה'}];}
+// 📞 מאיר: "שמשנים טלפון ללקוח במקווה — שתהיה אפשרות לשלוח לו הודעה על זה"; "בהודעות הקוליות — אפשרות לשלוח חזרה הודעה"
+const MK_PHONE_TXT='שלום {שם}, מספר הטלפון שלך במקווה עודכן ל-{טלפון}. מעכשיו ההודעות מהמקווה יגיעו למספר הזה.';
+const MK_VMREPLY_TXT='שלום {שם}, קיבלנו את ההודעה שהשארת במקווה. ';
+async function mkPhoneMsgAsk(c){if(!c||!c.phone)return;
+  if(await uiConfirm('הטלפון עודכן. לשלוח ל'+mkName(c)+' הודעה על זה?','💬 לשלוח הודעה','לא עכשיו'))mkNotify(c,'free',{text:MK_PHONE_TXT});}
+function mkVmReply(x){const c=x.cid&&MK&&MK.clients.find(z=>z.id===x.cid);
+  if(c)return mkNotify(c,'free',{text:MK_VMREPLY_TXT});
+  // מספר שלא רשום במקווה — שולחים לטלפון שממנו השאירו את ההודעה, בלי שם
+  mkNotify({id:'',first:'',last:'(מספר שלא רשום במקווה)',code:'',phone:x.phone},'free',{text:'שלום, קיבלנו את ההודעה שהשארת במקווה. ',who:{first:'',full:''}});}
 let MKREQ=null;
 // 📥 מאיר: "בפניות צריך לראות את כל הפרטים המלאים מנדרים פלוס, וכפתורים לעדכון… הכל באופן מפורט"
 const MKRQ_ST={new:['🆕 חדשה','#e74c3c'],wip:['⏳ בטיפול','#e67e22'],done:['✓ טופלה','#27ae60'],rejected:['✗ נדחתה','#7f8c8d']};
@@ -1943,7 +1952,7 @@ async function mkReqOpen(sync=true){
       b.disabled=true;const y=await api('POST','/api/mikveh/client_phone',{id:z.id,phone:b.dataset.ph,req:b.dataset.rq}).catch(()=>null);
       if(!y||!y.ok){b.disabled=false;uiAlert('⚠️ '+((y&&y.error)||'לא עודכן'));return;}
       z.phone=y.phone;const x=MKREQ.rows.find(q=>q.id===b.dataset.rq);if(x)(x.hist=x.hist||[]).push({at:new Date().toISOString(),what:'הטלפון במקווה עודכן: '+(y.old||'(ריק)')+' → '+y.phone});
-      toast('✓ הטלפון עודכן במקווה');const sc=rs.scrollTop;paint();rs.scrollTop=sc;});
+      toast('✓ הטלפון עודכן במקווה');const sc=rs.scrollTop;paint();rs.scrollTop=sc;mkPhoneMsgAsk(z);});
     document.getElementById('rqapi').onclick=()=>mkReqApiSetup();
     rs.querySelectorAll('[data-rqf]').forEach(b=>b.onclick=()=>{MKRQ_F=b.dataset.rqf;paint();});
     rs.querySelectorAll('[data-rqs]').forEach(b=>b.onclick=async()=>{const v=b.dataset.v;let note=null;
@@ -2892,7 +2901,7 @@ function mkOpen(c){
       const r=await api('POST','/api/mikveh/phone',{id:c.id,phone:String(v).trim()}).catch(()=>null);
       if(bt){bt.disabled=false;bt.textContent='📞 לתקן את הטלפון';}
       if(!r||!r.ok)return uiAlert('הטלפון לא עודכן:\n'+((r&&r.error)||'אין תשובה מהשרת'));
-      c.phone=r.phone;toast('✓ הטלפון עודכן במקווה: '+r.phone);mkOpen(c);};
+      c.phone=r.phone;toast('✓ הטלפון עודכן במקווה: '+r.phone);mkOpen(c);mkPhoneMsgAsk(c);};
     mkRecentFill(c.id,document.getElementById('mkrecent'));
     rs.querySelectorAll('.mkg[data-g]').forEach(b=>b.onclick=()=>{if(busy)return;pick=G[b.dataset.g];state='';draw();
       const cf=rs.querySelector('.mkconf');if(cf)cf.scrollIntoView({block:'nearest',behavior:'smooth'});});
@@ -3025,7 +3034,7 @@ async function mkNotify(target,tplId,ctx){
     const sh=()=>{if(a.dataset.w)a.innerHTML='<div class="mksub">⏳ Gemini מייצר את הקול… '+Math.round((Date.now()-t0)/1000)+' שנ׳</div>';};a.dataset.w=1;sh();const tk=setInterval(sh,500);
     const r=await api('POST','/api/yemot/sample',{text:txt});clearInterval(tk);delete a.dataset.w;if(!o.isConnected)return;
     a.innerHTML=r&&r.ok?`<audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%;margin-top:6px"></audio>`:`<div class="mksub">לא נוצר קול: ${esc((r&&r.error)||'')}</div>`;};
-  load(); paintT(); paintW(); upd();
+  load(); if(ctx&&ctx.text)ta.value=ctx.text; paintT(); paintW(); upd();
   ta.oninput=upd; sj.oninput=upd; o.querySelector('#mkhear').onclick=hear;
   const pp=o.querySelector('#mkpp'),pn=o.querySelector('#mkpnx');if(pp){pp.onclick=()=>{pi--;upd();};pn.onclick=()=>{pi++;upd();};}
   o.querySelectorAll('.mkchan button').forEach(b=>b.onclick=()=>{if(ch===b.dataset.c)return;
@@ -3374,10 +3383,12 @@ function mkVmRow(x,withName){
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
         <button class="btn sm ${x.done?'ghost':''}" data-vmd="${x.id}" data-v="${x.done?0:1}">${x.done?'↩️ להחזיר לטיפול':'✓ טופל'}</button>
         <button class="btn sm ghost" data-vmn="${x.id}">🗒️ הערה</button>
+        ${x.phone?`<button class="btn sm ghost" data-vmr="${x.id}">↩️ לשלוח לו הודעה בחזרה</button>`:''}
         ${withName&&x.phone?(MKVM_BLK.has(x.phone)?`<button class="btn sm ghost" data-vmub="${esc(x.phone)}">🔓 לבטל את החסימה</button>`:`<button class="btn sm ghost" data-vmb="${esc(x.phone)}">🚫 לחסום את המספר</button>`):''}</div></div></div>`;}
 function mkVmWire(root,rows,reload){
   root.querySelectorAll('[data-vmp]').forEach(a=>a.onplay=()=>{const x=rows.find(z=>z.id==a.dataset.vmp);if(x&&!x.heard){x.heard=1;api('POST','/api/mikveh/vm/'+x.id,{heard:1});mkVmCount();}});
   root.querySelectorAll('[data-vmd]').forEach(b=>b.onclick=async()=>{await api('POST','/api/mikveh/vm/'+b.dataset.vmd,{done:b.dataset.v==='1',heard:1});mkVmCount();reload();});
+  root.querySelectorAll('[data-vmr]').forEach(b=>b.onclick=()=>{const x=rows.find(z=>z.id==b.dataset.vmr);if(x)mkVmReply(x);});
   root.querySelectorAll('[data-vmn]').forEach(b=>b.onclick=async()=>{const x=rows.find(z=>z.id==b.dataset.vmn);const v=await uiPrompt('הערה להודעה',x&&x.note||'');if(v==null)return;
     await api('POST','/api/mikveh/vm/'+b.dataset.vmn,{note:v});reload();});
   root.querySelectorAll('[data-vmb]').forEach(b=>b.onclick=async()=>{if(!await uiConfirm('לחסום את '+b.dataset.vmb+'? ממספר זה לא יוכלו להשאיר הודעה בשלוחת המקווה.'))return;
