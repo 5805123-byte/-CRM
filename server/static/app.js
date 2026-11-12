@@ -1873,6 +1873,11 @@ function mkReqMatch(x,CL,q){
     CL.filter(c=>(d.length>=3&&(String(c.phone||'').replace(/\D/g,'').includes(d)||String(c.code||'')===d))||(t.length>=2&&!/^\d+$/.test(t)&&(mkNm(c.first)+' '+mkNm(c.last)+' '+mkNm(c.last)+' '+mkNm(c.first)+' '+String(c.email||'')).toLowerCase().includes(t)))
       .slice(0,8).forEach(c=>add(c,30,'חיפוש: '+q));}
   return {exact,me,sug:Object.values(S).sort((a,b)=>b.sc-a.sc).slice(0,q?10:5)};}
+// 👤 מאיר: "שולח בנדרים פלוס על המספר של אבא שלו אבל על השם שלו" — אם השם בפנייה שונה מבעל הכרטיס: שתי אפשרויות
+function mkReqNames(x,c){const rq=((x.first||'')+' '+(x.last||'')).trim(),cn=((c.first||'')+' '+(c.last||'')).trim();
+  const k=s=>mkNm(s).split(' ').sort().join(' ');
+  if(!rq||!cn||k(rq)===k(cn))return [];
+  return [{first:(x.first||'').trim()||rq.split(' ')[0],full:rq,label:'מי ששלח את הפנייה'},{first:(c.first||'').trim()||cn.split(' ')[0],full:cn,label:'בעל הכרטיס במקווה'}];}
 let MKREQ=null;
 // 📥 מאיר: "בפניות צריך לראות את כל הפרטים המלאים מנדרים פלוס, וכפתורים לעדכון… הכל באופן מפורט"
 const MKRQ_ST={new:['🆕 חדשה','#e74c3c'],wip:['⏳ בטיפול','#e67e22'],done:['✓ טופלה','#27ae60'],rejected:['✗ נדחתה','#7f8c8d']};
@@ -1920,7 +1925,7 @@ async function mkReqOpen(sync=true){
         ${btn('wip','⏳ בטיפול')}${btn('done','✓ טופל','')}${btn('rejected','✗ נדחה')}${x.status!=='new'?btn('new','↩️ להחזיר לחדשה'):''}
         <button class="btn sm ghost" data-rqn="${esc(x.id)}">📝 ${x.note?'לערוך הערה':'הערה'}</button>
         ${x.phone?`<a class="btn sm ghost" href="tel:${esc(x.phone)}">📞 חיוג</a><a class="btn sm ghost" href="${wa(x.phone)}" target="_blank" rel="noopener">💬 וואטסאפ</a>`:''}
-        ${c?`<button class="btn sm ghost" data-rqc="${esc(c.id)}">🛁 כרטיס במקווה</button><button class="btn sm ghost" data-rqm="${esc(c.id)}">✉️ לשלוח הודעה</button>`:''}</div></div>`;};
+        ${c?`<button class="btn sm ghost" data-rqc="${esc(c.id)}">🛁 כרטיס במקווה</button><button class="btn sm ghost" data-rqm="${esc(c.id)}" data-rqx="${esc(x.id)}">✉️ לשלוח הודעה</button>`:''}</div></div>`;};
     const F=[['open','לטיפול'],['new','חדשות'],['wip','בטיפול'],['done','טופלו'],['rejected','נדחו'],['all','הכל']];
     rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📥</div><div><h2>פניות</h2>
         <div class="mksub">טופס הפניות בנדרים פלוס${MKREQ&&MKREQ.box?' · '+esc(MKREQ.box):''}${MKREQ&&MKREQ.last&&MKREQ.last.at?' · נבדק '+esc(MKREQ.last.at.slice(11))+(MKREQ.last.new?' · '+MKREQ.last.new+' חדשות':''):''}</div>
@@ -1952,7 +1957,8 @@ async function mkReqOpen(sync=true){
       const y=await api('POST','/api/mikveh/requests/'+encodeURIComponent(b.dataset.rqn),{note:v}).catch(()=>null);if(x){x.note=v;if(y&&y.hist)x.hist=y.hist;}paint();});
     rs.querySelectorAll('[data-rqc]').forEach(b=>b.onclick=()=>{const c=MK.clients.find(z=>z.id===b.dataset.rqc);if(!c)return;
       const sc=rs.scrollTop;MK_BACK={cid:c.id,go:()=>{mkReqOpen(false);rs.scrollTop=sc;}};mkOpen(c);});
-    rs.querySelectorAll('[data-rqm]').forEach(b=>b.onclick=()=>{const c=MK.clients.find(z=>z.id===b.dataset.rqm);if(c)mkNotify(c,'free');});};
+    rs.querySelectorAll('[data-rqm]').forEach(b=>b.onclick=()=>{const c=MK.clients.find(z=>z.id===b.dataset.rqm);if(!c)return;
+      const x=MKREQ.rows.find(q=>q.id===b.dataset.rqx),nm=x?mkReqNames(x,c):[];mkNotify(c,'free',nm.length?{names:nm}:undefined);});};
   remov.classList.add('show');
   if(!MKREQ||!MKREQ.rows){MKREQ={rows:[],new:0};}
   paint(sync?'<span class="mkspin"></span> בודק בנדרים פלוס…':'');
@@ -2914,7 +2920,8 @@ async function mkTplSave(list){const r=await api('POST','/api/mikveh/templates',
   if(r&&r.ok){MKTPL=r.templates;return true;} uiAlert('הנוסח לא נשמר:\n'+((r&&r.error)||'שגיאה'));return false;}
 function mkFill(t,c,ctx){
   const G={}; (MK&&MK.groups||[]).forEach(g=>G[g.id]=g);
-  const v={'שם':c.first||mkName(c),'שם מלא':mkName(c),'קבוצה':mkGName(G[(ctx&&ctx.group)||c.group]),'מספר לקוח':String(c.code||''),
+  const w_=ctx&&ctx.who;   // 👤 פונים בשם אחר מבעל הכרטיס (למשל הבן ששלח פנייה על הטלפון של אבא)
+  const v={'שם':w_?(w_.first||w_.full):(c.first||mkName(c)),'שם מלא':w_?w_.full:mkName(c),'קבוצה':mkGName(G[(ctx&&ctx.group)||c.group]),'מספר לקוח':String(c.code||''),
     'מנוי עד':mkDate(c.sub_end),'רישיון עד':mkDate(c.lic_exp),'טלפון':c.phone||''};
   return String(t||'').replace(/\{([^{}]+)\}/g,(m,k)=>k in v?v[k]:m);
 }
@@ -2948,6 +2955,8 @@ async function mkNotify(target,tplId,ctx){
       <div><b>${multi?'הודעה ל־'+cs.length+' לקוחות':'הודעה ל'+esc(mkName(one))}</b><span class="mksub" id="mkto" dir="ltr" style="justify-content:flex-end"></span></div>
       <button class="x2" id="mkx" title="סגירה">✕</button></div>
     <div class="mkdb">
+      ${!multi&&ctx&&(ctx.names||[]).length>1?`<div class="mklbl"><span>👤 לפנות בשם</span></div><div class="mktpl" id="mkwho" style="flex-wrap:wrap;overflow:visible"></div>
+        <div class="mksub" style="margin-top:4px">השם בפנייה שונה מהשם בכרטיס במקווה (למשל מישהו ששלח מהטלפון של אבא שלו) — בוחרים למי פונים</div>`:''}
       <div class="mklbl"><span>איך לשלוח</span></div>
       <div class="mkchan" style="grid-template-columns:1fr 1fr 1fr"><button data-c="sms">💬 SMS</button><button data-c="voice">📞 שיחה</button><button data-c="mail">✉️ מייל</button></div>
       <div class="mksub" id="mkcnt" style="margin-top:6px"></div>
@@ -2974,8 +2983,13 @@ async function mkNotify(target,tplId,ctx){
   document.body.appendChild(o);
   const ta=o.querySelector('#mkta'), sj=o.querySelector('#mksj'), pv=o.querySelector('#mkpv'), dt=o.querySelector('#mkdt'), go=o.querySelector('#mkgo');
   const close=()=>{try{const a=o.querySelector('audio');if(a)a.pause();}catch(e){}o.remove();};
+  if(ctx&&(ctx.names||[]).length&&!ctx.who)ctx.who=ctx.names[0];
   const pc=()=>{const L=ok();return L.length?L[((pi%L.length)+L.length)%L.length]:one;};
   const load=()=>{ta.value=mkTplTxt(cur,ch);sj.value=mkTplSubj(cur);};
+  const paintW=()=>{const w=o.querySelector('#mkwho');if(!w)return;
+    w.innerHTML=ctx.names.map((n,i)=>`<button class="mkchip${ctx.who===n?' on':''}" data-w="${i}">${esc(n.full)} <small style="opacity:.7">${esc(n.label||'')}</small></button>`).join('')+'<button class="mkchip" data-w="new">✏️ שם אחר</button>';
+    w.querySelectorAll('[data-w]').forEach(b=>b.onclick=async()=>{if(b.dataset.w==='new'){const v=await uiPrompt('לפנות בשם (שם פרטי ומשפחה)','');if(!v)return;
+        const n={first:v.split(/\s+/)[0],full:v,label:'שם שהקלדת'};ctx.names.push(n);ctx.who=n;}else ctx.who=ctx.names[+b.dataset.w];paintW();upd();});};
   const paintT=()=>{o.querySelector('#mkt').innerHTML=(MKTPL||[]).map(t=>`<button class="mkchip${t.id===cur.id?' on':''}" data-t="${esc(t.id)}">${esc(t.name)}</button>`).join('')||'<span class="mksub">אין קטגוריות שמורות</span>';
     o.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{cur=MKTPL.find(t=>t.id===b.dataset.t)||cur;load();paintT();upd();});
     o.querySelector('#mkdel').disabled=!MKTPL.some(t=>t.id===cur.id);};
@@ -3011,7 +3025,7 @@ async function mkNotify(target,tplId,ctx){
     const sh=()=>{if(a.dataset.w)a.innerHTML='<div class="mksub">⏳ Gemini מייצר את הקול… '+Math.round((Date.now()-t0)/1000)+' שנ׳</div>';};a.dataset.w=1;sh();const tk=setInterval(sh,500);
     const r=await api('POST','/api/yemot/sample',{text:txt});clearInterval(tk);delete a.dataset.w;if(!o.isConnected)return;
     a.innerHTML=r&&r.ok?`<audio controls autoplay src="data:audio/wav;base64,${r.wav}" style="width:100%;margin-top:6px"></audio>`:`<div class="mksub">לא נוצר קול: ${esc((r&&r.error)||'')}</div>`;};
-  load(); paintT(); upd();
+  load(); paintT(); paintW(); upd();
   ta.oninput=upd; sj.oninput=upd; o.querySelector('#mkhear').onclick=hear;
   const pp=o.querySelector('#mkpp'),pn=o.querySelector('#mkpnx');if(pp){pp.onclick=()=>{pi--;upd();};pn.onclick=()=>{pi++;upd();};}
   o.querySelectorAll('.mkchan button').forEach(b=>b.onclick=()=>{if(ch===b.dataset.c)return;

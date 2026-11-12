@@ -781,11 +781,15 @@ async function cAction(a){const c=CUR;if(!c)return;
 
 // ---------- שליחת הודעה (אותו /api/mikveh/notify של האתר הרגיל) ----------
 let TPL=null;
-async function sendMsg(c,tid){if(!TPL){const r=await api('GET','/api/mikveh/templates');TPL=r.templates||[];}
-  const g=S.G[c.group]||{};
-  const fill=t=>String(t||'').replace(/\{שם\}/g,c.first||'').replace(/\{שם מלא\}/g,cName(c)).replace(/\{קבוצה\}/g,(g.name||'').replace(/^\s*\d+\s*[.\-)]\s*/,'')).replace(/\{מנוי עד\}/g,dmy(c.sub_end)).replace(/\{רישיון עד\}/g,dmy(c.lic_exp)).replace(/\{מספר לקוח\}/g,c.code||'');
+let SM_C=null;   // למי ההודעה (עם השם שבחרו לפנות אליו)
+async function sendMsg(c,tid,names){if(!TPL){const r=await api('GET','/api/mikveh/templates');TPL=r.templates||[];}
+  const g=S.G[c.group]||{};names=(names||[]).slice();
+  const W=n=>n?Object.assign({},c,{first:n.first,last:n.full.split(/\s+/).slice(1).join(' '),_full:n.full}):c;
+  SM_C=Object.assign(W(names[0]),{_names:names,_w:0});
+  const fill=t=>String(t||'').replace(/\{שם\}/g,SM_C.first||'').replace(/\{שם מלא\}/g,SM_C._full||cName(SM_C)).replace(/\{קבוצה\}/g,(g.name||'').replace(/^\s*\d+\s*[.\-)]\s*/,'')).replace(/\{מנוי עד\}/g,dmy(c.sub_end)).replace(/\{רישיון עד\}/g,dmy(c.lic_exp)).replace(/\{מספר לקוח\}/g,c.code||'');
   const t0=TPL.find(x=>x.id===tid)||TPL.find(x=>x.id==='free')||TPL[0]||{text:'שלום {שם}, '};
-  const v=await modal('הודעה ל'+esc(cName(c)),`<div class="seg" id="mch" style="margin-bottom:12px"><button data-c="sms" class="on">💬 SMS</button><button data-c="voice">📞 שיחה קולית</button></div>
+  const whoH=()=>`<div class="fld"><span>לפנות בשם — השם בפנייה שונה מבעל הכרטיס (למשל מישהו ששלח מהטלפון של אבא שלו)</span><div class="seg" id="mwho" style="flex-wrap:wrap">${SM_C._names.map((n,i)=>`<button data-w="${i}" class="${SM_C._w===i?'on':''}">${esc(n.full)} <small style="opacity:.7">${esc(n.label||'')}</small></button>`).join('')}<button data-w="new">✏️ שם אחר</button></div></div>`;
+  const v=await modal('הודעה ל'+esc(cName(c)),`${names.length>1?'<div id="mwhob">'+whoH()+'</div>':''}<div class="seg" id="mch" style="margin-bottom:12px"><button data-c="sms" class="on">💬 SMS</button><button data-c="voice">📞 שיחה קולית</button></div>
     <label class="fld"><span>נושא</span><select id="mt">${TPL.map(x=>`<option value="${esc(x.id)}"${x.id===t0.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
     <label class="fld"><span>הטקסט</span><textarea id="mtx" rows="4">${esc(fill(t0.text))}</textarea></label>
     <label class="fld"><span>לשלוח מאוחר יותר (לא חובה)</span><input type="datetime-local" id="mat"></label><div class="mut" style="font-size:.82rem">ל: <span dir="ltr">${esc(c.phone||'')}</span></div>`,
@@ -797,8 +801,15 @@ async function sendMsg(c,tid){if(!TPL){const r=await api('GET','/api/mikveh/temp
   setTimeout(()=>{},0);}
 document.addEventListener('click',e=>{const b=e.target.closest('#mch [data-c]');if(b){$$('#mch button').forEach(x=>x.classList.toggle('on',x===b));}
   const s=e.target.closest('#mt');});
-document.addEventListener('change',e=>{if(e.target.id==='mt'&&CUR&&TPL){const t=TPL.find(x=>x.id===e.target.value);if(t){const c=CUR,g=S.G[c.group]||{};
-  $('#mtx').value=String(t.text||'').replace(/\{שם\}/g,c.first||'').replace(/\{שם מלא\}/g,cName(c)).replace(/\{קבוצה\}/g,(g.name||'').replace(/^\s*\d+\s*[.\-)]\s*/,'')).replace(/\{מנוי עד\}/g,dmy(c.sub_end)).replace(/\{רישיון עד\}/g,dmy(c.lic_exp)).replace(/\{מספר לקוח\}/g,c.code||'');}}});
+// 👤 בחירת השם — מחליפים בטקסט את השם הקודם בחדש
+document.addEventListener('click',async e=>{const b=e.target.closest('#mwho [data-w]');if(!b||!SM_C)return;const N=SM_C._names,old=N[SM_C._w];let i;
+  if(b.dataset.w==='new'){const v=prompt('לפנות בשם (שם פרטי ומשפחה)','');if(!v||!v.trim())return;N.push({first:v.trim().split(/\s+/)[0],full:v.trim(),label:'שם שהקלדת'});i=N.length-1;}else i=+b.dataset.w;
+  const n=N[i],ta=$('#mtx');if(ta&&old)ta.value=ta.value.split(old.full).join(n.full).split(old.first).join(n.first);
+  Object.assign(SM_C,{first:n.first,last:n.full.split(/\s+/).slice(1).join(' '),_full:n.full,_w:i});
+  $$('#mwho [data-w]').forEach(x=>x.classList.toggle('on',x.dataset.w===String(i)));
+  if(b.dataset.w==='new')b.insertAdjacentHTML('beforebegin',`<button data-w="${i}" class="on">${esc(n.full)} <small style="opacity:.7">${esc(n.label)}</small></button>`);});
+document.addEventListener('change',e=>{if(e.target.id==='mt'&&(SM_C||CUR)&&TPL){const t=TPL.find(x=>x.id===e.target.value);if(t){const c=SM_C||CUR,g=S.G[c.group]||{};
+  $('#mtx').value=String(t.text||'').replace(/\{שם\}/g,c.first||'').replace(/\{שם מלא\}/g,c._full||cName(c)).replace(/\{קבוצה\}/g,(g.name||'').replace(/^\s*\d+\s*[.\-)]\s*/,'')).replace(/\{מנוי עד\}/g,dmy(c.sub_end)).replace(/\{רישיון עד\}/g,dmy(c.lic_exp)).replace(/\{מספר לקוח\}/g,c.code||'');}}});
 
 // ---------- כניסות ליום ----------
 async function vEntr(day,frm){day=day||TODAY;frm=frm||'00:00';
@@ -863,6 +874,11 @@ function mkReqMatch(x,CL,q){
     CL.filter(c=>(d.length>=3&&(String(c.phone||'').replace(/\D/g,'').includes(d)||String(c.code||'')===d))||(t.length>=2&&!/^\d+$/.test(t)&&(mkNm(c.first)+' '+mkNm(c.last)+' '+mkNm(c.last)+' '+mkNm(c.first)+' '+String(c.email||'')).toLowerCase().includes(t)))
       .slice(0,8).forEach(c=>add(c,30,'חיפוש: '+q));}
   return {exact,me,sug:Object.values(S).sort((a,b)=>b.sc-a.sc).slice(0,q?10:5)};}
+// 👤 מאיר: "שולח בנדרים פלוס על המספר של אבא שלו אבל על השם שלו" — אם השם בפנייה שונה מבעל הכרטיס: שתי אפשרויות
+function mkReqNames(x,c){const rq=((x.first||'')+' '+(x.last||'')).trim(),cn=((c.first||'')+' '+(c.last||'')).trim();
+  const k=s=>mkNm(s).split(' ').sort().join(' ');
+  if(!rq||!cn||k(rq)===k(cn))return [];
+  return [{first:(x.first||'').trim()||rq.split(' ')[0],full:rq,label:'מי ששלח את הפנייה'},{first:(c.first||'').trim()||cn.split(' ')[0],full:cn,label:'בעל הכרטיס במקווה'}];}
 async function vReqs(){
   $('#main').innerHTML=head('inbox','בקשות ופניות','')+`<div class="tabs" id="rtabs">${[['grp','בקשות שינוי סוג מנוי'],['nd','פניות מנדרים פלוס']].map(([k,t])=>`<button data-t="${k}" class="${RTAB===k?'on':''}">${t}</button>`).join('')}</div><div id="rb"><div class="skel" style="height:300px"></div></div>`;
   $('#rtabs').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;RTAB=b.dataset.t;vReqs();};
@@ -917,7 +933,7 @@ async function vReqs(){
         <div class="acts" style="margin:12px 0 0">${sb('wip',ic('clock')+'בטיפול')}${sb('done',ic('check')+'טופל','g')}${sb('rejected','נדחה','r')}${x.status!=='new'?sb('new','להחזיר לחדשה'):''}
           <button class="btn sm" data-n="${esc(x.id)}">${ic('edit')}${x.note?'לערוך הערה':'הערה'}</button>
           ${x.phone?`<a class="btn sm" href="tel:${esc(x.phone)}">${ic('phone')}חיוג</a><a class="btn sm" href="${wa(x.phone)}" target="_blank" rel="noopener">וואטסאפ</a>`:''}
-          ${c?`<button class="btn sm" data-c="${esc(c.id)}">${ic('users')}כרטיס לקוח</button><button class="btn sm" data-m="${esc(c.id)}">${ic('send')}הודעה</button>`:''}</div></div>`;};
+          ${c?`<button class="btn sm" data-c="${esc(c.id)}">${ic('users')}כרטיס לקוח</button><button class="btn sm" data-m="${esc(c.id)}" data-rq="${esc(x.id)}">${ic('send')}הודעה</button>`:''}</div></div>`;};
     const F=[['open','לטיפול'],['new','חדשות'],['wip','בטיפול'],['done','טופלו'],['rejected','נדחו'],['all','הכל']];
     $('#rb').innerHTML=`<div class="toolbar" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><div class="seg" id="rqf">${F.map(([k,t])=>`<button data-f="${k}" class="${RQF===k?'on':''}">${t} ${cnt[k]||0}</button>`).join('')}</div>
         <span class="mut" style="font-size:.85rem">${sy&&sy.ok===false?'<span class="red">'+esc(sy.error||'')+'</span>':(r.last&&r.last.at?'נבדק '+esc(r.last.at):'')}${sy&&sy.new?' · נוספו '+sy.new:''}</span></div>`+
@@ -931,7 +947,7 @@ async function vReqs(){
       b.disabled=true;const y=await api('POST','/api/mikveh/client_phone',{id:z.id,phone:b.dataset.v,req:b.dataset.rq});
       if(!y.ok){b.disabled=false;alertBox('לא עודכן',y.error);return;}z.phone=y.phone;toast('הטלפון עודכן במקווה');RQ_Y=scrollY;vReqs();});
     $$('#rb [data-c]').forEach(e=>e.onclick=ev=>{ev.preventDefault();openClient(e.dataset.c);});
-    $$('#rb [data-m]').forEach(e=>e.onclick=()=>{const c=S.mk.clients.find(z=>z.id===e.dataset.m);if(c)sendMsg(c);});
+    $$('#rb [data-m]').forEach(e=>e.onclick=()=>{const c=S.mk.clients.find(z=>z.id===e.dataset.m);if(!c)return;const x=R.find(q=>q.id===e.dataset.rq);sendMsg(c,undefined,x?mkReqNames(x,c):[]);});
     $$('#rb [data-s]').forEach(b=>b.onclick=async()=>{const v=b.dataset.v,body={status:v};
       if(v==='rejected'){const n=await promptBox('דחיית פנייה','למה? (לא חובה)','');if(n===null)return;if(n)body.note=n;}
       const y=await api('POST','/api/mikveh/requests/'+encodeURIComponent(b.dataset.s),body);if(!y.ok){alertBox('לא נשמר',y.error);return;}
