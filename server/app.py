@@ -24840,10 +24840,51 @@ class H(BaseHTTPRequestHandler):
                 reqs = ym_req_rows(con, st)
                 nmo = natan_mosad(con)
                 nlk = natan_link(con)
+                # 📜 מאיר: "שיהיה כתוב היסטוריה של שיחות ששלחנו לו או אימייל או SMS בכל חוב והתחייבות" — לכל אחד ברשימה
+                hist = {}
+                try:
+                    since_h = (il_now() - datetime.timedelta(days=180)).strftime('%Y-%m-%d')
+                    mids_ = sorted({r['member_id'] for r in rows if r.get('member_id')})
+                    phs_ = {}
+                    for r in rows:
+                        r['hk'] = ('m%d' % r['member_id']) if r.get('member_id') else ('p' + (_ymv.norm_phone(r.get('phone') or '') or ''))
+                        if not r.get('member_id') and r['hk'] != 'p':
+                            phs_[r['hk'][1:]] = r['hk']
+                    q_ = ("SELECT y.id, y.kind, y.ref_id, y.phone, COALESCE(y.sent_ts, y.at) ts, y.status, y.answered, y.listen_secs, y.pressed, "
+                          "y.call_status, y.error, y.retry_of, COALESCE(y.fund,'') fund, j.channel, j.label, substr(j.text,1,90) txt FROM ym_msg y "
+                          "JOIN ym_job j ON j.id=y.job WHERE COALESCE(j.test,0)=0 AND COALESCE(y.sent_ts, y.at,'')>=? AND (")
+                    cond, args = [], [since_h]
+                    if mids_:
+                        cond.append("(y.kind='m' AND y.ref_id IN (%s))" % ','.join('?' * len(mids_))); args += mids_
+                    if phs_:
+                        cond.append("y.phone IN (%s)" % ','.join('?' * len(phs_))); args += list(phs_)
+                    if cond:
+                        for y in con.execute(q_ + ' OR '.join(cond) + ") ORDER BY ts DESC", args).fetchall():
+                            k = ('m%d' % y['ref_id']) if (y['kind'] == 'm' and y['ref_id'] in mids_) else phs_.get(y['phone'] or '')
+                            if not k or len(hist.setdefault(k, [])) >= 40:
+                                continue
+                            hist[k].append({'at': (y['ts'] or '')[:16], 'ch': y['channel'] or '', 'st': y['status'] or '', 'ans': y['answered'],
+                                            'listen': y['listen_secs'], 'pressed': y['pressed'] or '', 'call': y['call_status'] or '',
+                                            'err': (y['error'] or '')[:80], 'retry': bool(y['retry_of']), 'fund': y['fund'],
+                                            'txt': (y['label'] or y['txt'] or '')[:90]})
+                    if mids_:
+                        for q in con.execute("SELECT q.member_id, q.email, q.status, q.sent_at, q.opened_at, q.opens, q.error, b.subject, b.track "
+                                             "FROM mail_queue q JOIN mail_batch b ON b.id=q.batch WHERE q.member_id IN (%s) AND COALESCE(q.sent_at, b.created,'')>=? "
+                                             "ORDER BY COALESCE(q.sent_at, b.created) DESC" % ','.join('?' * len(mids_)), mids_ + [since_h]).fetchall():
+                            k = 'm%d' % q['member_id']
+                            if len(hist.setdefault(k, [])) >= 60:
+                                continue
+                            hist[k].append({'at': (q['sent_at'] or '')[:16], 'ch': 'email', 'st': q['status'] or '', 'opened': (q['opened_at'] or '')[:16],
+                                            'opens': q['opens'] or 0, 'track': q['track'], 'err': (q['error'] or '')[:80], 'txt': (q['subject'] or '')[:90],
+                                            'to': q['email'] or ''})
+                    for k in hist:
+                        hist[k].sort(key=lambda x: x['at'] or '', reverse=True)
+                except Exception as e:
+                    print('  debts hist error:', e)
             finally:
                 con.close()
             import nedarim as _nd
-            return self._send(200, {'ok': True, 'rows': rows, 'open_sum': tot[0], 'open_n': tot[1], 'open_members': tot[2],
+            return self._send(200, {'ok': True, 'rows': rows, 'open_sum': tot[0], 'open_n': tot[1], 'open_members': tot[2], 'hist': hist,
                                     'reqs': reqs, 'req_days': YM_REQ_DAYS, 'natan_mosad': nmo, 'natan_link': nlk, 'vms': vms, 'notes': notes,
                                     'nd_accounts': [{'mosad': x['mosad'], 'name': x['name'], 'main': x['main']} for x in _nd.accounts()]})
         if self.path.split('?')[0] == '/api/auth/log':

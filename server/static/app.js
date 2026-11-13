@@ -9395,6 +9395,15 @@ async function bqFixFlow(id,amt,who){
 // הכיתוב שלא עבר ואראה רק שלא עבר ואח"כ הסתדר בירוק" — בלשונית "חזרו": למעלה רק מה שעדיין פתוח, מקובץ לפי תורם
 // עם הסכום הפתוח שלו, וניסיונות חוזרים של אותו חיוב (אותו סכום, עד 14 יום) בשורה אחת; מה שהסתדר — שורה ירוקה
 // קצרה אחת לכל חיוב, בקבוצה מקופלת למטה
+// 📜 מאיר: "היסטוריה של שיחות / מייל / SMS ששלחנו לו — גם לתורמים בחלון של חיובים חוזרים" — מיומן הקשר של התורם
+function bqDonHistHTML(did){const d=did?DB.find(x=>x.id==did):null;if(!d)return '';
+  const since=new Date(Date.now()-180*864e5).toISOString().slice(0,10);
+  const L=(d.contacts||[]).filter(c=>String(c.date||'')>=since&&/אימייל|מייל|שיחה|טלפון|SMS|וואטסאפ|הודעה/i.test(c.channel||''))
+    .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||b.id-a.id);
+  if(!L.length)return '<div class="cdhist"><small class="mksub">📜 אין ביומן שלו פניות (שיחה / SMS / מייל / וואטסאפ) בחצי השנה האחרונה</small></div>';
+  const ic=c=>/מייל/.test(c.channel)?'✉️':/SMS/i.test(c.channel)?'💬':/וואטסאפ/.test(c.channel)?'🟢':'📞';
+  return `<details class="cdhist"><summary>📜 היסטוריית פניות — ${L.length} (אחרונה ${esc(String(L[0].date).split('-').reverse().join('.'))})</summary>
+    ${L.slice(0,40).map(c=>`<div class="mksub cdhrow">${esc(String(c.date||'').split('-').reverse().join('.'))} · <b>${ic(c)} ${esc(c.channel||'')}</b> ${c.direction==='out'?'· יצא':c.direction==='in'?'· נכנס':''} · ${esc(String(c.summary||'').slice(0,140))}</div>`).join('')}</details>`;}
 function bqBadHTML(rows){
   const key=r=>String(r.donor_id||('n:'+(r.donor_name||r.name||'')));
   // ⛔ מי שהפסיק את החיוב החודשי — לא כאן בכלל (רק בכרטיס שלו)
@@ -9412,6 +9421,7 @@ function bqBadHTML(rows){
     const r0=G[0].rep,who=r0.donor_name||r0.name||'?';
     const tot=G.reduce((t,g)=>{const f=g.rep.fix||{};return t+Math.max(0,(+g.rep.amount||0)-(f.state==='partial'?(+f.got||0):0));},0);
     h+=`<div class="bqdonhd">${esc(who)} — עדיין לא עבר: <b style="color:var(--no)">${bqMoney(tot)}</b>${G.length>1?' · '+G.length+' חיובים':''}</div>`;
+    h+=bqDonHistHTML(r0.donor_id);
     G.forEach(g=>{const r=Object.assign({},g.rep);if(g.tries.length>1)r._tries=g.tries.map(x=>bqDate(x.created));h+=bqTxRow(r);});});
   if(!groups.length&&fixed.length)h+='<div class="hintxt" style="color:#2e7d4f;font-weight:bold">✅ אין כרגע חיובים שחזרו ולא הסתדרו.</div>';
   // מה שהסתדר — פעם אחת לכל חיוב שעבר בסוף
@@ -17747,7 +17757,7 @@ function cdItemHTML(d){if(d._req)return cdReqRow(d);const k=CD_KIND[d.kind]||['�
           ${d.status==='open'?`<span class="cdch">${[['voice','📞','שיחה'],['sms','💬','SMS'],['email','✉️','מייל']].map(([k,i,l])=>`<button class="${(d.channel||'sms')===k?'on':''}" data-cdch="${k}" data-id="${d.id}" title="${l}${k==='email'&&!d.memail?' — אין מייל':''}${k==='sms'&&!ymMobile(ymPhone(d.mphone))?' — אין נייד':''}">${i}</button>`).join('')}</span>`:''}</div>
         <div class="cdamt">${!(+d.amount)?`<button class="btn sm ghost cdnoamt" data-cda="edit" data-id="${d.id}" title="להכניס סכום">✎ סכום חסר</button>`:`<b>${cdMoney(d.status==='open'?o:d.amount)}</b>`}${d.paid>0&&d.status==='open'?`<small>שולם ${cdMoney(d.paid)} מ-${cdMoney(d.amount)}</small>`:''}
           ${d.status==='paid'?'<small class="ndok">✓ שולם</small>':(d.status==='canceled'?'<small>בוטל</small>':'')}</div>
-        <div class="bqacts">${d.status==='open'?`<button class="btn sm ghost" data-cda="paid" data-id="${d.id}" title="שולם במלואו">✓</button>
+        <div class="bqacts">${d.status==='open'&&o>0?`<button class="btn sm bqgo" data-cdchi="${d.id}" title="לחייב עכשיו את החוב הזה — מהכרטיס שלו (או כרטיס אחר)">💳</button>`:''}${d.status==='open'?`<button class="btn sm ghost" data-cda="paid" data-id="${d.id}" title="שולם במלואו">✓</button>
           <button class="btn sm ghost" data-cda="partial" data-id="${d.id}" title="תשלום חלקי">½</button>
           <button class="btn sm ghost" data-cda="edit" data-id="${d.id}" title="שנה סכום">✎</button>
           <button class="btn sm ghost" data-cda="cancel" data-id="${d.id}" title="בטל">✕</button>`
@@ -17827,7 +17837,18 @@ function cdGroupsHTML(rows){
       ${cdNotesHTML(g)}
       ${(()=>{const V=(cdData&&cdData.vms)||{},seen=new Set(),L=(V['m'+g.mid]||[]).concat(g.phone?(V['p'+ymPhone(g.phone)]||[]):[]).filter(v=>!seen.has(v.id)&&seen.add(v.id));
         return L.length?`<div class="cdvms">${L.map(cdVmHTML).join('')}</div>`:'';})()}
-      <div class="cdgitems">${g.items.map(d=>d._req?cdReqRow(d):cdItemHTML(d)).join('')}</div></div>`;})()).join('');}
+      <div class="cdgitems">${g.items.map(d=>d._req?cdReqRow(d):cdItemHTML(d)).join('')}</div>${cdContactHist(g)}</div>`;})()).join('');}
+// 📜 מאיר: "שיהיה כתוב פה היסטוריה של שיחות ששלחנו לו או אימייל או SMS בכל חוב והתחייבות"
+function cdContactHist(g){const H=(cdData&&cdData.hist)||{},k=(g.items.find(d=>d.hk)||{}).hk,L=(k&&H[k])||[];
+  if(!L.length)return '<div class="cdhist"><small class="mksub">📜 עוד לא נשלחה אליו שום פנייה (שיחה / SMS / מייל) מהמערכת</small></div>';
+  const ic={voice:'📞 שיחה',sms:'💬 SMS',email:'✉️ מייל'};
+  const res=x=>{if(x.ch==='email')return x.st==='sent'?(x.opened?`<span class="ndok">👁 נפתח ${esc(ndDate(x.opened))}${+x.opens>1?' (×'+x.opens+')':''}</span>`:(x.track?'נשלח · עוד לא נפתח':'נשלח')):`<span style="color:var(--no)">${esc(x.st==='failed'?'נכשל'+(x.err?': '+x.err:''):x.st||'')}</span>`;
+    if(x.ch==='sms')return x.st==='sent'||x.st==='ok'?'נשלח':`<span style="color:var(--no)">${esc(x.err||x.st||'')}</span>`;
+    if(+x.ans)return `<span class="ndok">✅ ענה${+x.listen?' · הקשיב '+x.listen+' שנ׳':''}${x.pressed?' · הקיש '+esc(x.pressed):''}</span>`;
+    if(x.st==='sent'||x.st==='ok'||x.call)return `<span style="color:#b06a00">לא ענה${x.call?' ('+esc(x.call)+')':''}</span>`;
+    return `<span style="color:var(--no)">${esc(x.err||x.st||'')}</span>`;};
+  return `<details class="cdhist"><summary>📜 היסטוריית פניות — ${L.length} (אחרונה ${esc(ndDate(L[0].at))} ב${esc((ic[L[0].ch]||L[0].ch).replace(/^\S+ /,''))})</summary>
+    ${L.map(x=>`<div class="mksub cdhrow">${esc(ndDate(x.at))}${x.at&&x.at.length>10?' '+esc(x.at.slice(11,16)):''} · <b>${ic[x.ch]||esc(x.ch)}</b>${x.retry?' (ניסיון חוזר)':''}${x.fund==='natan'?' · נתן תתן':''} · ${res(x)}${x.txt?` · <small>${esc(x.txt)}</small>`:''}</div>`).join('')}</details>`;}
 // 📝 מאיר: "אצל כל אחד שרשום בחובות והתחייבויות — הערה או משימה עם תאריך, כמו תזכורת; או שנתן חלק מזומן ושיעודכן;
 // או פשוט תזכורת לבקש ממנו בתאריך פלוני, או שאמר משהו לעשות עם זה". נשמר כתזכורת קהילה (cm_task) — מופיע גם בכרטיס
 function cdNoteKeys(g){return g.mid?['m'+g.mid]:g.items.filter(d=>!d._req).map(d=>'d'+d.id);}
@@ -17838,7 +17859,7 @@ function cdNotesHTML(g){const N=(cdData&&cdData.notes)||{},td=todayStr(),L=[].co
       <span class="bqacts"><button class="btn sm ghost" data-cdnt="done" data-id="${t.id}" title="בוצע / לא רלוונטי יותר">✓</button><button class="btn sm ghost" data-cdnt="delete" data-id="${t.id}" title="למחוק">🗑️</button></span></div>`;}).join('')}</div>`;}
 // 💳 מאיר: "כל מי שיש לו לא עבר הו"ק או יש לו חוב — כפתור בכרטיס הזה שכתוב על החוב שלו: חייב עכשיו. שזה יחייב את
 // הסכום שהוא חייב, או סכום אחר… וכשמחייב חד פעמי באשראי אחר — שזה ישאל אם מעכשיו המספר הזה ישמש להו"ק. נורמלי וקליל"
-async function cdChargeNow(g){
+async function cdChargeNow(g,amt1){
   const deb=g.items.filter(d=>!d._req&&d.status==='open'), tot=Math.round(deb.reduce((t,d)=>t+cdOpen(d),0)*100)/100;
   const what=[...new Set(deb.map(d=>String(d.title||'').split(' · ')[0]).filter(Boolean))].slice(0,3).join(', ')||'חוב';
   let K=[];
@@ -17847,7 +17868,7 @@ async function cdChargeNow(g){
   if(!K.length)deb.filter(d=>d.kind==='hok'&&d.ref).forEach(d=>{if(!K.find(k=>String(k.id)===String(d.ref)))K.push({id:d.ref,last4:((/\*{2,}(\d{4})/.exec(d.note||'')||[])[1]||''),error:String(d.note||'').split(' · ')[0]});});
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:460px;width:96vw"><div class="cm">💳 לחייב את ${esc(g.name)}</div>
-    <label class="fld"><span>כמה לחייב (₪)</span><input id="cc_amt" class="cinp" inputmode="decimal" value="${tot||''}"></label>
+    <label class="fld"><span>כמה לחייב (₪)</span><input id="cc_amt" class="cinp" inputmode="decimal" value="${amt1||tot||''}"></label>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-8px 0 10px"><button type="button" class="btn sm ghost" data-cca="${tot}">כל מה שהוא חייב — ${cdMoney(tot)}</button>${deb.length>1?deb.map(d=>`<button type="button" class="btn sm ghost" data-cca="${cdOpen(d)}">${esc(String(d.title||'').split(' · ')[0]||'חוב')} — ${cdMoney(cdOpen(d))}</button>`).join(''):''}</div>
     ${K.map(k=>`<button class="btn" data-cck="${esc(k.id)}" style="width:100%;margin:4px 0">⚡ מהכרטיס שבהוראת הקבע ****${esc(k.last4||'')}${k.error?` <small>(🔴 ${esc(String(k.error).slice(0,40))})</small>`:''}</button>`).join('')}
     <button class="btn ${K.length?'ghost':''}" id="cc_other" style="width:100%;margin:4px 0">💳 מכרטיס אחר${K.length?' — ואז אפשר להעביר אליו את הוראת הקבע':''}</button>
@@ -18148,6 +18169,8 @@ function cdWire(){const g=id=>document.getElementById(id);
     ids.forEach(id=>{const d=(cdData.rows||[]).find(x=>x.id===id);if(d)d.channel=ch;});renderCommDebts();});
   view.querySelectorAll('[data-cdnote]').forEach(b=>b.onclick=()=>{const g=CD_GROUPS.get(b.dataset.cdnote);if(g)cdNoteAdd(g);});
   view.querySelectorAll('[data-cdchg]').forEach(b=>b.onclick=()=>{const g=CD_GROUPS.get(b.dataset.cdchg);if(g)cdChargeNow(g);});
+  // 💳 חיוב של חוב אחד — אותו חלון, עם הסכום של החוב הזה
+  view.querySelectorAll('[data-cdchi]').forEach(b=>b.onclick=()=>{const id=+b.dataset.cdchi;for(const g of CD_GROUPS.values()){const d=g.items.find(x=>!x._req&&x.id===id);if(d){cdChargeNow(g,cdOpen(d));break;}}});
   view.querySelectorAll('[data-cdnt]').forEach(b=>b.onclick=async()=>{const a=b.dataset.cdnt;
     if(a==='delete'&&!await uiConfirm('למחוק את ההערה / התזכורת?','🗑️ כן, למחוק','לא'))return;
     const r=await api('POST','/api/cm/tasks/'+b.dataset.id,{action:a});if(r&&r.ok){toast(a==='done'?'✓ בוצע':'🗑️ נמחק');CMREMS=null;cdData=null;renderCommDebts();}});
