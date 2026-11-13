@@ -5206,7 +5206,7 @@ def ensure_schema():
 
     # הוראות קבע שחזרו בנדרים פלוס — גם של מי שלא מקושר לחבר קהילה — נפתחות כחוב כבר עכשיו (לא רק בסנכרון הבא)
     try:
-        if cm_debts_from_keva(con)[0]:
+        if any(cm_debts_from_keva(con)):
             con.commit()
     except Exception as e:
         print('  keva debts error:', e)
@@ -25134,6 +25134,29 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             return self._send(200, {'ok': True, 'last4': l4 or qtxt, 'amount': amt, 'months': months, 'year': yr, 'rows': rows,
                                     'kupot': [x['name'] for x in _nd.accounts()], 'synced': ah})
+        if self.path.split('?')[0] == '/api/nd/donor_returns':
+            # מאיר: "שפרה ג'וזף שייכת לתורמים" — הוראות קבע של תורמים (לא קהילה) שחזרו בנדרים פלוס, לדף "🔴 לא עבר"
+            con = db()
+            try:
+                ctx_ = nd_keva_comm_ctx(con)
+                links = {r['key'][5:]: r['donor_id'] for r in con.execute("SELECT key, donor_id FROM nd_dlink WHERE key LIKE 'keva:%'")}
+                out = []
+                for k in con.execute("SELECT * FROM nd_keva WHERE COALESCE(mosad,'')='' AND COALESCE(TRIM(error),'')<>''").fetchall():
+                    if keva_dead(k) or not _ivr_amt(k['amount']) or not nd_keva_is_donor(ctx_, k):
+                        continue
+                    did_ = links.get(str(k['id']).split(':')[-1].lstrip('M'))
+                    dn = con.execute("SELECT id, last, first FROM donors WHERE id=?", (did_,)).fetchone() if did_ else None
+                    last_err = con.execute("SELECT iso FROM nd_err WHERE keva=? ORDER BY iso DESC LIMIT 1",
+                                           (str(k['id']).split(':')[-1].lstrip('M'),)).fetchone()
+                    out.append({'id': k['id'], 'name': k['name'] or '', 'phone': (k['phone'] or '').split(';')[0], 'amount': _ivr_amt(k['amount']),
+                                'groupe': k['groupe'] or '', 'error': (k['error'] or '')[:120], 'last4': k['last4'] or '',
+                                'kind': (k['kind'] if 'kind' in k.keys() else '') or 'card', 'mail': k['mail'] or '',
+                                'at': (last_err['iso'] or '')[:10] if last_err else '',
+                                'donor': {'id': dn['id'], 'name': ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip()} if dn else None})
+                out.sort(key=lambda x: x['at'], reverse=True)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': out})
         m = re.match(r'/api/donor/(\d+)/ndkevas$', self.path.split('?')[0])
         if m:
             # מאיר: "הוא תורם שקלים בנדרים פלוס אז גם חיוב חד פעמי בשקלים" — הוראות הקבע של התורם בנדרים, לחיוב מיידי
@@ -35734,6 +35757,41 @@ def keva_dead(k):
     return False
 
 
+def nd_keva_comm_ctx(con):
+    """מה מסמן "קהילה" בהוראת קבע: טלפונים של חברים ואברכים, שמות אברכים, הוראות מקושרות לתורם, סיווג ידני."""
+    mem_ph, av_ph, av_nm = set(), set(), set()
+    for m_ in con.execute("SELECT phone FROM members WHERE COALESCE(TRIM(phone),'')<>''").fetchall():
+        mem_ph.update(_phones_of(m_['phone']))
+    try:
+        for x in con.execute("SELECT last, first, name, phone FROM avreichim").fetchall():
+            av_ph.update(_phones_of(x['phone']))
+            for nm in (((x['last'] or '') + ' ' + (x['first'] or '')), ((x['first'] or '') + ' ' + (x['last'] or '')), x['name'] or ''):
+                nm = re.sub(r'\s+', ' ', nm).strip()
+                if nm.count(' ') >= 1:
+                    av_nm.add(nm)
+    except Exception:
+        pass
+    dl = {r['key'][5:] for r in con.execute("SELECT key FROM nd_dlink WHERE key LIKE 'keva:%'")}
+    con.execute("CREATE TABLE IF NOT EXISTS nd_keva_class(keva_id TEXT PRIMARY KEY, cls TEXT, at TEXT)")
+    cls = {r['keva_id']: r['cls'] for r in con.execute("SELECT keva_id, cls FROM nd_keva_class")}
+    return {'mem_ph': mem_ph, 'av_ph': av_ph, 'av_nm': av_nm, 'dl': dl, 'cls': cls}
+
+
+def nd_keva_is_donor(ctx, k):
+    """מאיר: "מי שלא חבר בקהילה ושכתוב עליו זכות לימוד התורה וכו' — הוא שייך לתורמים". הוראה של תורם:
+    לא מקושרת לחבר, ולא דמי חבר / מקום / חזקוני / אברך / טלפון של חבר, ולא סומנה "קהילה"."""
+    if k['member_id']:
+        return False
+    if str(k['id']).split(':')[-1].lstrip('M') in ctx['dl'] or ctx['cls'].get(k['id']) == 'donor':
+        return True
+    if ctx['cls'].get(k['id']) == 'comm' or ND_COMM_RX.search(k['groupe'] or ''):
+        return False
+    phs = set(_phones_of(k['phone']))
+    if phs & (ctx['mem_ph'] | ctx['av_ph']) or re.sub(r'\s+', ' ', (k['name'] or '')).strip() in ctx['av_nm']:
+        return False
+    return True
+
+
 def cm_debts_from_keva(con):
     """הוראת קבע של חבר קהילה שחזרה ← חוב פתוח ("הו\"ק חזרה"). עברה / עודכנה ← החוב נסגר.
     הוראה לא פעילה / שפג תוקפה ← החוב יורד מהרשימה (בוטל — לא "שולם")."""
@@ -35742,12 +35800,20 @@ def cm_debts_from_keva(con):
     # קהילה (כנראה צריך לשייך אותו)". גם הוראה שלא מקושרת לחבר נפתחת כחוב בשם ובטלפון שבנדרים פלוס,
     # וגם הוראות של נתן תתן (לקופה שלה)
     nm_ = natan_mosad(con)
+    ctx_ = nd_keva_comm_ctx(con)
     for k in con.execute("SELECT id,member_id,amount,groupe,error,last4,active,off,itra,next_date,name,phone,COALESCE(mosad,'') mosad,COALESCE(kind,'') kind FROM nd_keva "
                          "WHERE COALESCE(mosad,'')='' OR (?<>'' AND mosad=?) OR (mosad=? AND kind='bank')", (nm_, nm_, mk_mosad())).fetchall():
         if k['mosad'] and k['mosad'] == mk_mosad() and k['mosad'] != nm_ and not nd_mk_comm(k['kind'], k['groupe']):
             continue
         fund_ = 'natan' if (nm_ and k['mosad'] == nm_) else ''
         d = con.execute("SELECT id FROM cm_debt WHERE kind='hok' AND ref=? AND status='open'", (k['id'],)).fetchone()
+        if not fund_ and nd_keva_is_donor(ctx_, k):
+            # הוראה של תורם (לא קהילה) — לא נכנסת לחובות הקהילה; אם כבר נפתח — יורד (מופיע ב"🔴 לא עבר" של התורמים)
+            if d:
+                con.execute("UPDATE cm_debt SET status='canceled', closed_at=?, updated=?, note=TRIM(COALESCE(note,'')||' · תורם — לא קהילה (עבר ל\"לא עבר\" של התורמים)') WHERE id=?",
+                            (now_iso(), now_iso(), d['id']))
+                closed += 1
+            continue
         dead = keva_dead(k)
         bad = not dead and (k['error'] or '').strip() and _ivr_amt(k['amount']) > 0
         if d and dead:

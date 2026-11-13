@@ -11891,6 +11891,30 @@ function renderCalls(){
   const ci=view.querySelector('#callimp2'); if(ci)ci.onchange=()=>uploadCallLog(ci,'callout2','callimpbtn2').then(r=>{
     if(tab!=='mails'||mailSub!=='calls')return; if(r&&r.ok){renderCalls(); toast(`נקראו ${r.calls} שיחות מ-30 שניות · ${(r.matched||[]).length} עם תורמים · ${r.added} חדשות נכנסו`);}});
 }
+let NDRET=null;
+// 💳 הוראת קבע של תורם שחזרה — לחייב עכשיו: שוב מאותו כרטיס, או מכרטיס אחר (הטופס המאובטח של נדרים פלוס)
+async function ndRetCharge(k){
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:460px;width:96vw"><div class="cm">💳 לחייב את ${esc(k.donor?k.donor.name:k.name)}</div>
+    <label class="fld"><span>כמה לחייב (₪)</span><input id="nr_amt" class="cinp" inputmode="decimal" value="${esc(k.amount||'')}"></label>
+    <button class="btn" id="nr_same" style="width:100%;margin:4px 0">⚡ שוב מהכרטיס שבהוראה ****${esc(k.last4||'')} <small>(🔴 ${esc(String(k.error).slice(0,40))})</small></button>
+    <button class="btn" id="nr_other" style="width:100%;margin:4px 0">💳 מכרטיס אחר / ביט — טופס מאובטח של נדרים פלוס</button>
+    ${k.donor?`<button class="btn ghost" id="nr_link" style="width:100%;margin:4px 0">🔗 לשלוח לו קישור אישי לעדכון כרטיס</button>`:''}
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button></div></div>`;
+  document.body.appendChild(o);const A=o.querySelector('#nr_amt');
+  o.querySelector('.cno').onclick=()=>o.remove();o.onclick=e=>{if(e.target===o)o.remove();};
+  o.querySelector('#nr_same').onclick=async function(){const a=amtNum(A.value);if(!(a>0)){toast('סכום לא תקין');return;}
+    if(!await uiConfirm('לחייב עכשיו ₪'+a+' מהכרטיס ****'+(k.last4||'')+'?','⚡ כן, לחייב','ביטול'))return;
+    this.disabled=true;this.textContent='⏳ מחייב…';
+    const r=await api('POST','/api/nd/keva/'+encodeURIComponent(k.id)+'/charge',{amount:a,groupe:k.groupe||'תרומה',donor_id:k.donor?k.donor.id:0}).catch(()=>null);
+    if(r&&r.ok){o.remove();toast('✅ החיוב עבר · אישור '+(r.confirmation||''));NDRET=null;render();}
+    else{this.disabled=false;this.textContent='⚡ לנסות שוב מהכרטיס הזה';uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה')+'\n\nאפשר לחייב "💳 מכרטיס אחר".');}};
+  o.querySelector('#nr_other').onclick=()=>{const a=amtNum(A.value);o.remove();
+    const d=k.donor?DB.find(x=>x.id==k.donor.id):null;
+    ndDonate(null,{amount:a>0?a:'',purpose:k.groupe||'תרומה',name:k.donor?k.donor.name:k.name,phone:k.phone||(d?String(d.phone||'').split(/[,;\/]+/)[0].trim():''),
+      mail:k.mail||(d?(splitEmails(d.email)[0]||''):''),addr:d?(d.addr||''):'',city:d?(d.city||''):''});};
+  const lk=o.querySelector('#nr_link');if(lk)lk.onclick=()=>{o.remove();const d=DB.find(x=>x.id==k.donor.id);klinkOpen('d',k.donor.id,d?d.phone:'',d?d.region:'il');};
+}
 function renderMissed(){
   const q1=DB.filter(d=>matchQ(d.last+' '+d.first+' '+d.english));
   const missed=q1.filter(d=>gaps(d.months,d).length>0).sort((a,b)=>gaps(b.months,b).length-gaps(a.months,a).length);
@@ -11904,8 +11928,16 @@ function renderMissed(){
   q1.forEach(d=>declinedGroups(d).forEach(r=>dec.push({d,r})));
   dec.sort((a,b)=>String(b.r.iso).localeCompare(String(a.r.iso)));
   const fD=n=>curSym()+Math.round(n).toLocaleString('en-US');
+  // מאיר: "שפרה ג'וזף שייכת לתורמים" — הוראות קבע בנדרים פלוס של תורמים (לא קהילה) שחזרו — כאן, ולא בחובות הקהילה
+  if(NDRET===null){NDRET=[];api('GET','/api/nd/donor_returns').then(r=>{NDRET=(r&&r.ok&&r.rows)||[];if(tab==='missed'&&NDRET.length)render();});}
+  const ndr=(NDRET||[]).filter(k=>matchQ(k.name+' '+(k.donor?k.donor.name:'')+' '+k.phone));
   view.innerHTML=`
-    <div class="misshead">🔴 חיובי אשראי שחזרו ולא נגבו מאז (${dec.length})</div>
+    ${ndr.length?`<div class="misshead">🔴 הוראות קבע בנדרים פלוס שחזרו — תורמים (${ndr.length})</div>
+    <div class="list">${ndr.map((k,ix)=>`<div class="rowc"><div class="rowmain" ${k.donor?`data-id="${k.donor.id}"`:''}>
+      <div class="nm">${esc(k.donor?k.donor.name:k.name)}${k.donor?'':' <small class="cdres bad">עוד לא בכרטיס תורם</small>'}</div>
+      <div class="miss">${k.at?esc(k.at.split('-').reverse().join('/'))+' · ':''}<b style="color:var(--no)">₪${esc(k.amount)}</b> לחודש${k.groupe?' · '+esc(k.groupe):''} · ${esc(k.error)}${k.last4?' · ****'+esc(k.last4):''}</div></div>
+      <div class="meta"><button class="btn sm bqgo ndrchg" data-ix="${ix}">💳 חייב עכשיו</button></div></div>`).join('')}</div>`:''}
+    <div class="misshead"${ndr.length?' style="margin-top:16px"':''}>🔴 חיובי אשראי שחזרו ולא נגבו מאז (${dec.length})</div>
     <div class="submuted">רק חיובים שנדחו בפועל. התחייבות שעוד לא הגיע זמנה, או חודש
       שהקובץ שלו עדיין לא נטען — אינם "לא עבר", והם נמצאים במסך 💰 חובות.</div>
     <div class="list">${dec.map(({d,r},ix)=>`<div class="rowc"><div class="rowmain" data-id="${d.id}">
@@ -11921,6 +11953,7 @@ function renderMissed(){
     <div class="list">${missed.map(d=>{const g=gaps(d.months,d);return `<div class="rowc"><div class="rowmain" data-id="${d.id}"><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="miss">לא עבר: ${g.map(i=>`<span class="gchip" data-id="${d.id}" data-m="${i}">${MON[i]} ✓</span>`).join(' ')}</div></div><div class="meta"><button class="btn sm ghost missdismiss" data-id="${d.id}">הסר שורה</button>${monthGrid(d.months,d)}</div></div>`;}).join('')||'<div class="hintxt">אין פספוסים 🎉</div>'}</div>`;
   view.querySelectorAll('.rowmain').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
   // "✓ סודר" על חיוב שחזר — מסתיר אותו מהרשימה (הכסף נכנס בדרך אחרת)
+  view.querySelectorAll('.ndrchg').forEach(b=>b.onclick=e=>{e.stopPropagation();ndRetCharge(ndr[+b.dataset.ix]);});
   view.querySelectorAll('.decdrop').forEach(b=>b.onclick=async e=>{e.stopPropagation();
     const x=dec[+b.dataset.ix]; if(!x)return;
     b.disabled=true;
@@ -17810,6 +17843,8 @@ async function cdChargeNow(g){
   const what=[...new Set(deb.map(d=>String(d.title||'').split(' · ')[0]).filter(Boolean))].slice(0,3).join(', ')||'חוב';
   let K=[];
   if(g.mid){const r=await api('GET','/api/members/'+g.mid+'/nd').catch(()=>null);K=((r&&r.kevas)||[]).filter(k=>k.active&&k.kind!=='bank'&&!(k.mosad||''));}
+  // מאיר: "אני לא מצליח לחייב עכשיו בכפתור הזה" — מי שלא מקושר לחבר: ההוראה שחזרה עצמה (מהחוב)
+  if(!K.length)deb.filter(d=>d.kind==='hok'&&d.ref).forEach(d=>{if(!K.find(k=>String(k.id)===String(d.ref)))K.push({id:d.ref,last4:((/\*{2,}(\d{4})/.exec(d.note||'')||[])[1]||''),error:String(d.note||'').split(' · ')[0]});});
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:460px;width:96vw"><div class="cm">💳 לחייב את ${esc(g.name)}</div>
     <label class="fld"><span>כמה לחייב (₪)</span><input id="cc_amt" class="cinp" inputmode="decimal" value="${tot||''}"></label>
@@ -17829,7 +17864,7 @@ async function cdChargeNow(g){
     if(r&&r.ok){o.remove();toast('✅ החיוב עבר · אישור '+(r.confirmation||'')+' — החוב עודכן');cdData=null;cdHist=null;renderCommDebts();}
     else{b.disabled=false;b.textContent='⚡ לנסות שוב מהכרטיס הזה';uiAlert('החיוב לא עבר:\n'+((r&&r.error)||'שגיאה')+'\n\nאפשר לחייב "💳 מכרטיס אחר".');}});
   o.querySelector('#cc_other').onclick=()=>{const a=amtNum(A.value);if(!(a>0)){toast('סכום לא תקין');return;}
-    o.remove();ndDonate(g.mid||0,{amount:a,purpose:what,kevas:K});};
+    o.remove();ndDonate(g.mid||0,{amount:a,purpose:what,kevas:K,name:g.mid?'':(g.name||''),phone:g.mid?'':(g.phone||deb.map(d=>d.phone).find(Boolean)||'')});};
 }
 // 💳 מאיר: "כמו שאתה רואה כאן שיש לכל אחד… גם חיוב עכשיו וגם חלון של… לשלוח לו עדכון — אותו דבר שיהיה לקהילה,
 // רק עם נדרים פלוס" — חיוב מהכרטיס שבהוראת הקבע שלו בנדרים (נרשם אצלו ובנדרים), או כרטיס אחר / ביט / העברה
