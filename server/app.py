@@ -18001,7 +18001,7 @@ def klink_message(p, url, kind='m'):
             'תודה רבה ותזכו למצוות!')
     # בוואטסאפ אין כפתור אמיתי — "הכפתור" הוא תצוגת הקישור (התמונה עם "לחצו כאן"). מאיר: "לא צורת קישור לינק ארוך
     # אלא… כפתור יפה מזמין" — הקישור בשורה הראשונה, צמוד מתחת לתמונה, והטקסט מפנה לכפתור ולא לקישור
-    wa = (url + '\n\n*' + sal + '*\n\nשלום וברכה,\n' + T['wa'] + '\n\n👆 *לחצו על הכפתור למעלה*\n\nתודה רבה ותזכו למצוות!')
+    wa = (url + '\n\n*' + sal + '*\n\nשלום וברכה,\n' + T['wa'] + '\n\n⬆️ *לחצו על הכפתור למעלה*\n\nתודה רבה ותזכו למצוות!')
     return {'subject': T['subject'], 'body': body, 'wa': wa}
 
 
@@ -22140,6 +22140,30 @@ class H(BaseHTTPRequestHandler):
         data = json.dumps({'ok': True, 'role': role, 'exp': int(time.time()) + auth_hours(role) * 3600}).encode('utf-8')
         self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
         return False
+
+    def do_HEAD(self):
+        """מאיר: "למה יוצא לי ככה השליחה הזו — זה אמור להיות יותר מעוצב ויפה" — חלק מהמערכות שבונות תצוגה מקדימה
+        לקישור (וואטסאפ / פייסבוק) שואלות קודם HEAD; בלי תשובה (501) הן מוותרות על התמונה והכותרת. כאן: אותה תשובה כמו
+        GET — הכותרות בלבד, בלי הגוף."""
+        real = self.wfile
+
+        class _HeadOnly:
+            def __init__(s):
+                s.n = 0
+
+            def write(s, data):
+                s.n += 1
+                if s.n == 1:                         # הכתיבה הראשונה = שורת הסטטוס והכותרות
+                    return real.write(data)
+                return len(data)
+
+            def flush(s):
+                return real.flush()
+        self.wfile = _HeadOnly()
+        try:
+            self.do_GET()
+        finally:
+            self.wfile = real
 
     def do_GET(self):
         if self.path.startswith('/mcp/'):
