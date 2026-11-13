@@ -15651,7 +15651,8 @@ SECRET_KV = ('mail_pass', 'mail_gpass', 'sess_secret')   # לא יוצא מהש�
 AUTH_HOURS = 48
 # מאיר: "בכניסה למערכת גבאים תעשה שרק פעם בחודש יצטרכו להכניס סיסמא" — לגבאים (קהילה) 30 יום
 # מאיר: "שלי תעשה פעם בשבוע" — הכניסה הראשית 7 ימים
-AUTH_HOURS_ROLE = {'gabbai': 30 * 24, 'comm': 30 * 24, 'parnes': 30 * 24, 'admin': 7 * 24}
+# מאיר (13.11.2026): "שמהטאבלט… לא יבקש ממני סיסמה… כמו שביקשתי ממך שפעם בשבועיים" — הכניסה הראשית 14 יום
+AUTH_HOURS_ROLE = {'gabbai': 30 * 24, 'comm': 30 * 24, 'parnes': 30 * 24, 'admin': 14 * 24}
 
 
 def auth_hours(role):
@@ -36110,7 +36111,7 @@ def nd_keva_donor_keys(con, kid):
     return ['keva:' + str(kid).split(':')[-1].lstrip('M')]
 
 
-def nd_donor_keva_cands(con):
+def nd_donor_keva_cands(con, light=False):
     out = []
     mk = ''
     try:
@@ -36142,6 +36143,13 @@ def nd_donor_keva_cands(con):
         keys = nd_keva_donor_keys(con, k['id'])
         dl = next((links[x] for x in keys if x in links), None)
         dn = con.execute("SELECT id,last,first FROM donors WHERE id=?", (dl,)).fetchone() if dl else None
+        if light:
+            # בלי הצעות ובלי סטטיסטיקה — רק מה שהשיוך האוטומטי צריך (מהיר, כל סנכרון)
+            out.append({'id': k['id'], 'name': k['name'] or '', 'auto_comm': auto_comm,
+                        'cls': 'donor' if dn else ('comm' if (auto_comm or cls.get(k['id']) == 'comm') else ''),
+                        'member': ((k['ml'] or '') + ' ' + (k['mf'] or '')).strip() if k['member_id'] else '',
+                        'donor': {'id': dn['id']} if dn else None})
+            continue
         phs = _phones_of(k['phone'])
         by_phone = []
         if phs:
@@ -36174,7 +36182,7 @@ def nd_donor_keva_cands(con):
     return out
 
 
-def nd_donor_keva_add(con, kid, donor_id=0, last='', first=''):
+def nd_donor_keva_add(con, kid, donor_id=0, last='', first='', do_import=True):
     """מוסיף / מקשר: כרטיס תורם (קיים או חדש) ← ההוראה בנדרים. כל התשלומים שלה נכנסים לכרטיס, וכל חיוב חדש."""
     k = con.execute("SELECT * FROM nd_keva WHERE id=?", (kid,)).fetchone()
     if not k:
@@ -36207,7 +36215,7 @@ def nd_donor_keva_add(con, kid, donor_id=0, last='', first=''):
         if ow and ow['donor_id'] != did:
             return None, 'ההוראה כבר מקושרת לכרטיס #%s' % ow['donor_id']
         con.execute("INSERT OR IGNORE INTO nd_dlink(key, donor_id, label, at) VALUES(?,?,?,?)", (key, did, (k['name'] or '')[:80], now_iso()))
-    n = nd_donor_import(con, did)
+    n = nd_donor_import(con, did) if do_import else 0
     return did, n
 
 
@@ -36245,7 +36253,7 @@ def nd_keva_auto_donors(con):
         for ph in _phones_of(d['phone']):
             owner.setdefault(ph, set()).add(d['id'])
     n = 0
-    for x in nd_donor_keva_cands(con):
+    for x in nd_donor_keva_cands(con, light=True):
         if x['cls'] or x['donor'] or x['member']:
             continue
         k = con.execute("SELECT member_id, phone FROM nd_keva WHERE id=?", (x['id'],)).fetchone()
@@ -36259,46 +36267,60 @@ def nd_keva_auto_donors(con):
             ids |= owner.get(ph, set())
         if len(ids) > 1:
             continue
-        did, res = nd_donor_keva_add(con, x['id'], (next(iter(ids)) if ids else 0))
+        did, res = nd_donor_keva_add(con, x['id'], (next(iter(ids)) if ids else 0), do_import=False)
         if did:
             con.execute("INSERT INTO nd_keva_class(keva_id,cls,at) VALUES(?,'donor',?) ON CONFLICT(keva_id) DO UPDATE SET cls='donor', at=excluded.at",
                         (x['id'], now_iso()))
             n += 1
+    if n:
+        nd_donor_import(con)
     return n
 
 
 def nd_donor_import(con, did=None):
-    """התשלומים בנדרים פלוס (החשבון של הכולל) של התורמים המקושרים → תרומות ב-₪ בכרטיס. בלי כפילויות."""
+    """התשלומים בנדרים פלוס (החשבון של הכולל) של התורמים המקושרים → תרומות ב-₪ בכרטיס. בלי כפילויות.
+    מאיר: "אני לא מצליח להיכנס למערכת" — הגרסה הקודמת סרקה את כל עסקאות נדרים פלוס כמה פעמים לכל תורם
+    מקושר, והמסד נשאר נעול דקות (גם הכניסה חיכתה). עכשיו: העסקאות נטענות פעם אחת לזיכרון."""
     links = {}
     for r in con.execute("SELECT key, donor_id FROM nd_dlink" + (" WHERE donor_id=?" if did else ""), ((did,) if did else ())):
         links.setdefault(r['donor_id'], set()).add(r['key'])
+    if not links:
+        return 0
+    alive = {r['id'] for r in con.execute("SELECT id FROM donors WHERE id IN (%s)" % ','.join('?' * len(links)), list(links))}
+    owner = {r['key']: r['donor_id'] for r in con.execute("SELECT key, donor_id FROM nd_dlink WHERE key LIKE 'keva:%'")}
+    txs = [dict(r) for r in con.execute("SELECT * FROM nd_tx WHERE COALESCE(mosad,'')='' AND amount>0")]
+    have = {r['tid'] for r in con.execute("SELECT tid FROM donations WHERE tid LIKE 'ND%'")}
     ins = 0
     for d_id, keys in links.items():
-        if not con.execute("SELECT 1 FROM donors WHERE id=?", (d_id,)).fetchone():
+        if d_id not in alive:
             continue
+        mine = [t for t in txs if t['donor_id'] is None or t['donor_id'] == d_id]
         # הרחבה: חיוב שהותאם לפי שם / טלפון ושייך להוראת קבע — כל החיובים של אותה הוראה הם של אותו תורם
         # (גם מלפני שהשם / הטלפון נכתבו כך). המפתח נשמר, אלא אם ההוראה כבר מקושרת לכרטיס אחר
         for _ in range(3):
             add = set()
-            for t in con.execute("SELECT DISTINCT LTRIM(COALESCE(keva,''),'-') kv, phone, name FROM nd_tx WHERE COALESCE(mosad,'')='' AND amount>0 "
-                                 "AND (donor_id IS NULL OR donor_id=?)", (d_id,)).fetchall():
-                if t['kv'] and ('keva:' + t['kv']) not in keys and _nd_tx_matches({'keva': '', 'phone': t['phone'], 'name': t['name']}, keys):
-                    add.add('keva:' + t['kv'])
+            for t in mine:
+                kv = str(t['keva'] or '').lstrip('-')
+                if kv and ('keva:' + kv) not in keys and _nd_tx_matches({'keva': '', 'phone': t['phone'], 'name': t['name']}, keys):
+                    add.add('keva:' + kv)
+            added = False
             for k in add:
-                ow = con.execute("SELECT donor_id FROM nd_dlink WHERE key=?", (k,)).fetchone()
-                if ow and ow['donor_id'] != d_id:
+                if owner.get(k) not in (None, d_id):
                     continue
                 con.execute("INSERT OR IGNORE INTO nd_dlink(key, donor_id, label, at) VALUES(?,?,?,?)", (k, d_id, 'אוטומטי — אותה הוראת קבע', now_iso()))
+                owner[k] = d_id
                 keys.add(k)
-            if not add:
+                added = True
+            if not added:
                 break
-        for t in con.execute("SELECT * FROM nd_tx WHERE COALESCE(mosad,'')='' AND amount>0 AND (donor_id IS NULL OR donor_id=?)", (d_id,)).fetchall():
+        for t in mine:
             if not _nd_tx_matches(t, keys):
                 continue
             if t['donor_id'] != d_id:
                 con.execute("UPDATE nd_tx SET donor_id=? WHERE id=?", (d_id, t['id']))
+                t['donor_id'] = d_id
             tid = 'ND' + t['id']
-            if con.execute("SELECT 1 FROM donations WHERE tid=?", (tid,)).fetchone():
+            if tid in have:
                 continue
             auto = bool(t['keva']) and not str(t['keva']).startswith('-')
             what = (t['groupe'] or '').strip()
@@ -36308,6 +36330,7 @@ def nd_donor_import(con, did=None):
                    (' · אישור ' + t['conf'] if t['conf'] else '')
             con.execute("INSERT INTO donations(donor_id,date,amount,category,method,note,tid,cur,paid) VALUES(?,?,?,?,?,?,?,'₪',1)",
                         (d_id, (t['iso'] or '')[:10], ('%g' % t['amount']), cat, 'נדרים פלוס', note, tid))
+            have.add(tid)
             ins += 1
     return ins
 
