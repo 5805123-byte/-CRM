@@ -16202,7 +16202,7 @@ function renderComm(){
   if(cmSub==='ledger') return renderCommLedger();
   if(cmSub==='cgifts') return renderCommGifts();
   if(cmSub==='jobs') return renderCommJobs();
-  if(cmSub==='sched') return renderSched();
+  if(cmSub==='sched'){cmSub='ym';ymView='sched';return renderCommYm();}   // מתוזמנים — רק בחלון הטלפונים
   if(cmSub==='zmanim') return renderZmanim();      // מאיר: "זמני תפילות תכניס בתוך קהילה"
   const all=MEMBERS;
   const chk=m=>!!m.pending;
@@ -16234,7 +16234,6 @@ function renderComm(){
       <button class="btn" id="cm_natan" style="flex:2" title="קופה נפרדת — התחייבויות, תרומות ושליחה, בלי לערב עם הקהילה">🎁 קופת נתן תתן</button>
       <button class="btn" id="cm_ledger" style="flex:2">📒 הכנסות והוצאות</button>
       <button class="btn" id="cm_zm" style="flex:2">🕰️ זמני תפילות</button>
-      <button class="btn" id="cm_sch" style="flex:2" title="הודעות מתוזמנות, ניסיון חוזר למי שלא ענה, מיילים בתור">⏰ מתוזמנים</button>
       <button class="btn" id="cm_jobs" style="flex:2">✅ משימות צוות${CMJOBS&&CMJOBS.rows?` <b>${CMJOBS.rows.filter(j=>j.status!=='done').length||''}</b>`:''}</button>
       <button class="btn" id="cm_ndfind" style="flex:2" title="חיפוש בכל העסקאות בנדרים פלוס לפי שם / טלפון — גם תשלומים שלא שויכו לאף כרטיס">🔍 חיפוש תשלומים בנדרים פלוס</button>
     </div>
@@ -16292,7 +16291,7 @@ function renderComm(){
   // 🔍 מאיר: "לא הבנתי איפה אני רואה את זה פה, נדרים פלוס" — החיפוש ישר מהמסך הראשי של הקהילה
   document.getElementById('cm_ndfind').onclick=async()=>{const v=await uiPrompt('את מי לחפש בנדרים פלוס? שם (למשל: אלחדד שמעון) או טלפון','');if(v===null)return;avPaidOpen(String(v).trim()||' ');};
   // מאיר: "כשאני לוחץ עליו בקהילה הוא מדלג על הכל וקופץ ללמטה" — נפתח כדף משלו, מלמעלה
-  document.getElementById('cm_sch').onclick=()=>{SCH=null;cmSub='sched';render();window.scrollTo({top:0});};
+  // מאיר: "אל תערב את מתוזמנים לקהילה" — מתוזמנים רק בחלון הטלפונים והשליחה (📞 ימות המשיח ← ⏰ מתוזמנים)
   document.getElementById('cm_zm').onclick=()=>{cmSub='zmanim';render();window.scrollTo(0,0);};
   if(CMJOBS===null)api('GET','/api/cm/jobs').then(r=>{if(!r||!r.ok||CMJOBS)return;CMJOBS=r;const n=r.rows.filter(j=>j.status!=='done').length,bt=document.getElementById('cm_jobs');if(bt&&n)bt.innerHTML='✅ משימות צוות <b>'+n+'</b>';});
   if(CMREMS===null)cmRemsLoad().then(()=>{if(tab==='comm'&&cmSub==='list')render();});
@@ -16302,8 +16301,6 @@ function renderComm(){
   // מאיר: "אפשרות קובץ PDF והדפסה של כל הרשימה עם הפרטים, אפשרות הורדה לאקסל או PDF"
   document.getElementById('cm_print').onclick=()=>window.open('/kehila-print'+(cmFlt==='seat'?'?sort=seat':''),'_blank');
   document.getElementById('cm_xlsx').onclick=()=>{location.href='/api/members.xlsx'+(cmFlt==='seat'?'?sort=seat':'');};
-  // ⏰ מתוזמנים — בתחתית הדף של הקהילה
-  const sb=document.createElement('div');sb.id='cm_schbox';sb.style.marginTop='26px';view.appendChild(sb);renderSched(sb);
 }
 // ===== 💰 חובות והתחייבויות — של הקהילה בלבד =====
 // מאיר: "שיהיה מערכת חובות והתחייבויות של הקהילה בלבד… תסנכרן נדרים פלוס כל כמה זמן, שיראו
