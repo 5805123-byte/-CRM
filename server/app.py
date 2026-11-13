@@ -5417,6 +5417,29 @@ def ensure_schema():
         con.rollback()
         print('  berger checks error:', e)
 
+    # מארק (איצי) ברגר, 13.11.2026: "The Po Box is 40005. Please correct" — הכתובת בכרטיס ובקבלה 2025
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='berger_pobox_v1'").fetchone():
+            c_ = con.execute("SELECT id, addr FROM donors WHERE lower(COALESCE(email,'')) LIKE '%mark4realty@verizon.net%'").fetchall()
+            if len(c_) == 1:
+                did_ = c_[0]['id']
+                a_ = str(c_[0]['addr'] or '')
+                new_ = re.sub(r'(?i)(p\.?\s*o\.?\s*box\s*)[\d\-]+', lambda m_: m_.group(1) + '40005', a_) if re.search(r'(?i)p\.?\s*o\.?\s*box', a_) else 'P.O. Box 40005'
+                con.execute("UPDATE donors SET addr=?, addr_ok=1 WHERE id=?", (new_, did_))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                            (did_, today_iso(), 'כתובת', '🏠 הכתובת תוקנה לבקשתו (מייל 13.11.2026): %s → %s' % (a_ or '—', new_), '', now_iso()))
+                con.commit()
+                try:
+                    statement_save(con, did_, '2025')
+                except Exception as e:
+                    print('  berger pobox pdf error:', e)
+                print('  ברגר: תא דואר 40005')
+                con.execute("INSERT INTO seed_flags(name) VALUES('berger_pobox_v1')")
+                con.commit()
+    except Exception as e:
+        con.rollback()
+        print('  berger pobox error:', e)
+
     # מאיר: "כן, על שם החברה B & C Lead Consultants LLC" — הקבלה השנתית 2025 של ברגר על שם החברה
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_name_v1'").fetchone():
