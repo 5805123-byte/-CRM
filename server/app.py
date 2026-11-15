@@ -18396,6 +18396,24 @@ def klink_day(con, kind, pid, b):
 # עצמו הוא יוכל להוציא את הקבלות בלי שאני אצטרך לשלוח לו… בוחר מתאריך עד תאריך… למלא את הכתובת".
 # קבלה (סעיף 46) נפרדת לכל תשלום — בתאריך התשלום, כמו שמס הכנסה מבקש — ומה שכבר הופק לא מופק שוב.
 # בסוף מורידים קובץ PDF אחד עם כל הקבלות שבטווח.
+def klink_rc_mosads(con):
+    """החשבונות בנדרים פלוס שעל התשלומים בהם מפיקים קבלה מהקישור: הראשי ('') וכל חשבון נוסף שמוגדר
+    ב-Render — מאיר: "זה אותה עמותה, תוסיף את החשבון לקבלות" — חוץ מנתן תתן ומהמקווה."""
+    out = {''}
+    try:
+        import nedarim as _ndr
+        skip = {natan_mosad(con), mk_mosad()}
+        for a in _ndr.accounts():
+            mo = str(a.get('mosad') or '')
+            if a.get('main'):
+                continue
+            if mo and mo not in skip and not re.search(r'נתן|natan|מקוו|mikv', a.get('name') or '', re.I):
+                out.add(mo)
+    except Exception as e:
+        print('  klink rc mosads error:', e)
+    return out
+
+
 def klink_rc_of_tx(con, tid, don_id=None):
     """הקבלה הישראלית שכבר הופקה על עסקת נדרים פלוס — מהכרטיס של חבר הקהילה (nd:<עסקה>) או על התרומה
     שנכנסה ממנה לכרטיס התורם. (מזהה, מספר) או (0, 0)."""
@@ -18419,7 +18437,7 @@ def _klink_name_toks(s):
     return frozenset(w for w in re.sub(r'[^א-תa-zA-Z ]', ' ', s).lower().split() if w)
 
 
-def klink_rc_name_tx(con, pid, have):
+def klink_rc_name_tx(con, pid, have, okm=None):
     """מאיר: "תבדוק לפי השם ליפשיץ אברהם, אברהם ליפשיץ… בכל הווריאציות, אצל כולם" — תשלומים לחשבון של הכולל
     שלא שויכו לחבר (טלפון אחר / הוראה לא מקושרת), אבל השם בהם הוא בדיוק השם שלו (בכל סדר). בלי ניחוש:
     רק כשאין עוד חבר קהילה פעיל באותו שם, והטלפון בתשלום לא שייך לחבר אחר, והתשלום לא שויך לחבר אחר
@@ -18436,9 +18454,10 @@ def klink_rc_name_tx(con, pid, have):
         return []
     pidx = nd_member_index(con)
     out = []
-    for t in con.execute("SELECT * FROM nd_tx WHERE COALESCE(mosad,'')='' AND amount>0 AND (member_id IS NULL OR member_id=?) AND name LIKE ?",
+    okm = okm or {''}
+    for t in con.execute("SELECT * FROM nd_tx WHERE amount>0 AND (member_id IS NULL OR member_id=?) AND name LIKE ?",
                          (pid, '%' + last + '%')).fetchall():
-        if str(t['id']) in have or _klink_name_toks(t['name']) != want:
+        if str(t['mosad'] or '') not in okm or str(t['id']) in have or _klink_name_toks(t['name']) != want:
             continue
         if not re.fullmatch(r'\d{4}-\d\d-\d\d', str(t['iso'] or '')[:10]):
             continue
@@ -18461,6 +18480,7 @@ def klink_rc_items(con, kind, pid):
     out = []
     if kind == 'm':
         nd = member_nd(con, pid) or {}
+        okm = klink_rc_mosads(con)
         for t in nd.get('tx') or []:
             try:
                 amt = round(float(t.get('amount') or 0), 2)
@@ -18469,7 +18489,7 @@ def klink_rc_items(con, kind, pid):
             iso = str(t.get('iso') or '')[:10]
             # מאיר: "שלחתי לליפשיץ… והוא קיבל רק 2 קבלות, אבל הוא תורם כל חודש" — תשלום לחשבון של הכולל שנרשם
             # גם בכרטיס תורם (fund='donor') הוא עדיין התשלום שלו ונכלל. רק חשבונות אחרים (נתן תתן / מקווה) לא נכללים
-            if amt <= 0 or t.get('fund') in ('natan', 'other') or not re.fullmatch(r'\d{4}-\d\d-\d\d', iso):
+            if amt <= 0 or t.get('fund') == 'natan' or str(t.get('mosad') or '') not in okm or not re.fullmatch(r'\d{4}-\d\d-\d\d', iso):
                 continue
             auto = bool(t.get('keva')) and not str(t.get('keva')).startswith('-')
             # הקבלה תמיד על שם בעל הקישור (חבר הקהילה) — גם כשהתשלום שויך בעבר לכרטיס תורם (לפעמים בטעות);
@@ -18477,7 +18497,7 @@ def klink_rc_items(con, kind, pid):
             rc, num = klink_rc_of_tx(con, str(t['id']))
             out.append({'key': 't' + str(t['id']), 'date': iso, 'amount': amt, 'auto': auto,
                         'what': 'הוראת קבע' if auto else ((t.get('groupe') or '').strip()[:40] or 'תרומה'), 'rc': rc, 'num': num})
-        for t in klink_rc_name_tx(con, pid, {str(t['id']) for t in (nd.get('tx') or [])}):
+        for t in klink_rc_name_tx(con, pid, {str(t['id']) for t in (nd.get('tx') or [])}, okm):
             auto = bool(t['keva']) and not str(t['keva']).startswith('-')
             rc, num = klink_rc_of_tx(con, str(t['id']))
             out.append({'key': 't' + str(t['id']), 'date': str(t['iso'])[:10], 'amount': round(float(t['amount']), 2), 'auto': auto,
