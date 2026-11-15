@@ -3224,7 +3224,22 @@ async function mkHistDel(cid,id){if(!await uiConfirm('למחוק את השורה
 function mkHistBody(r){
   if(r.kind==='mail')return `<div class="mksub">${mkHistRes(r)}</div><details><summary class="mksub">המייל</summary><div class="mksub"><b>${esc(r.m_subj||'')}</b></div><div class="mksub" style="white-space:pre-wrap">${esc(r.m_body||'')}</div></details>`;
   if(r.kind!=='msg')return '';
-  return `<div class="mksub">${mkHistRes(r)}${r.y_sent?' · יצאה '+esc(String(r.y_sent).slice(11,16)):''}</div>${r.y_text?`<details><summary class="mksub">הטקסט</summary><div class="mksub">${esc(r.y_text)}</div></details>`:''}`;}
+  return `<div class="mksub">${mkHistRes(r)}${r.y_sent?' · יצאה '+esc(String(r.y_sent).slice(11,16)):''}</div>${r.y_text?`<details><summary class="mksub">הטקסט</summary><div class="mksub">${esc(r.y_text)}</div></details>`:''}${mkMsgActions(r)}`;}
+// 🎧 מאיר: "כמו בהודעות הקהילה — לראות אם שמע, חיוג חוזר, הורדת ההקלטה ושליחה בוואטסאפ" — אותם כפתורים גם במקווה
+function mkMsgActions(r){
+  if(r.kind!=='msg'||r.ch!=='voice'||r.y_st!=='sent'||!r.msg_id)return '';
+  const nm=esc(r.nm||r.name||''), notHeard=(+r.y_ans!==1)||((+r.y_listen||0)<5&&!r.y_pressed);
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+    <button class="btn sm ghost ymaud" data-ymid="${r.msg_id}" data-nm="${nm}" title="לשמוע את ההקלטה — ומשם לשמור / לשלוח בוואטסאפ">🎧 הקלטה · שמירה · וואטסאפ</button>
+    ${notHeard&&r.y_job?`<button class="btn sm ghost mkredial" data-job="${r.y_job}" data-id="${r.msg_id}" data-nm="${nm}" title="להתקשר אליו שוב עכשיו (אותה הקלטה)">📞 חיוג חוזר</button>`:''}</div>`;}
+async function mkRedial(b){
+  if(!await uiConfirm('לחייג שוב '+(b.dataset.nm?'אל '+b.dataset.nm+' ':'')+'עכשיו? (יוצא שוב בדיוק אותו נוסח)','📞 כן, לחייג','ביטול'))return;
+  const t0=b.innerHTML;b.disabled=true;b.innerHTML='<span class="mkspin"></span>';
+  const r=await api('POST','/api/yemot/job/'+b.dataset.job+'/redial',{ids:[+b.dataset.id]}).catch(()=>null);
+  b.disabled=false;b.innerHTML=t0;
+  if(r&&r.ok){toast('📞 יצא חיוג חוזר');const he=document.getElementById('mkhist');if(he&&he.dataset.id)setTimeout(()=>mkHistLoad(he.dataset.id),1500);if(document.getElementById('mklogr'))setTimeout(()=>mkLogOpen(),1500);}
+  else uiAlert('החיוג החוזר לא יצא:\n'+((r&&r.error)||'שגיאה'));}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.mkredial');if(!b)return;e.preventDefault();e.stopPropagation();mkRedial(b);},true);
 async function mkHistLoad(cid){const r=await api('GET','/api/mikveh/log/'+encodeURIComponent(cid));if(!r||!r.ok)return;MKHIST[cid]=r.rows||[];
   const el=document.getElementById('mkhist');if(el&&el.dataset.id===cid)el.innerHTML=mkHistHTML(cid);
   // תוצאה שעוד לא הגיעה — שוב בעוד דקה, כל עוד הכרטיס פתוח

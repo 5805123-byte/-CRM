@@ -26879,7 +26879,7 @@ class H(BaseHTTPRequestHandler):
             try:
                 rows = [dict(r) for r in con.execute(
                     "SELECT l.*, COALESCE(y.name, mm.name, '') nm, y.phone y_phone, y.status y_st, y.answered y_ans, y.secs y_secs, y.listen_secs y_listen, "
-                    "y.pressed y_pressed, y.sent_ts y_sent, y.error y_err, y.text y_text, y.retry_at y_retry_at, y.retried y_retried, y.call_status y_call, "
+                    "y.pressed y_pressed, y.sent_ts y_sent, y.error y_err, y.text y_text, y.retry_at y_retry_at, y.retried y_retried, y.call_status y_call, y.job y_job, "
                     "j.channel ch, j.send_at, j.status j_st, (SELECT r2.answered FROM ym_msg r2 WHERE r2.id=y.retried) y_r_ans, "
                     "mm.status m_st, mm.error m_err, mm.sent_at m_sent, mm.subject m_subj, mm.body m_body, mm.email m_email, mm.opened_at m_open, mm.opens m_opens "
                     "FROM mk_log l LEFT JOIN ym_msg y ON y.id=l.msg_id LEFT JOIN ym_job j ON j.id=y.job LEFT JOIN mk_mail mm ON mm.id=l.mail_id "
@@ -26896,7 +26896,7 @@ class H(BaseHTTPRequestHandler):
             try:
                 rows = []
                 for r in con.execute("SELECT l.*, y.status y_st, y.answered y_ans, y.secs y_secs, y.listen_secs y_listen, y.pressed y_pressed, "
-                                     "y.sent_ts y_sent, y.error y_err, y.text y_text, y.retry_at y_retry_at, y.retried y_retried, y.call_status y_call, j.channel ch, j.send_at, j.status j_st, "
+                                     "y.sent_ts y_sent, y.error y_err, y.text y_text, y.retry_at y_retry_at, y.retried y_retried, y.call_status y_call, y.job y_job, j.channel ch, j.send_at, j.status j_st, "
                                      "(SELECT r2.answered FROM ym_msg r2 WHERE r2.id=y.retried) y_r_ans, "
                                      "mm.status m_st, mm.error m_err, mm.sent_at m_sent, mm.subject m_subj, mm.body m_body, mm.email m_email, mm.opened_at m_open, mm.opens m_opens "
                                      "FROM mk_log l LEFT JOIN ym_msg y ON y.id=l.msg_id LEFT JOIN ym_job j ON j.id=y.job "
