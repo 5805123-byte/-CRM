@@ -1767,6 +1767,8 @@ function render(){
     if(!tab){view.innerHTML='';return;}}
   const qi=document.getElementById('q');
   if(qi)qi.placeholder=QPH[tab]||QPH.donors;
+  // 🛁 מאיר: "למה זה מצומצם? שזה יהיה על כל המסך — רק המקווה" — רק בלשונית המקווה פותחים את כל הרוחב
+  document.body.classList.toggle('mkfull',tab==='mikveh');
   chips.innerHTML='';
   if(tab==='donors'){
     if(flt==='addrfix')return renderAddrFix();
