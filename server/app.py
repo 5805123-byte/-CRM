@@ -18396,6 +18396,24 @@ def klink_day(con, kind, pid, b):
 # עצמו הוא יוכל להוציא את הקבלות בלי שאני אצטרך לשלוח לו… בוחר מתאריך עד תאריך… למלא את הכתובת".
 # קבלה (סעיף 46) נפרדת לכל תשלום — בתאריך התשלום, כמו שמס הכנסה מבקש — ומה שכבר הופק לא מופק שוב.
 # בסוף מורידים קובץ PDF אחד עם כל הקבלות שבטווח.
+def klink_rc_of_tx(con, tid, don_id=None):
+    """הקבלה הישראלית שכבר הופקה על עסקת נדרים פלוס — מהכרטיס של חבר הקהילה (nd:<עסקה>) או על התרומה
+    שנכנסה ממנה לכרטיס התורם. (מזהה, מספר) או (0, 0)."""
+    tid = str(tid or '')
+    if tid:
+        for r in con.execute("SELECT id, num, note FROM receipt_docs WHERE kind='il' AND note LIKE ? ORDER BY id DESC", ('%nd:' + tid + '%',)).fetchall():
+            if re.search(r'nd:' + re.escape(tid) + r'(?![\w])', r['note'] or ''):
+                return r['id'], r['num']
+    if don_id is None and tid:
+        dn = con.execute("SELECT id FROM donations WHERE tid=? ORDER BY id LIMIT 1", ('ND' + tid,)).fetchone()
+        don_id = dn['id'] if dn else None
+    if don_id:
+        r = con.execute("SELECT id, num FROM receipt_docs WHERE kind='il' AND donation_id=? ORDER BY id DESC LIMIT 1", (don_id,)).fetchone()
+        if r:
+            return r['id'], r['num']
+    return 0, 0
+
+
 def klink_rc_items(con, kind, pid):
     """התשלומים בשקלים לכולל בנדרים פלוס (חבר — מהעסקאות שלו; תורם — מהתרומות שנכנסו מנדרים פלוס),
     לכל אחד: מפתח, תאריך, סכום, עבור, והקבלה שכבר הופקה (אם יש)."""
@@ -18408,22 +18426,19 @@ def klink_rc_items(con, kind, pid):
             except (TypeError, ValueError):
                 amt = 0
             iso = str(t.get('iso') or '')[:10]
-            if amt <= 0 or t.get('fund') or not re.fullmatch(r'\d{4}-\d\d-\d\d', iso):
+            # מאיר: "שלחתי לליפשיץ… והוא קיבל רק 2 קבלות, אבל הוא תורם כל חודש" — תשלום לחשבון של הכולל שנרשם
+            # גם בכרטיס תורם (fund='donor') הוא עדיין התשלום שלו: נכלל, והקבלה עליו היא אותה קבלה של התרומה בכרטיס
+            # התורם (בלי כפילות). רק חשבונות אחרים (נתן תתן / מקווה) לא נכללים
+            if amt <= 0 or t.get('fund') in ('natan', 'other') or not re.fullmatch(r'\d{4}-\d\d-\d\d', iso):
                 continue
             auto = bool(t.get('keva')) and not str(t.get('keva')).startswith('-')
-            rc, num = 0, 0
-            for r in con.execute("SELECT id, num, note FROM receipt_docs WHERE kind='il' AND note LIKE ? ORDER BY id DESC",
-                                 ('%nd:' + str(t['id']) + '%',)).fetchall():
-                if re.search(r'nd:' + re.escape(str(t['id'])) + r'(?![\w])', r['note'] or ''):
-                    rc, num = r['id'], r['num']
-                    break
-            out.append({'key': 't' + str(t['id']), 'date': iso, 'amount': amt, 'auto': auto,
+            rc, num = klink_rc_of_tx(con, str(t['id']))
+            dn = con.execute("SELECT id FROM donations WHERE tid=? ORDER BY id LIMIT 1", ('ND' + str(t['id']),)).fetchone()
+            out.append({'key': ('d' + str(dn['id'])) if dn else ('t' + str(t['id'])), 'date': iso, 'amount': amt, 'auto': auto,
                         'what': 'הוראת קבע' if auto else ((t.get('groupe') or '').strip()[:40] or 'תרומה'), 'rc': rc, 'num': num})
     elif kind == 'd':
-        for r in con.execute("SELECT d.id, d.date, d.amount, d.category, d.note,"
-                             "(SELECT rd.id FROM receipt_docs rd WHERE rd.kind='il' AND rd.donation_id=d.id ORDER BY rd.id DESC LIMIT 1) rc,"
-                             "(SELECT rd.num FROM receipt_docs rd WHERE rd.kind='il' AND rd.donation_id=d.id ORDER BY rd.id DESC LIMIT 1) num "
-                             "FROM donations d WHERE d.donor_id=? AND COALESCE(d.tid,'') LIKE 'ND%' AND COALESCE(d.paid,1)=1 "
+        for r in con.execute("SELECT d.id, d.date, d.amount, d.category, d.note, d.tid FROM donations d "
+                             "WHERE d.donor_id=? AND COALESCE(d.tid,'') LIKE 'ND%' AND COALESCE(d.paid,1)=1 "
                              "AND COALESCE(NULLIF(TRIM(d.cur),''),'₪') IN ('₪','ILS')", (pid,)).fetchall():
             amt = round(_amt2(r['amount']), 2)
             iso = str(r['date'] or '')[:10]
@@ -18431,8 +18446,9 @@ def klink_rc_items(con, kind, pid):
                 continue
             auto = 'הו"ק' in (r['note'] or '') or (r['category'] or '').strip() == 'קבוע'
             cat = (r['category'] or '').strip()
+            rc, num = klink_rc_of_tx(con, str(r['tid'])[2:], r['id'])
             out.append({'key': 'd' + str(r['id']), 'date': iso, 'amount': amt, 'auto': auto,
-                        'what': 'הוראת קבע' if auto else ((cat if cat not in ('כללי', '') else 'תרומה')[:40]), 'rc': r['rc'] or 0, 'num': r['num'] or 0})
+                        'what': 'הוראת קבע' if auto else ((cat if cat not in ('כללי', '') else 'תרומה')[:40]), 'rc': rc, 'num': num})
     out.sort(key=lambda x: (x['date'], x['key']), reverse=True)
     return out
 
@@ -18448,17 +18464,20 @@ def klink_rc_issue(con, kind, pid, b):
     if it['rc']:
         return {'ok': True, 'rc': it['rc'], 'num': it['num'], 'old': True}
     tz = re.sub(r'\D', '', str(b.get('tz') or ''))[:9]
-    if kind == 'm':
+    if key.startswith('t'):
         doc, err = receipt_issue_member(con, pid, it['amount'], it['date'], 'תרומה בהוראת קבע' if it['auto'] else 'תרומה',
                                         '', False, key[1:], 'כרטיס אשראי · נדרים פלוס', crn=tz)
         if not doc:
             return {'ok': False, 'error': err or 'ההפקה נכשלה.'}
     else:
-        if tz:
-            d = con.execute("SELECT notes FROM donors WHERE id=?", (pid,)).fetchone()
+        # תרומה בכרטיס תורם (גם כשהקישור של חבר הקהילה — התשלום נרשם גם שם): אותה קבלה לשניהם
+        dn = con.execute("SELECT donor_id FROM donations WHERE id=?", (int(key[1:]),)).fetchone()
+        ddid = dn['donor_id'] if dn else 0
+        if tz and ddid:
+            d = con.execute("SELECT notes FROM donors WHERE id=?", (ddid,)).fetchone()
             nt = (d['notes'] or '') if d else ''
             if not re.search(r'ת\.?\s?ז\.?\s*:?\s*\d{6,9}', nt):
-                con.execute("UPDATE donors SET notes=? WHERE id=?", ((nt + '\n' if nt.strip() else '') + 'ת.ז. ' + tz, pid))
+                con.execute("UPDATE donors SET notes=? WHERE id=?", ((nt + '\n' if nt.strip() else '') + 'ת.ז. ' + tz, ddid))
                 con.commit()
         try:
             doc = receipt_issue(con, int(key[1:]), 'il', send=False)
