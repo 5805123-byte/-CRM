@@ -22718,7 +22718,10 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(500, {'error': 'backup', 'detail': str(e)[:200]})
         if self.path == '/api/health':
-            return self._send(200, health_report())
+            hr = health_report()
+            if isinstance(hr, dict):
+                hr['ver'] = (os.environ.get('RENDER_GIT_COMMIT') or '')[:7]   # איזו גרסה רצה עכשיו (לבדיקה שהעדכון עלה)
+            return self._send(200, hr)
         return self._get2()
 
     def _build_data(self):
@@ -23208,6 +23211,13 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 out = {'ok': True, 'items': klink_rc_items(con, kind, pid)}
+                if kind == 'm':
+                    # לבדיקה: כמה מהתשלומים שלו בכל חשבון / סוג (רק מספרים, בלי פרטים)
+                    import collections as _co
+                    nd_ = member_nd(con, pid) or {}
+                    out['diag'] = {'acct': dict(_co.Counter('%s|%s|%s' % (t.get('mosad') or 'main', t.get('fund') or '-', str(t.get('iso') or '')[:4])
+                                                            for t in (nd_.get('tx') or []) if (t.get('amount') or 0) > 0)),
+                                   'ok': sorted(klink_rc_mosads(con))}
             finally:
                 con.close()
             return self._send(200, out)
