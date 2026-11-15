@@ -17999,13 +17999,20 @@ def klink_message(p, url, kind='m'):
     body = (sal + '\n\nשלום וברכה,\n\n' + T['intro'] + '\n'
             '\u2022 לעדכן שם, כתובת, טלפון ואימייל.\n'
             '\u2022 ' + T['card'] + '\n'
+            + ('\u2022 \u05dc\u05d4\u05e4\u05d9\u05e7 \u05d5\u05dc\u05d4\u05d5\u05e8\u05d9\u05d3 \u05e7\u05d1\u05dc\u05d5\u05ea \u05e2\u05dc \u05d4\u05ea\u05e8\u05d5\u05de\u05d5\u05ea \u05e9\u05dc\u05da, \u05dc\u05db\u05dc \u05d8\u05d5\u05d5\u05d7 \u05ea\u05d0\u05e8\u05d9\u05db\u05d9\u05dd.\n' if kind != 'v' else '')
             + (('\u2022 ' + T['don'] + '\n') if T['don'] else '') + '\n'
             + url + '\n\n'
             'הקישור אישי ומאובטח ותקף ל-30 יום. מספר הכרטיס מוזן ישירות בנדרים פלוס ולא עובר אצלנו.\n\n'
             'תודה רבה ותזכו למצוות!')
     # בוואטסאפ אין כפתור אמיתי — "הכפתור" הוא תצוגת הקישור (התמונה עם "לחצו כאן"). מאיר: "לא צורת קישור לינק ארוך
     # אלא… כפתור יפה מזמין" — הקישור בשורה הראשונה, צמוד מתחת לתמונה, והטקסט מפנה לכפתור ולא לקישור
-    wa = (url + '\n\n*' + sal + '*\n\nשלום וברכה,\n' + T['wa'] + '\n\n⬆️ *לחצו על הכפתור למעלה*\n\nתודה רבה ותזכו למצוות!')
+    # מאיר: "הקישור בווצאפ לא מעוצב מספיק יפה" — רשימה קצרה עם סמלים במקום פסקה; סמלים בלי תו
+    # "וריאציה" (⬆️ הופיע אצלו כ-�)
+    items = ['📝 עדכון פרטים', '💳 עדכון כרטיס אשראי' + (' למנוי המקווה' if kind == 'v' else '')]
+    if kind != 'v':
+        items += ['🧾 קבלות על התרומות — להורדה מיידית', '💛 נדרים ונדבות · ארוחת בוקר']
+    wa = (url + '\n\n*' + sal + '*\n\nשלום וברכה,\n' + T['intro'] + '\n\n' + '\n'.join(items)
+          + '\n\n👆 *לחצו על הכפתור למעלה*\n\nתודה רבה ותזכו למצוות!')
     return {'subject': T['subject'], 'body': body, 'wa': wa}
 
 
@@ -18039,9 +18046,7 @@ def klink_mail_html(body, url):
 
 KLINK_PAGE = r'''<!doctype html><html lang="he" dir="rtl" translate="no" class="notranslate"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="google" content="notranslate">
-<title>{{TITLE}}</title><meta property="og:title" content="{{TITLE}}">
-<meta property="og:description" content="דף אישי ומאובטח · לחצו לעדכון">
-<meta property="og:image" content="{{BASE}}/{{OGIMG}}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:type" content="website">
+{{OGTAGS}}
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=Frank+Ruhl+Libre:wght@700&display=swap">
 <style>
 :root{--bg:#efe9db;--paper:#fffdf8;--ink:#3a2f1a;--soft:#6b6249;--wine:#7a1f1f;--gold:#9c7a2e;--line:#e3d9c2;--cream:#f7f1e3;--ok:#2e7d4f;--okbg:#e8f3ea;--bad:#8f2a1b;--badbg:#fde8e4}
@@ -18518,6 +18523,29 @@ def klink_rc_pdf(con, kind, pid, frm, to):
     return out, 'קבלות %s - %s.pdf' % (yrs[0] if len(yrs) == 1 else yrs[0] + '-' + yrs[-1], safe)
 
 
+KLINK_OG = {'m': ('קהילת כולל חצות · הדף האישי שלי', 'עדכון פרטים · כרטיס אשראי · קבלות על תרומות · נדרים ונדבות', 'kl_og.png'),
+            'v': ('המקווה · הדף האישי שלי', 'עדכון פרטים וכרטיס אשראי למנוי המקווה', 'kl_og_mk.png'),
+            'd': ('כולל חצות · הדף האישי שלי', 'עדכון פרטים · כרטיס אשראי · קבלות על תרומות · נדרים ונדבות', 'kl_og.png')}
+
+
+def klink_og_tags(kind, base, url=''):
+    import html as _h
+    e = _h.escape
+    t, d, img = KLINK_OG.get(kind) or KLINK_OG['m']
+    im = '%s/%s?v=2' % (base, img)
+    return ('<title>%s</title><meta name="description" content="%s">'
+            '<meta property="og:title" content="%s"><meta property="og:description" content="%s">'
+            '<meta property="og:site_name" content="כולל חצות"><meta property="og:locale" content="he_IL"><meta property="og:type" content="website">%s'
+            '<meta property="og:image" content="%s"><meta property="og:image:secure_url" content="%s"><meta property="og:image:type" content="image/png">'
+            '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="%s">'
+            '<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="%s"><meta name="twitter:image" content="%s">'
+            % (e(t), e(d), e(t), e(d), ('<meta property="og:url" content="%s">' % e(url)) if url else '', e(im), e(im), e(t), e(t), e(im)))
+
+
+def klink_og_html(kind, base, url):
+    return '<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">%s</head><body></body></html>' % klink_og_tags(kind, base, url)
+
+
 def klink_page(con, kind, pid, base=''):
     import html as _h
     import nedarim as _nd
@@ -18538,7 +18566,7 @@ def klink_page(con, kind, pid, base=''):
     acc = _nd.accounts()
     mos = (acc[0]['mosad'] if acc else '') or (_nd.mosad() if _nd.configured() else '')
     em = (emails_of(p['email'] or '') or [''])[0]
-    rep = {'{{BASE}}': e(base), '{{LOGO}}': 'data:image/png;base64,' + base64.b64encode(letterhead_logo(300)).decode('ascii'),
+    rep = {'{{OGTAGS}}': klink_og_tags(kind, base), '{{BASE}}': e(base), '{{LOGO}}': 'data:image/png;base64,' + base64.b64encode(letterhead_logo(300)).decode('ascii'),
            '{{NAME}}': e(klink_salute(p, kind)),
            '{{OGIMG}}': 'kl_og_mk.png' if kind == 'v' else 'kl_og.png',
            '{{SUB}}': e({'m': 'הדף האישי שלך בקהילה', 'v': 'עדכון לגבי המקווה — הדף האישי שלך',
@@ -23124,9 +23152,14 @@ class H(BaseHTTPRequestHandler):
             kind, pid = klink_resolve(m.group(1))
             if not pid:
                 return self._send(404, '<!doctype html><meta charset="utf-8"><body dir="rtl" style="font-family:sans-serif;padding:30px">הקישור פג תוקף. נא לפנות לכולל חצות: 02-580-3545 · 052-762-8272</body>'.encode('utf-8'), 'text/html')
+            base_url = (os.environ.get('PUBLIC_URL') or ('https://' + (self.headers.get('Host') or 'kollel-chatzot-crm.onrender.com'))).rstrip('/')
+            ua = (self.headers.get('User-Agent') or '')
+            if re.search(r'WhatsApp|facebookexternalhit|Facebot|TelegramBot|Twitterbot|Slackbot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot|bingbot|Applebot', ua, re.I):
+                # מאיר: "הקישור בווצאפ לא מעוצב מספיק יפה" — לתצוגה המקדימה מספיק דף קטן עם התגיות בלבד: מהיר,
+                # בלי הלוגו המוטבע (רבע מגה), כדי שוואטסאפ תמיד יספיק לקרוא את התמונה והכותרת
+                return self._send(200, klink_og_html(kind, base_url, base_url + self.path.split('?')[0]).encode('utf-8'), 'text/html')
             con = db()
             try:
-                base_url = (os.environ.get('PUBLIC_URL') or ('https://' + (self.headers.get('Host') or 'kollel-chatzot-crm.onrender.com'))).rstrip('/')
                 page = klink_page(con, kind, pid, base_url)
             finally:
                 con.close()
