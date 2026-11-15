@@ -30332,21 +30332,21 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'מחיר לא תקין'})
             cents = int(round(price * 100))
             try:
+                # ⚡ מאיר: "למה זה לוקח הרבה זמן, ובמקווה זה מתעדכן מייד" — לא עושים קריאה שלישית לאימות.
+                # update_client כבר נכשל אם ה-PATCH לא הצליח, ומחזיר את הלקוח המעודכן — בודקים ממנו (בלי עוד פנייה)
                 if scope == 'client':
                     fld = str(b.get('field') or '')
                     if fld not in _mk.price_fields(cid):
                         return self._send(200, {'ok': False, 'error': 'אין ללקוח שדה מחיר כזה במקווה'})
-                    _mk.update_client(cid, {fld: cents})
-                    got = _mk.client(cid).get(fld)
-                    if got != cents:
+                    res = _mk.update_client(cid, {fld: cents})
+                    if isinstance(res, dict) and fld in res and res.get(fld) != cents:
                         return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל המחיר לא השתנה'})
                     what = '💲 מחיר אישי במקווה: ₪%g' % price
                 elif scope == 'fix':
                     # 🏷️ מחיר מיוחד ללקוח (subscriptionFixPrice) — ₪0 מסיר אותו. בלי לגעת בקבוצה
                     val = cents if cents > 0 else None
-                    _mk.update_client(cid, {'subscriptionFixPrice': val})
-                    got = _mk.client(cid).get('subscriptionFixPrice')
-                    if (val or 0) != (got or 0):
+                    res = _mk.update_client(cid, {'subscriptionFixPrice': val})
+                    if isinstance(res, dict) and 'subscriptionFixPrice' in res and ((res.get('subscriptionFixPrice') or 0) != (val or 0)):
                         return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל המחיר המיוחד לא השתנה'})
                     what = ('🏷️ מחיר מיוחד במקווה: ₪%g' % price) if val else '🏷️ המחיר המיוחד הוסר'
                 else:
