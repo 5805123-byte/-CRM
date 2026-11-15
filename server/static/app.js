@@ -2460,8 +2460,7 @@ function renderMikveh(){
       <div class="mkstat" id="mkdash" title="מלוח הבקרה של המקווה — מתחילת החודש">${mkDashTxt()}</div>
       <button class="mkstat" id="mkcredit" style="cursor:pointer;border:0;font:inherit" title="לקוחות עם ערך צבור (פעימות) — לחיצה פותחת את הרשימה"><b>${MK.clients.filter(c=>((c.balance!=null?c.balance:c.last_balance)||0)>0).length}</b><span>💰 ערך צבור</span></button>
       <button class="mkstat" id="mkzklist" style="cursor:pointer;border:0;font:inherit" title="לקוחות עם זיכוי (יתרה זמנית) — לחיצה פותחת את הרשימה"><b>${MK.clients.filter(c=>(c.temp_balance||0)>0).length}</b><span>💳 זיכויים</span></button>
-      <button class="mkstat" id="mkfixstat" style="cursor:pointer;border:0;font:inherit${mkFixOnly?';outline:3px solid #fff':''}" title="לקוחות שיש להם מחיר מיוחד (subscriptionFixPrice) — לחיצה מציגה רק אותם, למעקב"><b>${MK.clients.filter(c=>c.fix).length}</b><span>🏷️ מחיר מיוחד${mkFixOnly?' ✕':''}</span></button>
-      <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button></div></div>
+      <button class="mkstat" id="mkfixstat" style="cursor:pointer;border:0;font:inherit${mkFixOnly?';outline:3px solid #fff':''}" title="לקוחות שיש להם מחיר מיוחד (subscriptionFixPrice) — לחיצה מציגה רק אותם, למעקב"><b>${MK.clients.filter(c=>c.fix).length}</b><span>🏷️ מחיר מיוחד${mkFixOnly?' ✕':''}</span></button></div></div>
     <div class="mktools noprint">
       <div class="mksearch"><input id="mkq" placeholder="חיפוש לקוח — שם, טלפון או מספר לקוח" value="${esc(mkQ)}" autocomplete="off"></div>
       <div class="mkchips" id="mkchips"><button class="mkchip${mkGrp?'':' on'}" data-g="">הכל <i>${MK.clients.length}</i></button>
@@ -2481,7 +2480,6 @@ function renderMikveh(){
           <button class="mkibtn" id="mkmonb1" title="מי התקשר לשלוחות, חובות הפרש פתוחים, והאם הבדיקה האוטומטית פועלת">📡 מעקב — שיחות וחובות</button>
           <button class="mkibtn" id="mkdebtsb" title="כל החובות הפתוחים במקווה — מי חייב, כמה ועל מה">🧾 חובות פתוחים</button>
       <button class="mkibtn" id="mkprice" title="מסמך Word על הבלאנק של המקווה — כל המנויים והמחירים, מהמקווה עכשיו">📄 מחירון המנויים</button>
-      <button class="mkibtn" id="mktwm" title="מראש חודש כסלו המגבת כלולה במנוי — העברת מי שיש לו מנוי מגבות למנוי עם מגבת">🧺 העברת מנויי מגבות</button>
       <button class="mkibtn" id="mkgrpw" title="סוגי המנוי במקווה — והעתקה של מנוי עם כל השעות וההגדרות">📋 סוגי מנוי</button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי או הרישיון שלו הסתיים, ולמה (חידוש אוטומטי כבוי / אין אמצעי תשלום / חיוב נכשל)">🔍 בדיקת פג תוקף</button></div></div>
         <div class="mkhg"><span>💬 פניות והודעות</span><div><button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📨 פניות מנדרים${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
@@ -2497,8 +2495,7 @@ function renderMikveh(){
     document.querySelectorAll('#mksort button').forEach(x=>x.classList.toggle('on',x===b));mkPaint();};
   document.getElementById('mksched').onclick=mkSchedOpen; mkSchedCount();
   document.getElementById('mklogb').onclick=()=>mkLogOpen();
-  document.getElementById('mktowel').onclick=()=>{if(mkTowelOnly){mkTowelOnly=false;renderMikveh();}else mkTowelOpen();};
-  document.getElementById('mkfixstat').onclick=()=>{mkFixOnly=!mkFixOnly;if(mkFixOnly)mkTowelOnly=false;renderMikveh();};
+  document.getElementById('mkfixstat').onclick=()=>{mkFixOnly=!mkFixOnly;renderMikveh();};
   const _side=document.getElementById('mkside');   // זוכר אם פתחת / סגרת את הצד
   try{if(localStorage.getItem('mk_side')==='0')_side.open=false;}catch(e){}
   _side.addEventListener('toggle',()=>{try{localStorage.setItem('mk_side',_side.open?'1':'0');}catch(e){}});
@@ -2507,7 +2504,6 @@ function renderMikveh(){
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mkprice').onclick=e=>mkPriceDoc('',e.currentTarget);
   document.getElementById('mkgrpw').onclick=()=>mkGroupsWin();
-  document.getElementById('mktwm').onclick=()=>mkTowelMigrate();
   document.getElementById('mkselfg').onclick=()=>mkSelfGroupOpen();
   document.getElementById('mkvmb').onclick=()=>mkVmOpen();
   document.getElementById('mkrqb').onclick=()=>mkSgReqOpen();
@@ -2559,7 +2555,6 @@ function mkPaint(){
   let rows=MK.clients.filter(c=>{
     if(mkGrp&&c.group!==mkGrp)return false;
     if(mkFixOnly)return !!c.fix&&(!qq||matchStr(mkName(c)+' '+(c.remark||''),qq));   // 🏷️ רק מחיר מיוחד (פעילים ומסתיימים יחד)
-    if(mkTowelOnly)return mkTowel(c)&&(!qq||matchStr(mkName(c)+' '+(c.remark||''),qq));
     if(!qq)return mkExpired(c)===mkExp;          // בלי חיפוש — רק הרשימה שנבחרה למעלה
     if(qd&&qd.length>=3&&mkDigits(c.phone).indexOf(qd.replace(/^972/,'0'))>=0)return true;     // טלפון — גם עם מקפים / רווחים
     if(qd&&qd===qq&&String(c.code||'')===qd)return true;                                       // מספר לקוח
@@ -2575,7 +2570,7 @@ function mkPaint(){
   body.innerHTML=rows.map(c=>mkRowHTML(c,G)).join('');
   const inG=MK.clients.filter(c=>!mkGrp||c.group===mkGrp), nOff=inG.filter(mkExpired).length;
   const n1=document.getElementById('mkn_on'),n2=document.getElementById('mkn_off');if(n1)n1.textContent=inG.length-nOff;if(n2)n2.textContent=nOff;
-  document.getElementById('mkcount').textContent=mkFixOnly?'🏷️ '+rows.length+' עם מחיר מיוחד — לחץ שוב על הקוביה כדי לחזור':mkTowelOnly?'🧺 '+rows.length+' עם מנוי מגבות (לפי ההערות במקווה) — לחץ שוב על הקוביה כדי לחזור':qq?rows.length+' תוצאות (גם מי שהסתיים לו)':rows.length+' '+(mkExp?'שהסתיים להם / מזדמנים':'פעילים')+(mkGrp?' בקבוצה':'')+' · מתוך '+MK.clients.length+' לקוחות';
+  document.getElementById('mkcount').textContent=mkFixOnly?'🏷️ '+rows.length+' עם מחיר מיוחד — לחץ שוב על הקוביה כדי לחזור':qq?rows.length+' תוצאות (גם מי שהסתיים לו)':rows.length+' '+(mkExp?'שהסתיים להם / מזדמנים':'פעילים')+(mkGrp?' בקבוצה':'')+' · מתוך '+MK.clients.length+' לקוחות';
   document.getElementById('mknone').classList.toggle('hidden',rows.length>0);
 }
 // ☑️ בחירה לשליחה — מסמנים לקוחות ברשימה (או את כל המוצגים: קבוצה / פעילים / חיפוש) ושולחים לכולם
@@ -2833,7 +2828,7 @@ function mkOpen(c){
     if(r.balance==null)return; c.balance=r.balance;
     const el=document.getElementById('mkbal'); if(!el)return;
     el.classList.toggle('bad',r.balance<0);
-    el.querySelector('span').textContent='💰 ערך צבור (פעימות) ✎';
+    el.querySelector('span').innerHTML=mkIco('coins')+' ערך צבור (פעימות) ✎';
     el.querySelector('b').textContent=mkMoney(r.balance);
   }).catch(()=>{});
   let pick=null, state='', info='';
@@ -2855,8 +2850,6 @@ function mkOpen(c){
         <div class="mktile" id="mkpaid" data-id="${esc(c.id)}" title="מה ששילם במקווה (במכשיר / במערכת המקווה)"><span>${mkIco('card')} שילם במקווה</span><b>${mkPaidTxt(c.id)}</b></div>
         <div class="mktile mkedit ${mkPast(c.sub_end)?'bad':'ok'}" id="mksub" title="לחיצה — לשנות את תאריך ההתחלה / הסיום של המנוי במקווה"><span>${mkIco('cal')} מנוי עד ✎</span><b>${esc(mkDate(c.sub_end))||'—'}</b>${c.sub_end&&hebOfIso(c.sub_end)?`<small style="display:block;color:#555">${esc(hebOfIso(c.sub_end))}</small>`:''}${c.sub_start?`<small style="display:block;color:#777">מ-${esc(mkDate(c.sub_start))}${hebOfIso(c.sub_start)?' · '+esc(hebOfIso(c.sub_start)):''}</small>`:''}</div>
         ${tile('רישיון עד',esc(mkDate(c.lic_exp)),mkPast(c.lic_exp)?'bad':'','license')}
-        <div class="mktile mkedit ${mkTowel(c)?'ok':''}" id="mktwl" title="לחיצה — להוסיף / להסיר מנוי מגבות (מתעדכן במקווה)"><span>${mkIco('towel')} מנוי מגבות ✎</span><b>${mkTowel(c)?({small:'קטנות',large:'גדולות'}[mkTowelSize(c)]||'כן')+(mkTwPr(c)!=null?' · ₪'+esc(mkTwPr(c))+(MKTW&&MKTW.hmonth?' <small>('+esc(MKTW.hmonth.split(' ')[0])+')</small>':''):''):'לא'}</b></div>
-        ${mkTowel(c)&&mkTwPr(c)!=null&&(c.price!=null||(g&&g.price!=null))?`<div class="mktile ok"><span>${mkIco('coins')} סה״כ לחודש${MKTW&&MKTW.hmonth?' '+esc(MKTW.hmonth.split(' ')[0]):''}</span><b>${mkNis((c.price!=null?c.price:g.price)+mkTwPr(c))}</b><small style="display:block;color:#777">מנוי ${mkNis(c.price!=null?c.price:g.price)} + מגבות ₪${esc(mkTwPr(c))}</small></div>`:''}
         ${tile('כניסה אחרונה',esc(mkAgo(c.last_in)),'','door')}
         <div class="mktile mkedit${c.balance!=null&&c.balance<0?' bad':''}" id="mkbal" title="לחיצה — לעדכן את היתרה במקווה (למשל: נתן חלק במזומן)"><span>${mkIco('coins')} ערך צבור (פעימות)${c.balance==null&&c.last_balance!=null?' (אחרונה)':''} ✎</span><b>${bal||'—'}</b></div>
         <div class="mktile mkedit" id="mkzk" title="לחיצה — להוסיף / להוריד זיכוי (יתרה זמנית) במקווה"><span>${mkIco('wallet')} זיכוי (יתרה זמנית) ✎</span><b>${c.temp_balance!=null?mkMoney(c.temp_balance):'—'}</b></div>
@@ -2927,7 +2920,6 @@ function mkOpen(c){
     const _ms2=document.getElementById('mksub2'); if(_ms2)_ms2.onclick=()=>mkSubEdit(c);
     document.getElementById('mkweb').onclick=e=>{e.preventDefault();mkOpenWeb(c);};
     document.getElementById('mkwebset').onclick=e=>{e.preventDefault();mkOpenWeb(c,true);};
-    document.getElementById('mktwl').onclick=()=>mkTowelEdit(c);
     const kl=document.getElementById('mkkl');
     if(kl)kl.onclick=async e=>{e.preventDefault();e.stopPropagation();
       const r=await api('POST','/api/mikveh/klink',{phone:c.phone||''}).catch(()=>null);
@@ -2956,7 +2948,6 @@ function mkOpen(c){
     const af=document.getElementById('mkafter'); if(af)af.onclick=()=>mkNotify(c,'group',{group:c.group});
   };
   draw(); remov.classList.add('show');
-  if(!MKTW&&mkTowel(c))api('GET','/api/mikveh/towel_cfg').then(r=>{if(r&&r.ok){MKTW=r;if(document.getElementById('mktwl'))draw();}}).catch(()=>{});
 }
 // הודעה ללקוח — SMS או קולית, דרך ימות המשיח.
 // מאיר: "שיהיה יותר משוכלל, נוסחים מוכנים, שמירת נוסחים, אופציה לשלוח מאוחר יותר".
