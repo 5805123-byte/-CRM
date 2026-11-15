@@ -219,6 +219,8 @@ def slim(c):
             'pay_method': bool(c.get('hasPaymentMethod')), 'blocked': bool(c.get('isBlocked')),
             'block_reason': c.get('blockReason') or '', 'remark': c.get('remark') or '',
             'message': c.get('message') or '', 'sons': len(c.get('sons') or []),
+            # 🏷️ מחיר מיוחד ללקוח (subscriptionFixPrice, אגורות → שקלים) — None אם אין
+            'fix': (lambda v: (v / 100.0) if isinstance(v, (int, float)) and not isinstance(v, bool) and v else None)(c.get('subscriptionFixPrice')),
             # מחיר אישי ללקוח, אם המקווה מחזיר כזה (באגורות, כמו מחיר הקבוצה). בלי — מחיר הקבוצה
             'price': next(((c.get(k) or 0) / 100.0 for k in ('subscriptionPrice', 'specialPrice', 'customPrice', 'price')
                            if isinstance(c.get(k), (int, float)) and c.get(k)), None)}

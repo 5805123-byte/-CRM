@@ -2406,6 +2406,7 @@ async function mkTowelBill(hm){
     const cfg=Object.assign({},r.cfg);cfg.month=Object.assign({},cfg.month||{});cfg.month[H]={small:+a||0,large:+b2||0};
     const q=await api('POST','/api/mikveh/towel_cfg',cfg).catch(()=>null);if(q&&q.ok){MKTW=null;toast('✓ נשמר');mkTowelBill(hm);}else uiAlert('לא נשמר');};}
 let mkTowelOnly=false;
+let mkFixOnly=false;   // 🏷️ מעקב מחיר מיוחד — להציג רק לקוחות עם מחיר מיוחד
 let MK=null, mkGrp='', mkBusy=false, mkQ='', mkSort='name', mkExp=false, mkSel=new Set(), mkSelOn=false;
 // מאיר: "שתי רשימות נפרדות — אלו שלא הסתיים להם המנוי או הרישיון, ואלו שהסתיים; את אלו שהסתיים רק בלחיצת
 // כפתור למעלה. בחיפוש — שיופיעו מיד, אבל מול העיניים רק אלו שלא הסתיים להם"
@@ -2447,7 +2448,7 @@ function renderMikveh(){
   const cnt={}; MK.clients.forEach(c=>{cnt[c.group]=(cnt[c.group]||0)+1;});
   const used=MK.groups.filter(g=>cnt[g.id]).sort((a,b)=>(cnt[b.id]||0)-(cnt[a.id]||0));
   const expired=MK.clients.filter(c=>mkPast(c.sub_end)).length;
-  view.innerHTML=`<div class="mkw"><div id="mkpend" class="noprint"></div>
+  view.innerHTML=`<div class="mkw mklayout"><div class="mkmain"><div id="mkpend" class="noprint"></div>
     <div class="mkhero"><div class="mkhtop"><h2>🛁 לקוחות המקווה<small>חי מהמקווה · לא נשמר במערכת · לחיצה על לקוח פותחת את הכרטיס שלו</small></h2>
       <button class="mkibtn" id="mkfresh" title="לטעון שוב מהמקווה">🔄 רענון</button></div>
       <div class="mkhstats">
@@ -2457,8 +2458,20 @@ function renderMikveh(){
       <div class="mkstat" id="mkdash" title="מלוח הבקרה של המקווה — מתחילת החודש">${mkDashTxt()}</div>
       <button class="mkstat" id="mkcredit" style="cursor:pointer;border:0;font:inherit" title="לקוחות עם ערך צבור (פעימות) — לחיצה פותחת את הרשימה"><b>${MK.clients.filter(c=>((c.balance!=null?c.balance:c.last_balance)||0)>0).length}</b><span>💰 ערך צבור</span></button>
       <button class="mkstat" id="mkzklist" style="cursor:pointer;border:0;font:inherit" title="לקוחות עם זיכוי (יתרה זמנית) — לחיצה פותחת את הרשימה"><b>${MK.clients.filter(c=>(c.temp_balance||0)>0).length}</b><span>💳 זיכויים</span></button>
-      <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button></div>
-      <div class="mkhgroups">
+      <button class="mkstat" id="mkfixstat" style="cursor:pointer;border:0;font:inherit${mkFixOnly?';outline:3px solid #fff':''}" title="לקוחות שיש להם מחיר מיוחד (subscriptionFixPrice) — לחיצה מציגה רק אותם, למעקב"><b>${MK.clients.filter(c=>c.fix).length}</b><span>🏷️ מחיר מיוחד${mkFixOnly?' ✕':''}</span></button>
+      <button class="mkstat" id="mktowel" style="cursor:pointer;border:0;font:inherit${mkTowelOnly?';outline:3px solid #fff':''}" title="מי שכתוב בהערות שלו במקווה 'מגבת' / 'מגבות' — לחיצה פותחת את כולם במרוכז"><b>${MK.clients.filter(mkTowel).length}</b><span>🧺 מנוי מגבות${mkTowelOnly?' ✕':''}</span></button></div></div>
+    <div class="mktools noprint">
+      <div class="mksearch"><input id="mkq" placeholder="חיפוש לקוח — שם, טלפון או מספר לקוח" value="${esc(mkQ)}" autocomplete="off"></div>
+      <div class="mkchips" id="mkchips"><button class="mkchip${mkGrp?'':' on'}" data-g="">הכל <i>${MK.clients.length}</i></button>
+        ${used.map(g=>`<button class="mkchip${g.id===mkGrp?' on':''}" data-g="${esc(g.id)}"><span class="mkdot" style="background:${esc(mkColor(g))}"></span>${esc(g.name)} <i>${cnt[g.id]}</i></button>`).join('')}</div>
+      <div class="mkseg" id="mkexp" style="margin:8px 0"><button data-x="0" class="${mkExp?'':'on'}">✅ פעילים <i id="mkn_on"></i></button><button data-x="1" class="${mkExp?'on':''}">🔴 הסתיים מנוי / רישיון · מזדמני ערב <i id="mkn_off"></i></button></div>
+      <div class="mkbar2"><span id="mkcount"></span>
+        <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="mkchip${mkSelOn?' on':''}" id="mkselb" title="לסמן כמה לקוחות ולשלוח לכולם SMS / שיחה / מייל">☑️ בחירה לשליחה</button>
+        <span class="mkseg" id="mksort">${[['name','א–ב'],['code','מספר לקוח'],['last','כניסה אחרונה']].map(([k,l])=>`<button data-s="${k}" class="${mkSort===k?'on':''}">${l}</button>`).join('')}</span></span></div>
+      <div id="mksel"></div></div>
+    <div class="mklist" id="mkbody"></div>
+    <div class="mkempty hidden" id="mknone"><b>🔍</b>אין לקוחות שמתאימים לחיפוש</div></div>
+    <details class="mkside noprint" id="mkside" open><summary>🛠️ כלים ולשוניות של המקווה</summary><div class="mksidebody">
         <div class="mkhg"><span>📞 שלוחות בטלפון</span><div><button class="mkibtn" id="mkselfg" title="שלוחה בטלפון שבה כל מנוי משנה לעצמו את סוג המנוי — קטגוריות, מחירים ויומן">🔄 שלוחת שינוי סוג מנוי</button>
           <button class="mkibtn" id="mkrqb" title="בקשות לשינוי סוג מנוי שנשלחו מהטלפון — לאשר ולהעביר, או לדחות">📨 בקשות שינוי מנוי<b id="mksgn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button>
       <button class="mkibtn" id="mkvmb" title="הודעות שהשאירו בשלוחת המקווה בטלפון — להאזין, לקרוא את התמלול, לסמן שטופל">📥 הודעות מוקלטות<b id="mkvmn" style="display:none;background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:4px"></b></button></div></div>
@@ -2471,18 +2484,7 @@ function renderMikveh(){
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי או הרישיון שלו הסתיים, ולמה (חידוש אוטומטי כבוי / אין אמצעי תשלום / חיוב נכשל)">🔍 בדיקת פג תוקף</button></div></div>
         <div class="mkhg"><span>💬 פניות והודעות</span><div><button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📨 פניות מנדרים${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
           <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
-          <button class="mkibtn hidden" id="mksched">⏰ מתוזמנות</button></div></div></div></div>
-    <div class="mktools noprint">
-      <div class="mksearch"><input id="mkq" placeholder="חיפוש לקוח — שם, טלפון או מספר לקוח" value="${esc(mkQ)}" autocomplete="off"></div>
-      <div class="mkchips" id="mkchips"><button class="mkchip${mkGrp?'':' on'}" data-g="">הכל <i>${MK.clients.length}</i></button>
-        ${used.map(g=>`<button class="mkchip${g.id===mkGrp?' on':''}" data-g="${esc(g.id)}"><span class="mkdot" style="background:${esc(mkColor(g))}"></span>${esc(g.name)} <i>${cnt[g.id]}</i></button>`).join('')}</div>
-      <div class="mkseg" id="mkexp" style="margin:8px 0"><button data-x="0" class="${mkExp?'':'on'}">✅ פעילים <i id="mkn_on"></i></button><button data-x="1" class="${mkExp?'on':''}">🔴 הסתיים מנוי / רישיון · מזדמני ערב <i id="mkn_off"></i></button></div>
-      <div class="mkbar2"><span id="mkcount"></span>
-        <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="mkchip${mkSelOn?' on':''}" id="mkselb" title="לסמן כמה לקוחות ולשלוח לכולם SMS / שיחה / מייל">☑️ בחירה לשליחה</button>
-        <span class="mkseg" id="mksort">${[['name','א–ב'],['code','מספר לקוח'],['last','כניסה אחרונה']].map(([k,l])=>`<button data-s="${k}" class="${mkSort===k?'on':''}">${l}</button>`).join('')}</span></span></div>
-      <div id="mksel"></div></div>
-    <div class="mklist" id="mkbody"></div>
-    <div class="mkempty hidden" id="mknone"><b>🔍</b>אין לקוחות שמתאימים לחיפוש</div></div>`;
+          <button class="mkibtn hidden" id="mksched">⏰ מתוזמנות</button></div></div></div></details></div>`;
   const qi=document.getElementById('mkq');
   qi.oninput=()=>{mkQ=q=qi.value.trim();const tq=document.getElementById('q');if(tq)tq.value=qi.value;mkPaint();};
   document.getElementById('mkchips').onclick=e=>{const b=e.target.closest('[data-g]');if(!b)return;mkGrp=b.dataset.g;
@@ -2494,6 +2496,10 @@ function renderMikveh(){
   document.getElementById('mksched').onclick=mkSchedOpen; mkSchedCount();
   document.getElementById('mklogb').onclick=()=>mkLogOpen();
   document.getElementById('mktowel').onclick=()=>{if(mkTowelOnly){mkTowelOnly=false;renderMikveh();}else mkTowelOpen();};
+  document.getElementById('mkfixstat').onclick=()=>{mkFixOnly=!mkFixOnly;if(mkFixOnly)mkTowelOnly=false;renderMikveh();};
+  const _side=document.getElementById('mkside');   // זוכר אם פתחת / סגרת את הצד
+  try{if(localStorage.getItem('mk_side')==='0')_side.open=false;}catch(e){}
+  _side.addEventListener('toggle',()=>{try{localStorage.setItem('mk_side',_side.open?'1':'0');}catch(e){}});
   const _mc=document.getElementById('mkcredit'); if(_mc)_mc.onclick=()=>mkCreditOpen('bal');
   const _mz=document.getElementById('mkzklist'); if(_mz)_mz.onclick=()=>mkCreditOpen('zk');
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
@@ -2538,7 +2544,8 @@ function mkRowHTML(c,G){
       <div class="mksub">${c.phone?`<span dir="ltr">${esc(c.phone)}</span>`:'<span>אין טלפון</span>'}<span>#${esc(c.code||'')}</span>
         ${c.last_in?`<span>🚪 ${esc(mkAgo(c.last_in))}</span>`:''}
         ${c.parent?'<span class="mktag mu">בן</span>':''}${c.blocked?`<span class="mktag bad" title="${esc(c.block_reason)}">חסום</span>`:''}
-        ${subBad?'<span class="mktag bad">המנוי הסתיים</span>':''}${licBad?'<span class="mktag bad">רישיון פג</span>':''}</div></div>
+        ${subBad?'<span class="mktag bad">המנוי הסתיים</span>':''}${licBad?'<span class="mktag bad">רישיון פג</span>':''}
+        ${c.fix?`<span class="mktag fix" title="מחיר מיוחד ללקוח במקווה (לא מחיר הקבוצה)">🏷️ מחיר מיוחד ₪${(+c.fix).toLocaleString('he-IL',{maximumFractionDigits:2})}</span>`:''}</div></div>
     <div class="mkgcol"><span class="mkgb"><span class="mkdot" style="background:${esc(mkColor(g))}"></span>${esc(g?g.name:'קבוצה שנמחקה')}</span></div>
     <div class="mkact"><button class="mkround mkmsg" title="${c.phone||mkHasMail(c)?'שליחת הודעה / מייל':'אין טלפון ומייל במקווה'}"${c.phone||mkHasMail(c)?'':' disabled'}>💬</button></div>
     ${c._busy?`<div class="mkbusy"><span class="mkspin"></span> ${esc(c._busy)}</div>`:''}</div>`;
@@ -2549,6 +2556,7 @@ function mkPaint(){
   const qq=(mkQ||'').trim(), qd=mkDigits(qq);
   let rows=MK.clients.filter(c=>{
     if(mkGrp&&c.group!==mkGrp)return false;
+    if(mkFixOnly)return !!c.fix&&(!qq||matchStr(mkName(c)+' '+(c.remark||''),qq));   // 🏷️ רק מחיר מיוחד (פעילים ומסתיימים יחד)
     if(mkTowelOnly)return mkTowel(c)&&(!qq||matchStr(mkName(c)+' '+(c.remark||''),qq));
     if(!qq)return mkExpired(c)===mkExp;          // בלי חיפוש — רק הרשימה שנבחרה למעלה
     if(qd&&qd.length>=3&&mkDigits(c.phone).indexOf(qd.replace(/^972/,'0'))>=0)return true;     // טלפון — גם עם מקפים / רווחים
@@ -2565,7 +2573,7 @@ function mkPaint(){
   body.innerHTML=rows.map(c=>mkRowHTML(c,G)).join('');
   const inG=MK.clients.filter(c=>!mkGrp||c.group===mkGrp), nOff=inG.filter(mkExpired).length;
   const n1=document.getElementById('mkn_on'),n2=document.getElementById('mkn_off');if(n1)n1.textContent=inG.length-nOff;if(n2)n2.textContent=nOff;
-  document.getElementById('mkcount').textContent=mkTowelOnly?'🧺 '+rows.length+' עם מנוי מגבות (לפי ההערות במקווה) — לחץ שוב על הקוביה כדי לחזור':qq?rows.length+' תוצאות (גם מי שהסתיים לו)':rows.length+' '+(mkExp?'שהסתיים להם / מזדמנים':'פעילים')+(mkGrp?' בקבוצה':'')+' · מתוך '+MK.clients.length+' לקוחות';
+  document.getElementById('mkcount').textContent=mkFixOnly?'🏷️ '+rows.length+' עם מחיר מיוחד — לחץ שוב על הקוביה כדי לחזור':mkTowelOnly?'🧺 '+rows.length+' עם מנוי מגבות (לפי ההערות במקווה) — לחץ שוב על הקוביה כדי לחזור':qq?rows.length+' תוצאות (גם מי שהסתיים לו)':rows.length+' '+(mkExp?'שהסתיים להם / מזדמנים':'פעילים')+(mkGrp?' בקבוצה':'')+' · מתוך '+MK.clients.length+' לקוחות';
   document.getElementById('mknone').classList.toggle('hidden',rows.length>0);
 }
 // ☑️ בחירה לשליחה — מסמנים לקוחות ברשימה (או את כל המוצגים: קבוצה / פעילים / חיפוש) ושולחים לכולם
