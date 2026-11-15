@@ -20386,6 +20386,76 @@ def mk_unpaid_run(days=30):
         MK_UNPAID.update(running=False, at=il_now().strftime('%Y-%m-%d %H:%M'))
 
 
+# 🧾 מאיר: "טוענים שהמערכת חידשה אוטומטית מנויים בלי שנגבה תשלום — מי יש לו מנוי בתוקף ולא רואים שום חיוב?"
+# בדיקה: כל לקוח עם מנוי בתוקף, שאין לו אף תשלום (מזומן / אשראי) ב-X החודשים האחרונים. שלב א' — יומן הפעילות
+# הכללי (בקשה אחת) לסינון מהיר של מי ששילם במכונה; שלב ב' — למי שלא נמצא לו, בדיקה פרטנית של היסטוריית התשלומים
+# שלו במקווה (תופס גם חיוב אוטומטי בכרטיס שלא עובר במכונה).
+MK_RENEW = {'running': False, 'done': 0, 'total': 0, 'rows': [], 'at': '', 'error': '', 'months': 3}
+
+
+def mk_renew_run(months=3):
+    import mikveh as _mk
+    from concurrent.futures import ThreadPoolExecutor
+    MK_RENEW.update(running=True, done=0, total=0, rows=[], error='', months=months)
+    try:
+        gr = {g['id']: g['name'] for g in _mk.groups()}
+        now = il_now().replace(tzinfo=None)
+        since = (now - datetime.timedelta(days=int(round(months * 30.4)))).strftime('%Y-%m-%d')
+        today = now.strftime('%Y-%m-%d')
+        cand = []
+        for c in _mk.clients(fresh=True):
+            if not _mk.visible(c) or (c.get('firstName') or '').strip().startswith('['):
+                continue
+            gname = gr.get(c.get('groupId'), '')
+            if 'מזדמ' in gname:
+                continue
+            if str(c.get('subscriptionEndDate') or '')[:10] < today:   # רק מנוי בתוקף עכשיו
+                continue
+            cand.append(c)
+        MK_RENEW['total'] = len(cand)
+        # שלב א' — מי ששילם במכונה (מזומן / אשראי) בתוך החלון, בבקשה אחת
+        paid = set()
+        try:
+            raw = _mk.attendance(since, (now + datetime.timedelta(days=1)).strftime('%Y-%m-%d'), pay_only=True)
+            for r in (raw or []):
+                n = _mk.att_norm(r)
+                if n['kind'] == 'pay' and n['cid'] and (n['amount'] or 0) > 0 and not re.search(r'נכשל|fail', n['text'], re.I):
+                    paid.add(str(n['cid']))
+        except Exception:
+            pass
+        out = []
+        days = int(round(months * 31)) + 5
+
+        def one(c):
+            cid = str(c.get('id'))
+            if cid in paid:
+                MK_RENEW['done'] += 1
+                return
+            try:
+                tx, src, _k = _mk.payments(cid, days=days)
+            except Exception:
+                tx = None
+            MK_RENEW['done'] += 1
+            if tx is None:
+                return
+            inwin = [t for t in tx if not t['failed'] and (t['amount'] or 0) > 0 and (t['iso'] or '') >= since]
+            if inwin:
+                return
+            last = next((t for t in tx if not t['failed'] and (t['amount'] or 0) > 0), None)
+            out.append({'id': cid, 'name': ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip(),
+                        'code': c.get('clientCode'), 'phone': (c.get('phone') or '').strip(), 'group': gr.get(c.get('groupId'), ''),
+                        'sub_start': str(c.get('subscriptionStartDate') or '')[:10], 'sub_end': str(c.get('subscriptionEndDate') or '')[:10],
+                        'auto': bool(c.get('autoRenewSubscription')), 'last_pay': last['iso'] if last else '', 'last_amt': last['amount'] if last else 0})
+        with ThreadPoolExecutor(5) as ex:
+            list(ex.map(one, cand))
+        out.sort(key=lambda r: (r['sub_end'] or '', r['name']))
+        MK_RENEW['rows'] = out
+    except Exception as e:
+        MK_RENEW['error'] = str(e)[:200]
+    finally:
+        MK_RENEW.update(running=False, at=il_now().strftime('%Y-%m-%d %H:%M'))
+
+
 # 🧺 מאיר: "יש 2 סוגי מנוי מגבות — קטנות 30 ש"ח לחודש, גדולות 50 ש"ח בחודש. החודש הזה חשון — 25 מגבות קטנות.
 # זה מתחיל מא' לחודש העברי". month — מחיר מיוחד לחודש עברי מסוים
 MK_TOWEL_DEF = {'small': 30, 'large': 50, 'month': {'חשון תשפ"ז': {'small': 25}}}   # מאיר: "לחשון זה מחיר מיוחד" 
@@ -25797,6 +25867,8 @@ class H(BaseHTTPRequestHandler):
                 con.close()
         if self.path.split('?')[0] == '/api/mikveh/unpaid':
             return self._send(200, dict(MK_UNPAID, ok=True))
+        if self.path.split('?')[0] == '/api/mikveh/renew_check':
+            return self._send(200, dict(MK_RENEW, ok=True))
         if self.path.split('?')[0] == '/api/nd/donate_cfg':
             # 💳 מאיר: "חלון לתרומות כמו שיש בנדרים פלוס — הוראת קבע בלי מסגרת, או ידני, ועבור מה… מסונכרן עם הקהילה".
             # הכרטיס נקלט בטופס המאובטח של נדרים פלוס (iframe) — מספר כרטיס לא עובר אצלנו. ApiValid — קוד ה-iframe
@@ -29363,6 +29435,12 @@ class H(BaseHTTPRequestHandler):
                 d = max(7, min(90, int(b.get('days') or 30)))
                 import threading as _th
                 _th.Thread(target=mk_unpaid_run, args=(d,), daemon=True).start()
+            return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/renew_check':
+            if not MK_RENEW['running']:
+                m = max(1, min(12, int(b.get('months') or 3)))
+                import threading as _th
+                _th.Thread(target=mk_renew_run, args=(m,), daemon=True).start()
             return self._send(200, {'ok': True})
         if self.path == '/api/nd/purposes':
             # 🏷️ מאיר: "איך אני מוסיף בתרומה חדשה עוד קטגוריות — כמו דמי חבר, וכל קטגוריה שארצה להוסיף ידנית"

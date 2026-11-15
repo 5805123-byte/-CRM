@@ -1844,6 +1844,36 @@ async function mkUnpaidOpen(start){
     const csv=['שם,טלפון,מספר לקוח,קבוצה,כניסה אחרונה,מנוי עד,תשלום אחרון,סכום'].concat(L.map(x=>[x.name,x.phone,x.code||'',x.group,x.last_in.replace('T',' '),x.sub_end,x.last_pay,x.last_amt||''].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='נכנס ולא שילם.csv';document.body.appendChild(a);a.click();a.remove();};
   if(r.running||start)setTimeout(()=>{if(document.getElementById('remov').classList.contains('show')&&rs.querySelector('h2')&&rs.querySelector('h2').textContent==='נכנס ולא שילם')mkUnpaidOpen();},2500);}
+// 🧾 מאיר: "טוענים שהמערכת חידשה מנויים אוטומטית בלי לגבות — מי יש לו מנוי בתוקף ולא רואים שום חיוב?"
+let mkRenewMonths=3;
+async function mkRenewCheck(start){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  remov.classList.add('show');
+  if(start)await api('POST','/api/mikveh/renew_check',{months:mkRenewMonths});
+  const r=await api('GET','/api/mikveh/renew_check').catch(()=>null)||{};
+  const d=x=>x?String(x).slice(8,10)+'/'+String(x).slice(5,7)+'/'+String(x).slice(0,4):'';
+  const L=r.rows||[]; const mon=r.months||mkRenewMonths;
+  rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#c0392b">🧾</div><div><h2>מנוי בלי חיוב</h2>
+      <div class="mksub">מי שיש לו מנוי בתוקף במקווה ולא נמצא לו <b>שום חיוב</b> (אשראי / מזומן) ב-${mon} החודשים האחרונים — לבדיקה אם המנוי חודש בלי שנגבה תשלום</div></div></div>
+    <div class="mktpl" style="margin:8px 0">${[1,2,3,6].map(m=>`<button class="mkchip${mkRenewMonths===m?' on':''}" data-mon="${m}" ${r.running?'disabled':''}>${m} חודשים</button>`).join('')}</div>
+    ${r.running?`<div class="mksub"><span class="mkspin"></span> בודק ${r.done||0} מתוך ${r.total||'…'} לקוחות עם מנוי בתוקף… (יכול לקחת דקה-שתיים)</div>`
+      :`<button class="btn sm" id="rnrun">${r.at?'🔄 לבדוק שוב':'▶️ לבנות את הרשימה'}</button>${r.at?` <span class="mksub">נבדק ${esc(r.at)} · ${r.total||0} מנויים בתוקף</span>`:''}`}
+    ${r.error?`<div class="hintxt" style="color:#c0392b">⚠️ ${esc(r.error)}</div>`:''}
+    ${!r.running&&r.at&&!r.error?`<div class="mksec" style="margin-top:10px">${L.length} מנויים בתוקף בלי חיוב ב-${mon} החודשים האחרונים</div>
+      <div class="mksub" style="margin:2px 2px 8px;color:#b9770e">⚠️ זו רשימה לבדיקה, לא הוכחה. מנוי שנתי ששולם מזמן, או מי ששילם במזומן ולא תועד, יכול להופיע כאן. בדקו כל אחד לגופו.</div>
+      <div class="mklist">${L.map(x=>`<div class="mkrow" data-rn="${esc(x.id)}" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc(x.name)}</b>
+        <div class="mksub"><span dir="ltr">${esc(x.phone||'אין טלפון')}</span> · #${esc(x.code||'')} · ${esc(x.group)}${x.auto?' · <span class="mktag ok">חידוש אוטומטי פעיל</span>':''}</div>
+        <div class="mksub">${x.sub_start?'מנוי מ-'+d(x.sub_start)+' ':''}· ${x.last_pay?'תשלום אחרון שנמצא '+d(x.last_pay)+' ('+esc(mkNis(x.last_amt))+')':'<b style="color:#c0392b">לא נמצא אף תשלום</b>'}</div></div>
+        <span class="mktag ${mkPast(x.sub_end)?'bad':'ok'}">מנוי עד ${esc(mkDate(x.sub_end))}</span></div>`).join('')||'<div class="hintxt">✓ לכל מנוי בתוקף נמצא חיוב בתקופה</div>'}</div>
+      ${L.length?'<button class="btn sm" id="rncsv" style="margin-top:8px">⬇️ אקסל</button>':''}`:''}`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('[data-mon]').forEach(b=>b.onclick=()=>{mkRenewMonths=+b.dataset.mon;mkRenewCheck();});
+  const b=document.getElementById('rnrun');if(b)b.onclick=()=>mkRenewCheck(true);
+  rs.querySelectorAll('[data-rn]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.rn);if(c)mkOpen(c);});
+  const cv=document.getElementById('rncsv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const csv=['שם,טלפון,מספר לקוח,קבוצה,מנוי מ,מנוי עד,חידוש אוטומטי,תשלום אחרון,סכום'].concat(L.map(x=>[x.name,x.phone,x.code||'',x.group,x.sub_start,x.sub_end,x.auto?'כן':'לא',x.last_pay,x.last_amt||''].map(q).join(','))).join('\n');
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='מנוי בלי חיוב.csv';document.body.appendChild(a);a.click();a.remove();};
+  if(r.running||start)setTimeout(()=>{if(document.getElementById('remov').classList.contains('show')&&rs.querySelector('h2')&&rs.querySelector('h2').textContent==='מנוי בלי חיוב')mkRenewCheck();},2500);}
 // 🔎 מאיר: "יש לקוחות שמכניסים טלפונים אחרים ממה שמעודכן במקווה — שיהיה חכם ויבדוק אם יש שם דומה ויציע,
 // שיראו שהוא לא קיים וזה רק הצעה, או שיבדוק לפי מייל וכו'". exact = אותו טלפון בדיוק; sug = הצעות בלבד, עם הסיבה
 const mkN9=p=>{const d=String(p||'').replace(/\D/g,'').replace(/^972/,'0');return d.length>=9&&d.length<=10?d.slice(-9):'';};
@@ -2480,7 +2510,8 @@ function renderMikveh(){
           <button class="mkibtn" id="mkmonb1" title="מי התקשר לשלוחות, חובות הפרש פתוחים, והאם הבדיקה האוטומטית פועלת">📡 מעקב — שיחות וחובות</button>
           <button class="mkibtn" id="mkdebtsb" title="כל החובות הפתוחים במקווה — מי חייב, כמה ועל מה">🧾 חובות פתוחים</button>
       <button class="mkibtn" id="mkgrpw" title="סוגי המנוי במקווה — והעתקה של מנוי עם כל השעות וההגדרות">📋 סוגי מנוי</button>
-      <button class="mkibtn" id="mkexpchk" title="מי שהמנוי או הרישיון שלו הסתיים, ולמה (חידוש אוטומטי כבוי / אין אמצעי תשלום / חיוב נכשל)">🔍 בדיקת פג תוקף</button></div></div>
+      <button class="mkibtn" id="mkexpchk" title="מי שהמנוי או הרישיון שלו הסתיים, ולמה (חידוש אוטומטי כבוי / אין אמצעי תשלום / חיוב נכשל)">🔍 בדיקת פג תוקף</button>
+      <button class="mkibtn" id="mkrenewchk" title="מי שיש לו מנוי בתוקף ולא נמצא לו שום חיוב בחודשים האחרונים — לבדיקה אם חודש בלי שנגבה תשלום">🧾 מנוי בלי חיוב</button></div></div>
         <div class="mkhg"><span>💬 פניות והודעות</span><div><button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📨 פניות מנדרים${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
           <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
           <button class="mkibtn hidden" id="mksched">⏰ מתוזמנות</button></div></div></div></details></div>`;
@@ -2501,6 +2532,7 @@ function renderMikveh(){
   const _mc=document.getElementById('mkcredit'); if(_mc)_mc.onclick=()=>mkCreditOpen('bal');
   const _mz=document.getElementById('mkzklist'); if(_mz)_mz.onclick=()=>mkCreditOpen('zk');
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
+  document.getElementById('mkrenewchk').onclick=()=>mkRenewCheck();
   document.getElementById('mkgrpw').onclick=()=>mkGroupsWin();
   document.getElementById('mkselfg').onclick=()=>mkSelfGroupOpen();
   document.getElementById('mkvmb').onclick=()=>mkVmOpen();
