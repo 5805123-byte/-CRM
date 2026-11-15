@@ -600,10 +600,20 @@ details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;ma
   .mkempty{text-align:center;color:var(--muted);padding:50px 10px}.mkempty b{display:block;font-size:2.2rem;margin-bottom:6px}
   @media (max-width:640px){.mkrow{grid-template-columns:auto 1fr auto;gap:10px}.mkrow .mkgcol{grid-column:2/4;grid-row:2}.mkhero{padding:14px}.mkstat{min-width:60px}}
   /* כרטיס לקוח */
-  .mkhead{display:flex;gap:14px;align-items:center;margin:4px 0 14px}.mkhead h2{margin:0;font-size:1.3rem}.mkhead .mksub{font-size:.85rem}
-  .mktiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:14px}
-  .mktile{background:var(--ground);border:1px solid var(--line);border-radius:12px;padding:9px 11px}.mktile span{display:block;color:var(--muted);font-size:.74rem;font-weight:700}.mktile b{font-size:.98rem}
+  .mkhead{display:flex;gap:14px;align-items:center;margin:4px 0 16px;padding-bottom:14px;border-bottom:1px solid var(--line)}.mkhead h2{margin:0;font-size:1.32rem}.mkhead .mksub{font-size:.85rem}
+  .mkhead .mkav.lg{box-shadow:0 0 0 3px var(--card),0 0 0 4px var(--line),0 6px 16px rgba(16,20,40,.14)}
+  body.mkfull .sheet{max-width:680px}
+  .mktiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px;margin-bottom:14px}
+  .mktile{background:linear-gradient(180deg,var(--card),var(--ground));border:1px solid var(--line);border-radius:14px;padding:11px 13px;box-shadow:0 1px 2px rgba(16,20,40,.04)}
+  .mktile span{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:.74rem;font-weight:700;margin-bottom:3px}.mktile b{font-size:1.02rem}
   .mktile.bad{background:var(--no-soft);border-color:transparent}.mktile.bad b{color:var(--no)}.mktile.ok b{color:var(--yes)}
+  /* ✨ אייקוני קו יוקרתיים */
+  .mkico{width:17px;height:17px;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;opacity:.8}
+  .mkbtn .mkico,.mktile b .mkico{opacity:1}
+  /* 🏷️ אריח מחיר מיוחד — זהב */
+  .mktile.special{background:linear-gradient(180deg,#fffaf0,#fdf1d8);border-color:#e7c478;box-shadow:0 2px 10px rgba(185,119,14,.14)}
+  .mktile.special span{color:#9a6b12}.mktile.special b{color:#8a5e0a}.mktile.special .mkico{color:#c79324;opacity:1}
+  .mktile.special small{display:block;color:#b0894a;font-weight:600;font-size:.72rem}
   .mksec{font-weight:800;margin:14px 0 8px;display:flex;align-items:center;gap:8px}.mksec small{color:var(--muted);font-weight:600}
   .mkgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:7px}
   .mkg{position:relative;text-align:start;border:1.5px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:10px 12px 10px 10px;font:inherit;font-size:.86rem;font-weight:700;cursor:pointer;display:flex;gap:8px;align-items:center;transition:border-color .12s,background .12s}

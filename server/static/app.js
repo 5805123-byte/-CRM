@@ -2798,6 +2798,26 @@ async function mkSetGroup(c,g,on,diff){
 // כרטיס לקוח: הפרטים כאריחים, הקבוצות כלחצנים. בחירה → שורת אישור למטה → "מעביר…" עם ספינר
 // ושניות → ✓ → חלון הודעה מוכן. הלקוח נטען מהמקווה כבר כשהכרטיס נפתח, כדי שההעברה תהיה מהירה.
 let MKCT='grp';const MKLOCK={};
+// ✨ מאיר: "תעשה אייקונים יותר יוקרתיים" — סט אייקוני קו דקים (SVG) במקום אימוג'י, בכרטיס הלקוח
+const MKICO={
+  group:'<path d="M12 3l9 4-9 4-9-4 9-4z"/><path d="M3 12l9 4 9-4"/><path d="M3 17l9 4 9-4"/>',
+  price:'<path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0l-7.1-7.1A2 2 0 013 12V5a2 2 0 012-2h7a2 2 0 011.4.6l7.2 7.2a2 2 0 010 2.6z"/><circle cx="7.5" cy="7.5" r="1.3"/>',
+  card:'<rect x="2.5" y="5" width="19" height="14" rx="2.3"/><path d="M2.5 10h19"/>',
+  cal:'<rect x="3" y="4.5" width="18" height="17" rx="2.3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/>',
+  license:'<circle cx="12" cy="8.5" r="5"/><path d="M8.5 12.5L7 21l5-2.8 5 2.8-1.5-8.5"/>',
+  towel:'<rect x="4.5" y="3.5" width="15" height="17" rx="2"/><path d="M9 3.5v17"/><path d="M12.5 8h4M12.5 11h4"/>',
+  door:'<path d="M3 21h18"/><path d="M6 21V4.5a1.5 1.5 0 011.5-1.5h9A1.5 1.5 0 0118 4.5V21"/><circle cx="14.5" cy="12" r="1"/>',
+  coins:'<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3V6"/><path d="M4 12v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/>',
+  wallet:'<path d="M3 7.5A2.5 2.5 0 015.5 5H18a2 2 0 012 2v1"/><path d="M3 7.5V18a2 2 0 002 2h14a2 2 0 002-2v-6a2 2 0 00-2-2H5.5"/><circle cx="17" cy="13.5" r="1.3"/>',
+  finger:'<path d="M12 11a1.8 1.8 0 00-1.8 1.8V17"/><path d="M12 7.2A4.8 4.8 0 007.2 12v3"/><path d="M15.8 12A3.8 3.8 0 0012 8.2"/><path d="M14 13v3.5"/>',
+  gem:'<path d="M6 3h12l3 5.2-9 12.8L3 8.2z"/><path d="M3 8.2h18M9.5 3L6.5 8.2 12 21M14.5 3l3 5.2L12 21"/>',
+  phone:'<path d="M5 4.5h3.6l1.7 4.3-2.3 1.6a12 12 0 005.6 5.6l1.6-2.3 4.3 1.7V19a2 2 0 01-2 2A16 16 0 013 6.5a2 2 0 012-2z"/>',
+  mail:'<rect x="3" y="5" width="18" height="14" rx="2.3"/><path d="M3.5 7l8.5 6 8.5-6"/>',
+  chat:'<path d="M21 14.5a2 2 0 01-2 2H8l-5 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>',
+  block:'<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
+  lock:'<rect x="5" y="11" width="14" height="10" rx="2.2"/><path d="M8 11V7.5a4 4 0 018 0V11"/>',
+  renew:'<path d="M4 12a8 8 0 0113.7-5.7L21 9"/><path d="M20 4v5h-5"/><path d="M20 12a8 8 0 01-13.7 5.7L3 15"/><path d="M4 20v-5h5"/>'};
+const mkIco=(n,cls)=>`<svg class="mkico${cls?' '+cls:''}" viewBox="0 0 24 24" aria-hidden="true">${MKICO[n]||''}</svg>`;
 function mkOpen(c){
   if(!c)return;
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
@@ -2817,7 +2837,7 @@ function mkOpen(c){
     el.querySelector('b').textContent=mkMoney(r.balance);
   }).catch(()=>{});
   let pick=null, state='', info='';
-  const tile=(l,v,cls)=>v?`<div class="mktile ${cls||''}"><span>${l}</span><b>${v}</b></div>`:'';
+  const tile=(l,v,cls,ic)=>v?`<div class="mktile ${cls||''}"><span>${ic?mkIco(ic)+' ':''}${l}</span><b>${v}</b></div>`:'';
   const bal=c.balance!=null?mkMoney(c.balance):(c.last_balance!=null?mkMoney(c.last_balance):'');
   const draw=()=>{
     const g=G[c.group];
@@ -2829,23 +2849,24 @@ function mkOpen(c){
           ${c.phone?`<button class="mkbtn gh" id="mkkl" style="padding:6px 12px;font-size:.9rem" title="קישור אישי — לכבוד ר'… עדכון לגבי המקווה: פרטים וכרטיס אשראי בנדרים פלוס">💧 קישור אישי — וואטסאפ / מייל</button>`:''}
           ${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
       <div class="mktiles">
-        ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`)}
-        <div class="mktile mkedit" id="mkprice" title="לחיצה — לשנות את המחיר"><span>💲 מחיר המנוי${c.price!=null?' (אישי)':' (של הקבוצה)'} ✎</span><b>${c.price!=null?mkNis(c.price):(g&&g.price!=null?mkNis(g.price):'—')}</b></div>
-        <div class="mktile" id="mkpaid" data-id="${esc(c.id)}" title="מה ששילם במקווה (במכשיר / במערכת המקווה)"><span>💳 שילם במקווה</span><b>${mkPaidTxt(c.id)}</b></div>
-        <div class="mktile mkedit ${mkPast(c.sub_end)?'bad':'ok'}" id="mksub" title="לחיצה — לשנות את תאריך ההתחלה / הסיום של המנוי במקווה"><span>📅 מנוי עד ✎</span><b>${esc(mkDate(c.sub_end))||'—'}</b>${c.sub_end&&hebOfIso(c.sub_end)?`<small style="display:block;color:#555">${esc(hebOfIso(c.sub_end))}</small>`:''}${c.sub_start?`<small style="display:block;color:#777">מ-${esc(mkDate(c.sub_start))}${hebOfIso(c.sub_start)?' · '+esc(hebOfIso(c.sub_start)):''}</small>`:''}</div>
-        ${tile('רישיון עד',esc(mkDate(c.lic_exp)),mkPast(c.lic_exp)?'bad':'')}
-        <div class="mktile mkedit ${mkTowel(c)?'ok':''}" id="mktwl" title="לחיצה — להוסיף / להסיר מנוי מגבות (מתעדכן במקווה)"><span>🧺 מנוי מגבות ✎</span><b>${mkTowel(c)?({small:'קטנות',large:'גדולות'}[mkTowelSize(c)]||'כן')+(mkTwPr(c)!=null?' · ₪'+esc(mkTwPr(c))+(MKTW&&MKTW.hmonth?' <small>('+esc(MKTW.hmonth.split(' ')[0])+')</small>':''):''):'לא'}</b></div>
-        ${mkTowel(c)&&mkTwPr(c)!=null&&(c.price!=null||(g&&g.price!=null))?`<div class="mktile ok"><span>💰 סה״כ לחודש${MKTW&&MKTW.hmonth?' '+esc(MKTW.hmonth.split(' ')[0]):''}</span><b>${mkNis((c.price!=null?c.price:g.price)+mkTwPr(c))}</b><small style="display:block;color:#777">מנוי ${mkNis(c.price!=null?c.price:g.price)} + מגבות ₪${esc(mkTwPr(c))}</small></div>`:''}
-        ${tile('כניסה אחרונה',esc(mkAgo(c.last_in)))}
-        <div class="mktile mkedit${c.balance!=null&&c.balance<0?' bad':''}" id="mkbal" title="לחיצה — לעדכן את היתרה במקווה (למשל: נתן חלק במזומן)"><span>💰 ערך צבור (פעימות)${c.balance==null&&c.last_balance!=null?' (אחרונה)':''} ✎</span><b>${bal||'—'}</b></div>
-        <div class="mktile mkedit" id="mkzk" title="לחיצה — להוסיף / להוריד זיכוי (יתרה זמנית) במקווה"><span>💳 זיכוי (יתרה זמנית) ✎</span><b>${c.temp_balance!=null?mkMoney(c.temp_balance):'—'}</b></div>
-        ${tile('טביעת אצבע',c.finger?'✓ רשומה':'')}
+        ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`,'','group')}
+        <div class="mktile mkedit" id="mkprice" title="לחיצה — לשנות את המחיר"><span>${mkIco('price')} מחיר המנוי${c.price!=null?' (אישי)':' (של הקבוצה)'} ✎</span><b>${c.price!=null?mkNis(c.price):(g&&g.price!=null?mkNis(g.price):'—')}</b></div>
+        ${c.fix?`<div class="mktile special" id="mkfixtile" title="מחיר מיוחד ללקוח במקווה — גובר על מחיר הקבוצה. במעבר מנוי הוא נמחק"><span>${mkIco('gem')} מחיר מיוחד</span><b>${mkNis(c.fix)}</b><small>במקום מחיר הקבוצה</small></div>`:''}
+        <div class="mktile" id="mkpaid" data-id="${esc(c.id)}" title="מה ששילם במקווה (במכשיר / במערכת המקווה)"><span>${mkIco('card')} שילם במקווה</span><b>${mkPaidTxt(c.id)}</b></div>
+        <div class="mktile mkedit ${mkPast(c.sub_end)?'bad':'ok'}" id="mksub" title="לחיצה — לשנות את תאריך ההתחלה / הסיום של המנוי במקווה"><span>${mkIco('cal')} מנוי עד ✎</span><b>${esc(mkDate(c.sub_end))||'—'}</b>${c.sub_end&&hebOfIso(c.sub_end)?`<small style="display:block;color:#555">${esc(hebOfIso(c.sub_end))}</small>`:''}${c.sub_start?`<small style="display:block;color:#777">מ-${esc(mkDate(c.sub_start))}${hebOfIso(c.sub_start)?' · '+esc(hebOfIso(c.sub_start)):''}</small>`:''}</div>
+        ${tile('רישיון עד',esc(mkDate(c.lic_exp)),mkPast(c.lic_exp)?'bad':'','license')}
+        <div class="mktile mkedit ${mkTowel(c)?'ok':''}" id="mktwl" title="לחיצה — להוסיף / להסיר מנוי מגבות (מתעדכן במקווה)"><span>${mkIco('towel')} מנוי מגבות ✎</span><b>${mkTowel(c)?({small:'קטנות',large:'גדולות'}[mkTowelSize(c)]||'כן')+(mkTwPr(c)!=null?' · ₪'+esc(mkTwPr(c))+(MKTW&&MKTW.hmonth?' <small>('+esc(MKTW.hmonth.split(' ')[0])+')</small>':''):''):'לא'}</b></div>
+        ${mkTowel(c)&&mkTwPr(c)!=null&&(c.price!=null||(g&&g.price!=null))?`<div class="mktile ok"><span>${mkIco('coins')} סה״כ לחודש${MKTW&&MKTW.hmonth?' '+esc(MKTW.hmonth.split(' ')[0]):''}</span><b>${mkNis((c.price!=null?c.price:g.price)+mkTwPr(c))}</b><small style="display:block;color:#777">מנוי ${mkNis(c.price!=null?c.price:g.price)} + מגבות ₪${esc(mkTwPr(c))}</small></div>`:''}
+        ${tile('כניסה אחרונה',esc(mkAgo(c.last_in)),'','door')}
+        <div class="mktile mkedit${c.balance!=null&&c.balance<0?' bad':''}" id="mkbal" title="לחיצה — לעדכן את היתרה במקווה (למשל: נתן חלק במזומן)"><span>${mkIco('coins')} ערך צבור (פעימות)${c.balance==null&&c.last_balance!=null?' (אחרונה)':''} ✎</span><b>${bal||'—'}</b></div>
+        <div class="mktile mkedit" id="mkzk" title="לחיצה — להוסיף / להוריד זיכוי (יתרה זמנית) במקווה"><span>${mkIco('wallet')} זיכוי (יתרה זמנית) ✎</span><b>${c.temp_balance!=null?mkMoney(c.temp_balance):'—'}</b></div>
+        ${tile('טביעת אצבע',c.finger?'✓ רשומה':'','','finger')}
       </div>
       <div style="display:flex;gap:8px;margin:14px 0 4px;align-items:center;flex-wrap:wrap">
-        <button class="mkbtn gh" id="mkmsg1"${c.phone||mkHasMail(c)?'':' disabled'}>💬 הודעה / ✉️ מייל</button>
-        <button class="mkbtn gh" id="mkzikui" title="יתרה זמנית (זיכוי) במקווה — להוסיף או להוריד">💳 זיכוי</button>
-        <button class="mkbtn gh" id="mkblock" title="${c.blocked?'לבטל את החסימה במקווה':'לחסום את הלקוח במקווה (לא ייכנס)'}">${c.blocked?'✅ ביטול חסימה':'⛔ חסימה'}</button>
-        <button class="mkbtn gh" id="mklock" title="נעילה — לא יוכל להחליף קבוצה בשלוחה בטלפון">${MKLOCK[c.id]?'🔓 ביטול נעילת החלפה':'🔒 נעילת החלפה בטלפון'}</button>
+        <button class="mkbtn gh" id="mkmsg1"${c.phone||mkHasMail(c)?'':' disabled'}>${mkIco('chat')} הודעה / מייל</button>
+        <button class="mkbtn gh" id="mkzikui" title="יתרה זמנית (זיכוי) במקווה — להוסיף או להוריד">${mkIco('wallet')} זיכוי</button>
+        <button class="mkbtn gh" id="mkblock" title="${c.blocked?'לבטל את החסימה במקווה':'לחסום את הלקוח במקווה (לא ייכנס)'}">${c.blocked?mkIco('block')+' ביטול חסימה':mkIco('block')+' חסימה'}</button>
+        <button class="mkbtn gh" id="mklock" title="נעילה — לא יוכל להחליף קבוצה בשלוחה בטלפון">${MKLOCK[c.id]?mkIco('lock')+' ביטול נעילת החלפה':mkIco('lock')+' נעילת החלפה בטלפון'}</button>
         <span id="mksent" data-id="${esc(c.id)}" style="font-weight:700;color:var(--muted)">${mkSentTxt(c)}</span></div>
       ${MKLOCK[c.id]?'<div class="mksub" style="color:#c0392b;font-weight:700">🔒 נעול — לא יכול להחליף קבוצה בשלוחה בטלפון</div>':''}
       <div class="mkseg" id="mkctabs" style="margin:12px 0 10px;flex-wrap:wrap">${[['grp','🔄 קבוצה ומנוי'],['money','💳 תשלומים וחובות'],['hist','📜 היסטוריה והודעות'],['act','🗓️ פעילות']].map(([k,l])=>`<button data-t="${k}" class="${MKCT===k?'on':''}">${l}</button>`).join('')}</div>
