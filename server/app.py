@@ -18414,6 +18414,47 @@ def klink_rc_of_tx(con, tid, don_id=None):
     return 0, 0
 
 
+def _klink_name_toks(s):
+    s = re.sub(r'[֑-ׇ"\'׳״`]', '', str(s or '')).translate(str.maketrans('ךםןףץ', 'כמנפצ'))
+    return frozenset(w for w in re.sub(r'[^א-תa-zA-Z ]', ' ', s).lower().split() if w)
+
+
+def klink_rc_name_tx(con, pid, have):
+    """מאיר: "תבדוק לפי השם ליפשיץ אברהם, אברהם ליפשיץ… בכל הווריאציות, אצל כולם" — תשלומים לחשבון של הכולל
+    שלא שויכו לחבר (טלפון אחר / הוראה לא מקושרת), אבל השם בהם הוא בדיוק השם שלו (בכל סדר). בלי ניחוש:
+    רק כשאין עוד חבר קהילה פעיל באותו שם, והטלפון בתשלום לא שייך לחבר אחר, והתשלום לא שויך לחבר אחר
+    או לכרטיס תורם בשם אחר."""
+    m = con.execute("SELECT * FROM members WHERE id=?", (pid,)).fetchone()
+    if not m or ('nd_nomatch' in m.keys() and m['nd_nomatch']):
+        return []
+    want = _klink_name_toks((m['first'] or '') + ' ' + (m['last'] or ''))
+    last = (m['last'] or '').strip()
+    if len(want) < 2 or not last:
+        return []
+    if sum(1 for r in con.execute("SELECT first, last FROM members WHERE COALESCE(active,1)=1 AND last LIKE ?", ('%' + last + '%',))
+           if _klink_name_toks((r['first'] or '') + ' ' + (r['last'] or '')) == want) > 1:
+        return []
+    pidx = nd_member_index(con)
+    out = []
+    for t in con.execute("SELECT * FROM nd_tx WHERE COALESCE(mosad,'')='' AND amount>0 AND (member_id IS NULL OR member_id=?) AND name LIKE ?",
+                         (pid, '%' + last + '%')).fetchall():
+        if str(t['id']) in have or _klink_name_toks(t['name']) != want:
+            continue
+        if not re.fullmatch(r'\d{4}-\d\d-\d\d', str(t['iso'] or '')[:10]):
+            continue
+        owners = set()
+        for ph in _phones_of(t['phone'] or ''):
+            owners |= pidx.get(ph, set())
+        if owners - {pid}:
+            continue                         # הטלפון של חבר אחר
+        if t['donor_id']:
+            d = con.execute("SELECT first, last FROM donors WHERE id=?", (t['donor_id'],)).fetchone()
+            if d and _klink_name_toks((d['first'] or '') + ' ' + (d['last'] or '')) != want:
+                continue                     # שויך לתורם בשם אחר
+        out.append(t)
+    return out
+
+
 def klink_rc_items(con, kind, pid):
     """התשלומים בשקלים לכולל בנדרים פלוס (חבר — מהעסקאות שלו; תורם — מהתרומות שנכנסו מנדרים פלוס),
     לכל אחד: מפתח, תאריך, סכום, עבור, והקבלה שכבר הופקה (אם יש)."""
@@ -18436,6 +18477,11 @@ def klink_rc_items(con, kind, pid):
             rc, num = klink_rc_of_tx(con, str(t['id']))
             out.append({'key': 't' + str(t['id']), 'date': iso, 'amount': amt, 'auto': auto,
                         'what': 'הוראת קבע' if auto else ((t.get('groupe') or '').strip()[:40] or 'תרומה'), 'rc': rc, 'num': num})
+        for t in klink_rc_name_tx(con, pid, {str(t['id']) for t in (nd.get('tx') or [])}):
+            auto = bool(t['keva']) and not str(t['keva']).startswith('-')
+            rc, num = klink_rc_of_tx(con, str(t['id']))
+            out.append({'key': 't' + str(t['id']), 'date': str(t['iso'])[:10], 'amount': round(float(t['amount']), 2), 'auto': auto,
+                        'what': 'הוראת קבע' if auto else ((t['groupe'] or '').strip()[:40] or 'תרומה'), 'rc': rc, 'num': num})
     elif kind == 'd':
         for r in con.execute("SELECT d.id, d.date, d.amount, d.category, d.note, d.tid FROM donations d "
                              "WHERE d.donor_id=? AND COALESCE(d.tid,'') LIKE 'ND%' AND COALESCE(d.paid,1)=1 "
