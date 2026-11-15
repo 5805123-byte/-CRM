@@ -17122,7 +17122,8 @@ def receipt_issue_ez(con, don_id, email='', address='', phone='', send=True, nam
     if mm:
         crn = mm.group(2)
     ok, res = _ez.send_receipt(name=name, email=email, amount=row['amount'], currency='ILS', date=(row['date'] or '')[:10],
-                               purpose=(row['category'] or '').strip() or 'תרומה לכולל חצות', method=row['method'] or '',
+                               purpose={'קבוע': 'תרומה בהוראת קבע', 'כללי': 'תרומה לכולל חצות'}.get((row['category'] or '').strip(), (row['category'] or '').strip()) or 'תרומה לכולל חצות',
+                               method=row['method'] or '',
                                note=note, address=address, phone=phone, require_email=False, crn=crn)
     if not ok:
         return None, str(res)
@@ -17320,7 +17321,7 @@ def donor_suggest(con, name, limit=6):
     return [x[1] for x in out[:limit]]
 
 
-def receipt_issue_member(con, member_id, amount, date='', purpose='', email='', send=False, key='', method=''):
+def receipt_issue_member(con, member_id, amount, date='', purpose='', email='', send=False, key='', method='', crn=''):
     """קבלה ישראלית לחבר קהילה — מאיר: "בכרטיס של חבר הקהילה… גם להוציא קבלות משם". בלי שורת
     תרומה (הקהילה נפרדת מהתורמים): דרך איזיקאונט אם מוגדר, אחרת בעיצוב שלנו. key — מזהה
     העסקה בנדרים פלוס, כדי שלא תופק פעמיים על אותה עסקה."""
@@ -17335,15 +17336,17 @@ def receipt_issue_member(con, member_id, amount, date='', purpose='', email='', 
     purpose = (purpose or '').strip() or 'תרומה'
     note = 'member:%d' % member_id + ((' nd:' + key) if key else '')
     if key:
-        ex = con.execute("SELECT id FROM receipt_docs WHERE kind='il' AND note LIKE ?", ('%nd:' + key + '%',)).fetchone()
-        if ex:
-            return receipt_doc(con, ex['id']), ''
+        # בדיוק אותה עסקה — "nd:123" לא נחשב קבלה של "nd:1234"
+        for ex in con.execute("SELECT id, note FROM receipt_docs WHERE kind='il' AND note LIKE ? ORDER BY id DESC", ('%nd:' + key + '%',)).fetchall():
+            if re.search(r'nd:' + re.escape(key) + r'(?![\w])', ex['note'] or ''):
+                return receipt_doc(con, ex['id']), ''
+    crn = re.sub(r'\D', '', str(crn or ''))[:9]
     email = (email or '').strip() or (emails_of(m['email'])[0] if m['email'] else '')
     addr = ', '.join(x for x in (str(m['addr'] or '').strip(), str(m['city'] or '').strip()) if x)
     if ez_ready():
         import ezcount as _ez
         ok, res = _ez.send_receipt(name=name, email=email if send else '', amount=amt, currency='ILS', date=date, purpose=purpose,
-                                   method=method or 'אשראי', note='', address=addr, phone=(m['phone'] or '').strip(), require_email=False)
+                                   method=method or 'אשראי', note='', address=addr, phone=(m['phone'] or '').strip(), require_email=False, crn=crn)
         if not ok:
             return None, str(res)
         docnum = str(res.get('docnum') or '')
@@ -17373,7 +17376,7 @@ def receipt_issue_member(con, member_id, amount, date='', purpose='', email='', 
         heb = greg_to_heb_full(date)
     except Exception:
         heb = ''
-    info = {'donation_id': None, 'donor_id': None, 'name': name, 'tz': '', 'addr': addr, 'amount': amt,
+    info = {'donation_id': None, 'donor_id': None, 'name': name, 'tz': ('ת.ז. ' + crn) if crn else '', 'addr': addr, 'amount': amt,
             'words': _il.amount_words(amt), 'date': date, 'date_heb': heb, 'method': method or 'כרטיס אשראי', 'ref': '' if key.startswith('cm') else key,
             'purpose': purpose, 'num': num, 'org': _il.org_settings(con, kv_get), 'issued': today_iso(), 'email': email}
     pdf, _f = _il.receipt_file(con, 0, 'pdf', STATIC, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_full, info=info)
@@ -18034,68 +18037,202 @@ def klink_mail_html(body, url):
             '</td></tr></table></body></html>' % ''.join(out))
 
 
-KLINK_PAGE = r'''<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+KLINK_PAGE = r'''<!doctype html><html lang="he" dir="rtl" translate="no" class="notranslate"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="google" content="notranslate">
 <title>{{TITLE}}</title><meta property="og:title" content="{{TITLE}}">
 <meta property="og:description" content="דף אישי ומאובטח · לחצו לעדכון">
 <meta property="og:image" content="{{BASE}}/{{OGIMG}}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:type" content="website">
-<style>body{margin:0;background:#efe9db;font-family:Arial,Helvetica,sans-serif;color:#3a2f1a}
-.wrap{max-width:560px;margin:22px auto;padding:0 0 26px;background:#fffdf8;border:1px solid #c9b57a;border-radius:6px;box-shadow:0 10px 30px rgba(90,70,30,.12)}
-@media(max-width:600px){.wrap{margin:10px 8px}}.in{padding:0 20px}.hd{text-align:center;padding:14px 16px 10px;border-bottom:1px solid #c9b57a;margin:0 20px 6px}
-.hd img{width:64px}.hi{font-size:20px;font-weight:bold;color:#7a1f1f;margin:14px 0 4px}.sub{font-size:14px;color:#6b6249}
-h3{font-size:17px;color:#7a1f1f;margin:26px 0 10px;background:#f6f1e5;border:1px solid #e3d3a3;border-right:5px solid #9c7a2e;padding:9px 12px;border-radius:4px}
-label{display:block;font-size:14px;color:#6b6249;margin:10px 0 3px}input{width:100%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:11px;font:inherit;font-size:17px;background:#fffdf7}
-input.ltr{direction:ltr;text-align:right}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-button,a.btn{display:block;width:100%;box-sizing:border-box;text-align:center;text-decoration:none;margin-top:14px;background:#7a1f1f;color:#fff;border:2px solid #9c7a2e;border-radius:12px;padding:14px;font:inherit;font-size:18px;font-weight:bold;cursor:pointer}
-button.gold{background:#9c7a2e;border-color:#7a1f1f}button:disabled{opacity:.55;cursor:default}
-.keva{background:#fffdf7;border:1px solid #d9cfb5;border-radius:10px;padding:12px;margin-top:10px}.keva b{color:#7a1f1f}.bad{color:#8f2a1b;font-size:14px;margin-top:4px}
-.small{font-size:13px;color:#6b6249;margin-top:6px;line-height:1.5}.ok{background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:13px;font-size:16px;margin-top:12px}
-.err{color:#8f2a1b;font-size:15px;margin-top:10px}.err:not(:empty){background:#fde8e4;border:1px solid #e3a094;border-radius:8px;padding:10px 12px}
-.amts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.amts span{flex:1;min-width:60px;text-align:center;border:1px solid #d9cfb5;border-radius:8px;padding:9px 4px;cursor:pointer;background:#fffdf7;font-weight:bold}
-.amts span.on{background:#f3e3a8;border-color:#9c7a2e}.foot{text-align:center;font-size:12px;color:#6b6249;margin-top:26px;line-height:1.6}
-.cal{background:#fffdf7;border:1px solid #d9cfb5;border-radius:10px;padding:10px;margin-top:12px}.calhd{display:flex;align-items:center;justify-content:space-between;font-weight:bold;color:#7a1f1f;font-size:17px}
-.calnav{width:auto!important;margin:0!important;padding:4px 14px!important;font-size:22px!important;background:#fffdf7!important;color:#7a1f1f!important;border:1px solid #d9cfb5!important}
-.calgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px}.cd{border:1px solid #d9cfb5;border-radius:8px;padding:6px 2px;text-align:center;cursor:pointer;background:#e8f3ea;line-height:1.25}
-.cd b{display:block;font-size:17px}.cd small{display:block;font-size:11px;color:#6b6249}.cd.taken{background:#ececec;color:#9a9a9a;cursor:not-allowed}.cd.block{background:#f6f1e5;color:#b0a890;cursor:not-allowed}
-.cd.mine{background:#f3e3a8;border-color:#9c7a2e}.cd.sel{outline:3px solid #7a1f1f}</style></head>
-<body><div class="wrap"><div class="hd"><img src="{{LOGO}}" alt="כולל חצות"><div class="hi">{{NAME}}</div><div class="sub">{{SUB}}</div></div><div class="in">
-<h3>1 · הפרטים שלי</h3>
-<div class="two"><div><label>שם פרטי</label><input id="first" value="{{FIRST}}"></div><div><label>שם משפחה</label><input id="last" value="{{LAST}}"></div></div>
-<label>כתובת</label><input id="addr" value="{{ADDR}}" placeholder="רחוב ומספר בית">
-<label>עיר</label><input id="city" value="{{CITY}}">
-<div class="two"><div><label>טלפון</label><input id="phone" class="ltr" inputmode="tel" value="{{PHONE}}"></div><div><label>אימייל</label><input id="email" class="ltr" type="email" value="{{EMAIL}}"></div></div>
-<button type="button" id="s_go">שמור ועדכן את הפרטים</button><div class="err" id="s_err"></div><div class="ok" id="s_done" hidden></div>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=Frank+Ruhl+Libre:wght@700&display=swap">
+<style>
+:root{--bg:#efe9db;--paper:#fffdf8;--ink:#3a2f1a;--soft:#6b6249;--wine:#7a1f1f;--gold:#9c7a2e;--line:#e3d9c2;--cream:#f7f1e3;--ok:#2e7d4f;--okbg:#e8f3ea;--bad:#8f2a1b;--badbg:#fde8e4}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font-family:"Assistant",Arial,Helvetica,sans-serif;color:var(--ink);font-size:16px;line-height:1.5}
+.wrap{max-width:640px;margin:18px auto 30px;padding:0 12px}
+.hd{background:var(--paper);border:1px solid #c9b57a;border-radius:16px;text-align:center;padding:18px 18px 16px;box-shadow:0 8px 24px rgba(90,70,30,.10)}
+.hd img{width:66px}
+.hi{font-family:"Frank Ruhl Libre",Georgia,serif;font-size:22px;font-weight:700;color:var(--wine);margin:10px 0 2px;text-wrap:balance}
+.sub{font-size:14px;color:var(--soft)}
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
+.tile{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:right;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px 14px 13px;
+  font:inherit;color:inherit;cursor:pointer;box-shadow:0 3px 10px rgba(90,70,30,.06);transition:border-color .15s,transform .15s;min-height:104px}
+.tile:hover{border-color:var(--gold);transform:translateY(-1px)}
+.tile[aria-expanded="true"]{border-color:var(--wine);box-shadow:0 0 0 2px var(--wine) inset}
+.tile .ic{width:40px;height:40px;border-radius:50%;background:var(--cream);border:1px solid #e3d3a3;display:flex;align-items:center;justify-content:center;font-size:20px}
+.tile b{font-size:16.5px;color:var(--wine);margin-top:4px}
+.tile span{font-size:13px;color:var(--soft);line-height:1.35}
+.tile .warn{color:var(--bad);font-weight:700}
+.panel{background:var(--paper);border:1px solid #c9b57a;border-radius:16px;padding:18px;margin-top:12px;box-shadow:0 8px 24px rgba(90,70,30,.10)}
+.panel h2{font-family:"Frank Ruhl Libre",Georgia,serif;font-size:19px;color:var(--wine);margin:0 0 4px;display:flex;align-items:center;gap:8px}
+.panel .x{margin-inline-start:auto;background:none;border:0;font-size:22px;color:var(--soft);cursor:pointer;padding:0 4px;width:auto;margin-top:0}
+label{display:block;font-size:13.5px;color:var(--soft);margin:10px 0 3px;font-weight:600}
+input,textarea{width:100%;border:1px solid #d9cfb5;border-radius:10px;padding:11px;font:inherit;font-size:16.5px;background:#fffdf7;color:var(--ink)}
+input:focus,textarea:focus,button:focus-visible,.tile:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+input.ltr{direction:ltr;text-align:right}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.go{display:block;width:100%;text-align:center;text-decoration:none;margin-top:14px;background:var(--wine);color:#fff;border:2px solid var(--gold);border-radius:12px;padding:13px;font:inherit;font-size:17.5px;font-weight:700;cursor:pointer}
+.go.gold{background:var(--gold);border-color:var(--wine)}.go:disabled{opacity:.55;cursor:default}
+.keva{background:#fffdf7;border:1px solid #d9cfb5;border-radius:12px;padding:12px;margin-top:10px}.keva b{color:var(--wine)}.bad{color:var(--bad);font-size:14px;margin-top:4px}
+.small{font-size:13.5px;color:var(--soft);margin-top:6px;line-height:1.55}
+.ok{background:var(--okbg);border:1px solid #9fc8a8;border-radius:10px;padding:12px;font-size:15.5px;margin-top:12px}
+.err{color:var(--bad);font-size:15px;margin-top:10px}.err:not(:empty){background:var(--badbg);border:1px solid #e3a094;border-radius:8px;padding:10px 12px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.chips span{flex:1;min-width:64px;text-align:center;border:1px solid #d9cfb5;border-radius:10px;padding:9px 6px;cursor:pointer;background:#fffdf7;font-weight:700}
+.chips span.on{background:#f3e3a8;border-color:var(--gold)}
+.dk{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.dk span{border:1px solid #d9cfb5;border-radius:12px;padding:12px 8px;text-align:center;cursor:pointer;background:#fffdf7}
+.dk span b{display:block;font-size:16px;color:var(--wine)}.dk span i{font-style:normal;font-size:13px;color:var(--soft)}
+.dk span.on{background:#f3e3a8;border-color:var(--gold)}
+.cal{background:#fffdf7;border:1px solid #d9cfb5;border-radius:12px;padding:10px;margin-top:12px}
+.calhd{display:flex;align-items:center;justify-content:space-between;font-weight:700;color:var(--wine);font-size:17px}
+.calnav{width:auto;margin:0;padding:3px 14px;font-size:22px;background:#fffdf7;color:var(--wine);border:1px solid #d9cfb5;border-radius:8px;cursor:pointer}
+.calgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px}
+.cd{border:1px solid #d9cfb5;border-radius:8px;padding:6px 2px;text-align:center;cursor:pointer;background:var(--okbg);line-height:1.25}
+.cd b{display:block;font-size:17px}.cd small{display:block;font-size:11px;color:var(--soft)}
+.cd.taken{background:#ececec;color:#9a9a9a;cursor:not-allowed}.cd.block{background:#f6f1e5;color:#b0a890;cursor:not-allowed}
+.cd.mine{background:#f3e3a8;border-color:var(--gold)}.cd.sel{outline:3px solid var(--wine)}
+.rng{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.sum div{background:var(--cream);border:1px solid #e3d3a3;border-radius:12px;padding:9px 6px;text-align:center}
+.sum b{display:block;font-size:19px;color:var(--wine);font-variant-numeric:tabular-nums}.sum small{font-size:12.5px;color:var(--soft)}
+.rcl{margin-top:10px;border:1px solid var(--line);border-radius:12px;max-height:290px;overflow:auto;background:#fffdf7}
+.rcr{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid #efe7d4;font-size:14.5px}
+.rcr:last-child{border-bottom:0}.rcr .d{font-variant-numeric:tabular-nums;color:var(--soft);direction:ltr}
+.rcr .a{font-weight:700;font-variant-numeric:tabular-nums}
+.rcr .s{grid-column:2/4;font-size:12.5px;color:var(--soft);margin-top:-6px}.rcr .s.y{color:var(--ok)}
+.yr{background:var(--cream);font-weight:700;color:var(--wine);padding:6px 12px;font-size:13.5px;border-bottom:1px solid #efe7d4;position:sticky;top:0}
+.bar{height:10px;border-radius:5px;background:#eadfc6;overflow:hidden;margin-top:12px}.bar i{display:block;height:100%;width:0;background:var(--gold);transition:width .25s}
+.empty{text-align:center;color:var(--soft);padding:22px 10px;font-size:15px}
+.foot{text-align:center;font-size:12.5px;color:var(--soft);margin-top:22px;line-height:1.6}
+[hidden]{display:none!important}
+@media(max-width:380px){.tiles{gap:8px}.tile{padding:12px 11px;min-height:96px}.tile b{font-size:15.5px}}
+@media(prefers-reduced-motion:reduce){.tile,.bar i{transition:none}}
+</style></head>
+<body><div class="wrap">
+<div class="hd"><img src="{{LOGO}}" alt="כולל חצות"><div class="hi">{{NAME}}</div><div class="sub">{{SUB}}</div></div>
+
+<div class="tiles" id="tiles">
+  <button type="button" class="tile" data-p="p_me" aria-expanded="false"><span class="ic">✏️</span><b>הפרטים שלי</b><span>שם, כתובת, טלפון ואימייל</span></button>
+  <button type="button" class="tile" data-p="p_card" aria-expanded="false"{{CARDHIDE}}><span class="ic">💳</span><b>כרטיס אשראי</b><span>{{CARDLINE}}</span></button>
+  <button type="button" class="tile" data-p="p_rc" aria-expanded="false"{{DONHIDE}}><span class="ic">🧾</span><b>קבלות על תרומות</b><span>להפקה ולהורדה, לכל טווח תאריכים</span></button>
+  <button type="button" class="tile" data-p="p_don" aria-expanded="false"{{DONHIDE}}><span class="ic">💛</span><b>נדרים ונדבות</b><span>תרומה בכל סכום</span></button>
+  <button type="button" class="tile" data-p="p_day" aria-expanded="false"{{DONHIDE}}><span class="ic">🍳</span><b>ארוחת בוקר / יום קפה</b><span>תרומת יום למאות הלומדים</span></button>
+</div>
+
+<section class="panel" id="p_me" hidden><h2>✏️ הפרטים שלי<button type="button" class="x" aria-label="סגור">×</button></h2>
+<div class="two"><div><label for="first">שם פרטי</label><input id="first" value="{{FIRST}}"></div><div><label for="last">שם משפחה</label><input id="last" value="{{LAST}}"></div></div>
+<label for="addr">כתובת</label><input id="addr" value="{{ADDR}}" placeholder="רחוב ומספר בית">
+<label for="city">עיר</label><input id="city" value="{{CITY}}">
+<div class="two"><div><label for="phone">טלפון</label><input id="phone" class="ltr" inputmode="tel" value="{{PHONE}}"></div><div><label for="email">אימייל</label><input id="email" class="ltr" type="email" value="{{EMAIL}}"></div></div>
+<button type="button" class="go" id="s_go">שמור ועדכן את הפרטים</button><div class="err" id="s_err"></div><div class="ok" id="s_done" hidden></div>
+</section>
+
+<section class="panel" id="p_card" hidden><h2>💳 {{CARDTITLE}}<button type="button" class="x" aria-label="סגור">×</button></h2>
+<div class="small">הכרטיס מוזן בדף המאובטח של נדרים פלוס — מספר הכרטיס לא עובר אצלנו. אחרי העדכון הכרטיס החדש נכנס להוראת הקבע מיד.</div>
 {{CARDS}}
-<div id="donsec"{{DONHIDE}}><h3>{{DONNUM}} · נדרים ונדבות — תרומה עכשיו</h3>
+</section>
+
+<section class="panel" id="p_rc" hidden><h2>🧾 קבלות על תרומות<button type="button" class="x" aria-label="סגור">×</button></h2>
+<div class="small">התרומות שלך בנדרים פלוס. בוחרים טווח תאריכים, ממלאים כתובת, ומורידים את כל הקבלות בקובץ אחד. לכל תשלום קבלה נפרדת, בתאריך התשלום.</div>
+<div class="chips" id="rc_yrs"></div>
+<div class="rng"><div><label for="rc_from">מתאריך</label><input id="rc_from" type="date"></div><div><label for="rc_to">עד תאריך</label><input id="rc_to" type="date"></div></div>
+<div class="sum"><div><b id="rc_n">0</b><small>תשלומים</small></div><div><b id="rc_t">₪0</b><small>סה״כ</small></div><div><b id="rc_h">0</b><small>כבר עם קבלה</small></div></div>
+<div class="rcl" id="rc_list"><div class="empty">טוען את התרומות…</div></div>
+<label for="rc_name">הקבלה על שם</label><input id="rc_name" value="{{LAST}} {{FIRST}}" disabled>
+<div class="small" style="margin-top:2px">לשינוי השם — בחלון "הפרטים שלי".</div>
+<label for="rc_addr">כתובת לקבלה</label><input id="rc_addr" value="{{ADDR}}" placeholder="רחוב ומספר בית">
+<div class="two"><div><label for="rc_city">עיר</label><input id="rc_city" value="{{CITY}}"></div><div><label for="rc_tz">ת.ז. (לא חובה)</label><input id="rc_tz" class="ltr" inputmode="numeric" maxlength="9"></div></div>
+<button type="button" class="go" id="rc_go" disabled>הפק והורד קבלות</button>
+<div class="bar" id="rc_bar" hidden><i></i></div><div class="small" id="rc_st"></div>
+<div class="err" id="rc_err"></div>
+<a class="go gold" id="rc_pdf" href="#" target="_blank" rel="noopener" hidden>📄 פתח את הקבלות (PDF)</a>
+</section>
+
+<section class="panel" id="p_don" hidden><h2>💛 נדרים ונדבות<button type="button" class="x" aria-label="סגור">×</button></h2>
 <div class="small">בכל סכום, בכרטיס אשראי, בדף התשלום המאובטח של נדרים פלוס.</div>
-<div class="amts" id="amts"><span data-a="52">₪52</span><span data-a="100">₪100</span><span data-a="180">₪180</span><span data-a="360">₪360</span></div>
-<label>סכום (₪)</label><input id="amt" inputmode="decimal" placeholder="כל סכום">
-<button type="button" class="gold" id="d_go">תרום עכשיו</button><div class="err" id="d_err"></div></div>
-<div id="daysec"{{DONHIDE}}><h3>{{DAYNUM}} · ארוחת בוקר / יום בחדר קפה</h3>
-<div class="small">אם ברצונך לתרום יום אחד של <b>ארוחת בוקר (₪{{PB}})</b> — ארוחת בוקר למאות הלומדים והמתפללים, או <b>יום בחדר קפה (₪{{PC}})</b> — שתייה חמה ועוגיות במשך כל היממה, כל היום והלילה, 24 שעות, למאות הלומדים והמתפללים בבית מדרשנו — בחר כאן, בחר תאריך פנוי בלוח, וכתוב את ההקדשה.</div>
-<div class="amts" id="dk"><span data-k="breakfast">🍳 ארוחת בוקר · ₪{{PB}}</span><span data-k="coffee">☕ יום בחדר קפה · ₪{{PC}}</span></div>
+<div class="chips" id="amts"><span data-a="52">₪52</span><span data-a="100">₪100</span><span data-a="180">₪180</span><span data-a="360">₪360</span></div>
+<label for="amt">סכום (₪)</label><input id="amt" inputmode="decimal" placeholder="כל סכום">
+<button type="button" class="go gold" id="d_go">תרום עכשיו</button><div class="err" id="d_err"></div>
+</section>
+
+<section class="panel" id="p_day" hidden><h2>🍳 ארוחת בוקר / יום קפה<button type="button" class="x" aria-label="סגור">×</button></h2>
+<div class="small">יום אחד לזכות או לעילוי נשמת — למאות הלומדים והמתפללים בבית מדרשנו. בוחרים, בוחרים יום פנוי, וכותבים הקדשה.</div>
+<div class="dk" id="dk"><span data-k="breakfast"><b>🍳 ארוחת בוקר</b><i>₪{{PB}} · ארוחת בוקר לכולם</i></span><span data-k="coffee"><b>☕ יום בחדר קפה</b><i>₪{{PC}} · שתייה וכיבוד 24 שעות</i></span></div>
 <div id="dkbox" hidden>
-<label>ההקדשה</label><textarea id="dnames" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7" placeholder="למשל: לעילוי נשמת… / לזכות…"></textarea>
+<label for="dnames">ההקדשה</label><textarea id="dnames" rows="2" placeholder="למשל: לעילוי נשמת… / לזכות…"></textarea>
 <div class="cal"><div class="calhd"><button type="button" class="calnav" id="cal_prev">&rsaquo;</button><div id="cal_title"></div><button type="button" class="calnav" id="cal_next">&lsaquo;</button></div>
 <div class="calgrid" id="cal_grid"></div><div class="small">ירוק — פנוי · אפור — תפוס · בהיר — שבת / חג</div></div>
 <div class="small" id="cal_st"></div>
-<button type="button" class="gold" id="day_go" disabled>שריין ותרום</button><div class="err" id="day_err"></div></div></div>
+<button type="button" class="go gold" id="day_go" disabled>שריין ותרום</button><div class="err" id="day_err"></div></div>
+</section>
+
 <div class="foot">כולל חצות · כנסת יחזקאל 38 ביתר עילית<br><bdi dir="ltr">02-580-3545</bdi> · <bdi dir="ltr">052-762-8272</bdi><br>הקישור אישי ומאובטח ותקף ל-30 יום</div>
-</div></div>
+</div>
 <script>
 var API=location.pathname.replace('/k/','/api/k/'),MOSAD={{MOSAD}};
 var g=function(i){return document.getElementById(i);},v=function(i){return g(i).value.trim();};
+var qa=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));};
 async function postJ(p,b){try{return await (await fetch(API+p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})})).json();}catch(e){return null;}}
 function busy(b,on,t){b.disabled=on;if(on){b.dataset.t=b.textContent;b.textContent=t;}else if(b.dataset.t){b.textContent=b.dataset.t;}}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function money(n){return '₪'+Math.round(n).toLocaleString('he-IL');}
+// משבצות — חלון אחד פתוח בכל פעם
+var OPENED={};
+function openP(id){qa('.panel').forEach(function(p){p.hidden=p.id!==id;});qa('.tile').forEach(function(t){t.setAttribute('aria-expanded',t.dataset.p===id?'true':'false');});
+  var p=g(id);if(!p)return;p.scrollIntoView({behavior:'smooth',block:'start'});if(id==='p_rc'&&!OPENED.rc){OPENED.rc=1;rcLoad();}}
+qa('.tile').forEach(function(t){t.onclick=function(){if(t.getAttribute('aria-expanded')==='true'){g(t.dataset.p).hidden=true;t.setAttribute('aria-expanded','false');}else openP(t.dataset.p);};});
+qa('.panel .x').forEach(function(x){x.onclick=function(){var p=x.closest('.panel');p.hidden=true;qa('.tile[data-p="'+p.id+'"]').forEach(function(t){t.setAttribute('aria-expanded','false');});g('tiles').scrollIntoView({behavior:'smooth',block:'start'});};});
+if(location.hash&&g(location.hash.slice(1)))openP(location.hash.slice(1));
 g('s_go').onclick=async function(){var b=this,er=g('s_err');er.textContent='';
   if(v('email')&&v('email').indexOf('@')<0){er.textContent='כתובת האימייל לא תקינה.';g('email').focus();return;}
   busy(b,true,'שומר...');var r=await postJ('/save',{first:v('first'),last:v('last'),addr:v('addr'),city:v('city'),phone:v('phone'),email:v('email')});busy(b,false);
   if(!r||!r.ok){er.innerHTML='<b>לא נשמר.</b> '+((r&&r.error)||'משהו השתבש, נסו שוב או התקשרו אלינו.');return;}
+  g('rc_addr').value=v('addr');g('rc_city').value=v('city');g('rc_name').value=(v('last')+' '+v('first')).trim();
   var d=g('s_done');d.hidden=false;d.innerHTML=r.changes?'<b>תודה רבה!</b> הפרטים עודכנו אצלנו'+(r.nd?' ובהוראת הקבע בנדרים פלוס':'')+'.':'<b>תודה!</b> הפרטים לא השתנו.';};
-Array.prototype.forEach.call(document.querySelectorAll('.cardgo'),function(b){b.onclick=async function(){var er=b.parentNode.querySelector('.err');er.textContent='';
+qa('.cardgo').forEach(function(b){b.onclick=async function(){var er=b.parentNode.querySelector('.err');er.textContent='';
   busy(b,true,'פותח את הדף המאובטח...');var r=await postJ('/card',{keva:b.dataset.k});
   if(!r||!r.ok){busy(b,false);er.innerHTML='<b>לא נפתח.</b> '+((r&&r.error)||'נסו שוב או התקשרו אלינו.');return;}
   location.href=r.link;};});
-Array.prototype.forEach.call(document.querySelectorAll('#amts span'),function(s){s.onclick=function(){Array.prototype.forEach.call(document.querySelectorAll('#amts span'),function(x){x.classList.remove('on');});s.classList.add('on');g('amt').value=s.dataset.a;};});
+// 🧾 קבלות
+var RC=[];
+function rcRange(){var f=g('rc_from').value||'0000-00-00',t=g('rc_to').value||'9999-99-99';return RC.filter(function(x){return x.date>=f&&x.date<=t;});}
+function rcPaint(){var L=rcRange(),tot=0,h=0;L.forEach(function(x){tot+=x.amount;if(x.rc)h++;});
+  g('rc_n').textContent=L.length;g('rc_t').textContent=money(tot);g('rc_h').textContent=h;
+  qa('#rc_yrs span').forEach(function(s){var y=s.dataset.y;s.classList.toggle('on',y==='all'?(!g('rc_from').value&&!g('rc_to').value):(g('rc_from').value===y+'-01-01'&&g('rc_to').value===y+'-12-31'));});
+  var b=g('rc_go');b.disabled=!L.length;b.textContent=!L.length?'אין תרומות בטווח':(h===L.length?'הורד את הקבלות':(h?'הפק '+(L.length-h)+' קבלות חדשות והורד':'הפק והורד '+L.length+' קבלות'));
+  g('rc_pdf').hidden=true;
+  if(!RC.length){g('rc_list').innerHTML='<div class="empty">לא מצאנו אצלנו תרומות שלך בנדרים פלוס.<br>לשאלות: <bdi dir="ltr">02-580-3545</bdi></div>';return;}
+  if(!L.length){g('rc_list').innerHTML='<div class="empty">אין תרומות בטווח התאריכים הזה.</div>';return;}
+  var html='',yy='';L.forEach(function(x){var y=x.date.slice(0,4);if(y!==yy){yy=y;html+='<div class="yr">'+y+'</div>';}
+    html+='<div class="rcr"><span class="d">'+x.date.slice(8,10)+'.'+x.date.slice(5,7)+'</span><span>'+esc(x.what)+'</span><span class="a">'+money(x.amount)+'</span>'+
+      '<span class="s'+(x.rc?' y':'')+'">'+(x.rc?'✓ קבלה מס\' '+x.num:'קבלה תופק עכשיו')+'</span></div>';});
+  g('rc_list').innerHTML=html;}
+async function rcLoad(){var r=null;try{r=await (await fetch(API+'/receipts')).json();}catch(e){}
+  if(!r||!r.ok){g('rc_list').innerHTML='<div class="empty">לא הצלחנו לטעון את התרומות. נסו שוב מאוחר יותר.</div>';return;}
+  RC=r.items||[];var ys={};RC.forEach(function(x){ys[x.date.slice(0,4)]=1;});var yl=Object.keys(ys).sort().reverse();
+  g('rc_yrs').innerHTML=yl.map(function(y){return '<span data-y="'+y+'">'+y+'</span>';}).join('')+(yl.length>1?'<span data-y="all">הכל</span>':'');
+  qa('#rc_yrs span').forEach(function(s){s.onclick=function(){var y=s.dataset.y;if(y==='all'){g('rc_from').value='';g('rc_to').value='';}else{g('rc_from').value=y+'-01-01';g('rc_to').value=y+'-12-31';}rcPaint();};});
+  // ברירת מחדל — השנה האחרונה שלמה שיש בה תרומות (שנה שעברה), אחרת האחרונה
+  var last=String(new Date().getFullYear()-1),pick=ys[last]?last:yl[0];if(pick){g('rc_from').value=pick+'-01-01';g('rc_to').value=pick+'-12-31';}
+  rcPaint();}
+g('rc_from').onchange=rcPaint;g('rc_to').onchange=rcPaint;
+g('rc_go').onclick=async function(){var b=this,er=g('rc_err'),st=g('rc_st');er.textContent='';st.textContent='';
+  var tz=v('rc_tz').replace(/\D/g,'');if(tz&&tz.length<5){er.textContent='מספר תעודת הזהות לא תקין.';g('rc_tz').focus();return;}
+  if(!v('rc_addr')){er.textContent='נא למלא כתובת לקבלה.';g('rc_addr').focus();return;}
+  var L=rcRange(),todo=L.filter(function(x){return !x.rc;});busy(b,true,'מכין...');
+  if(v('rc_addr')!==v('addr')||v('rc_city')!==v('city')){g('addr').value=v('rc_addr');g('city').value=v('rc_city');
+    var s=await postJ('/save',{addr:v('rc_addr'),city:v('rc_city')});if(!s||!s.ok){busy(b,false);er.innerHTML='<b>הכתובת לא נשמרה.</b> '+((s&&s.error)||'נסו שוב.');return;}}
+  var bar=g('rc_bar');bar.hidden=!todo.length;var made=0,fail=0,tot=0;
+  for(var i=0;i<todo.length;i++){var x=todo[i];b.textContent='מפיק קבלה '+(i+1)+' מתוך '+todo.length+'...';bar.firstChild.style.width=(100*i/todo.length)+'%';
+    var r=await postJ('/receipt',{key:x.key,tz:tz});
+    if(r&&r.ok){x.rc=r.rc;x.num=r.num;if(!r.old){made++;tot+=x.amount;}}else{fail++;er.innerHTML='<b>קבלה אחת לא הופקה.</b> '+((r&&r.error)||'נסו שוב מאוחר יותר.');}}
+  bar.firstChild.style.width='100%';
+  if(made)postJ('/rcdone',{n:made,total:tot,from:g('rc_from').value,to:g('rc_to').value});
+  rcPaint();busy(b,false);rcPaint();
+  var have=rcRange().filter(function(x){return x.rc;}).length;
+  if(have){var a=g('rc_pdf');a.href=location.pathname+'/receipts.pdf?from='+encodeURIComponent(g('rc_from').value)+'&to='+encodeURIComponent(g('rc_to').value);a.hidden=false;
+    st.innerHTML=(made?'<b style="color:#2e7d4f">✓ הופקו '+made+' קבלות.</b> ':'')+'כל '+have+' הקבלות בקובץ אחד — לחצו לפתיחה:';a.scrollIntoView({behavior:'smooth',block:'center'});}};
+// 💛 תרומה
+qa('#amts span').forEach(function(s){s.onclick=function(){qa('#amts span').forEach(function(x){x.classList.remove('on');});s.classList.add('on');g('amt').value=s.dataset.a;};});
 g('d_go').onclick=function(){var er=g('d_err');er.textContent='';var a=parseFloat(String(v('amt')).replace(/[^\d.]/g,''))||0;
   if(!a){er.textContent='נא לכתוב סכום.';g('amt').focus();return;}if(!MOSAD){er.textContent='דף התרומה לא זמין כרגע, נא להתקשר אלינו.';return;}
   var nm=(v('first')+' '+v('last')).trim(),ph=v('phone').split(/[\/,;]/)[0].trim();
@@ -18104,7 +18241,7 @@ g('d_go').onclick=function(){var er=g('d_err');er.textContent='';var a=parseFloa
   if(v('addr'))p.push(['Street',v('addr')]);if(v('city'))p.push(['City',v('city')]);
   postJ('/donate',{amount:a});
   location.href='https://www.matara.pro/nedarimplus/online/?'+p.map(function(x){return x[0]+'='+encodeURIComponent(x[1]);}).join('&');};
-// 🍳☕ ארוחת בוקר / יום קפה — לוח של הימים הפנויים, שמות, ותשלום בנדרים פלוס בסכום הקבוע
+// 🍳☕ ארוחת בוקר / יום קפה
 var DK='',CAL={m:'',y:'',sel:null,data:null},PR={breakfast:{{PB}},coffee:{{PC}}},DKL={breakfast:'ארוחת בוקר',coffee:'יום בחדר קפה'};
 function paintBtn(){var b=g('day_go');b.disabled=!(CAL.sel&&DK);b.textContent=DK?('שריין ותרום '+DKL[DK]+' · ₪'+PR[DK]):'שריין ותרום';}
 async function calLoad(m,y){var r=null;try{r=await (await fetch(API+'/month?kind='+DK+'&m='+encodeURIComponent(m||'')+'&y='+encodeURIComponent(y||''))).json();}catch(e){}
@@ -18113,14 +18250,14 @@ async function calLoad(m,y){var r=null;try{r=await (await fetch(API+'/month?kind
   var h='';for(var d=1;d<=r.len;d++){var dv=r.days[String(d)]||{};var c=dv.block?'block':(dv.taken?'taken':(dv.mine?'mine':'free'));
     h+='<div class="cd '+c+'" data-d="'+d+'"><b>'+(dv.he||d)+'</b><small>'+(dv.block?(dv.why||'שבת'):(dv.taken?'תפוס':(dv.mine?'שלך':(dv.greg?dv.greg.slice(8,10)+'.'+dv.greg.slice(5,7):''))))+'</small></div>';}
   var gr=g('cal_grid');gr.innerHTML=h;
-  Array.prototype.forEach.call(gr.querySelectorAll('.cd'),function(el){el.onclick=function(){var d=+el.dataset.d,dv=r.days[String(d)]||{},st=g('cal_st');
+  qa('.cd',gr).forEach(function(el){el.onclick=function(){var d=+el.dataset.d,dv=r.days[String(d)]||{},st=g('cal_st');
     if(dv.block){st.innerHTML='<span style="color:#8f2a1b">אי אפשר לבחור את היום הזה ('+(dv.why||'שבת')+').</span>';return;}
     if(dv.taken){st.innerHTML='<span style="color:#8f2a1b"><b>התאריך הזה כבר תפוס.</b> נא לבחור יום אחר.</span>';return;}
-    Array.prototype.forEach.call(gr.querySelectorAll('.cd.sel'),function(x){x.classList.remove('sel');});el.classList.add('sel');CAL.sel=d;
+    qa('.cd.sel',gr).forEach(function(x){x.classList.remove('sel');});el.classList.add('sel');CAL.sel=d;
     st.innerHTML='<span style="color:#2e7d4f"><b>'+(dv.he||d)+' '+r.month+' '+r.year+'</b> — פנוי ✓</span>';paintBtn();};});}
 g('cal_prev').onclick=function(){if(CAL.data&&CAL.data.prev)calLoad(CAL.data.prev.m,CAL.data.prev.y);};
 g('cal_next').onclick=function(){if(CAL.data&&CAL.data.next)calLoad(CAL.data.next.m,CAL.data.next.y);};
-Array.prototype.forEach.call(document.querySelectorAll('#dk span'),function(s){s.onclick=function(){Array.prototype.forEach.call(document.querySelectorAll('#dk span'),function(x){x.classList.remove('on');});
+qa('#dk span').forEach(function(s){s.onclick=function(){qa('#dk span').forEach(function(x){x.classList.remove('on');});
   s.classList.add('on');DK=s.dataset.k;g('dkbox').hidden=false;calLoad(CAL.m,CAL.y);};});
 g('day_go').onclick=async function(){var b=this,er=g('day_err');er.textContent='';
   if(!v('dnames')){er.textContent='נא לכתוב את ההקדשה (לזכות / לעילוי נשמת).';g('dnames').focus();return;}
@@ -18249,6 +18386,138 @@ def klink_day(con, kind, pid, b):
     return {'ok': True, 'price': price, 'label': label, 'groupe': KL_DAYG[dk], 'date_text': dtext, 'year': md['year'], 'ded': ded}
 
 
+# 🧾 מאיר: "בקישור… שיכול להוציא קבלות על כל השנים שהוא תרם בנדרים פלוס… כמו שעשינו לאמריקאים. בקישור
+# עצמו הוא יוכל להוציא את הקבלות בלי שאני אצטרך לשלוח לו… בוחר מתאריך עד תאריך… למלא את הכתובת".
+# קבלה (סעיף 46) נפרדת לכל תשלום — בתאריך התשלום, כמו שמס הכנסה מבקש — ומה שכבר הופק לא מופק שוב.
+# בסוף מורידים קובץ PDF אחד עם כל הקבלות שבטווח.
+def klink_rc_items(con, kind, pid):
+    """התשלומים בשקלים לכולל בנדרים פלוס (חבר — מהעסקאות שלו; תורם — מהתרומות שנכנסו מנדרים פלוס),
+    לכל אחד: מפתח, תאריך, סכום, עבור, והקבלה שכבר הופקה (אם יש)."""
+    out = []
+    if kind == 'm':
+        nd = member_nd(con, pid) or {}
+        for t in nd.get('tx') or []:
+            try:
+                amt = round(float(t.get('amount') or 0), 2)
+            except (TypeError, ValueError):
+                amt = 0
+            iso = str(t.get('iso') or '')[:10]
+            if amt <= 0 or t.get('fund') or not re.fullmatch(r'\d{4}-\d\d-\d\d', iso):
+                continue
+            auto = bool(t.get('keva')) and not str(t.get('keva')).startswith('-')
+            rc, num = 0, 0
+            for r in con.execute("SELECT id, num, note FROM receipt_docs WHERE kind='il' AND note LIKE ? ORDER BY id DESC",
+                                 ('%nd:' + str(t['id']) + '%',)).fetchall():
+                if re.search(r'nd:' + re.escape(str(t['id'])) + r'(?![\w])', r['note'] or ''):
+                    rc, num = r['id'], r['num']
+                    break
+            out.append({'key': 't' + str(t['id']), 'date': iso, 'amount': amt, 'auto': auto,
+                        'what': 'הוראת קבע' if auto else ((t.get('groupe') or '').strip()[:40] or 'תרומה'), 'rc': rc, 'num': num})
+    elif kind == 'd':
+        for r in con.execute("SELECT d.id, d.date, d.amount, d.category, d.note,"
+                             "(SELECT rd.id FROM receipt_docs rd WHERE rd.kind='il' AND rd.donation_id=d.id ORDER BY rd.id DESC LIMIT 1) rc,"
+                             "(SELECT rd.num FROM receipt_docs rd WHERE rd.kind='il' AND rd.donation_id=d.id ORDER BY rd.id DESC LIMIT 1) num "
+                             "FROM donations d WHERE d.donor_id=? AND COALESCE(d.tid,'') LIKE 'ND%' AND COALESCE(d.paid,1)=1 "
+                             "AND COALESCE(NULLIF(TRIM(d.cur),''),'₪') IN ('₪','ILS')", (pid,)).fetchall():
+            amt = round(_amt2(r['amount']), 2)
+            iso = str(r['date'] or '')[:10]
+            if amt <= 0 or not re.fullmatch(r'\d{4}-\d\d-\d\d', iso):
+                continue
+            auto = 'הו"ק' in (r['note'] or '') or (r['category'] or '').strip() == 'קבוע'
+            cat = (r['category'] or '').strip()
+            out.append({'key': 'd' + str(r['id']), 'date': iso, 'amount': amt, 'auto': auto,
+                        'what': 'הוראת קבע' if auto else ((cat if cat not in ('כללי', '') else 'תרומה')[:40]), 'rc': r['rc'] or 0, 'num': r['num'] or 0})
+    out.sort(key=lambda x: (x['date'], x['key']), reverse=True)
+    return out
+
+
+def klink_rc_issue(con, kind, pid, b):
+    """הפקת קבלה לתשלום אחד מהקישור (הדף קורא לזה תשלום אחרי תשלום, עם סרגל התקדמות)."""
+    if kind not in ('m', 'd'):
+        return {'ok': False, 'error': 'לא זמין בקישור הזה.'}
+    key = str(b.get('key') or '')
+    it = next((x for x in klink_rc_items(con, kind, pid) if x['key'] == key), None)
+    if not it:
+        return {'ok': False, 'error': 'התשלום לא נמצא.'}
+    if it['rc']:
+        return {'ok': True, 'rc': it['rc'], 'num': it['num'], 'old': True}
+    tz = re.sub(r'\D', '', str(b.get('tz') or ''))[:9]
+    if kind == 'm':
+        doc, err = receipt_issue_member(con, pid, it['amount'], it['date'], 'תרומה בהוראת קבע' if it['auto'] else 'תרומה',
+                                        '', False, key[1:], 'כרטיס אשראי · נדרים פלוס', crn=tz)
+        if not doc:
+            return {'ok': False, 'error': err or 'ההפקה נכשלה.'}
+    else:
+        if tz:
+            d = con.execute("SELECT notes FROM donors WHERE id=?", (pid,)).fetchone()
+            nt = (d['notes'] or '') if d else ''
+            if not re.search(r'ת\.?\s?ז\.?\s*:?\s*\d{6,9}', nt):
+                con.execute("UPDATE donors SET notes=? WHERE id=?", ((nt + '\n' if nt.strip() else '') + 'ת.ז. ' + tz, pid))
+                con.commit()
+        try:
+            doc = receipt_issue(con, int(key[1:]), 'il', send=False)
+        except Exception as e:
+            return {'ok': False, 'error': 'ההפקה נכשלה: ' + str(e)[:150]}
+        if not doc:
+            return {'ok': False, 'error': 'ההפקה נכשלה.'}
+    return {'ok': True, 'rc': doc['id'], 'num': doc.get('num') or 0}
+
+
+def klink_rc_done(con, kind, pid, b):
+    """סוף הפקה מהקישור — שורה ביומן ומייל אליך (פעם אחת לכל הפקה, לא לכל קבלה)."""
+    try:
+        n = int(b.get('n') or 0)
+    except (TypeError, ValueError):
+        n = 0
+    tot = _amt2(b.get('total'))
+    rng = '%s – %s' % (str(b.get('from') or '')[:10], str(b.get('to') or '')[:10])
+    if n <= 0:
+        return {'ok': True}
+    line = '🧾 הפיק %d קבלות דרך הקישור האישי · %s · סה"כ ₪%s' % (n, rng, format(tot, ',.0f'))
+    klink_log(con, kind, pid, line)
+    con.commit()
+    who = klink_fullname(klink_person(con, kind, pid)) or '#%d' % pid
+    klink_alert('🧾 %s הפיק %d קבלות דרך הקישור' % (who, n), '%s\n\n%s\n\n(נרשם ביומן שלו במערכת, הקבלות שמורות בחלון הקבלות)' % (who, line))
+    return {'ok': True}
+
+
+def klink_rc_pdf(con, kind, pid, frm, to):
+    """כל הקבלות של התשלומים שלו בטווח — PDF אחד (מהישן לחדש)."""
+    frm = frm if re.fullmatch(r'\d{4}-\d\d-\d\d', str(frm or '')) else '0000-00-00'
+    to = to if re.fullmatch(r'\d{4}-\d\d-\d\d', str(to or '')) else '9999-99-99'
+    its = [x for x in klink_rc_items(con, kind, pid) if x['rc'] and frm <= x['date'] <= to]
+    its.sort(key=lambda x: x['date'])
+    if not its:
+        return None, None
+    pdfs = []
+    for x in its:
+        pdf, _fn = receipt_pdf(con, x['rc'])
+        if pdf:
+            pdfs.append(bytes(pdf))
+    if not pdfs:
+        return None, None
+    try:
+        from pypdf import PdfReader, PdfWriter
+        w = PdfWriter()
+        for pdf in pdfs:
+            for pg in PdfReader(io.BytesIO(pdf)).pages:
+                w.add_page(pg)
+        buf = io.BytesIO()
+        w.write(buf)
+        out = buf.getvalue()
+    except Exception as e:
+        print('  klink rc pdf (pypdf) error:', e)
+        import fitz as _fz
+        doc = _fz.open()
+        for pdf in pdfs:
+            doc.insert_pdf(_fz.open(stream=pdf, filetype='pdf'))
+        out = doc.tobytes()
+    p = klink_person(con, kind, pid)
+    safe = re.sub(r'[^\w֐-׿ .-]+', '', klink_fullname(p))[:40].strip() or 'kollel'
+    yrs = sorted({x['date'][:4] for x in its})
+    return out, 'קבלות %s - %s.pdf' % (yrs[0] if len(yrs) == 1 else yrs[0] + '-' + yrs[-1], safe)
+
+
 def klink_page(con, kind, pid, base=''):
     import html as _h
     import nedarim as _nd
@@ -18257,16 +18526,15 @@ def klink_page(con, kind, pid, base=''):
     if not p:
         return None
     ks = klink_kevas(con, kind, pid)
-    cards = ''
+    cards, bad_any = '', False
     if ks:
         rows = []
         for k in ks:
             bad = str(k['error'] or '').strip() if 'error' in k.keys() else ''
-            rows.append('<div class="keva"><b>%s</b>%s<button type="button" class="cardgo" data-k="%s">\U0001F512 עדכון כרטיס אשראי</button><div class="err"></div></div>'
+            bad_any = bad_any or bool(bad)
+            rows.append('<div class="keva"><b>%s</b>%s<button type="button" class="go cardgo" data-k="%s">\U0001F512 עדכון כרטיס אשראי</button><div class="err"></div></div>'
                         % (e(klink_keva_label(k)), ('<div class="bad">⚠️ החיוב האחרון לא עבר — כדאי לעדכן כרטיס</div>' if bad else ''), e(str(k['id']))))
-        cards = ('<h3>2 · %s</h3><div class="small">' % {'m': 'כרטיס האשראי — דמי חבר', 'v': 'כרטיס האשראי — מנוי המקווה',
-                                                        'd': 'כרטיס האשראי בהוראת הקבע'}[kind] + 'הכרטיס מוזן בדף המאובטח של נדרים פלוס — מספר הכרטיס לא עובר אצלנו. '
-                 'אחרי העדכון הכרטיס החדש נכנס להוראת הקבע מיד.</div>' + ''.join(rows))
+        cards = ''.join(rows)
     acc = _nd.accounts()
     mos = (acc[0]['mosad'] if acc else '') or (_nd.mosad() if _nd.configured() else '')
     em = (emails_of(p['email'] or '') or [''])[0]
@@ -18278,7 +18546,9 @@ def klink_page(con, kind, pid, base=''):
            '{{TITLE}}': {'m': 'קהילת כולל חצות · הדף האישי שלי', 'v': 'המקווה · הדף האישי שלי', 'd': 'כולל חצות · הדף האישי שלי'}[kind],
            '{{DONHIDE}}': ' hidden' if kind == 'v' else '', '{{FIRST}}': e(p['first'] or ''), '{{LAST}}': e(p['last'] or ''),
            '{{ADDR}}': e(p['addr'] or ''), '{{CITY}}': e(p['city'] or ''), '{{PHONE}}': e(cardlink_phone_clean(p['phone'])), '{{EMAIL}}': e(em),
-           '{{CARDS}}': cards, '{{DONNUM}}': '3' if ks else '2', '{{DAYNUM}}': '4' if ks else '3',
+           '{{CARDS}}': cards, '{{CARDHIDE}}': '' if ks else ' hidden',
+           '{{CARDTITLE}}': {'m': 'כרטיס האשראי — דמי חבר', 'v': 'כרטיס האשראי — מנוי המקווה', 'd': 'כרטיס האשראי בהוראת הקבע'}[kind],
+           '{{CARDLINE}}': '<span class="warn">⚠️ החיוב האחרון לא עבר</span>' if bad_any else 'עדכון הכרטיס בהוראת הקבע',
            '{{PB}}': str(klink_day_price(con, 'breakfast')), '{{PC}}': str(klink_day_price(con, 'coffee')), '{{MOSAD}}': json.dumps(str(mos or ''))}
     out = KLINK_PAGE
     for k_, v_ in rep.items():
@@ -22742,6 +23012,39 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, out or {'ok': False, 'error': 'month'})
+        m = re.match(r'/api/k/([A-Za-z0-9.]+)/receipts$', self.path.split('?')[0])
+        if m:
+            kind, pid = klink_resolve(m.group(1))
+            if not pid or kind == 'v':
+                return self._send(200, {'ok': False, 'error': 'expired'})
+            con = db()
+            try:
+                out = {'ok': True, 'items': klink_rc_items(con, kind, pid)}
+            finally:
+                con.close()
+            return self._send(200, out)
+        m = re.match(r'/k/([A-Za-z0-9.]+)/receipts\.pdf$', self.path.split('?')[0])
+        if m:
+            # 🧾 כל הקבלות שהופקו בטווח — קובץ PDF אחד (רק קבלות של התשלומים שלו)
+            kind, pid = klink_resolve(m.group(1))
+            if not pid or kind == 'v':
+                return self._send(404, {'ok': False})
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            con = db()
+            try:
+                pdf, fname = klink_rc_pdf(con, kind, pid, (qs.get('from') or [''])[0], (qs.get('to') or [''])[0])
+            except Exception as e:
+                con.close(); return self._send(500, {'ok': False, 'error': str(e)[:200]})
+            con.close()
+            if not pdf:
+                return self._send(404, '<!doctype html><meta charset="utf-8"><body dir="rtl" style="font-family:sans-serif;padding:30px">אין קבלות בטווח התאריכים הזה.</body>'.encode('utf-8'), 'text/html')
+            from urllib.parse import quote as _q
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/pdf')
+            self.send_header('Content-Disposition', "%s; filename*=UTF-8''%s" % ('attachment' if qs.get('dl') else 'inline', _q(fname)))
+            self.send_header('Content-Length', str(len(pdf)))
+            self.end_headers(); self.wfile.write(pdf)
+            return
         m = re.match(r'/k/([A-Za-z0-9.]+)$', self.path.split('?')[0])
         if m:
             kind, pid = klink_resolve(m.group(1))
@@ -33621,7 +33924,7 @@ class H(BaseHTTPRequestHandler):
                          _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
-        m = re.match(r'/api/k/([A-Za-z0-9.]+)/(save|card|donate|day)$', self.path)
+        m = re.match(r'/api/k/([A-Za-z0-9.]+)/(save|card|donate|day|receipt|rcdone)$', self.path)
         if m:
             kind, pid = klink_resolve(m.group(1))
             if not pid:
@@ -33630,6 +33933,10 @@ class H(BaseHTTPRequestHandler):
             try:
                 if m.group(2) == 'save':
                     out = klink_save(con, kind, pid, b)
+                elif m.group(2) == 'receipt':
+                    out = klink_rc_issue(con, kind, pid, b)
+                elif m.group(2) == 'rcdone':
+                    out = klink_rc_done(con, kind, pid, b)
                 elif m.group(2) == 'card':
                     out = klink_card(con, kind, pid, str(b.get('keva') or ''))
                 elif m.group(2) == 'day':

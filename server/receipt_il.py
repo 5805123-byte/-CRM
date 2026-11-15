@@ -159,7 +159,8 @@ def receipt_data(con, don_id, kv_get, RECEIPT_IL_START, today_iso, greg_to_heb_f
     org = org_settings(con, kv_get)
     return {'donation_id': don_id, 'donor_id': row['donor_id'], 'name': name, 'tz': tz, 'addr': addr,
             'amount': amt, 'words': amount_words(amt), 'date': date, 'date_heb': heb,
-            'method': method_he(row['method']), 'ref': ref, 'purpose': (row['category'] or '').strip() or 'תרומה',
+            'method': method_he(row['method']), 'ref': ref,
+            'purpose': {'קבוע': 'תרומה בהוראת קבע', 'כללי': 'תרומה'}.get((row['category'] or '').strip(), (row['category'] or '').strip()) or 'תרומה',
             'num': num, 'org': org, 'issued': today_iso(),
             'email': (d['email'] or '').strip() if d else ''}
 
