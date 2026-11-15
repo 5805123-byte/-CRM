@@ -30324,7 +30324,8 @@ class H(BaseHTTPRequestHandler):
             import mikveh as _mk
             cid, scope = str(b.get('id') or '').strip(), b.get('scope')
             try:
-                price = round(float(str(b.get('price') or '').replace(',', '').replace('₪', '').strip()), 2)
+                pv = b.get('price')
+                price = round(float(str(pv if pv is not None else '').replace(',', '').replace('₪', '').strip()), 2)
             except ValueError:
                 return self._send(200, {'ok': False, 'error': 'מחיר לא תקין'})
             if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid) or price < 0 or price > 100000:
@@ -30340,6 +30341,14 @@ class H(BaseHTTPRequestHandler):
                     if got != cents:
                         return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל המחיר לא השתנה'})
                     what = '💲 מחיר אישי במקווה: ₪%g' % price
+                elif scope == 'fix':
+                    # 🏷️ מחיר מיוחד ללקוח (subscriptionFixPrice) — ₪0 מסיר אותו. בלי לגעת בקבוצה
+                    val = cents if cents > 0 else None
+                    _mk.update_client(cid, {'subscriptionFixPrice': val})
+                    got = _mk.client(cid).get('subscriptionFixPrice')
+                    if (val or 0) != (got or 0):
+                        return self._send(200, {'ok': False, 'error': 'המקווה קיבל את הבקשה אבל המחיר המיוחד לא השתנה'})
+                    what = ('🏷️ מחיר מיוחד במקווה: ₪%g' % price) if val else '🏷️ המחיר המיוחד הוסר'
                 else:
                     gid = _mk.client(cid, max_age=60).get('groupId') or ''
                     gname = next((x['name'] for x in _mk.groups() if x['id'] == gid), '')

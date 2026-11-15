@@ -2845,8 +2845,8 @@ function mkOpen(c){
           ${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
       <div class="mktiles">
         ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`,'','group')}
-        <div class="mktile mkedit" id="mkprice" title="לחיצה — לשנות את המחיר"><span>${mkIco('price')} מחיר המנוי${c.price!=null?' (אישי)':' (של הקבוצה)'} ✎</span><b>${c.price!=null?mkNis(c.price):(g&&g.price!=null?mkNis(g.price):'—')}</b></div>
-        ${c.fix?`<div class="mktile special" id="mkfixtile" title="מחיר מיוחד ללקוח במקווה — גובר על מחיר הקבוצה. במעבר מנוי הוא נמחק"><span>${mkIco('gem')} מחיר מיוחד</span><b>${mkNis(c.fix)}</b><small>במקום מחיר הקבוצה</small></div>`:''}
+        <div class="mktile" title="מחיר המנוי לפי הקבוצה — נקבע בהגדרות הקבוצה במקווה"><span>${mkIco('price')} מחיר המנוי <small style="font-weight:600;color:var(--muted)">(הקבוצה)</small></span><b>${c.price!=null?mkNis(c.price):(g&&g.price!=null?mkNis(g.price):'—')}</b></div>
+        <div class="mktile mkedit${c.fix!=null?' special':''}" id="mkfixtile" title="לחיצה — להגדיר / לשנות / להסיר מחיר מיוחד ללקוח הזה (גובר על מחיר הקבוצה)"><span>${mkIco('gem')} מחיר מיוחד ✎</span><b>${c.fix!=null?mkNis(c.fix):'—'}</b><small>${c.fix!=null?'במקום מחיר הקבוצה':'ללקוח הזה בלבד'}</small></div>
         <div class="mktile" id="mkpaid" data-id="${esc(c.id)}" title="מה ששילם במקווה (במכשיר / במערכת המקווה)"><span>${mkIco('card')} שילם במקווה</span><b>${mkPaidTxt(c.id)}</b></div>
         <div class="mktile mkedit ${mkPast(c.sub_end)?'bad':'ok'}" id="mksub" title="לחיצה — לשנות את תאריך ההתחלה / הסיום של המנוי במקווה"><span>${mkIco('cal')} מנוי עד ✎</span><b>${esc(mkDate(c.sub_end))||'—'}</b>${c.sub_end&&hebOfIso(c.sub_end)?`<small style="display:block;color:#555">${esc(hebOfIso(c.sub_end))}</small>`:''}${c.sub_start?`<small style="display:block;color:#777">מ-${esc(mkDate(c.sub_start))}${hebOfIso(c.sub_start)?' · '+esc(hebOfIso(c.sub_start)):''}</small>`:''}</div>
         ${tile('רישיון עד',esc(mkDate(c.lic_exp)),mkPast(c.lic_exp)?'bad':'','license')}
@@ -2914,7 +2914,7 @@ function mkOpen(c){
       remov.classList.remove('show');};
     document.getElementById('mkmsg1').onclick=()=>mkNotify(c,'free');
     document.getElementById('mkrenew').onclick=()=>mkRenewOpen(c);
-    document.getElementById('mkprice').onclick=()=>mkPriceEdit(c);
+    const _fx=document.getElementById('mkfixtile'); if(_fx)_fx.onclick=()=>mkFixEdit(c);
     document.getElementById('mkbal').onclick=()=>mkBalanceEdit(c);
     const _ms=document.getElementById('mksub'); if(_ms)_ms.onclick=()=>mkSubEdit(c);
     const _ms2=document.getElementById('mksub2'); if(_ms2)_ms2.onclick=()=>mkSubEdit(c);
@@ -3239,6 +3239,23 @@ function mkPaidTxt(cid){const P=MKPAY[cid];if(!P)return '⏳';if(!P.ok)return '�
     +'<br><small>אחרון: '+esc(mkNis(t.amount))+' · '+esc(d(t))+'</small>';}
 // 💲 מאיר: "שאם אני לוחץ על הקוביה של מחיר שאוכל לשנות את המחיר… ושמכאן אוכל לשנות מחירים וכו'".
 // המחיר במקווה (של הקבוצה, או אישי אם יש ללקוח שדה כזה)
+// 🏷️ מאיר: "יהיה אפשר להגדיר מהכרטיס לקוח את המחיר המיוחד" — קביעה / שינוי / הסרה, בלי לגעת בקבוצה
+async function mkFixEdit(c){
+  const g=(MK.groups||[]).find(x=>x.id===c.group), gp=g&&g.price!=null?g.price:null;
+  const cur=c.fix!=null?String(c.fix):'';
+  const v=await uiPrompt('מחיר מיוחד ל'+mkName(c)+' — ₪ לחודש'+(gp!=null?'\n(מחיר הקבוצה היום: ₪'+gp+')':'')+'\nגובר על מחיר הקבוצה. להשארה ריק = להסיר את המחיר המיוחד.',cur);
+  if(v===null)return;
+  const t=String(v).replace(/[^\d.]/g,''), price=t===''?0:+t;
+  if(t!==''&&(isNaN(price)||price<=0))return uiAlert('מחיר לא תקין');
+  const msg=price>0?('לקבוע ל'+mkName(c)+' מחיר מיוחד של ₪'+price+' לחודש?\n(גובר על מחיר הקבוצה, לא משנה לאף אחד אחר)')
+    :('להסיר את המחיר המיוחד מ'+mkName(c)+'?\n(יחזור למחיר הרגיל של הקבוצה)');
+  if(!await uiConfirm(msg,price>0?'💾 כן, לקבוע':'🗑️ כן, להסיר','ביטול'))return;
+  const r=await api('POST','/api/mikveh/price',{id:c.id,scope:'fix',price:price}).catch(()=>null);
+  if(!r||!r.ok)return uiAlert('לא עודכן במקווה:\n'+((r&&(r.error||r.detail))||'אין תשובה מהשרת'));
+  c.fix=price>0?price:null;
+  toast(price>0?'✓ נקבע מחיר מיוחד ₪'+price:'✓ המחיר המיוחד הוסר');
+  mkOpen(c);
+}
 async function mkPriceEdit(c,paidFirst){
   const o=document.createElement('div');o.className='mkov';
   o.innerHTML=`<div class="mkdlg" role="dialog"><div class="mkdh"><div class="mkav">💲</div><div><b>מחירים · ${esc(mkName(c))}</b></div><button class="x2" id="mpx">✕</button></div>
