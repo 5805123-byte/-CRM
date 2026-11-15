@@ -18399,19 +18399,28 @@ def klink_day(con, kind, pid, b):
 def klink_rc_mosads(con):
     """החשבונות בנדרים פלוס שעל התשלומים בהם מפיקים קבלה מהקישור: הראשי ('') וכל חשבון נוסף שמוגדר
     ב-Render — מאיר: "זה אותה עמותה, תוסיף את החשבון לקבלות" — חוץ מנתן תתן ומהמקווה."""
-    out = {''}
+    # בבדיקה: דמי החבר וקביעת המקום של ליפשיץ מאמצע 2024 נגבו בחשבון 7000571 (החשבון שהמערכת קוראת לו
+    # "המקווה") — אותה עמותה. לכן גם הוא נכלל, אבל בלי תשלומי השימוש במקווה עצמו (ראה klink_rc_is_mk_use)
+    out = {'', mk_mosad()}
     try:
         import nedarim as _ndr
-        skip = {natan_mosad(con), mk_mosad()}
+        skip = {natan_mosad(con)}
         for a in _ndr.accounts():
             mo = str(a.get('mosad') or '')
             if a.get('main'):
                 continue
-            if mo and mo not in skip and not re.search(r'נתן|natan|מקוו|mikv', a.get('name') or '', re.I):
+            if mo and mo not in skip and not re.search(r'נתן|natan', a.get('name') or '', re.I):
                 out.add(mo)
     except Exception as e:
         print('  klink rc mosads error:', e)
+    out.discard(natan_mosad(con) or '-')
     return out
+
+
+def klink_rc_is_mk_use(t):
+    """תשלום על שימוש במקווה ("מקווה - 2087", "מקווה שבת", טופס רישום למקווה) — לא תרומה, בלי קבלה."""
+    g = str((t['groupe'] if 'groupe' in t.keys() else t.get('groupe')) or '').strip()
+    return bool(re.match(r'(מקווה|טופס רישום למקווה)', g))
 
 
 def klink_rc_of_tx(con, tid, don_id=None):
@@ -18457,7 +18466,7 @@ def klink_rc_name_tx(con, pid, have, okm=None):
     okm = okm or {''}
     for t in con.execute("SELECT * FROM nd_tx WHERE amount>0 AND (member_id IS NULL OR member_id=?) AND name LIKE ?",
                          (pid, '%' + last + '%')).fetchall():
-        if str(t['mosad'] or '') not in okm or str(t['id']) in have or _klink_name_toks(t['name']) != want:
+        if str(t['mosad'] or '') not in okm or klink_rc_is_mk_use(t) or str(t['id']) in have or _klink_name_toks(t['name']) != want:
             continue
         if not re.fullmatch(r'\d{4}-\d\d-\d\d', str(t['iso'] or '')[:10]):
             continue
@@ -18489,7 +18498,8 @@ def klink_rc_items(con, kind, pid):
             iso = str(t.get('iso') or '')[:10]
             # מאיר: "שלחתי לליפשיץ… והוא קיבל רק 2 קבלות, אבל הוא תורם כל חודש" — תשלום לחשבון של הכולל שנרשם
             # גם בכרטיס תורם (fund='donor') הוא עדיין התשלום שלו ונכלל. רק חשבונות אחרים (נתן תתן / מקווה) לא נכללים
-            if amt <= 0 or t.get('fund') == 'natan' or str(t.get('mosad') or '') not in okm or not re.fullmatch(r'\d{4}-\d\d-\d\d', iso):
+            if amt <= 0 or t.get('fund') == 'natan' or str(t.get('mosad') or '') not in okm or klink_rc_is_mk_use(t) \
+                    or not re.fullmatch(r'\d{4}-\d\d-\d\d', iso):
                 continue
             auto = bool(t.get('keva')) and not str(t.get('keva')).startswith('-')
             # הקבלה תמיד על שם בעל הקישור (חבר הקהילה) — גם כשהתשלום שויך בעבר לכרטיס תורם (לפעמים בטעות);
