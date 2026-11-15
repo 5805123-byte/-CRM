@@ -2479,7 +2479,6 @@ function renderMikveh(){
         <div class="mkhg"><span>📊 דוחות ובדיקות</span><div><button class="mkibtn" id="mkentday" title="כמה נכנסו למקווה ביום מסוים — לפי קבוצה (ערך צבור, מזדמן וכו')">📊 כניסות ליום</button>
           <button class="mkibtn" id="mkmonb1" title="מי התקשר לשלוחות, חובות הפרש פתוחים, והאם הבדיקה האוטומטית פועלת">📡 מעקב — שיחות וחובות</button>
           <button class="mkibtn" id="mkdebtsb" title="כל החובות הפתוחים במקווה — מי חייב, כמה ועל מה">🧾 חובות פתוחים</button>
-      <button class="mkibtn" id="mkprice" title="מסמך Word על הבלאנק של המקווה — כל המנויים והמחירים, מהמקווה עכשיו">📄 מחירון המנויים</button>
       <button class="mkibtn" id="mkgrpw" title="סוגי המנוי במקווה — והעתקה של מנוי עם כל השעות וההגדרות">📋 סוגי מנוי</button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי או הרישיון שלו הסתיים, ולמה (חידוש אוטומטי כבוי / אין אמצעי תשלום / חיוב נכשל)">🔍 בדיקת פג תוקף</button></div></div>
         <div class="mkhg"><span>💬 פניות והודעות</span><div><button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📨 פניות מנדרים${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
@@ -2502,7 +2501,6 @@ function renderMikveh(){
   const _mc=document.getElementById('mkcredit'); if(_mc)_mc.onclick=()=>mkCreditOpen('bal');
   const _mz=document.getElementById('mkzklist'); if(_mz)_mz.onclick=()=>mkCreditOpen('zk');
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
-  document.getElementById('mkprice').onclick=e=>mkPriceDoc('',e.currentTarget);
   document.getElementById('mkgrpw').onclick=()=>mkGroupsWin();
   document.getElementById('mkselfg').onclick=()=>mkSelfGroupOpen();
   document.getElementById('mkvmb').onclick=()=>mkVmOpen();
