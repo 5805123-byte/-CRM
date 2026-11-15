@@ -20399,6 +20399,7 @@ def mk_renew_run(months=3):
     MK_RENEW.update(running=True, done=0, total=0, rows=[], error='', months=months)
     try:
         gr = {g['id']: g['name'] for g in _mk.groups()}
+        gpr = {g['id']: g.get('price') for g in _mk.groups()}
         now = il_now().replace(tzinfo=None)
         since = (now - datetime.timedelta(days=int(round(months * 30.4)))).strftime('%Y-%m-%d')
         today = now.strftime('%Y-%m-%d')
@@ -20445,7 +20446,10 @@ def mk_renew_run(months=3):
             out.append({'id': cid, 'name': ((c.get('firstName') or '').strip() + ' ' + (c.get('lastName') or '').strip()).strip(),
                         'code': c.get('clientCode'), 'phone': (c.get('phone') or '').strip(), 'group': gr.get(c.get('groupId'), ''),
                         'sub_start': str(c.get('subscriptionStartDate') or '')[:10], 'sub_end': str(c.get('subscriptionEndDate') or '')[:10],
-                        'auto': bool(c.get('autoRenewSubscription')), 'last_pay': last['iso'] if last else '', 'last_amt': last['amount'] if last else 0})
+                        'auto': bool(c.get('autoRenewSubscription')),
+                        'price': ((c.get('subscriptionFixPrice') or 0) / 100.0) or gpr.get(c.get('groupId')),
+                        'fix': bool(c.get('subscriptionFixPrice')),
+                        'last_pay': last['iso'] if last else '', 'last_amt': last['amount'] if last else 0})
         with ThreadPoolExecutor(5) as ex:
             list(ex.map(one, cand))
         out.sort(key=lambda r: (r['sub_end'] or '', r['name']))

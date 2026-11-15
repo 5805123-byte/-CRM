@@ -1839,7 +1839,7 @@ async function mkUnpaidOpen(start){
       ${L.length?'<button class="btn sm" id="uncsv" style="margin-top:8px">⬇️ אקסל</button>':''}`:''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   const b=document.getElementById('unrun');if(b)b.onclick=()=>mkUnpaidOpen(true);
-  rs.querySelectorAll('[data-un]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.un);if(c)mkOpen(c);});
+  rs.querySelectorAll('[data-un]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.un);if(!c)return;MK_BACK={cid:c.id,go:()=>mkUnpaidOpen()};mkOpen(c);});
   const cv=document.getElementById('uncsv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
     const csv=['שם,טלפון,מספר לקוח,קבוצה,כניסה אחרונה,מנוי עד,תשלום אחרון,סכום'].concat(L.map(x=>[x.name,x.phone,x.code||'',x.group,x.last_in.replace('T',' '),x.sub_end,x.last_pay,x.last_amt||''].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='נכנס ולא שילם.csv';document.body.appendChild(a);a.click();a.remove();};
@@ -1852,6 +1852,7 @@ async function mkRenewCheck(start){
   if(start)await api('POST','/api/mikveh/renew_check',{months:mkRenewMonths});
   const r=await api('GET','/api/mikveh/renew_check').catch(()=>null)||{};
   const d=x=>x?String(x).slice(8,10)+'/'+String(x).slice(5,7)+'/'+String(x).slice(0,4):'';
+  const per=(s,e)=>{if(!s||!e)return '';const dd=(new Date(e)-new Date(s))/864e5;return dd<=0?'':dd<45?'מנוי חודשי':dd<120?'מנוי לכמה חודשים':dd<300?'מנוי לחצי שנה':'מנוי שנתי';};
   const L=r.rows||[]; const mon=r.months||mkRenewMonths;
   rs.innerHTML=`<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#c0392b">🧾</div><div><h2>מנוי בלי חיוב</h2>
       <div class="mksub">מי שיש לו מנוי בתוקף במקווה ולא נמצא לו <b>שום חיוב</b> (אשראי / מזומן) ב-${mon} החודשים האחרונים — לבדיקה אם המנוי חודש בלי שנגבה תשלום</div></div></div>
@@ -1861,17 +1862,17 @@ async function mkRenewCheck(start){
     ${r.error?`<div class="hintxt" style="color:#c0392b">⚠️ ${esc(r.error)}</div>`:''}
     ${!r.running&&r.at&&!r.error?`<div class="mksec" style="margin-top:10px">${L.length} מנויים בתוקף בלי חיוב ב-${mon} החודשים האחרונים</div>
       <div class="mksub" style="margin:2px 2px 8px;color:#b9770e">⚠️ זו רשימה לבדיקה, לא הוכחה. מנוי שנתי ששולם מזמן, או מי ששילם במזומן ולא תועד, יכול להופיע כאן. בדקו כל אחד לגופו.</div>
-      <div class="mklist">${L.map(x=>`<div class="mkrow" data-rn="${esc(x.id)}" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc(x.name)}</b>
-        <div class="mksub"><span dir="ltr">${esc(x.phone||'אין טלפון')}</span> · #${esc(x.code||'')} · ${esc(x.group)}${x.auto?' · <span class="mktag ok">חידוש אוטומטי פעיל</span>':''}</div>
-        <div class="mksub">${x.sub_start?'מנוי מ-'+d(x.sub_start)+' ':''}· ${x.last_pay?'תשלום אחרון שנמצא '+d(x.last_pay)+' ('+esc(mkNis(x.last_amt))+')':'<b style="color:#c0392b">לא נמצא אף תשלום</b>'}</div></div>
+      <div class="mklist">${L.map(x=>`<div class="mkrow" data-rn="${esc(x.id)}" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc(x.name)} ${per(x.sub_start,x.sub_end)?`<span class="mktag mu">${esc(per(x.sub_start,x.sub_end))}</span>`:''}${x.fix?'<span class="mktag fix">🏷️ מחיר מיוחד</span>':''}${x.auto?'<span class="mktag ok">חידוש אוטומטי פעיל</span>':'<span class="mktag mu">חידוש אוטומטי כבוי</span>'}</b>
+        <div class="mksub"><span dir="ltr">${esc(x.phone||'אין טלפון')}</span> · #${esc(x.code||'')} · ${esc(x.group)}${x.price!=null?' · מחיר המנוי '+esc(mkNis(x.price)):''}</div>
+        <div class="mksub">${x.sub_start?'תוקף '+d(x.sub_start)+' – '+d(x.sub_end):'מנוי עד '+d(x.sub_end)} · ${x.last_pay?'תשלום אחרון שנמצא '+d(x.last_pay)+' ('+esc(mkNis(x.last_amt))+')':'<b style="color:#c0392b">❌ לא נמצא אף תשלום בכלל</b>'}</div></div>
         <span class="mktag ${mkPast(x.sub_end)?'bad':'ok'}">מנוי עד ${esc(mkDate(x.sub_end))}</span></div>`).join('')||'<div class="hintxt">✓ לכל מנוי בתוקף נמצא חיוב בתקופה</div>'}</div>
       ${L.length?'<button class="btn sm" id="rncsv" style="margin-top:8px">⬇️ אקסל</button>':''}`:''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   rs.querySelectorAll('[data-mon]').forEach(b=>b.onclick=()=>{mkRenewMonths=+b.dataset.mon;mkRenewCheck();});
   const b=document.getElementById('rnrun');if(b)b.onclick=()=>mkRenewCheck(true);
-  rs.querySelectorAll('[data-rn]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.rn);if(c)mkOpen(c);});
+  rs.querySelectorAll('[data-rn]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.rn);if(!c)return;MK_BACK={cid:c.id,go:()=>mkRenewCheck()};mkOpen(c);});
   const cv=document.getElementById('rncsv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
-    const csv=['שם,טלפון,מספר לקוח,קבוצה,מנוי מ,מנוי עד,חידוש אוטומטי,תשלום אחרון,סכום'].concat(L.map(x=>[x.name,x.phone,x.code||'',x.group,x.sub_start,x.sub_end,x.auto?'כן':'לא',x.last_pay,x.last_amt||''].map(q).join(','))).join('\n');
+    const csv=['שם,טלפון,מספר לקוח,קבוצה,סוג מנוי,מחיר המנוי,מנוי מ,מנוי עד,חידוש אוטומטי,מחיר מיוחד,תשלום אחרון,סכום'].concat(L.map(x=>[x.name,x.phone,x.code||'',x.group,per(x.sub_start,x.sub_end),x.price!=null?x.price:'',x.sub_start,x.sub_end,x.auto?'כן':'לא',x.fix?'כן':'לא',x.last_pay,x.last_amt||''].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='מנוי בלי חיוב.csv';document.body.appendChild(a);a.click();a.remove();};
   if(r.running||start)setTimeout(()=>{if(document.getElementById('remov').classList.contains('show')&&rs.querySelector('h2')&&rs.querySelector('h2').textContent==='מנוי בלי חיוב')mkRenewCheck();},2500);}
 // 🔎 מאיר: "יש לקוחות שמכניסים טלפונים אחרים ממה שמעודכן במקווה — שיהיה חכם ויבדוק אם יש שם דומה ויציע,
