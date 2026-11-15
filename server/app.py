@@ -18427,14 +18427,14 @@ def klink_rc_items(con, kind, pid):
                 amt = 0
             iso = str(t.get('iso') or '')[:10]
             # מאיר: "שלחתי לליפשיץ… והוא קיבל רק 2 קבלות, אבל הוא תורם כל חודש" — תשלום לחשבון של הכולל שנרשם
-            # גם בכרטיס תורם (fund='donor') הוא עדיין התשלום שלו: נכלל, והקבלה עליו היא אותה קבלה של התרומה בכרטיס
-            # התורם (בלי כפילות). רק חשבונות אחרים (נתן תתן / מקווה) לא נכללים
+            # גם בכרטיס תורם (fund='donor') הוא עדיין התשלום שלו ונכלל. רק חשבונות אחרים (נתן תתן / מקווה) לא נכללים
             if amt <= 0 or t.get('fund') in ('natan', 'other') or not re.fullmatch(r'\d{4}-\d\d-\d\d', iso):
                 continue
             auto = bool(t.get('keva')) and not str(t.get('keva')).startswith('-')
+            # הקבלה תמיד על שם בעל הקישור (חבר הקהילה) — גם כשהתשלום שויך בעבר לכרטיס תורם (לפעמים בטעות);
+            # קבלה שכבר הופקה על התרומה בכרטיס התורם נחשבת, כדי שלא תצא קבלה כפולה
             rc, num = klink_rc_of_tx(con, str(t['id']))
-            dn = con.execute("SELECT id FROM donations WHERE tid=? ORDER BY id LIMIT 1", ('ND' + str(t['id']),)).fetchone()
-            out.append({'key': ('d' + str(dn['id'])) if dn else ('t' + str(t['id'])), 'date': iso, 'amount': amt, 'auto': auto,
+            out.append({'key': 't' + str(t['id']), 'date': iso, 'amount': amt, 'auto': auto,
                         'what': 'הוראת קבע' if auto else ((t.get('groupe') or '').strip()[:40] or 'תרומה'), 'rc': rc, 'num': num})
     elif kind == 'd':
         for r in con.execute("SELECT d.id, d.date, d.amount, d.category, d.note, d.tid FROM donations d "
