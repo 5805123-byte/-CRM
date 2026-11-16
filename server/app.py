@@ -14465,6 +14465,51 @@ def av_phones_from_nd(con):
     return out
 
 
+def izcerts_data(con):
+    """📜 מאיר: "תעודות חדשות ליששכר זבולון… לפי מה שיש עכשיו מי שיש לו יששכר זבולון ותכניס את התאריך שכתוב
+    אצלנו ואני ישנה כל אחד" — לכל תורם עם שותפות פעילה: השם, האברכים שלו, הסכום לחודש לכל אברך, ממתי;
+    ומה שמאיר כבר שינה (נשמר ב-izcert:<תורם>)."""
+    # מאיר: "אני לא מחפש תעודות וגרפיקה — אני מתכוון לרשימה שיש לנו במערכת אצל אברכים, יששכר זבולון שלהם
+    # לפי שמות האברכים" — שורה לכל אברך ושותף: האברך, הזבולון, ממתי, הסכום. השינויים לרשימת התעודות נשמרים
+    # בנפרד (izcert:<שותפות>) ולא משנים את השותפות עצמה במערכת.
+    old = set()
+    try:
+        old = {r['ref_id'] for r in con.execute("SELECT DISTINCT ref_id FROM files WHERE kind='iz'")}
+    except Exception:
+        pass
+    gone = set()
+    try:
+        gone = {r['name'] for r in con.execute("SELECT name FROM avreichim WHERE COALESCE(TRIM(ended),'')<>''")}
+    except Exception:
+        pass
+    out = []
+    for r in con.execute("SELECT p.id pid, p.donor_id did, TRIM(p.avreich) a, p.start_date, p.amount, p.share, "
+                         "d.last, d.first, COALESCE(d.region,'') region FROM partners p JOIN donors d ON d.id=p.donor_id "
+                         "WHERE COALESCE(p.active,1)<>0 AND COALESCE(TRIM(p.avreich),'')<>''"):
+        if not _is_avreich(r['a']) or r['a'] in gone:
+            continue
+        raw = str(r['share'] if (r['share'] not in (None, '')) else (r['amount'] or ''))
+        cur = '₪' if ('₪' in raw or r['region'] == 'il') else '$'
+        a = _amt2(re.sub(r'[^\d.]', '', raw))
+        dt = str(r['start_date'] or '').strip()
+        if re.fullmatch(r'\d{4}-\d\d-\d\d', dt):
+            try:
+                dt = greg_to_heb_full(dt) or dt
+            except Exception:
+                pass
+        try:
+            saved = json.loads(kv_get(con, 'izcert:p%d' % r['pid'], '') or '{}')
+        except ValueError:
+            saved = {}
+        l, f = _split_av(r['a'])
+        out.append({'pid': r['pid'], 'did': r['did'], 'av': r['a'], 'av_last': l,
+                    'donor': ((r['last'] or '') + ' ' + (r['first'] or '')).strip(),
+                    'amt': ('%g' % a) if a else '', 'cur': cur, 'date': dt, 'old_cert': r['did'] in old,
+                    'saved': saved if isinstance(saved, dict) else {}})
+    out.sort(key=lambda x: (x['av_last'], x['av'], x['donor']))
+    return {'ok': True, 'rows': out}
+
+
 def _split_av(name):
     """שם אברך נשמר כ"משפחה פרטי" — מפרידים כדי למיין לפי שם משפחה."""
     p = re.sub(r'\s+', ' ', (name or '').strip()).split(' ')
@@ -23213,6 +23258,15 @@ class H(BaseHTTPRequestHandler):
             return
         if self.path.split('?')[0] == '/iz-slips':
             return self._send(200, open(os.path.join(STATIC, 'izslips.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/iz-certs':
+            return self._send(200, open(os.path.join(STATIC, 'izcerts.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/izcerts':
+            con = db()
+            try:
+                out = izcerts_data(con)
+            finally:
+                con.close()
+            return self._send(200, out)
         m = re.match(r'/api/parnes/(\d+)/cert$', self.path.split('?')[0])
         if m:
             # התעודה טוענת את הטקסט והעריכות השמורות של הלילה (מאיר: "איפה אני עושה פה שמור?")
@@ -34319,6 +34373,22 @@ class H(BaseHTTPRequestHandler):
                          _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        if self.path == '/api/izcerts/save':
+            # 📜 מה שמאיר שינה בתעודה של תורם (שם, אברכים, סכום, תאריך, להדפיס או לא) — נשמר במערכת
+            try:
+                pid_ = int(b.get('pid') or 0)
+            except (TypeError, ValueError):
+                pid_ = 0
+            if not pid_:
+                return self._send(200, {'ok': False, 'error': 'חסרה שותפות'})
+            data_ = b.get('data') if isinstance(b.get('data'), dict) else {}
+            con = db()
+            try:
+                kv_set(con, 'izcert:p%d' % pid_, json.dumps(data_, ensure_ascii=False)[:4000])
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/k/([A-Za-z0-9.]+)/(save|card|donate|day|receipt|rcdone)$', self.path)
         if m:
             kind, pid = klink_resolve(m.group(1))
