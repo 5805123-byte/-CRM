@@ -25920,6 +25920,15 @@ class H(BaseHTTPRequestHandler):
                 rows = [_mk.slim(c) for c in _mk.clients(fresh=fresh) if _mk.visible(c)]
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            # 🗂️ קטגוריה לכל קבוצה (מהעורך "סוגי מנוי", או לפי השם) — לסידור גריד שינוי המנוי בכרטיס
+            try:
+                con_ = db()
+                cmap = mk_group_cat_map(con_, gr)
+                con_.close()
+                for g in gr:
+                    g['cat'] = cmap.get(g['id']) or mk_group_cat_guess(g.get('name') or '')
+            except Exception:
+                pass
             # מערכת נפרדת לגמרי מהקהילה — בלי קישור לחבר קהילה
             return self._send(200, {'ok': True, 'groups': gr, 'clients': rows})
         if self.path.split('?')[0] == '/api/mikveh/link':
