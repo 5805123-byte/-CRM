@@ -5440,6 +5440,49 @@ def ensure_schema():
         con.rollback()
         print('  berger pobox error:', e)
 
+    # מאיר (מאגאזינטש): "יש פה פרנס יום ג' אב אחד שולם ואחד כתוב טרם נגבה — אסור שיהיה כזה דבר… זה אותו
+    # דבר וזה שולם". שורה בלי שנה עברית = השנה הנוכחית (כך הלוח קורא אותה), ולכן "ג' אב" ששולם ו"ג' אב תשפ"ז"
+    # שטרם נגבה אצל אותו תורם הם אותו לילה. פעם אחת: השורה הכפולה שטרם נגבתה מתאחדת לתוך זו ששולמה
+    # (התרומות שקושרו אליה עוברות, ההקדשה והשנה נשמרות). רק כשהסכום זהה — בסכום שונה לא נוגעים.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_dup_paid_v1'").fetchone():
+            from hebdate import current_heb_year as _cyr
+            cy_ = _cyr()
+            grp_ = {}
+            for r_ in con.execute("SELECT id, donor_id, day, month, COALESCE(kind,'parnes') k, COALESCE(hyear,'') hy, COALESCE(paid,0) pd, "
+                                  "amount, COALESCE(dedication,'') ded, COALESCE(date_text,'') dt FROM parnes "
+                                  "WHERE COALESCE(status,'confirmed')!='suggested' AND donor_id IS NOT NULL").fetchall():
+                grp_.setdefault((r_['donor_id'], r_['k'], str(r_['month'] or '').strip(), int(r_['day'] or 0), r_['hy'] or cy_), []).append(r_)
+            n_ = 0
+            for key_, L_ in grp_.items():
+                paid_ = [r_ for r_ in L_ if int(r_['pd'] or 0) in (1, 2)]
+                unp_ = [r_ for r_ in L_ if int(r_['pd'] or 0) not in (1, 2)]
+                if not key_[3] or not paid_ or not unp_:
+                    continue
+                keep_ = paid_[0]
+                for u_ in unp_:
+                    if abs(_amt2(u_['amount']) - _amt2(keep_['amount'])) > 0.5:
+                        continue
+                    con.execute("UPDATE donations SET parnes_id=? WHERE parnes_id=?", (keep_['id'], u_['id']))
+                    sets_, vals_ = [], []
+                    if not keep_['hy'] and u_['hy']:
+                        sets_.append('hyear=?'); vals_.append(u_['hy'])
+                    if not keep_['ded'].strip() and u_['ded'].strip():
+                        sets_.append('dedication=?'); vals_.append(u_['ded'])
+                    if sets_:
+                        con.execute("UPDATE parnes SET %s WHERE id=?" % ', '.join(sets_), vals_ + [keep_['id']])
+                    con.execute("DELETE FROM parnes WHERE id=?", (u_['id'],))
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (key_[0], today_iso(), 'פרנס', '🌙 %s %s — הופיע פעמיים (פעם נגבה ופעם "טרם נגבה"); אוחד לשורה אחת שנגבתה'
+                                 % (u_['dt'] or key_[2], u_['hy'] or ''), '', now_iso()))
+                    n_ += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_dup_paid_v1')")
+            con.commit()
+            print('  פרנס כפול (נגבה + טרם נגבה): אוחדו %d' % n_)
+    except Exception as e:
+        con.rollback()
+        print('  parnes dup error:', e)
+
     # מאיר: "כן, על שם החברה B & C Lead Consultants LLC" — הקבלה השנתית 2025 של ברגר על שם החברה
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_name_v1'").fetchone():

@@ -7201,7 +7201,10 @@ function cardDetails(d,body){
     const st=g.parnes?(part?`<span class="pstat part" title="שולם חלק — השאר עדיין לגבייה">🟡 שולם ${curd}${Math.round(g.psum).toLocaleString('en-US')} מתוך ${curd}${Math.round(g.amt).toLocaleString('en-US')} · נשאר ${curd}${Math.round(g.amt-g.psum).toLocaleString('en-US')}</span>`
       :`<span class="pstat ${pPaidCls(g.paid)}">${pPaidLbl(g.paid)}</span>`):'';
     // מאיר: "שזה יהיה קל לעדכון בפעם הבאה אצל כל אחד מהתורמים אם הוא שילם חלק" — כפתור אחד: כמה שילם עכשיו
-    const tog=g.parnes?(+g.paid!==1&&+g.paid!==2?`<button class="collectbtn partbtn" data-pid="${g.pid}" data-amt="${g.amt}" data-psum="${g.psum||0}" data-cur="${esc(curd)}" title="רישום תשלום על חשבון הלילה — הלילה נסגר לבד כשהכל שולם">💵 שילם חלק</button>`:'')
+    // מאיר: "מישהו שלקח לילה… ואני רוצה לחייב אותו מיד על השבצת הזה… תעשה לי אפשרות לחייב עכשיו" — פותח את
+    // חלון החיוב עם הלילה הזה, הסכום שנשאר והייעוד; אחרי החיוב הלילה נסגר כנגבה והתרומה נכנסת לדף התרומות
+    const pchg=(g.parnes&&+g.paid!==1&&+g.paid!==2)?`<button class="collectbtn pchgbtn dnqc" data-did="${d.id}" data-pid="${g.pid}" data-kind="${esc(g.kind||'parnes')}" data-amt="${Math.max(0,Math.round((g.amt-(g.psum||0))*100)/100)}" title="חיוב עכשיו בכרטיס ששמור אצלו — הלילה נסגר כנגבה">⚡ חייב עכשיו</button>`:'';
+    const tog=g.parnes?pchg+(+g.paid!==1&&+g.paid!==2?`<button class="collectbtn partbtn" data-pid="${g.pid}" data-amt="${g.amt}" data-psum="${g.psum||0}" data-cur="${esc(curd)}" title="רישום תשלום על חשבון הלילה — הלילה נסגר לבד כשהכל שולם">💵 שילם חלק</button>`:'')
       +`<button class="collectbtn ${+g.paid===1?'yes':'no'}" data-pid="${g.pid}">${+g.paid===1?'בטל גבייה':'✓ סמן נגבה'}</button>`
       +`<button class="collectbtn setl setlbtn ${+g.paid===2?'on':''}" data-pid="${g.pid}" title="הכסף הגיע בתרומה נפרדת — אין מה לגבות">${+g.paid===2?'בטל סודר':'סודר'}</button>`:'';
     // מאיר: "ביקשתי שיהיה לי אפשרות לתקן סכום או לפצל או לעדכן ייעוד,
@@ -20717,6 +20720,11 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
     +`<label><input type="radio" name="qc_pm" value="new" ${pm==='new'?'checked':''}> ➕ כרטיס חדש</label>`;
   o.querySelectorAll('[name=qc_pm]').forEach(x=>x.onchange=()=>{pm=x.value;showNew();});
   showNew();
+  // ⚡ "חייב עכשיו" משורת לילה שטרם נגבה — הלילה, הסכום שנשאר והייעוד כבר בחורים
+  if(b.dataset.pid){const ck=Object.keys(WFDAY).find(c=>WFDAY[c]===(b.dataset.kind||'parnes'));
+    if(ck){const sel=g('qc_cat');if(![...sel.options].some(op=>op.value===ck))sel.insertAdjacentHTML('afterbegin',`<option value="${esc(ck)}">${esc(ck)}</option>`);
+      sel.value=ck;pex=+b.dataset.pid;catShow();}
+    if(+b.dataset.amt)g('qc_amt').value=b.dataset.amt;}
   o.querySelector('.cno').onclick=()=>o.remove();
   const btxt=()=>kind==='rec'?'🔁 ליצור הוראת קבע':'⚡ לחייב';
   go.onclick=async()=>{const amt=amtNum(g('qc_amt').value);if(!amt){toast('חסר סכום');g('qc_amt').focus();return;}
