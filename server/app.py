@@ -5440,6 +5440,49 @@ def ensure_schema():
         con.rollback()
         print('  berger pobox error:', e)
 
+    # מאיר (מאגאזינטש): "יש פה פרנס יום ג' אב אחד שולם ואחד כתוב טרם נגבה — אסור שיהיה כזה דבר… זה אותו
+    # דבר וזה שולם". שורה בלי שנה עברית = השנה הנוכחית (כך הלוח קורא אותה), ולכן "ג' אב" ששולם ו"ג' אב תשפ"ז"
+    # שטרם נגבה אצל אותו תורם הם אותו לילה. פעם אחת: השורה הכפולה שטרם נגבתה מתאחדת לתוך זו ששולמה
+    # (התרומות שקושרו אליה עוברות, ההקדשה והשנה נשמרות). רק כשהסכום זהה — בסכום שונה לא נוגעים.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='parnes_dup_paid_v1'").fetchone():
+            from hebdate import current_heb_year as _cyr
+            cy_ = _cyr()
+            grp_ = {}
+            for r_ in con.execute("SELECT id, donor_id, day, month, COALESCE(kind,'parnes') k, COALESCE(hyear,'') hy, COALESCE(paid,0) pd, "
+                                  "amount, COALESCE(dedication,'') ded, COALESCE(date_text,'') dt FROM parnes "
+                                  "WHERE COALESCE(status,'confirmed')!='suggested' AND donor_id IS NOT NULL").fetchall():
+                grp_.setdefault((r_['donor_id'], r_['k'], str(r_['month'] or '').strip(), int(r_['day'] or 0), r_['hy'] or cy_), []).append(r_)
+            n_ = 0
+            for key_, L_ in grp_.items():
+                paid_ = [r_ for r_ in L_ if int(r_['pd'] or 0) in (1, 2)]
+                unp_ = [r_ for r_ in L_ if int(r_['pd'] or 0) not in (1, 2)]
+                if not key_[3] or not paid_ or not unp_:
+                    continue
+                keep_ = paid_[0]
+                for u_ in unp_:
+                    if abs(_amt2(u_['amount']) - _amt2(keep_['amount'])) > 0.5:
+                        continue
+                    con.execute("UPDATE donations SET parnes_id=? WHERE parnes_id=?", (keep_['id'], u_['id']))
+                    sets_, vals_ = [], []
+                    if not keep_['hy'] and u_['hy']:
+                        sets_.append('hyear=?'); vals_.append(u_['hy'])
+                    if not keep_['ded'].strip() and u_['ded'].strip():
+                        sets_.append('dedication=?'); vals_.append(u_['ded'])
+                    if sets_:
+                        con.execute("UPDATE parnes SET %s WHERE id=?" % ', '.join(sets_), vals_ + [keep_['id']])
+                    con.execute("DELETE FROM parnes WHERE id=?", (u_['id'],))
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (key_[0], today_iso(), 'פרנס', '🌙 %s %s — הופיע פעמיים (פעם נגבה ופעם "טרם נגבה"); אוחד לשורה אחת שנגבתה'
+                                 % (u_['dt'] or key_[2], u_['hy'] or ''), '', now_iso()))
+                    n_ += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('parnes_dup_paid_v1')")
+            con.commit()
+            print('  פרנס כפול (נגבה + טרם נגבה): אוחדו %d' % n_)
+    except Exception as e:
+        con.rollback()
+        print('  parnes dup error:', e)
+
     # מאיר: "כן, על שם החברה B & C Lead Consultants LLC" — הקבלה השנתית 2025 של ברגר על שם החברה
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_name_v1'").fetchone():
@@ -18210,7 +18253,7 @@ function rcPaint(){var L=rcRange(),tot=0,h=0;L.forEach(function(x){tot+=x.amount
   if(!L.length){g('rc_list').innerHTML='<div class="empty">אין תרומות בטווח התאריכים הזה.</div>';return;}
   var html='',yy='';L.forEach(function(x){var y=x.date.slice(0,4);if(y!==yy){yy=y;html+='<div class="yr">'+y+'</div>';}
     html+='<div class="rcr"><span class="d">'+x.date.slice(8,10)+'.'+x.date.slice(5,7)+'</span><span>'+esc(x.what)+'</span><span class="a">'+money(x.amount)+'</span>'+
-      '<span class="s'+(x.rc?' y':'')+'">'+(x.rc?'✓ קבלה מס\' '+x.num:'קבלה תופק עכשיו')+'</span></div>';});
+      '<span class="s'+(x.rc?' y':'')+'">'+(x.rc?'✓ קבלה מס\' '+x.num+(x.ready===false?' · הקובץ בהכנה':''):'קבלה תופק עכשיו')+'</span></div>';});
   g('rc_list').innerHTML=html;}
 async function rcLoad(){var r=null;try{r=await (await fetch(API+'/receipts')).json();}catch(e){}
   if(!r||!r.ok){g('rc_list').innerHTML='<div class="empty">לא הצלחנו לטעון את התרומות. נסו שוב מאוחר יותר.</div>';return;}
@@ -18234,9 +18277,15 @@ g('rc_go').onclick=async function(){var b=this,er=g('rc_err'),st=g('rc_st');er.t
   bar.firstChild.style.width='100%';
   if(made)postJ('/rcdone',{n:made,total:tot,from:g('rc_from').value,to:g('rc_to').value});
   rcPaint();busy(b,false);rcPaint();
-  var have=rcRange().filter(function(x){return x.rc;}).length;
+  await rcRefresh();
+  var R=rcRange().filter(function(x){return x.rc;}),have=R.length,ready=R.filter(function(x){return x.ready;}).length;
   if(have){var a=g('rc_pdf');a.href=location.pathname+'/receipts.pdf?from='+encodeURIComponent(g('rc_from').value)+'&to='+encodeURIComponent(g('rc_to').value);a.hidden=false;
-    st.innerHTML=(made?'<b style="color:#2e7d4f">✓ הופקו '+made+' קבלות.</b> ':'')+'כל '+have+' הקבלות בקובץ אחד — לחצו לפתיחה:';a.scrollIntoView({behavior:'smooth',block:'center'});}};
+    st.innerHTML=(made?'<b style="color:#2e7d4f">✓ הופקו '+made+' קבלות.</b> ':'')+(ready>=have?('כל '+have+' הקבלות בקובץ אחד — לחצו לפתיחה:')
+      :('בקובץ עכשיו '+ready+' מתוך '+have+' קבלות. <b>עוד '+(have-ready)+' קבלות בהכנה</b> — לחצו שוב על הכפתור בעוד כמה דקות, והן יופיעו בקובץ.'));
+    a.scrollIntoView({behavior:'smooth',block:'center'});}};
+async function rcRefresh(){var r=null;try{r=await (await fetch(API+'/receipts')).json();}catch(e){}
+  if(!r||!r.ok)return;var m={};(r.items||[]).forEach(function(x){m[x.key]=x;});
+  RC.forEach(function(x){var y=m[x.key];if(y){x.rc=y.rc;x.num=y.num;x.ready=y.ready;}});rcPaint();}
 // 💛 תרומה
 qa('#amts span').forEach(function(s){s.onclick=function(){qa('#amts span').forEach(function(x){x.classList.remove('on');});s.classList.add('on');g('amt').value=s.dataset.a;};});
 g('d_go').onclick=function(){var er=g('d_err');er.textContent='';var a=parseFloat(String(v('amt')).replace(/[^\d.]/g,''))||0;
@@ -18582,6 +18631,57 @@ def klink_rc_done(con, kind, pid, b):
     return {'ok': True}
 
 
+_KL_RC_FILL = set()
+
+
+def klink_rc_fill_bg(rids):
+    """ברקע: מוריד את הקבצים של קבלות (איזיקאונט) שעוד אין להם PDF אצלנו — אחרי דקה, 5 ו-15 דקות."""
+    rids = [r for r in rids if r and r not in _KL_RC_FILL]
+    if not rids:
+        return
+    _KL_RC_FILL.update(rids)
+
+    def run():
+        try:
+            left = list(rids)
+            for wait in (20, 60, 240, 600):
+                time.sleep(wait)
+                con = db()
+                try:
+                    nxt = []
+                    for rid in left:
+                        try:
+                            pdf, _fn = receipt_pdf(con, rid)
+                        except Exception:
+                            pdf = None
+                        if not pdf:
+                            nxt.append(rid)
+                        time.sleep(1)
+                    left = nxt
+                finally:
+                    con.close()
+                if not left:
+                    break
+        finally:
+            _KL_RC_FILL.difference_update(rids)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def klink_rc_ready(con, items):
+    """לכל קבלה ברשימה: האם הקובץ שלה כבר אצלנו (ready). מה שחסר — מתחיל לרדת ברקע."""
+    ids = [x['rc'] for x in items if x.get('rc')]
+    have = set()
+    for i in range(0, len(ids), 400):
+        part = ids[i:i + 400]
+        have |= {r['id'] for r in con.execute("SELECT id FROM receipt_docs WHERE pdf IS NOT NULL AND id IN (%s)" % ','.join('?' * len(part)), part)}
+    for x in items:
+        x['ready'] = bool(x.get('rc')) and x['rc'] in have
+    miss = [x['rc'] for x in items if x.get('rc') and not x['ready']]
+    if miss:
+        klink_rc_fill_bg(miss)
+    return items
+
+
 def klink_rc_pdf(con, kind, pid, frm, to):
     """כל הקבלות של התשלומים שלו בטווח — PDF אחד (מהישן לחדש)."""
     frm = frm if re.fullmatch(r'\d{4}-\d\d-\d\d', str(frm or '')) else '0000-00-00'
@@ -18590,11 +18690,30 @@ def klink_rc_pdf(con, kind, pid, frm, to):
     its.sort(key=lambda x: x['date'])
     if not its:
         return None, None
-    pdfs = []
+    # מאיר (ליפשיץ): "הופקו… כל 26 הקבלות בקובץ אחד" — והקובץ נפתח עם 2 עמודים. קבלות איזיקאונט שהקובץ שלהן
+    # עוד לא ירד (שרת הקבצים שלהם חוסם זמנית) — מנסים שוב כאן (עד 2 סבבים), והשאר ממשיכים לרדת ברקע
+    pdfs, miss = [], []
     for x in its:
         pdf, _fn = receipt_pdf(con, x['rc'])
         if pdf:
-            pdfs.append(bytes(pdf))
+            pdfs.append((x['date'], bytes(pdf)))
+        else:
+            miss.append(x)
+    for _round in range(2):
+        if not miss:
+            break
+        time.sleep(2)
+        left = []
+        for x in miss:
+            pdf, _fn = receipt_pdf(con, x['rc'])
+            if pdf:
+                pdfs.append((x['date'], bytes(pdf)))
+            else:
+                left.append(x)
+        miss = left
+    if miss:
+        klink_rc_fill_bg([x['rc'] for x in miss])
+    pdfs = [p for _d, p in sorted(pdfs, key=lambda y: y[0])]
     if not pdfs:
         return None, None
     try:
@@ -23220,7 +23339,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'expired'})
             con = db()
             try:
-                out = {'ok': True, 'items': klink_rc_items(con, kind, pid)}
+                out = {'ok': True, 'items': klink_rc_ready(con, klink_rc_items(con, kind, pid))}
                 if kind == 'm':
                     # לבדיקה: כמה מהתשלומים שלו בכל חשבון / סוג (רק מספרים, בלי פרטים)
                     import collections as _co
