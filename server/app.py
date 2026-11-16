@@ -17803,13 +17803,14 @@ def cardlink_message(d, url, con=None):
           'With deep appreciation for the great zechus you hold \u2013 supporting Torah learning at the eis ratzon of chatzos halailah. We daven for you at chatzos.'
           + (('\n' + iz) if iz else '') + '\n\n'
           'Your personal secure page:\n'
-          '\u2022 *Update your credit card*\n'
-          '\u2022 *Review your Kvittel names*\n'
-          '\u2022 *Dedicate a night of learning*\n'
-          '\u2022 *Download your tax receipts*\n\n'
+          # \u200e \u05d1\u05ea\u05d7\u05d9\u05dc\u05ea \u05d4\u05e9\u05d5\u05e8\u05d4 \u2014 \u05d0\u05d7\u05e8\u05ea \u05d5\u05d5\u05d0\u05d8\u05e1\u05d0\u05e4 \u05de\u05d9\u05d9\u05e9\u05e8 \u05d0\u05ea \u05e9\u05d5\u05e8\u05d5\u05ea \u05d4\u05e0\u05e7\u05d5\u05d3\u05d4 \u05dc\u05d9\u05de\u05d9\u05df (\u05d1\u05d2\u05dc\u05dc \u05d4\u05e9\u05dd \u05d1\u05e2\u05d1\u05e8\u05d9\u05ea \u05dc\u05de\u05e2\u05dc\u05d4)
+          '\u200e\u2022 *Update your credit card*\n'
+          '\u200e\u2022 *Review your Kvittel names*\n'
+          '\u200e\u2022 *Dedicate a night of learning*\n'
+          '\u200e\u2022 *Download your tax receipts*\n\n'
           '*Tap the image above to open your page*\n'
           '_Personal and secure \u00b7 valid for 30 days_\n\n'
-          'With deep appreciation,\nRabbi Yehoshua Meir Deutsch \u00b7 Kollel Chatzot') % (url, nm)
+          'With deep appreciation,\n\u200eRabbi Yehoshua Meir Deutsch \u00b7 Kollel Chatzot') % (url, nm)
     return {'subject': 'Card & Kvittel Updates \u2014 Your Secure Portal', 'body': body, 'wa': wa, 'monthly': mo}
 
 
