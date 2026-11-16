@@ -951,10 +951,14 @@ def ensure_schema():
                     "phone TEXT, from_gid TEXT, from_name TEXT, to_gid TEXT, to_name TEXT, fee REAL, call_id TEXT, ok INTEGER, error TEXT)")
         con.execute("CREATE INDEX IF NOT EXISTS ix_mkglog_cid ON mkg_log(cid, at)")
     except Exception: pass
-    for col in ('amount REAL', 'method TEXT', 'conf TEXT', 'status TEXT', 'debt_id TEXT', 'old_fix REAL'):
+    for col in ('amount REAL', 'method TEXT', 'conf TEXT', 'status TEXT', 'debt_id TEXT', 'old_fix REAL', 'nc INTEGER DEFAULT 0'):
         try:
             con.execute("ALTER TABLE mkg_log ADD COLUMN " + col)
         except Exception: pass
+    # 🔒 nc = "לא לחשב" — שינוי סוג מנוי שהמנהל סימן שלא ייחשב לחסימת ה-30 יום
+    try:
+        con.execute("ALTER TABLE mk_log ADD COLUMN nc INTEGER DEFAULT 0")
+    except Exception: pass
     # 📨 בקשות להחלפת קבוצה שנשלחו מהשלוחה (מי שעבר את המקסימום) — מטופלות במשרד
     try:
         con.execute("CREATE TABLE IF NOT EXISTS mkg_req(id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, cid TEXT, name TEXT, code TEXT, "
@@ -26140,6 +26144,22 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, dict(MK_UNPAID, ok=True))
         if self.path.split('?')[0] == '/api/mikveh/renew_check':
             return self._send(200, dict(MK_RENEW, ok=True))
+        if self.path.split('?')[0] == '/api/mikveh/change_lock':
+            # 🔒 מצב חסימת שינוי סוג מנוי ללקוח (לפני העברה מהאתר) — כמה שינויים היו בתקופה, ומתי האחרון
+            cid = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('id') or [''])[0]
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid):
+                return self._send(200, {'ok': False, 'error': 'לקוח לא תקין'})
+            con = db()
+            try:
+                cfg = mkg_cfg(con)
+                days = int(cfg.get('days') or 30)
+                mx = int(cfg.get('max') or 0)
+                lk = mk_change_lock(con, cid, days)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'days': days, 'max': mx, 'count': lk['count'],
+                                    'last': lk['last'], 'days_ago': lk['days_ago'], 'left': lk['left'],
+                                    'blocked': bool(mx and lk['count'] >= mx)})
         if self.path.split('?')[0] == '/api/nd/donate_cfg':
             # 💳 מאיר: "חלון לתרומות כמו שיש בנדרים פלוס — הוראת קבע בלי מסגרת, או ידני, ועבור מה… מסונכרן עם הקהילה".
             # הכרטיס נקלט בטופס המאובטח של נדרים פלוס (iframe) — מספר כרטיס לא עובר אצלנו. ApiValid — קוד ה-iframe
@@ -29496,6 +29516,22 @@ class H(BaseHTTPRequestHandler):
             cid, gid = str(b.get('id') or '').strip(), str(b.get('group') or '').strip()
             if not re.fullmatch(r'[0-9a-fA-F-]{36}', cid) or not re.fullmatch(r'[0-9a-fA-F-]{36}', gid):
                 return self._send(400, {'ok': False, 'error': 'חסר לקוח או קבוצה'})
+            # 🔒 מאיר: "שינוי סוג מנוי אמור להיחסם בתוך 30 יום (מה שמוגדר) — באתר תופיע אזהרה ורק באישורי אפשר להמשיך".
+            # נספר שינויים מהטלפון ומהאתר יחד (חוץ ממה שסומן 'לא לחשב'). force = אישור המנהל; no_count = שלא ייחשב.
+            force_change = bool(b.get('force'))
+            no_count = bool(b.get('no_count'))
+            con0 = db()
+            try:
+                cfg0 = mkg_cfg(con0)
+                days0 = int(cfg0.get('days') or 30)
+                max0 = int(cfg0.get('max') or 0)
+                lk0 = mk_change_lock(con0, cid, days0)
+            finally:
+                con0.close()
+            if not force_change and max0 and lk0['count'] >= max0:
+                return self._send(200, {'ok': False, 'locked': True,
+                                        'lock': {'days': days0, 'max': max0, 'count': lk0['count'],
+                                                 'last': lk0['last'], 'days_ago': lk0['days_ago'], 'left': lk0['left']}})
             try:
                 gname = next((g['name'] for g in _mk.groups() if g['id'] == gid), '')
                 if not gname:
@@ -29562,14 +29598,15 @@ class H(BaseHTTPRequestHandler):
             # מאיר: "לפעמים לוקח פחות משנייה ולפעמים הרבה זמן, ובעצם הוא כן מתעדכן באותו שנייה במקווה…
             # הוא צריך לעדכן וזהו". הרישום ביומן של חבר הקהילה חיכה לתורו בבסיס הנתונים (כשסנכרון
             # ברקע כותב, עד דקה) — לפני התשובה. עכשיו: עונים מיד, והרישום נעשה ברקע.
-            def _log(cid=cid, gname=gname, credit=credit):
+            def _log(cid=cid, gname=gname, credit=credit, no_count=no_count):
                 # היומן של לקוח המקווה בלבד — לא נוגע בקהילה
                 try:
                     con = db()
                     try:
-                        con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                        con.execute("INSERT INTO mk_log(cid,at,kind,summary,nc) VALUES(?,?,?,?,?)",
                                     (cid, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'group', '🏢 שונה סוג מנוי במשרד: ' + gname +
-                                     (' · 🏷️ המחיר המיוחד ₪%g אופס' % (old_fix / 100.0) if old_fix else '')))
+                                     (' · 🏷️ המחיר המיוחד ₪%g אופס' % (old_fix / 100.0) if old_fix else '') +
+                                     (' · 🔓 לא נחשב לחסימה' if no_count else ''), 1 if no_count else 0))
                         if credit:
                             con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                                         (cid, il_now().strftime('%Y-%m-%d %H:%M:%S'), 'credit', '💳 זיכוי: עבר ל"%s" עם יתרה צבורה של ₪%g — הכסף נשאר לזכותו במקווה (קוביית היתרה)' % (gname, credit)))
@@ -39072,18 +39109,40 @@ def mkg_month_start():
     return il_now().strftime('%Y-%m-01')
 
 
-def mkg_used(con, cid, days):
-    """כמה החלפות מוצלחות היו ללקוח ב-days הימים האחרונים, ובעוד כמה ימים תתפנה הבאה (כשהישנה יוצאת מהחלון)"""
-    since = (il_now().replace(tzinfo=None) - datetime.timedelta(days=int(days or 30))).strftime('%Y-%m-%d %H:%M:%S')
-    rows = [r['at'] for r in con.execute("SELECT at FROM mkg_log WHERE cid=? AND ok=1 AND at>=? ORDER BY at", (cid, since))]
-    left = 0
-    if rows:
+def mk_change_lock(con, cid, days):
+    """🔒 כל החלפות סוג המנוי של הלקוח ב-days הימים האחרונים — גם מהטלפון (mkg_log) וגם מהאתר (mk_log kind=group),
+    חוץ ממה שסומן 'לא לחשב' (nc). מחזיר {count, last, days_ago, left}. משמש גם לחסימה בטלפון וגם לאזהרה באתר."""
+    dd = int(days or 30)
+    since = (il_now().replace(tzinfo=None) - datetime.timedelta(days=dd)).strftime('%Y-%m-%d %H:%M:%S')
+    ats = []
+    try:
+        for r in con.execute("SELECT at FROM mkg_log WHERE cid=? AND ok=1 AND COALESCE(status,'active')<>'cancelled' AND COALESCE(nc,0)=0 AND at>=?", (cid, since)):
+            if r['at']:
+                ats.append(r['at'])
+    except Exception:
+        pass
+    try:
+        for r in con.execute("SELECT at FROM mk_log WHERE cid=? AND kind='group' AND COALESCE(nc,0)=0 AND at>=?", (cid, since)):
+            if r['at']:
+                ats.append(r['at'])
+    except Exception:
+        pass
+    ats.sort()
+    out = {'count': len(ats), 'last': ats[-1] if ats else None, 'days_ago': None, 'left': 0}
+    if ats:
         try:
-            free_at = datetime.datetime.fromisoformat(rows[0][:19]) + datetime.timedelta(days=int(days or 30))
-            left = max(1, (free_at.date() - il_now().date()).days)
+            out['days_ago'] = max(0, (il_now().replace(tzinfo=None).date() - datetime.datetime.fromisoformat(ats[-1][:19]).date()).days)
+            free_at = datetime.datetime.fromisoformat(ats[0][:19]).date() + datetime.timedelta(days=dd)
+            out['left'] = max(1, (free_at - il_now().date()).days)
         except ValueError:
-            left = 1
-    return len(rows), left
+            out['left'] = 1
+    return out
+
+
+def mkg_used(con, cid, days):
+    """כמה החלפות היו ללקוח ב-days הימים האחרונים (טלפון + אתר), ובעוד כמה ימים תתפנה הבאה"""
+    lk = mk_change_lock(con, cid, days)
+    return lk['count'], lk['left']
 
 
 def _mkg_phones(c):
