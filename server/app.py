@@ -18253,7 +18253,7 @@ function rcPaint(){var L=rcRange(),tot=0,h=0;L.forEach(function(x){tot+=x.amount
   if(!L.length){g('rc_list').innerHTML='<div class="empty">אין תרומות בטווח התאריכים הזה.</div>';return;}
   var html='',yy='';L.forEach(function(x){var y=x.date.slice(0,4);if(y!==yy){yy=y;html+='<div class="yr">'+y+'</div>';}
     html+='<div class="rcr"><span class="d">'+x.date.slice(8,10)+'.'+x.date.slice(5,7)+'</span><span>'+esc(x.what)+'</span><span class="a">'+money(x.amount)+'</span>'+
-      '<span class="s'+(x.rc?' y':'')+'">'+(x.rc?'✓ קבלה מס\' '+x.num:'קבלה תופק עכשיו')+'</span></div>';});
+      '<span class="s'+(x.rc?' y':'')+'">'+(x.rc?'✓ קבלה מס\' '+x.num+(x.ready===false?' · הקובץ בהכנה':''):'קבלה תופק עכשיו')+'</span></div>';});
   g('rc_list').innerHTML=html;}
 async function rcLoad(){var r=null;try{r=await (await fetch(API+'/receipts')).json();}catch(e){}
   if(!r||!r.ok){g('rc_list').innerHTML='<div class="empty">לא הצלחנו לטעון את התרומות. נסו שוב מאוחר יותר.</div>';return;}
@@ -18277,9 +18277,15 @@ g('rc_go').onclick=async function(){var b=this,er=g('rc_err'),st=g('rc_st');er.t
   bar.firstChild.style.width='100%';
   if(made)postJ('/rcdone',{n:made,total:tot,from:g('rc_from').value,to:g('rc_to').value});
   rcPaint();busy(b,false);rcPaint();
-  var have=rcRange().filter(function(x){return x.rc;}).length;
+  await rcRefresh();
+  var R=rcRange().filter(function(x){return x.rc;}),have=R.length,ready=R.filter(function(x){return x.ready;}).length;
   if(have){var a=g('rc_pdf');a.href=location.pathname+'/receipts.pdf?from='+encodeURIComponent(g('rc_from').value)+'&to='+encodeURIComponent(g('rc_to').value);a.hidden=false;
-    st.innerHTML=(made?'<b style="color:#2e7d4f">✓ הופקו '+made+' קבלות.</b> ':'')+'כל '+have+' הקבלות בקובץ אחד — לחצו לפתיחה:';a.scrollIntoView({behavior:'smooth',block:'center'});}};
+    st.innerHTML=(made?'<b style="color:#2e7d4f">✓ הופקו '+made+' קבלות.</b> ':'')+(ready>=have?('כל '+have+' הקבלות בקובץ אחד — לחצו לפתיחה:')
+      :('בקובץ עכשיו '+ready+' מתוך '+have+' קבלות. <b>עוד '+(have-ready)+' קבלות בהכנה</b> — לחצו שוב על הכפתור בעוד כמה דקות, והן יופיעו בקובץ.'));
+    a.scrollIntoView({behavior:'smooth',block:'center'});}};
+async function rcRefresh(){var r=null;try{r=await (await fetch(API+'/receipts')).json();}catch(e){}
+  if(!r||!r.ok)return;var m={};(r.items||[]).forEach(function(x){m[x.key]=x;});
+  RC.forEach(function(x){var y=m[x.key];if(y){x.rc=y.rc;x.num=y.num;x.ready=y.ready;}});rcPaint();}
 // 💛 תרומה
 qa('#amts span').forEach(function(s){s.onclick=function(){qa('#amts span').forEach(function(x){x.classList.remove('on');});s.classList.add('on');g('amt').value=s.dataset.a;};});
 g('d_go').onclick=function(){var er=g('d_err');er.textContent='';var a=parseFloat(String(v('amt')).replace(/[^\d.]/g,''))||0;
@@ -18625,6 +18631,57 @@ def klink_rc_done(con, kind, pid, b):
     return {'ok': True}
 
 
+_KL_RC_FILL = set()
+
+
+def klink_rc_fill_bg(rids):
+    """ברקע: מוריד את הקבצים של קבלות (איזיקאונט) שעוד אין להם PDF אצלנו — אחרי דקה, 5 ו-15 דקות."""
+    rids = [r for r in rids if r and r not in _KL_RC_FILL]
+    if not rids:
+        return
+    _KL_RC_FILL.update(rids)
+
+    def run():
+        try:
+            left = list(rids)
+            for wait in (20, 60, 240, 600):
+                time.sleep(wait)
+                con = db()
+                try:
+                    nxt = []
+                    for rid in left:
+                        try:
+                            pdf, _fn = receipt_pdf(con, rid)
+                        except Exception:
+                            pdf = None
+                        if not pdf:
+                            nxt.append(rid)
+                        time.sleep(1)
+                    left = nxt
+                finally:
+                    con.close()
+                if not left:
+                    break
+        finally:
+            _KL_RC_FILL.difference_update(rids)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def klink_rc_ready(con, items):
+    """לכל קבלה ברשימה: האם הקובץ שלה כבר אצלנו (ready). מה שחסר — מתחיל לרדת ברקע."""
+    ids = [x['rc'] for x in items if x.get('rc')]
+    have = set()
+    for i in range(0, len(ids), 400):
+        part = ids[i:i + 400]
+        have |= {r['id'] for r in con.execute("SELECT id FROM receipt_docs WHERE pdf IS NOT NULL AND id IN (%s)" % ','.join('?' * len(part)), part)}
+    for x in items:
+        x['ready'] = bool(x.get('rc')) and x['rc'] in have
+    miss = [x['rc'] for x in items if x.get('rc') and not x['ready']]
+    if miss:
+        klink_rc_fill_bg(miss)
+    return items
+
+
 def klink_rc_pdf(con, kind, pid, frm, to):
     """כל הקבלות של התשלומים שלו בטווח — PDF אחד (מהישן לחדש)."""
     frm = frm if re.fullmatch(r'\d{4}-\d\d-\d\d', str(frm or '')) else '0000-00-00'
@@ -18633,11 +18690,30 @@ def klink_rc_pdf(con, kind, pid, frm, to):
     its.sort(key=lambda x: x['date'])
     if not its:
         return None, None
-    pdfs = []
+    # מאיר (ליפשיץ): "הופקו… כל 26 הקבלות בקובץ אחד" — והקובץ נפתח עם 2 עמודים. קבלות איזיקאונט שהקובץ שלהן
+    # עוד לא ירד (שרת הקבצים שלהם חוסם זמנית) — מנסים שוב כאן (עד 2 סבבים), והשאר ממשיכים לרדת ברקע
+    pdfs, miss = [], []
     for x in its:
         pdf, _fn = receipt_pdf(con, x['rc'])
         if pdf:
-            pdfs.append(bytes(pdf))
+            pdfs.append((x['date'], bytes(pdf)))
+        else:
+            miss.append(x)
+    for _round in range(2):
+        if not miss:
+            break
+        time.sleep(2)
+        left = []
+        for x in miss:
+            pdf, _fn = receipt_pdf(con, x['rc'])
+            if pdf:
+                pdfs.append((x['date'], bytes(pdf)))
+            else:
+                left.append(x)
+        miss = left
+    if miss:
+        klink_rc_fill_bg([x['rc'] for x in miss])
+    pdfs = [p for _d, p in sorted(pdfs, key=lambda y: y[0])]
     if not pdfs:
         return None, None
     try:
@@ -23263,7 +23339,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': False, 'error': 'expired'})
             con = db()
             try:
-                out = {'ok': True, 'items': klink_rc_items(con, kind, pid)}
+                out = {'ok': True, 'items': klink_rc_ready(con, klink_rc_items(con, kind, pid))}
                 if kind == 'm':
                     # לבדיקה: כמה מהתשלומים שלו בכל חשבון / סוג (רק מספרים, בלי פרטים)
                     import collections as _co
