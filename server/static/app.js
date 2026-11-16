@@ -2897,8 +2897,11 @@ function mkOpen(c){
       <div data-ct="grp">
       <div class="mksec">🔄 שינוי סוג מנוי <small>בוחרים מנוי ומאשרים</small></div>
       <div id="mkrecent"></div>
-      <div class="mkgrid">${MK.groups.map(x=>`<button class="mkg${x.id===c.group?' cur':''}${pick&&x.id===pick.id?' pick':''}" data-g="${esc(x.id)}"${x.id===c.group||busy?' disabled':''}>
-          <span class="mkdot" style="background:${esc(mkColor(x))}"></span><span>${esc(x.name)}</span></button>`).join('')}</div>
+      ${(()=>{const catOf=x=>x.cat||mkGName(x)||'אחר';const byc={};MK.groups.forEach(x=>{(byc[catOf(x)]=byc[catOf(x)]||[]).push(x);});
+        let cats=Object.keys(byc).sort((a,b)=>a.localeCompare(b,'he'));
+        const curCat=g?catOf(g):'';if(curCat&&cats.includes(curCat)){cats=[curCat,...cats.filter(k=>k!==curCat)];}
+        const btn=x=>`<button class="mkg${x.id===c.group?' cur':''}${pick&&x.id===pick.id?' pick':''}" data-g="${esc(x.id)}"${x.id===c.group||busy?' disabled':''}><span class="mkdot" style="background:${esc(mkColor(x))}"></span><span>${esc(x.name)}</span></button>`;
+        return cats.map(cat=>`<div class="mkcatsec"><div class="mkcath"><span class="mkcdot"></span>${esc(cat)} <i>${byc[cat].length}</i></div><div class="mkgrid">${byc[cat].map(btn).join('')}</div></div>`).join('');})()}
       ${pick||state?`<div class="mkconf ${state==='ok'?'ok':state==='err'?'err':''}">
         ${state==='busy'?`<span class="mkspin" style="color:var(--accent)"></span><div class="t">מעביר את ${esc(c.first||mkName(c))} ל"${esc(pick.name)}" במקווה…<div class="mksub">${typeof info==='string'?esc(info):info>=3?info+' שניות · המקווה עונה לאט, עוד רגע…':'מתחבר למקווה ומעדכן'}</div></div>`
         :state==='ok'?`<span class="mkcheck">✓</span><div class="t">הועבר ל"${esc(G[c.group]?G[c.group].name:'')}"<div class="mksub">עודכן במקווה (${esc(info)} שניות)</div></div>
