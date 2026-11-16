@@ -2527,9 +2527,12 @@ function renderMikveh(){
   document.getElementById('mksched').onclick=mkSchedOpen; mkSchedCount();
   document.getElementById('mklogb').onclick=()=>mkLogOpen();
   document.getElementById('mkfixstat').onclick=()=>{mkFixOnly=!mkFixOnly;renderMikveh();};
-  const _side=document.getElementById('mkside');   // זוכר אם פתחת / סגרת את הצד
-  try{if(localStorage.getItem('mk_side')==='0')_side.open=false;}catch(e){}
-  _side.addEventListener('toggle',()=>{try{localStorage.setItem('mk_side',_side.open?'1':'0');}catch(e){}});
+  const _side=document.getElementById('mkside');   // זוכר אם פתחת / סגרת את הצד; בנייד מקופל כברירת מחדל
+  let _sideSave=false;
+  try{const pref=localStorage.getItem('mk_side');
+    _side.open = pref==='1' ? true : pref==='0' ? false : !window.matchMedia('(max-width:900px)').matches;}catch(e){}
+  _side.addEventListener('toggle',()=>{if(!_sideSave)return;try{localStorage.setItem('mk_side',_side.open?'1':'0');}catch(e){}});
+  setTimeout(()=>{_sideSave=true;},0);
   const _mc=document.getElementById('mkcredit'); if(_mc)_mc.onclick=()=>mkCreditOpen('bal');
   const _mz=document.getElementById('mkzklist'); if(_mz)_mz.onclick=()=>mkCreditOpen('zk');
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
