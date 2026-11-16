@@ -5487,6 +5487,35 @@ def ensure_schema():
         con.rollback()
         print('  parnes dup error:', e)
 
+    # מאיר (16.11.2026): "Daniella bat Orly, David ben Daniella, Eliyahu ben Daniella — תוסיף את השמות האלו בעברית
+    # אצל עזרא ביטש" — לקוויטל שלו (פעם אחת; רק כשיש כרטיס אחד בשם הזה)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='bitsch_kvittel_v1'").fetchone():
+            c_ = con.execute("SELECT id, tier FROM donors WHERE (last LIKE '%ביטש%' OR last LIKE '%בייטש%') AND first LIKE '%עזרא%'").fetchall()
+            if len(c_) == 1:
+                did_ = c_[0]['id']
+                add_ = ['דניאלה בת אורלי', 'דוד בן דניאלה', 'אליהו בן דניאלה']
+                rows_ = con.execute("SELECT id, text, tier FROM prayers WHERE donor_id=? ORDER BY id", (did_,)).fetchall()
+                have_ = '\n'.join(str(r_['text'] or '') for r_ in rows_)
+                new_ = [n_ for n_ in add_ if n_ not in have_]
+                if new_:
+                    if rows_:
+                        last_ = rows_[-1]
+                        con.execute("UPDATE prayers SET text=? WHERE id=?",
+                                    ((str(last_['text'] or '').rstrip() + '\n' + '\n'.join(new_)).strip(), last_['id']))
+                    else:
+                        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did_, '\n'.join(new_), c_[0]['tier'] or ''))
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (did_, today_iso(), 'קוויטל', '🕯️ נוספו לקוויטל: ' + ' · '.join(new_), '', now_iso()))
+                con.execute("INSERT INTO seed_flags(name) VALUES('bitsch_kvittel_v1')")
+                con.commit()
+                print('  עזרא ביטש: נוספו לקוויטל %d שמות' % len(new_))
+            else:
+                print('  עזרא ביטש: נמצאו %d כרטיסים — לא נוסף' % len(c_))
+    except Exception as e:
+        con.rollback()
+        print('  bitsch kvittel error:', e)
+
     # מאיר: "כן, על שם החברה B & C Lead Consultants LLC" — הקבלה השנתית 2025 של ברגר על שם החברה
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_name_v1'").fetchone():
