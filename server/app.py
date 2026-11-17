@@ -18403,7 +18403,7 @@ g('rc_go').onclick=async function(){var b=this,er=g('rc_err'),st=g('rc_st');er.t
   rcPaint();busy(b,false);rcPaint();
   await rcRefresh();
   var R=rcRange().filter(function(x){return x.rc;}),have=R.length,ready=R.filter(function(x){return x.ready;}).length;
-  if(have){var a=g('rc_pdf');a.href=location.pathname+'/receipts.pdf?from='+encodeURIComponent(g('rc_from').value)+'&to='+encodeURIComponent(g('rc_to').value);a.hidden=false;
+  if(have){var a=g('rc_pdf');a.href=location.pathname+'/receipts.pdf?from='+encodeURIComponent(g('rc_from').value)+'&to='+encodeURIComponent(g('rc_to').value)+'&t='+Date.now();a.hidden=false;
     st.innerHTML=(made?'<b style="color:#2e7d4f">✓ הופקו '+made+' קבלות.</b> ':'')+(ready>=have?('כל '+have+' הקבלות בקובץ אחד — לחצו לפתיחה:')
       :('בקובץ עכשיו '+ready+' מתוך '+have+' קבלות. <b>עוד '+(have-ready)+' קבלות בהכנה</b> — לחצו שוב על הכפתור בעוד כמה דקות, והן יופיעו בקובץ.'));
     a.scrollIntoView({behavior:'smooth',block:'center'});}};
@@ -22687,6 +22687,17 @@ def bump_data():
 
 
 class H(BaseHTTPRequestHandler):
+    def end_headers(self):
+        # מאיר (ליפשיץ): "לוחץ… ונותן לו רק 2 קבלות" — Cloudflare שומר כברירת מחדל כל קישור שנגמר ב-.pdf, ולכן
+        # בישראל חזר שוב ושוב הקובץ הישן (עם 2 קבלות). קבצי PDF שהמערכת מייצרת — לא נשמרים בדרך.
+        try:
+            if self.path.split('?')[0].lower().endswith('.pdf'):
+                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+                self.send_header('CDN-Cache-Control', 'no-store')
+        except Exception:
+            pass
+        super().end_headers()
+
     def _send_cached(self, c):
         """תשובה שכבר מוכנה במטמון. אם ללקוח יש בדיוק אותה גרסה — 304 בלי גוף."""
         if (self.headers.get('If-None-Match') or '') == c['etag']:
