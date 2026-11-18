@@ -8326,6 +8326,30 @@ def ensure_schema():
             _ns = con.execute("DELETE FROM stipends WHERE kind='monthly' AND period>='2026-10' AND name LIKE '%פיליפס%' AND name LIKE '%יונתן%'").rowcount
             if _ns:
                 print('  פיליפס יונתן: הוסר מ-%d רשימות חודשיות מחשון' % _ns)
+        # מאיר (18.11.2026): "תוציא את שלום פראנק ופיליפס וגלזר מהרשימה של הכולל חצות… שניהם בכלל לא,
+        # אם יש להם יששכר זבולון אז תשאיר ריק את הזבולון… מהכולל חצות לגמרי מחשוון" — פראנק יוצא מהכולל
+        # (המקום אצל הזבולון שלו נפתח), ונמחק מהרשימות החודשיות מחשון תשפ"ז
+        _sf = con.execute("SELECT name FROM avreichim WHERE name LIKE '%פראנק%' AND name LIKE '%שלום%'").fetchall()
+        if len(_sf) == 1:
+            _out.append(_sf[0]['name'])
+            if not con.execute("SELECT 1 FROM seed_flags WHERE name='frank_out_v1'").fetchone():
+                _ns = con.execute("DELETE FROM stipends WHERE kind='monthly' AND period>='2026-10' AND name LIKE '%פראנק%' AND name LIKE '%שלום%'").rowcount
+                con.execute("INSERT INTO seed_flags(name) VALUES('frank_out_v1')")
+                con.commit()
+                print('  פראנק שלום: הוסר מ-%d רשימות חודשיות מחשון' % _ns)
+        # גלזר מנחם דוד — "רק לומד בכולל הוראה": עובר לרשימת כולל הוראה בלבד, ונמחק מרשימות כולל חצות
+        # מחשון. נשאר אברך (בכולל הוראה), ולכן השותפות שלו ביששכר־זבולון לא נוגעים בה כאן.
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='glazer_horaa_only_v1'").fetchone():
+            _gz = con.execute("SELECT id,name FROM avreichim WHERE name LIKE '%גלזר%' AND name LIKE '%מנחם%'").fetchall()
+            if len(_gz) == 1:
+                con.execute("UPDATE avreichim SET seder='הוראה' WHERE id=?", (_gz[0]['id'],))
+                _ns = con.execute("DELETE FROM stipends WHERE kollel='חצות' AND kind='monthly' AND period>='2026-10' "
+                                  "AND name LIKE '%גלזר%' AND name LIKE '%מנחם%'").rowcount
+                iz_log(con, _gz[0]['name'], None, 'עבר לכולל הוראה בלבד — יצא מרשימת כולל חצות מחשון תשפ"ז',
+                       now_iso(), greg_to_heb_full(today_iso()) or today_iso())
+                print('  גלזר מנחם דוד: כולל הוראה בלבד, הוסר מ-%d רשימות חצות' % _ns)
+                con.execute("INSERT INTO seed_flags(name) VALUES('glazer_horaa_only_v1')")
+                con.commit()
         _left = 0
         for anm in _out:
             r = con.execute("SELECT id,ended FROM avreichim WHERE name=?", (anm,)).fetchone()
