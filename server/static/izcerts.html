@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="he" dir="rtl" translate="no" class="notranslate">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="google" content="notranslate">
+<title>רשימת תעודות יששכר־זבולון</title>
+<style>
+:root{--bg:#f3eee2;--paper:#fffdf8;--ink:#2b2416;--soft:#6b6249;--wine:#7a1f1f;--gold:#9c7a2e;--line:#e3d9c2;--ok:#2e7d4f;--okbg:#e6f3ea;--warn:#9a6a00;--warnbg:#fdf1d8;--no:#8a8274;--nobg:#eeeae0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Arial,Helvetica,sans-serif;font-size:15px}
+.top{position:sticky;top:0;z-index:5;background:var(--paper);border-bottom:1px solid var(--line);padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.top h1{font-size:20px;color:var(--wine);margin:0 0 0 auto}
+.top input{padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;min-width:190px}
+.btn{font:inherit;font-weight:700;border-radius:9px;padding:8px 14px;cursor:pointer;border:1px solid var(--gold);background:var(--wine);color:#fff}
+.btn.ghost{background:#fff;color:var(--ink);border-color:var(--line)}
+.flt{display:flex;gap:4px}.flt button{font:inherit;font-size:13px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 11px;cursor:pointer}
+.flt button.on{background:var(--gold);border-color:var(--gold);color:#fff}
+.sum{padding:8px 14px;color:var(--soft);font-size:13.5px}
+.sum b{color:var(--ink)}
+.tw{padding:0 14px 30px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);min-width:760px}
+th{background:var(--wine);color:#fff;font-size:13px;text-align:right;padding:7px 8px;position:sticky;top:57px}
+td{border-bottom:1px solid #eee3cc;padding:5px 8px;vertical-align:middle}
+tr.avfirst td{border-top:2px solid #e3d3a3}
+td.n{color:var(--soft);font-size:12px;width:34px}
+td.av{font-weight:700;white-space:nowrap}
+td input{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:7px;font:inherit;background:#fffef9}
+td.amt{width:150px}td.amt div{display:flex;gap:4px}td.amt select{width:52px;padding:6px 2px;border:1px solid var(--line);border-radius:7px;font:inherit}
+td.dt{width:170px}td.nt{min-width:150px}
+.stt{display:flex;gap:4px;flex-wrap:nowrap}
+.stt button{font:inherit;font-size:12.5px;border:1px solid var(--line);background:#fff;border-radius:7px;padding:4px 8px;cursor:pointer;white-space:nowrap}
+.stt button.on[data-s="make"]{background:var(--okbg);border-color:#9fc8a8;color:var(--ok);font-weight:700}
+.stt button.on[data-s="had"]{background:var(--warnbg);border-color:#e6c47a;color:var(--warn);font-weight:700}
+.stt button.on[data-s="no"]{background:var(--nobg);border-color:#cfc8b8;color:var(--no);font-weight:700}
+tr.s-no td,tr.s-had td{color:#8a8274}
+tr.s-no td.av,tr.s-had td.av{text-decoration:line-through}
+.oldc{font-size:11px;color:var(--warn);font-weight:700;display:block}
+.sv{font-size:11px;color:var(--ok)}
+.empty{padding:30px;text-align:center;color:var(--soft)}
+.ponly{display:none}
+@media print{
+  @page{size:A4 portrait;margin:12mm}
+  body{background:#fff;font-size:12px}
+  .top,.sum,.noprint{display:none!important}
+  .ponly{display:block}
+  .ph{font-size:17px;font-weight:700;margin:0 0 6px}.ph small{font-weight:400;color:#555;font-size:12px}
+  .tw{padding:0;overflow:visible}
+  table{min-width:0;border:1px solid #999}
+  th{position:static;background:#eee!important;color:#000;border:1px solid #999}
+  td{border:1px solid #bbb;padding:4px 6px}
+  td input,td select{border:0;padding:0;background:none}
+  td.amt select{-webkit-appearance:none;appearance:none;width:auto}
+  .stt,.oldc,.sv{display:none}
+  tr.hidep{display:none}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>📜 רשימה לתעודות יששכר־זבולון</h1>
+  <input id="q" type="search" placeholder="חיפוש אברך / זבולון…">
+  <div class="flt" id="flt"><button data-f="all" class="on">הכל</button><button data-f="make">להכין תעודה</button><button data-f="had">כבר קיבל</button><button data-f="no">לא צריך</button></div>
+  <button class="btn" id="print">🖨️ הדפסה (רק "להכין תעודה")</button>
+</div>
+<div class="sum" id="sum">טוען…</div>
+<div class="tw">
+  <div class="ponly ph">רשימת תעודות יששכר־זבולון — כולל חצות <small id="pdate"></small></div>
+  <table><thead><tr><th>#</th><th>האברך</th><th>הזבולון (התורם)</th><th>מתאריך</th><th>סכום לחודש</th><th>הערה</th><th class="noprint">תעודה</th></tr></thead>
+  <tbody id="tb"><tr><td colspan="7" class="empty">טוען את הרשימה…</td></tr></tbody></table>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let ROWS=[],Q='',F='all';
+function v(r,k){const s=r.saved||{};return s[k]!==undefined?s[k]:({date:r.date,amt:r.amt,cur:r.cur,note:'',st:'make'})[k];}
+function vis(r){if(F!=='all'&&v(r,'st')!==F)return false;if(!Q)return true;return (r.av+' '+r.donor+' '+v(r,'note')).includes(Q);}
+function paint(){const L=ROWS.filter(vis);let prev='',i=0;
+  const c={make:0,had:0,no:0};ROWS.forEach(r=>c[v(r,'st')]=(c[v(r,'st')]||0)+1);
+  $('#sum').innerHTML=`<b>${ROWS.length}</b> שותפויות · להכין תעודה: <b>${c.make}</b> · כבר קיבל: <b>${c.had}</b> · לא צריך: <b>${c.no}</b> — כל שינוי נשמר מיד`;
+  $('#tb').innerHTML=L.map(r=>{const first=r.av!==prev;prev=r.av;if(first)i++;const s=v(r,'st');
+    return `<tr class="s-${s}${first?' avfirst':''}${s!=='make'?' hidep':''}" data-pid="${r.pid}">
+      <td class="n">${first?i:''}</td><td class="av">${first?esc(r.av):''}</td>
+      <td>${esc(r.donor)}${r.old_cert?'<span class="oldc">יש לו תעודה ישנה במערכת</span>':''}</td>
+      <td class="dt"><input data-k="date" value="${esc(v(r,'date'))}" placeholder="א׳ אייר תשפ״ז"></td>
+      <td class="amt"><div><input data-k="amt" value="${esc(v(r,'amt'))}" inputmode="decimal"><select data-k="cur"><option ${v(r,'cur')==='$'?'selected':''}>$</option><option ${v(r,'cur')==='₪'?'selected':''}>₪</option></select></div></td>
+      <td class="nt"><input data-k="note" value="${esc(v(r,'note'))}" placeholder="—"></td>
+      <td class="noprint"><div class="stt"><button data-s="make" class="${s==='make'?'on':''}">להכין</button><button data-s="had" class="${s==='had'?'on':''}">כבר קיבל</button><button data-s="no" class="${s==='no'?'on':''}">לא צריך</button></div><span class="sv" data-sv></span></td></tr>`;}).join('')||'<tr><td colspan="7" class="empty">אין תוצאות</td></tr>';}
+const T={};
+function save(r){clearTimeout(T[r.pid]);T[r.pid]=setTimeout(async()=>{let ok=false;
+  try{const x=await (await fetch('/api/izcerts/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pid:r.pid,data:r.saved})})).json();ok=x&&x.ok;}catch(e){}
+  const el=document.querySelector('tr[data-pid="'+r.pid+'"] [data-sv]');if(el){el.textContent=ok?'✓ נשמר':'⚠️ לא נשמר — נסו שוב';el.style.color=ok?'':'#b3261e';}},450);}
+function setK(r,k,val){r.saved=Object.assign({},r.saved||{},{[k]:val});save(r);}
+document.addEventListener('input',e=>{if(e.target.id==='q'){Q=e.target.value.trim();paint();$('#q').focus();return;}
+  const tr=e.target.closest('tr[data-pid]');if(!tr||!e.target.dataset.k)return;setK(ROWS.find(x=>x.pid==tr.dataset.pid),e.target.dataset.k,e.target.value);});
+document.addEventListener('change',e=>{const tr=e.target.closest('tr[data-pid]');if(tr&&e.target.tagName==='SELECT')setK(ROWS.find(x=>x.pid==tr.dataset.pid),e.target.dataset.k,e.target.value);});
+document.addEventListener('click',e=>{const b=e.target.closest('.stt button');if(b){const tr=b.closest('tr');const r=ROWS.find(x=>x.pid==tr.dataset.pid);setK(r,'st',b.dataset.s);paint();return;}
+  const f=e.target.closest('#flt button');if(f){F=f.dataset.f;document.querySelectorAll('#flt button').forEach(x=>x.classList.toggle('on',x===f));paint();}});
+$('#print').onclick=()=>{$('#pdate').textContent='· הודפס '+new Date().toLocaleDateString('he-IL');const keep=F;F='all';paint();setTimeout(()=>{window.print();F=keep;paint();},200);};
+(async()=>{let r=null;try{r=await (await fetch('/api/izcerts')).json();}catch(e){}
+  if(!r||!r.ok){$('#tb').innerHTML='<tr><td colspan="7" class="empty">לא נטען. צריך להיות מחובר למערכת — פתחו את הדף מלשונית אברכים.</td></tr>';$('#sum').textContent='';return;}
+  ROWS=r.rows||[];paint();})();
+</script>
+</body>
+</html>

@@ -2527,9 +2527,12 @@ function renderMikveh(){
   document.getElementById('mksched').onclick=mkSchedOpen; mkSchedCount();
   document.getElementById('mklogb').onclick=()=>mkLogOpen();
   document.getElementById('mkfixstat').onclick=()=>{mkFixOnly=!mkFixOnly;renderMikveh();};
-  const _side=document.getElementById('mkside');   // זוכר אם פתחת / סגרת את הצד
-  try{if(localStorage.getItem('mk_side')==='0')_side.open=false;}catch(e){}
-  _side.addEventListener('toggle',()=>{try{localStorage.setItem('mk_side',_side.open?'1':'0');}catch(e){}});
+  const _side=document.getElementById('mkside');   // זוכר אם פתחת / סגרת את הצד; בנייד מקופל כברירת מחדל
+  let _sideSave=false;
+  try{const pref=localStorage.getItem('mk_side');
+    _side.open = pref==='1' ? true : pref==='0' ? false : !window.matchMedia('(max-width:900px)').matches;}catch(e){}
+  _side.addEventListener('toggle',()=>{if(!_sideSave)return;try{localStorage.setItem('mk_side',_side.open?'1':'0');}catch(e){}});
+  setTimeout(()=>{_sideSave=true;},0);
   const _mc=document.getElementById('mkcredit'); if(_mc)_mc.onclick=()=>mkCreditOpen('bal');
   const _mz=document.getElementById('mkzklist'); if(_mz)_mz.onclick=()=>mkCreditOpen('zk');
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
@@ -2789,8 +2792,25 @@ function mkMonitorOpen(){const rs=document.getElementById('remsheet'),remov=docu
   rs.innerHTML='<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">📡</div><div><h2>מעקב — שיחות וחובות</h2><div class="mksub">מי התקשר לשלוחות המקווה, חובות הפרש פתוחים, והאם הבדיקה האוטומטית פועלת</div></div></div><div id="mkmonb">⏳ טוען…</div>';
   remov.classList.add('show');document.getElementById('rx').onclick=()=>{remov.classList.remove('show');clearTimeout(MKMON_T);};
   mkMonitorInto(document.getElementById('mkmonb'),id=>{const c=MK&&MK.clients.find(z=>z.id===id);if(c)mkOpen(c);});}
-async function mkSetGroup(c,g,on,diff){
-  on=on||(()=>{});
+// 🔒 פופאפ לפני העברת סוג מנוי: אזהרה אם שונה בתוך תקופת ההגדרה (צריך אישור), והודעה שייחסם ל-N יום + סימון "לא לחשב"
+function mkLockConfirm(c){return new Promise(async resolve=>{
+  const r=await api('GET','/api/mikveh/change_lock?id='+encodeURIComponent(c.id)).catch(()=>null)||{};
+  const days=r.days||30, mx=r.max||1, blocked=!!r.blocked, ago=r.days_ago;
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox"><div class="cm" style="text-align:start">
+    <b>${blocked?'⚠️ ':''}העברת סוג מנוי — ${esc(mkName(c))}</b>
+    ${blocked?`<div style="background:#fde8e4;border:1px solid #e3a094;border-radius:8px;padding:8px 10px;margin:8px 0;line-height:1.6">המנוי שונה ${ago!=null?(ago===0?'היום':'לפני '+ago+' ימים'):'לאחרונה'}. לפי ההגדרה אפשר לשנות סוג מנוי רק ${mx} פעם כל ${days} יום — להעביר בכל זאת צריך את אישורך.</div>`:''}
+    <div style="margin:8px 0;color:#555;line-height:1.6">ℹ️ אחרי המעבר, שינוי סוג מנוי נוסף (באתר או בטלפון) ייחסם ל-${days} יום.</div>
+    <label style="display:flex;gap:8px;align-items:center;margin:10px 0;cursor:pointer"><input type="checkbox" id="mklocknc" style="width:18px;height:18px"> <span>אל תחשיב את המעבר הזה — שלא יחסום לשינוי ל-${days} יום</span></label>
+  </div><div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">${blocked?'להעביר בכל זאת':'המשך להעברה'}</button></div></div>`;
+  document.body.appendChild(o);
+  const done=v=>{o.remove();resolve(v);};
+  o.querySelector('.cno').onclick=()=>done(null);
+  o.querySelector('.cyes').onclick=()=>done({no_count:o.querySelector('#mklocknc').checked,force:true});
+  o.onclick=e=>{if(e.target===o)done(null);};
+});}
+async function mkSetGroup(c,g,on,diff,opts){
+  on=on||(()=>{}); opts=opts||{};
   const t0=Date.now(); let tick=null;
   c._busy='מעביר ל'+mkGName(g)+'…'; mkRowRefresh(c);
   on('busy',0); tick=setInterval(()=>on('busy',Math.floor((Date.now()-t0)/1000)),1000);
@@ -2801,8 +2821,9 @@ async function mkSetGroup(c,g,on,diff){
         if(!done&&v&&v.ok&&v.client&&v.client.group===g.id)return res({ok:true,checked:true});}catch(e){}
       if(!done)setTimeout(tryIt,3000);};
     setTimeout(tryIt,4000);});
-  const viaPost=api('POST','/api/mikveh/group',{id:c.id,group:g.id,diff:diff||{}}).catch(()=>null);   // 502 / ניתוק — תשובה שאינה JSON
+  const viaPost=api('POST','/api/mikveh/group',{id:c.id,group:g.id,diff:diff||{},force:opts.force?1:0,no_count:opts.no_count?1:0}).catch(()=>null);   // 502 / ניתוק — תשובה שאינה JSON
   r=await Promise.race([viaPost,viaCheck]); done=true;
+  if(r&&r.locked){clearInterval(tick);c._busy='';mkRowRefresh(c);on('err','השינוי חסום — שונה לאחרונה. צריך אישור.');return false;}
   if(!r||!r.ok){
     // מאיר: "באתר של המקווה אני רואה שהוא כן עדכן… פשוט השרת לא קורא שזה הצליח" — לפני שמודיעים
     // על כישלון, בודקים במקווה עצמו מה הקבוצה שלו עכשיו
@@ -2973,8 +2994,9 @@ function mkOpen(c){
     const no=document.getElementById('mkno'); if(no)no.onclick=()=>{pick=null;state='';draw();};
     const go=document.getElementById('mkgo');
     if(go)go.onclick=async()=>{const target=pick;
+      const lc=await mkLockConfirm(c);if(lc===null)return;   // 🔒 אזהרת חסימה + "לא לחשב"
       const d=await mkDiffAsk(c.id,target.id);if(d===null)return;
-      const ok=await mkSetGroup(c,target,(st,v)=>{state=st;info=v;draw();},d);
+      const ok=await mkSetGroup(c,target,(st,v)=>{state=st;info=v;draw();},d,lc);
       if(ok){delete MKRECENT[c.id];mkRecentFill(c.id,document.getElementById('mkrecent'));}
       if(ok&&d.mode==='debt')toast('💲 נרשם חוב הפרש ₪'+d.amount+' במקווה'+(d.screen?' · הודעה במסך':'')+(d.block?' · ⛔ חסום עד התשלום':''));
       if(ok&&d.mode==='credit')toast('💳 זיכוי ₪'+d.amount+' ביתרה הזמנית');
@@ -12118,7 +12140,7 @@ async function renderAvByAv(){
   const q2=String(q||'').trim();
   const rows=avFiltered();
   view.innerHTML=`<div class="avbar">
-      <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button>
+      <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcertlist" title="רשימה לפי שמות האברכים — לעריכה ולהדפסה, למי להכין תעודה חדשה">📜 רשימה לתעודות</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button>
       <button class="btn sm" id="avymbtn2" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל ·
       <button type="button" id="avfreebtn" class="avfreebtn${avFreeOnly?' on':''}"
@@ -12138,6 +12160,7 @@ async function renderAvByAv(){
   document.getElementById('avizhist').onclick=()=>{izHist=true;renderIzHistory();};
   document.getElementById('avprint').onclick=()=>{avView='avprint';render();};
   document.getElementById('avslips').onclick=()=>window.open('/iz-slips','_blank');
+  document.getElementById('avcertlist').onclick=()=>window.open('/iz-certs','_blank');
   wireByAv();
 }
 // יומן כללי — כל שינוי שנעשה ביששכר־זבולון, אצל כל האברכים והתורמים
