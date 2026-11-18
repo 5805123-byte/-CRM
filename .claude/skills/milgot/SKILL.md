@@ -67,7 +67,8 @@ description: משכורות ומלגות של כולל חצות — מלגות �
 - תיקיית אם: **מלגות והעברות תשפ"ז** — id `14Rfd1STCJhV05ZM9BwvgIoA4SkE8997a`
   - תשרי תשפ"ז — id `1Slm9PEh5vzxZ-1g3DatJMeARXwNbypH3`
   - חשוון תשפ"ז — id `1RdqJts-5q9SkCftjs-UXxN613LhDavE6`
-  - חודש שעוד לא קיים (כסלו והלאה) — ליצור תיקייה "<חודש> תשפ"ז" בתוך תיקיית האם (mimeType application/vnd.google-apps.folder), ולרשום כאן את ה-id. מסמכים מאלול תשפ"ו ולפני — לשאול איפה לשמור.
+  - כסלו תשפ"ז — id `1Mqh7VOgpAT_0JuphaEpE9rW8jmT450j0` (נוצר 18.11.2026)
+  - חודש שעוד לא קיים (טבת והלאה) — ליצור תיקייה "<חודש> תשפ"ז" בתוך תיקיית האם (mimeType application/vnd.google-apps.folder), ולרשום כאן את ה-id. מסמכים מאלול תשפ"ו ולפני — לשאול איפה לשמור.
 - כולל הוראה תשפ"ז — id `1PUhWBlXq0iShxsM5sEjJk_4AIyA143t9` (כל קבצי כולל הוראה)
 - קניות בית כנסת תשפ"ז — תיקייה לכל חודש (קבלות נטו חיסכון)
 - כל קובץ נכנס לתיקיית **החודש העברי של התאריך שעל המסמך** (לא של היום שבו הוכן). לחישוב: `pip install pyluach --break-system-packages`.
