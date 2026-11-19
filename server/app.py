@@ -675,6 +675,12 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS cm_ledger(id INTEGER PRIMARY KEY AUTOINCREMENT, month TEXT, kind TEXT, date TEXT,
         amount REAL, purpose TEXT, method TEXT, note TEXT, created TEXT, updated TEXT);
     CREATE INDEX IF NOT EXISTS ix_cm_ledger_month ON cm_ledger(month);
+    /* 📚 אוצר הספרים — רשימת ספרים (עם תורם, תשלום וחוב, הנצחה) + הכנסות/הוצאות משלו. נפרד לגמרי. */
+    CREATE TABLE IF NOT EXISTS book_item(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, cost REAL, donor TEXT,
+        paid REAL, method TEXT, dedication TEXT, note TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS book_ledger(id INTEGER PRIMARY KEY AUTOINCREMENT, month TEXT, kind TEXT, date TEXT,
+        amount REAL, purpose TEXT, method TEXT, note TEXT, created TEXT, updated TEXT);
+    CREATE INDEX IF NOT EXISTS ix_book_ledger_month ON book_ledger(month);
     /* משימות הצוות — ראש הכולל, שמעון ברלב, אברהם רובינפלד: "כל אחד יכול לרשום לשני משימות
        שעליו לבצע בעצמו או שהשני יעשה" */
     CREATE TABLE IF NOT EXISTS cm_job(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, note TEXT, to_who TEXT,
@@ -27563,6 +27569,27 @@ class H(BaseHTTPRequestHandler):
             exp = round(sum(r['amount'] or 0 for r in rows if r['kind'] == 'out'), 2)
             return self._send(200, {'ok': True, 'month': mon, 'rows': rows, 'inc': inc, 'exp': exp,
                                     'net': round(inc - exp, 2), 'months': months})
+        if self.path.split('?')[0] == '/api/books':
+            # 📚 אוצר הספרים — רשימת הספרים + הכנסות/הוצאות לחודש שנבחר
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            mon = (qs.get('month') or [''])[0][:7]
+            if not re.fullmatch(r'\d{4}-\d{2}', mon):
+                mon = today_iso()[:7]
+            con = db()
+            try:
+                books = [dict(r) for r in con.execute("SELECT * FROM book_item ORDER BY id DESC")]
+                rows = [dict(r) for r in con.execute("SELECT * FROM book_ledger WHERE month=? ORDER BY date, id", (mon,))]
+                months = [dict(r) for r in con.execute(
+                    "SELECT month, SUM(CASE WHEN kind='in' THEN amount ELSE 0 END) inc, "
+                    "SUM(CASE WHEN kind='out' THEN amount ELSE 0 END) exp, COUNT(*) n FROM book_ledger GROUP BY month ORDER BY month DESC")]
+            finally:
+                con.close()
+            inc = round(sum(r['amount'] or 0 for r in rows if r['kind'] == 'in'), 2)
+            exp = round(sum(r['amount'] or 0 for r in rows if r['kind'] == 'out'), 2)
+            tot_cost = round(sum(r['cost'] or 0 for r in books), 2)
+            tot_paid = round(sum(r['paid'] or 0 for r in books), 2)
+            return self._send(200, {'ok': True, 'books': books, 'tot_cost': tot_cost, 'tot_paid': tot_paid, 'tot_owed': round(tot_cost - tot_paid, 2),
+                                    'month': mon, 'rows': rows, 'inc': inc, 'exp': exp, 'net': round(inc - exp, 2), 'months': months})
         if self.path.split('?')[0] == '/api/cm/jobs':
             con = db()
             try:
@@ -33130,6 +33157,66 @@ class H(BaseHTTPRequestHandler):
                                 vals + (now_iso(), lid))
                 else:
                     con.execute("INSERT INTO cm_ledger(month,kind,date,amount,purpose,method,note,created,updated) VALUES(?,?,?,?,?,?,?,?,?)",
+                                vals + (now_iso(), now_iso()))
+                    lid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'id': lid})
+        if self.path == '/api/books/item' or re.match(r'/api/books/item/\d+$', self.path):
+            # 📚 ספר ברשימה — הוספה / תיקון / מחיקה
+            bid = int(self.path.rsplit('/', 1)[1]) if not self.path.endswith('/item') else 0
+            con = db()
+            try:
+                if bid and b.get('action') == 'delete':
+                    con.execute("DELETE FROM book_item WHERE id=?", (bid,))
+                    con.commit()
+                    return self._send(200, {'ok': True})
+                name = str(b.get('name') or '').strip()[:200]
+                if not name:
+                    return self._send(200, {'ok': False, 'error': 'חסר שם ספר'})
+                vals = (name, round(_amt2(b.get('cost')), 2), str(b.get('donor') or '').strip()[:120],
+                        round(_amt2(b.get('paid')), 2), str(b.get('method') or '').strip()[:40],
+                        str(b.get('dedication') or '').strip()[:300], str(b.get('note') or '').strip()[:500])
+                if bid:
+                    con.execute("UPDATE book_item SET name=?,cost=?,donor=?,paid=?,method=?,dedication=?,note=?,updated=? WHERE id=?",
+                                vals + (now_iso(), bid))
+                else:
+                    con.execute("INSERT INTO book_item(name,cost,donor,paid,method,dedication,note,created,updated) VALUES(?,?,?,?,?,?,?,?,?)",
+                                vals + (now_iso(), now_iso()))
+                    bid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'id': bid})
+        if self.path == '/api/books/ledger' or re.match(r'/api/books/ledger/\d+$', self.path):
+            # 📚 הכנסה / הוצאה של אוצר הספרים — אותו מבנה כמו קופת בית הכנסת
+            lid = int(self.path.rsplit('/', 1)[1]) if not self.path.endswith('/ledger') else 0
+            con = db()
+            try:
+                if lid and b.get('action') == 'delete':
+                    con.execute("DELETE FROM book_ledger WHERE id=?", (lid,))
+                    con.commit()
+                    return self._send(200, {'ok': True})
+                amt = round(_amt2(b.get('amount')), 2)
+                kind = 'out' if b.get('kind') == 'out' else 'in'
+                purpose = str(b.get('purpose') or '').strip()[:200]
+                if amt <= 0:
+                    return self._send(200, {'ok': False, 'error': 'חסר סכום'})
+                if not purpose:
+                    return self._send(200, {'ok': False, 'error': 'חסר עבור מה'})
+                date = str(b.get('date') or '')[:10]
+                if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date):
+                    date = today_iso()
+                mon = str(b.get('month') or '')[:7]
+                if not re.fullmatch(r'\d{4}-\d{2}', mon):
+                    mon = date[:7]
+                vals = (mon, kind, date, amt, purpose, str(b.get('method') or '').strip()[:40], str(b.get('note') or '').strip()[:500])
+                if lid:
+                    con.execute("UPDATE book_ledger SET month=?,kind=?,date=?,amount=?,purpose=?,method=?,note=?,updated=? WHERE id=?",
+                                vals + (now_iso(), lid))
+                else:
+                    con.execute("INSERT INTO book_ledger(month,kind,date,amount,purpose,method,note,created,updated) VALUES(?,?,?,?,?,?,?,?,?)",
                                 vals + (now_iso(), now_iso()))
                     lid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
                 con.commit()

@@ -1780,6 +1780,7 @@ function render(){
     return renderDonors();
   }
   if(tab==='bldghq') return renderBldgHQ();
+  if(tab==='books') return renderBooks();
   if(tab==='tasks') return renderTasksTab();
   if(tab==='cal'){if(calPrevTab!=='cal'){calMode='day';calDay='';}calPrevTab='cal';return renderCalTab();}
   calPrevTab=tab;
@@ -17082,6 +17083,84 @@ function lgPrint(){const L=LG||{rows:[]},w=window.open('','_blank');if(!w)return
     <style>body{font-family:Arial,sans-serif;margin:24px}table{width:100%;border-collapse:collapse;margin-bottom:18px}th,td{border:1px solid #bbb;padding:5px 7px;text-align:right;font-size:13px}th{background:#f1ede4}.t td{font-weight:bold;background:#faf8f3}</style></head>
     <body><h1>בית הכנסת — הכנסות והוצאות · ${esc(lgMonthName(lgMonth))}</h1>${tb('in')}${tb('out')}<h2>יתרה לחודש: ${cdMoney(L.net)}</h2><script>print()<\/script></body></html>`);
   w.document.close();}
+// ---- 📚 אוצר הספרים: רשימת ספרים + הכנסות + הוצאות (שלושה טורים, כמו קופת בית הכנסת) ----
+let BK=null, bkMonth='', bkEdit=0, bkBookEdit=-2;   // bkBookEdit: -2 אין עריכה, -1 הוספה חדשה, מספר=עריכת ספר
+const BK_METHODS=['נדרים','אשראי','מזומן','קופה'];
+function bkStatus(b){const cost=+b.cost||0, paid=+b.paid||0;
+  if(paid<=0)return {t:'לא נתרם',c:'no'};
+  if(cost>0&&paid>=cost)return {t:'נתרם הכל',c:'yes'};
+  return {t:'נתרם חלקית',c:'mid'};}
+async function bkLoad(){if(!bkMonth)bkMonth=todayStr().slice(0,7);BK=await api('GET','/api/books?month='+bkMonth)||{books:[],rows:[],months:[]};}
+function bkLedgerSide(kind){const L=BK, rows=(L.rows||[]).filter(r=>r.kind===kind), inc=kind==='in';
+  const tot=rows.reduce((t,r)=>t+(+r.amount||0),0), mopt=v=>BK_METHODS.map(x=>`<option ${x===v?'selected':''}>${x}</option>`).join('');
+  const row=r=>bkEdit===r.id?`<div class="lgrow ed"><div class="lgf"><input type="date" id="bke_date" value="${esc(r.date||'')}"><input id="bke_amt" inputmode="decimal" value="${esc(r.amount)}" placeholder="סכום"></div>
+      <input id="bke_for" value="${esc(r.purpose||'')}" placeholder="עבור מה"><div class="lgf"><select id="bke_meth"><option value="">אמצעי</option>${mopt(r.method||'')}</select><input id="bke_note" value="${esc(r.note||'')}" placeholder="הערות"></div>
+      <div class="bqacts"><button class="btn sm" data-bkl="save" data-id="${r.id}" data-k="${kind}">💾 שמור</button><button class="btn sm ghost" data-bkl="cancel">ביטול</button><button class="btn sm ghost" data-bkl="del" data-id="${r.id}">🗑 מחק</button></div></div>`
+    :`<div class="lgrow"><span class="lgd">${esc(ndDate(r.date))}</span><span class="lgw"><span><b>${esc(r.purpose||'')}</b>${r.method?` <small class="lgm">${esc(r.method)}</small>`:''}</span>${r.note?`<small>${esc(r.note)}</small>`:''}</span>
+      <b class="lga">${cdMoney(r.amount)}</b><button class="cmpen" data-bkl="edit" data-id="${r.id}" title="תיקון / מחיקה">✎</button></div>`;
+  return `<div class="lgcol ${inc?'in':'out'}"><h3>${inc?'⬇️ הכנסות':'⬆️ הוצאות'}</h3>
+    <div class="lgadd"><div class="lgf"><input id="bk_${kind}_amt" inputmode="decimal" placeholder="סכום ₪"><input type="date" id="bk_${kind}_date" value="${esc(bkMonth===todayStr().slice(0,7)?todayStr():bkMonth+'-01')}"></div>
+      <input id="bk_${kind}_for" placeholder="${inc?'עבור מה — למשל: תרומה לספר, מזומן…':'עבור מה — למשל: כריכה, הדפסה…'}">
+      <div class="lgf"><select id="bk_${kind}_meth"><option value="">אמצעי</option>${mopt('')}</select><input id="bk_${kind}_note" placeholder="הערות (לא חובה)"></div>
+      <button class="btn sm" data-bkl="add" data-k="${kind}">➕ הוסף ${inc?'הכנסה':'הוצאה'}</button></div>
+    <div class="lglist">${rows.map(row).join('')||'<div class="hintxt">עוד אין '+(inc?'הכנסות':'הוצאות')+' בחודש הזה.</div>'}</div>
+    <div class="lgtot">סה״כ ${inc?'הכנסות':'הוצאות'} ב${esc(lgMonthName(bkMonth))}: <b>${cdMoney(tot)}</b></div></div>`;}
+function bkForm(b){const mopt=v=>BK_METHODS.map(x=>`<option ${x===v?'selected':''}>${x}</option>`).join('');b=b||{};
+  return `<div class="bkedit"><input id="bkf_name" value="${esc(b.name||'')}" placeholder="שם הספר">
+    <div class="lgf"><input id="bkf_cost" inputmode="decimal" value="${b.cost!=null?esc(b.cost):''}" placeholder="עלות ₪"><input id="bkf_paid" inputmode="decimal" value="${b.paid!=null?esc(b.paid):''}" placeholder="שולם ₪"></div>
+    <input id="bkf_donor" value="${esc(b.donor||'')}" placeholder="שם התורם">
+    <div class="lgf"><select id="bkf_meth"><option value="">איך שולם</option>${mopt(b.method||'')}</select><input id="bkf_ded" value="${esc(b.dedication||'')}" placeholder="שם להנצחה"></div>
+    <input id="bkf_note" value="${esc(b.note||'')}" placeholder="הערה">
+    <div class="bqacts"><button class="btn sm" data-bk="save" data-id="${b.id||0}">💾 שמור</button><button class="btn sm ghost" data-bk="cancel">ביטול</button>${b.id?`<button class="btn sm ghost" data-bk="del" data-id="${b.id}">🗑 מחק</button>`:''}</div></div>`;}
+function bkBookRow(b){const s=bkStatus(b), owed=Math.max(0,(+b.cost||0)-(+b.paid||0));
+  return `<div class="bkrow"><div class="bknm"><b>${esc(b.name||'—')}</b><span class="mktag ${s.c==='no'?'bad':s.c==='yes'?'ok':'mu'}">${s.t}</span><button class="cmpen" data-bk="edit" data-id="${b.id}" title="תיקון / מחיקה" style="margin-inline-start:auto">✎</button></div>
+    <div class="bksub"><span>עלות <b>${cdMoney(b.cost)}</b></span>${b.donor?`<span>👤 ${esc(b.donor)}</span>`:''}<span>שולם ${cdMoney(b.paid)}${owed>0?` · <b class="no">חוב ${cdMoney(owed)}</b>`:(+b.cost>0?' ✓':'')}</span>${b.method?`<span class="lgm">${esc(b.method)}</span>`:''}${b.dedication?`<span>🕯️ ${esc(b.dedication)}</span>`:''}</div>
+    ${b.note?`<div class="bknote">📝 ${esc(b.note)}</div>`:''}</div>`;}
+async function renderBooks(){
+  chips.innerHTML='';
+  if(!BK){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען…</div>';await bkLoad();if(tab!=='books')return;}
+  const L=BK, books=L.books||[];
+  view.innerHTML=`<div class="bkw">
+    <div class="rbtitle">📚 אוצר הספרים</div>
+    <div class="hintxt">רשימת הספרים עם התורם, התשלום והחוב, וכן הכנסות והוצאות משלו. נפרד לגמרי משאר המערכת.</div>
+    <div class="bkcols">
+      <div class="bkcol books"><h3>📖 רשימת הספרים <small>${books.length} · עלות ${cdMoney(L.tot_cost)} · שולם ${cdMoney(L.tot_paid)}${L.tot_owed>0?' · חוב '+cdMoney(L.tot_owed):''}</small></h3>
+        ${bkBookEdit===-1?bkForm({}):'<button class="btn sm" id="bk_add_book">➕ הוסף ספר</button>'}
+        <div class="bklist">${books.map(b=>bkBookEdit===b.id?bkForm(b):bkBookRow(b)).join('')||'<div class="hintxt">עוד אין ספרים. לחץ "➕ הוסף ספר".</div>'}</div></div>
+      <div class="bkcol"><div class="lgnav"><button class="btn sm ghost" id="bk_prev">→ ${esc(lgMonthName(lgShift(bkMonth,-1)))}</button><b>${esc(lgMonthName(bkMonth))}</b><button class="btn sm ghost" id="bk_next">${esc(lgMonthName(lgShift(bkMonth,1)))} ←</button></div>
+        ${bkLedgerSide('in')}</div>
+      <div class="bkcol">${bkLedgerSide('out')}
+        <div class="lgsum" style="margin-top:8px"><span>⬇️ ${cdMoney(L.inc)}</span><span>⬆️ ${cdMoney(L.exp)}</span><span class="${(+L.net||0)<0?'neg':''}">יתרה: <b>${cdMoney(L.net)}</b></span></div></div>
+    </div></div>`;
+  const g=id=>document.getElementById(id);
+  const go=m=>{bkMonth=m;bkEdit=0;BK=null;renderBooks();};
+  g('bk_prev').onclick=()=>go(lgShift(bkMonth,-1)); g('bk_next').onclick=()=>go(lgShift(bkMonth,1));
+  const _ab=g('bk_add_book'); if(_ab)_ab.onclick=()=>{bkBookEdit=-1;renderBooks();};
+  // יומן הכנסות/הוצאות
+  view.querySelectorAll('[data-bkl]').forEach(b=>b.onclick=async()=>{const a=b.dataset.bkl,k=b.dataset.k,id=+b.dataset.id;
+    if(a==='edit'){bkEdit=id;renderBooks();return;}
+    if(a==='cancel'){bkEdit=0;renderBooks();return;}
+    if(a==='del'){if(!await uiConfirm('למחוק את השורה?','🗑 כן, למחוק','ביטול'))return;await api('POST','/api/books/ledger/'+id,{action:'delete'});bkEdit=0;BK=null;renderBooks();return;}
+    const P=a==='add'?'bk_'+k+'_':'bke_';
+    const body={kind:k,amount:amtNum(g(P+'amt').value),purpose:g(P+'for').value.trim(),method:g(P+'meth').value,note:g(P+'note').value.trim(),date:g(P+'date').value};
+    if(!body.amount){toast('חסר סכום');g(P+'amt').focus();return;}
+    if(!body.purpose){toast('חסר עבור מה');g(P+'for').focus();return;}
+    if(a==='add'&&body.date&&body.date.slice(0,7)!==bkMonth)body.month=bkMonth;
+    b.disabled=true;const r=await api('POST','/api/books/ledger'+(a==='save'?'/'+id:''),body);
+    if(!r||!r.ok){b.disabled=false;await uiAlert((r&&r.error)||'לא נשמר');return;}
+    toast('נשמר ✓');bkEdit=0;BK=null;await renderBooks();const f=g('bk_'+k+'_amt');if(a==='add'&&f)f.focus();});
+  // ספרים
+  view.querySelectorAll('[data-bk]').forEach(b=>b.onclick=async()=>{const a=b.dataset.bk,id=+b.dataset.id;
+    if(a==='edit'){bkBookEdit=id;renderBooks();return;}
+    if(a==='cancel'){bkBookEdit=-2;renderBooks();return;}
+    if(a==='del'){if(!await uiConfirm('למחוק את הספר?','🗑 כן, למחוק','ביטול'))return;await api('POST','/api/books/item/'+id,{action:'delete'});bkBookEdit=-2;BK=null;renderBooks();return;}
+    const body={name:g('bkf_name').value.trim(),cost:amtNum(g('bkf_cost').value),paid:amtNum(g('bkf_paid').value),
+      donor:g('bkf_donor').value.trim(),method:g('bkf_meth').value,dedication:g('bkf_ded').value.trim(),note:g('bkf_note').value.trim()};
+    if(!body.name){toast('חסר שם ספר');g('bkf_name').focus();return;}
+    b.disabled=true;const r=await api('POST','/api/books/item'+(id?'/'+id:''),body);
+    if(!r||!r.ok){b.disabled=false;await uiAlert((r&&r.error)||'לא נשמר');return;}
+    toast('נשמר ✓');bkBookEdit=-2;BK=null;await renderBooks();});
+}
 // ---- ✅ משימות הצוות: ראש הכולל, שמעון ברלב, אברהם רובינפלד, יוסף אורדנטליך ----
 // מאיר: "ברגע שאני על הדף של שמעון ברלב — לא צריך לבחור למי, זה אוטומטי בשבילו" (jobView)
 // מאיר: "אל תכתוב מי אתה — שאם אני רוצה לשים משימה עבור אברהם רובינפלד או שמעון ברלב שאוכל, או אם הם

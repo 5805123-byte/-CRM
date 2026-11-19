@@ -2343,6 +2343,21 @@ details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;ma
   .lgtot{border-top:2px solid var(--line);padding-top:6px;text-align:left;font-size:15px}
   .lgsum{display:flex;flex-wrap:wrap;gap:8px 18px;justify-content:center;margin:12px 0;padding:10px;border-radius:12px;background:var(--soft,#faf7f0);font-size:16px}
   .lgsum .neg b{color:#b8452f}
+  /* 📚 אוצר הספרים */
+  .bkcols{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:12px;align-items:start;margin-top:10px}
+  @media(max-width:980px){.bkcols{grid-template-columns:1fr}}
+  .bkcol{border:1px solid var(--line);border-radius:12px;padding:10px;display:grid;gap:8px;align-content:start;min-width:0}
+  .bkcol.books{border-top:4px solid #b9770e}
+  .bkcol h3{margin:0;font-size:16px}.bkcol h3 small{font-weight:400;color:var(--muted,#888);font-size:12px}
+  .bklist{display:grid;gap:6px}
+  .bkrow{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fff;display:grid;gap:4px}
+  .bknm{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .bksub{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:var(--muted,#777)}
+  .bksub b{color:var(--ink,#222)}.bksub .no{color:#b8452f}.bksub .lgm{background:#efe9dc;color:#5a4a1f;border-radius:6px;padding:0 5px}
+  .bknote{font-size:12.5px;color:var(--muted,#888)}
+  .bkedit{display:grid;gap:6px;border:1px solid var(--accent);border-radius:10px;padding:10px;background:var(--soft,#faf7f0)}
+  .bkedit input,.bkedit select{width:100%;min-width:0;box-sizing:border-box}
+  .mktag.mu{background:#fff4e5;color:#b9770e}.mktag.ok{background:#e6f4ea;color:#1e7a44}.mktag.bad{background:#fde8e4;color:#b8452f}
   .lgmonths{display:grid;gap:6px;margin-top:8px}
   .lgmon{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;border:1px solid var(--line);border-radius:10px;padding:8px 11px;background:#fff;cursor:pointer;text-align:right;font:inherit}
   .jobme,.jobfl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}
@@ -2668,6 +2683,7 @@ details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;ma
       <button class="tab" data-tab="camp">קמפיינים</button>
       <button class="tab" data-tab="mikveh">🛁 מקווה</button>
       <button class="tab" data-tab="bldghq">🏛️ הבניין הקדוש</button>
+      <button class="tab" data-tab="books">📚 אוצר הספרים</button>
       <button class="tab hidden" data-tab="old">🧹 תורמים ישנים</button>
       <button class="tab hidden danger" data-tab="review">📋 לבדיקה</button>
       <button class="tab hidden danger" data-tab="dups">🧾 תשלומים כפולים</button>
