@@ -23514,6 +23514,32 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'izslips.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/iz-certs':
             return self._send(200, open(os.path.join(STATIC, 'izcerts.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/recurring':
+            # 🔁 הוראות הקבע — מאיר: "איפה אני מוצא במערכת בחיובים את כל ההוראות קבע החודשיות?"
+            # אוטורייז (חי, מנויי ARB) + בנק ווסט (מהסנכרון). ?donor=ID — רק של התורם הזה (לכרטיס).
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                did_ = int((qs.get('donor') or ['0'])[0] or 0)
+            except ValueError:
+                did_ = 0
+            con = db()
+            try:
+                an, err = anet_subs(con, force=bool((qs.get('force') or [''])[0]))
+                bq = [dict(r) for r in con.execute(
+                    "SELECT s.id, s.amount, s.freq, s.next_run, s.status, COALESCE(s.donor_id, c.donor_id) donor_id, "
+                    "TRIM(COALESCE(c.first,'') || ' ' || COALESCE(c.last,'')) bq_name, s.title "
+                    "FROM bq_sched s LEFT JOIN bq_cust c ON c.id=s.customer_id WHERE COALESCE(s.active,0)=1")]
+                names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() for r in con.execute("SELECT id,last,first FROM donors")}
+                for r in bq:
+                    r['donor_name'] = names.get(r['donor_id'], '')
+            except Exception as e:
+                an, bq, err = [], [], str(e)[:200]
+            finally:
+                con.close()
+            if did_:
+                an = [x for x in an if x['donor_id'] == did_]
+                bq = [x for x in bq if x['donor_id'] == did_]
+            return self._send(200, {'ok': True, 'anet': an, 'bq': bq, 'anet_err': err})
         if self.path.split('?')[0] == '/api/transfers':
             # 🏦 לשונית העברות ומלגות — כל ההעברות מתחילת תשפ"ז, לפי תאריך, עם תאריך עברי וחודש עברי
             con = db()
@@ -34752,6 +34778,32 @@ class H(BaseHTTPRequestHandler):
                          _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        if self.path == '/api/recurring/anet_stop':
+            # ⛔ ביטול הוראת קבע באוטורייז מהכרטיס / מהרשימה — ואם ביקשו, גם "הפסיק לתרום כל חודש" בכרטיס
+            sid = re.sub(r'\D', '', str(b.get('sid') or ''))
+            try:
+                did_ = int(b.get('donor_id') or 0) or None
+            except (TypeError, ValueError):
+                did_ = None
+            if not sid:
+                return self._send(200, {'ok': False, 'error': 'חסר מספר מנוי'})
+            con = db()
+            try:
+                why = re.sub(r'\s+', ' ', str(b.get('reason') or '')).strip()[:200]
+                ok_, err_ = anet_stop_sub(con, sid, did_, why)
+                if ok_ and did_ and b.get('mark_stop'):
+                    dt = str(b.get('date') or '').strip()[:10]
+                    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', dt):
+                        dt = today_iso()
+                    con.execute("UPDATE donors SET monthly_stop=?, monthly_stop_charge=1, monthly_stop_note=? WHERE id=?", (dt, why, did_))
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                                (did_, today_iso(), 'הערה', '⛔ הפסיק לתרום כל חודש — מ-%s%s' % ('/'.join(reversed(dt.split('-'))), (' · ' + why) if why else '')))
+                    mstop_apply(con, did_)
+                con.commit()
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': ok_, 'error': err_})
         if self.path in ('/api/transfers/save', '/api/transfers/delete'):
             # 🏦 הוספה / עריכה / מחיקה של העברה בלשונית "העברות ומלגות"
             try:
@@ -36244,6 +36296,68 @@ def bq_run(full=False):
         BQSTAT['running'] = False
 
 
+_ANET_SUBS = {'at': 0, 'rows': None, 'err': ''}
+
+
+def anet_subs(con, force=False):
+    """🔁 כל הוראות הקבע הפעילות באוטורייז (מנויי ARB), עם שיוך לכרטיס תורם — רק שיוך ודאי: שם המנוי
+    זהה לשם בחיובים קודמים מאוטרייז שכבר שויכו לתורם אחד בלבד, או לשם הלועזי בכרטיס. נשמר בזיכרון ל-10 דקות."""
+    import authorize_sync as _an
+    if not _an.configured():
+        return [], 'החיבור לאוטרייז לא הוגדר'
+    if not force and _ANET_SUBS['rows'] is not None and time.time() - _ANET_SUBS['at'] < 600:
+        rows = _ANET_SUBS['rows']
+    else:
+        try:
+            rows = _an.arb_subscriptions('subscriptionActive')
+            _ANET_SUBS.update(at=time.time(), rows=rows, err='')
+        except Exception as e:
+            _ANET_SUBS['err'] = str(e)[:200]
+            return [], _ANET_SUBS['err']
+    def _ne(s): return re.sub(r'[^a-z0-9]', '', (s or '').lower())
+    byname = {}
+    for r in con.execute("SELECT first,last,donor_id FROM recon WHERE donor_id IS NOT NULL AND (source LIKE 'Authorize%' OR tid LIKE 'anet-%')"):
+        byname.setdefault(_ne((r['first'] or '') + (r['last'] or '')), set()).add(r['donor_id'])
+    for d in con.execute("SELECT id,english FROM donors WHERE COALESCE(TRIM(english),'')<>''"):
+        k = _ne(d['english'])
+        if k and k not in byname:
+            byname.setdefault(k, set()).add(d['id'])
+        # "Weingarden Shmuel" ו-"Shmuel Weingarden" — אותו שם
+        p = (d['english'] or '').split()
+        if len(p) == 2:
+            byname.setdefault(_ne(p[1] + p[0]), set()).add(d['id'])
+    names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() for r in con.execute("SELECT id,last,first FROM donors")}
+    out = []
+    for s in rows:
+        k = _ne((s.get('firstName') or '') + (s.get('lastName') or ''))
+        ids = byname.get(k) or set()
+        did = next(iter(ids)) if len(ids) == 1 else None
+        out.append({'sid': str(s.get('id') or ''), 'first': s.get('firstName') or '', 'last': s.get('lastName') or '',
+                    'title': s.get('name') or '', 'amount': float(s.get('amount') or 0), 'status': s.get('status') or '',
+                    'created': str(s.get('createTimeStampUTC') or '')[:10], 'past': s.get('pastOccurrences'),
+                    'total': s.get('totalOccurrences'), 'card': str(s.get('accountNumber') or '').replace('XXXX', '••••'),
+                    'donor_id': did, 'donor_name': names.get(did, '') if did else '', 'multi': len(ids) > 1})
+    out.sort(key=lambda x: ((x['last'] or '').lower(), (x['first'] or '').lower()))
+    return out, ''
+
+
+def anet_stop_sub(con, sid, did=None, why=''):
+    """מבטל מנוי ARB באוטורייז ורושם בכרטיס התורם. מחזיר (ok, error)."""
+    import authorize_sync as _an
+    sub = next((x for x in (_ANET_SUBS['rows'] or []) if str(x.get('id')) == str(sid)), None)
+    try:
+        _an.arb_cancel(sid)
+    except Exception as e:
+        return False, str(e)[:200]
+    if _ANET_SUBS['rows'] is not None:
+        _ANET_SUBS['rows'] = [x for x in _ANET_SUBS['rows'] if str(x.get('id')) != str(sid)]
+    if did:
+        amt = float((sub or {}).get('amount') or 0)
+        con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                    (did, today_iso(), 'מערכת', '⛔ הוראת הקבע באוטורייז בוטלה — $%g (מנוי %s)%s' % (amt, sid, (' · ' + why) if why else '')))
+    return True, ''
+
+
 def mstop_apply(con, did=None):
     """⛔ תורם שהפסיק לתרום כל חודש — כשהגיע התאריך שהפסיק: ההתחייבות החודשית מסתיימת, חיובים שנדחו מאז
     אינם חוב, והחיוב האוטומטי בבנק ווסט נעצר (אם ביקשו). נקרא בסימון, וכל שעה בשביל תאריכים עתידיים."""
@@ -36285,6 +36399,17 @@ def mstop_apply(con, did=None):
                         bad = True; out['sched_err'].append('$%g: %s' % (sc['amount'] or 0, str(res)[:80]))
                 except Exception as e:
                     bad = True; out['sched_err'].append('$%g: %s' % (sc['amount'] or 0, str(e)[:80]))
+            # מאיר: "שזה יהיה מסונכרן שהוא הפסיק" — גם הוראות הקבע שלו באוטורייז מתבטלות
+            try:
+                for s in anet_subs(con)[0]:
+                    if s['donor_id'] == d['id']:
+                        ok_, err_ = anet_stop_sub(con, s['sid'], d['id'], 'הפסיק לתרום כל חודש')
+                        if ok_:
+                            out['sched'].append('$%g אוטורייז' % s['amount'])
+                        else:
+                            bad = True; out['sched_err'].append('אוטורייז $%g: %s' % (s['amount'], err_[:80]))
+            except Exception as e:
+                print('  mstop anet error:', e)
             if not bad:
                 con.execute("UPDATE donors SET monthly_stop_charge=2 WHERE id=?", (d['id'],))
                 if not did and out['sched']:

@@ -176,6 +176,11 @@ def arb_subscription(sid):
     return (call('ARBGetSubscriptionRequest', {'subscriptionId': str(sid), 'includeTransactions': True}) or {}).get('subscription') or {}
 
 
+def arb_cancel(sid):
+    """ביטול הוראת קבע (מנוי ARB) באוטורייז — מאיר: "שיהיה שם את האפשרות של הפסקה… ושזה יהיה מסונכרן"."""
+    return call('ARBCancelSubscriptionRequest', {'subscriptionId': str(sid)})
+
+
 def arb_failed(days=45):
     """הניסיונות שנכשלו בהוראות הקבע ב-days הימים האחרונים — שורות כמו של collect, עם st='declined'.
     מחזיר (שורות, רשימת מנויים שהושעו/בוטלו)."""
