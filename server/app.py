@@ -15829,7 +15829,7 @@ AUTH_COMM = ('/api/data', '/api/members', '/api/cm/', '/api/yemot/', '/api/ym/',
 # טלפונים ומיילים (ראה _data_parnes), ובלי מחיקת כרטיסים
 AUTH_PARNES = ('/api/data', '/api/parnes', '/api/kvittel', '/kv-page', '/api/hebmonth', '/api/prayer', '/api/donor',
                '/cert.png', '/cert.jpg', '/api/task', '/api/intake', '/api/feedback')
-AUTH_GABBAI = tuple(dict.fromkeys(AUTH_COMM + AUTH_PARNES))     # קהילה + פרנס יום וקוויטל, בסיסמה אחת
+AUTH_GABBAI = tuple(dict.fromkeys(AUTH_COMM + AUTH_PARNES + ('/api/books',)))     # קהילה + פרנס יום וקוויטל + אוצר הספרים, בסיסמה אחת
 AUTH_ROLE_PATHS = {'comm': AUTH_COMM, 'parnes': AUTH_PARNES, 'gabbai': AUTH_GABBAI}
 # מאיר: "הבאתי לגבאי סיסמה של גבאים ונכנס לו להכל, גם לתורמים". התחיליות למעלה תופסות גם כתובות
 # שלא נועדו להן ('/api/donor' תפס גם את '/api/donors.csv' — כל התורמים עם טלפון ומייל). אלה חסומות
@@ -30587,6 +30587,17 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/price_groups':
+            # 🔎 מאיר מסמן אילו קבוצות "רגילות" (מושמעות בטלפון). מה שלא מסומן = חריג.
+            # נשמר אצלנו בלבד (mk_price_groups) — אותה בחירה שמשרתת גם את חלון הבדיקה וגם את המחירון.
+            ids = [str(x) for x in (b.get('ids') or []) if re.fullmatch(r'[0-9a-fA-F-]{36}', str(x))][:400]
+            con = db()
+            try:
+                kv_set(con, 'mk_price_groups', json.dumps(ids))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'n': len(ids)})
         if self.path == '/api/mikveh/group_sync':
             # 🗂️ "לערוך הכל ביחד": ההגדרות והשעות של מנוי אחד → לכל המנויים שנבחרו (כל אחד נשאר עם השם והמחיר שלו)
             import mikveh as _mk

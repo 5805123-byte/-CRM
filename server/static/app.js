@@ -1392,7 +1392,7 @@ let ROLE='admin', AUTH_ON=false, _loginShown=false;
 const _PP=location.pathname.replace(/\/+$/,'').toLowerCase();   // גם /gabbai/ עם לוכסן בסוף
 const PORTAL=_PP==='/kehila'?'comm':(_PP==='/parnes'?'parnes':(_PP==='/gabbai'?'gabbai':'admin'));
 const PORTAL_PATH={comm:'/kehila',parnes:'/parnes',gabbai:'/gabbai',admin:'/'};
-const ROLE_TABS={comm:['comm'],parnes:['parnes','kvittel'],gabbai:['comm','parnes','kvittel']};
+const ROLE_TABS={comm:['comm'],parnes:['parnes','kvittel'],gabbai:['comm','parnes','kvittel','books']};
 const ROLE_TITLE={comm:'כולל חצות — קהילה',parnes:'כולל חצות — פרנס יום וקוויטל',gabbai:'כולל חצות — גבאים'};
 const ROLE_ONLY={comm:'הקהילה',parnes:'פרנס יום והקוויטל',gabbai:'הקהילה, פרנס יום והקוויטל'};
 function showLogin(msg){
@@ -1877,6 +1877,80 @@ async function mkRenewCheck(start){
     const csv=['שם,טלפון,מספר לקוח,קבוצה,סוג מנוי,מחיר המנוי,מנוי מ,מנוי עד,חידוש אוטומטי,מחיר מיוחד,תשלום אחרון,סכום'].concat(L.map(x=>[x.name,x.phone,x.code||'',x.group,per(x.sub_start,x.sub_end),x.price!=null?x.price:'',x.sub_start,x.sub_end,x.auto?'כן':'לא',x.fix?'כן':'לא',x.last_pay,x.last_amt||''].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='מנוי בלי חיוב.csv';document.body.appendChild(a);a.click();a.remove();};
   if(r.running||start)setTimeout(()=>{if(document.getElementById('remov').classList.contains('show')&&rs.querySelector('h2')&&rs.querySelector('h2').textContent==='מנוי בלי חיוב')mkRenewCheck();},2500);}
+// 🔎 מאיר: "אני צריך סדר במקווה ולעקוב אחרי כולם" — חלון בדיקה מרוכז: מי בקבוצה חריגה (שלא סומנה כרגילה /
+// מושמעת בטלפון), מי עם מחיר מיוחד, ומי שיש עליו הערה (ללקוח או כללית). הסימון של "קבוצה רגילה" נשמר כאן —
+// מה שלא מסומן = חריג אוטומטית. מאיר מגדיר ידנית; אנחנו לא מנחשים.
+let MKAUD={tab:'group',reg:null,saved:false,dirty:null};
+function mkAuditOpen(){MKAUD.reg=null;MKAUD.dirty=null;mkAuditWin();}
+async function mkAuditWin(){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  remov.classList.add('show');
+  const close=()=>{const x=document.getElementById('rx');if(x)x.onclick=()=>remov.classList.remove('show');};
+  if(MK===null||!MK.ok){rs.innerHTML='<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">🔎</div><div><h2>בדיקת המקווה</h2><div class="mksub">צריך קודם לטעון את לקוחות המקווה (פתח את לשונית המקווה).</div></div></div>';close();return;}
+  if(MKAUD.reg===null){
+    rs.innerHTML='<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">🔎</div><div><h2>בדיקת המקווה</h2><div class="mksub"><span class="mkspin"></span> טוען את סימון הקבוצות…</div></div></div>';close();
+    const pg=await fetch('/api/mikveh/price_groups').then(x=>x.json()).catch(()=>null);
+    if(!document.getElementById('remov').classList.contains('show'))return;
+    MKAUD.reg=pg&&pg.ok?pg.groups:[]; MKAUD.saved=!!(pg&&pg.saved);
+  }
+  const REG=MKAUD.reg, esc_=esc;
+  // סט הקבוצות הרגילות — מהסימון השמור (dirty = עריכה שלא נשמרה עדיין)
+  const regSet=MKAUD.dirty||new Set(REG.filter(g=>g.on).map(g=>g.id));
+  const gName=id=>{const g=REG.find(x=>x.id===id);return g?g.name:((MK.groups.find(z=>z.id===id)||{}).name||'—');};
+  const gPrice=id=>{const g=REG.find(x=>x.id===id);return g?g.price:((MK.groups.find(z=>z.id===id)||{}).price);};
+  const clients=(MK.clients||[]);
+  const irr=clients.filter(c=>!regSet.has(c.group));
+  const special=clients.filter(c=>c.fix);
+  const noted=clients.filter(c=>(c.remark&&c.remark.trim())||(c.message&&c.message.trim()));
+  const T=MKAUD.tab;
+  const chip=(t,ico,lbl,n,col)=>`<button class="mkchip${T===t?' on':''}" data-aud="${t}">${ico} ${lbl}${n!=null?` <b style="background:${T===t?'rgba(255,255,255,.3)':col||'#c0392b'};color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:3px">${n}</b>`:''}</button>`;
+  const noteBits=c=>{const o=[];if(c.remark&&c.remark.trim())o.push(`<span class="mktag mu">📝 הערה ללקוח:</span> ${esc_(c.remark.trim())}`);if(c.message&&c.message.trim())o.push(`<span class="mktag mu">💬 הערה כללית:</span> ${esc_(c.message.trim())}`);return o.join('<br>');};
+  const row=(c,extra)=>`<div class="mkrow" data-ao="${esc_(c.id)}" style="grid-template-columns:1fr auto;cursor:pointer">
+      <div class="mknm"><b>${esc_(mkName(c))}${c.fix?' <span class="mktag fix">💎 מחיר מיוחד</span>':''}${c.blocked?' <span class="mktag bad">🚫 חסום</span>':''}</b>
+        <div class="mksub"><span dir="ltr">${esc_(c.phone||'אין טלפון')}</span> · #${esc_(c.code||'')} · ${esc_(gName(c.group))}${c.sub_end?' · מנוי עד '+esc_(mkDate(c.sub_end)):''}</div>
+        ${extra||''}${noteBits(c)?`<div class="mksub" style="color:#7a5b16;background:#fff8e8;border-radius:8px;padding:5px 8px;margin-top:4px">${noteBits(c)}</div>`:''}</div>
+      <span class="mktag ${mkPast(c.sub_end)?'bad':'ok'}" style="align-self:center">${c.sub_end?'מנוי עד '+esc_(mkDate(c.sub_end)):'אין מנוי'}</span></div>`;
+  let body='';
+  if(T==='group'){
+    body=`<div class="mksub" style="margin:2px 2px 8px;color:#b9770e">⚠️ לקוחות בקבוצה שלא סימנת כ"רגילה / מושמעת בטלפון". סמן קבוצות בלשונית ⚙️ הגדרת קבוצות רגילות.</div>
+      <div class="mklist">${irr.map(c=>row(c,`<div class="mksub"><span class="mktag bad">🔴 קבוצה חריגה</span> ${esc_(gName(c.group))}</div>`)).join('')||'<div class="hintxt">✓ כל הלקוחות בקבוצות רגילות.</div>'}</div>`;
+  } else if(T==='special'){
+    body=`<div class="mksub" style="margin:2px 2px 8px;color:#555">לקוחות עם מחיר מנוי מיוחד (שונה ממחיר הקבוצה). לחיצה פותחת את הכרטיס — שם אפשר לשנות את המחיר המיוחד.</div>
+      <div class="mklist">${special.map(c=>{const gp=gPrice(c.group);return row(c,`<div class="mksub"><span class="mktag fix">💎 מחיר מיוחד ${esc_(mkNis(c.fix))}</span>${gp!=null?` <span class="mkmut">(מחיר הקבוצה ${esc_(mkNis(gp))})</span>`:''}</div>`);}).join('')||'<div class="hintxt">אין לקוחות עם מחיר מיוחד.</div>'}</div>`;
+  } else if(T==='noted'){
+    body=`<div class="mksub" style="margin:2px 2px 8px;color:#555">לקוחות שיש עליהם הערה — ללקוח (על הכרטיס שלו) או הערה כללית.</div>
+      <div class="mklist">${noted.map(c=>row(c,'')).join('')||'<div class="hintxt">אין הערות.</div>'}</div>`;
+  } else if(T==='define'){
+    const cats={};REG.forEach(g=>{(cats[g.cat||'אחר']=cats[g.cat||'אחר']||[]).push(g);});
+    const names=Object.keys(cats).sort((a,b)=>cats[b].length-cats[a].length||a.localeCompare(b,'he'));
+    const nOn=regSet.size, nOff=REG.length-nOn;
+    body=`<div class="mksub" style="margin:2px 2px 6px;color:#555">סמן ✓ את הקבוצות ה<b>רגילות</b> (מושמעות בטלפון). מה שלא מסומן נחשב <b>חריג</b> אוטומטית ויופיע בלשונית 🔴 קבוצה חריגה.</div>
+      <div class="mktpl" style="margin:0 0 8px"><button class="btn sm ghost" id="aud_all">✓ לסמן הכל</button><button class="btn sm ghost" id="aud_none">לנקות הכל</button><span class="mksub" style="margin-inline-start:6px">${nOn} רגילות · ${nOff} חריגות</span></div>
+      <div class="audgroups">${names.map(n=>`<div class="audcat"><div class="audcath">${esc_(n)} <small>${cats[n].length}</small></div>${cats[n].map(g=>`<label class="audg${regSet.has(g.id)?' on':''}"><input type="checkbox" data-gon="${esc_(g.id)}" ${regSet.has(g.id)?'checked':''}><span class="audgn">${esc_(g.name)}${g.erech?' <small style="color:#999">(ערך צבור)</small>':''}</span>${g.price!=null?`<b>${esc_(mkNis(g.price))}</b>`:''}${g.clients!=null?`<small class="mkmut">${g.clients} לקוחות</small>`:''}</label>`).join('')}</div>`).join('')}</div>
+      <div class="mktpl" style="margin-top:10px">${MKAUD.dirty?'<button class="btn sm" id="aud_save">💾 שמירת הסימון</button><span class="mksub" id="aud_sst" style="margin-inline-start:6px;color:#b9770e">יש שינוי שלא נשמר</span>':`<span class="mksub">${MKAUD.saved?'הסימון נשמר. ':'עדיין לא נשמר סימון ידני — מוצגת ברירת מחדל (מנויים עם מחיר, בלי ערך צבור). '}סמן/בטל כדי לעדכן.</span>`}</div>`;
+  }
+  rs.innerHTML=`<button class="x" id="rx">✕</button>
+    <div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">🔎</div><div><h2>בדיקת המקווה — מעקב וחריגים</h2>
+      <div class="mksub">סדר ומעקב: מי בקבוצה חריגה, מי עם מחיר מיוחד, ומי שיש עליו הערה.</div></div></div>
+    <div class="mktpl" style="margin:8px 0;flex-wrap:wrap">${chip('group','🔴','קבוצה חריגה',irr.length,'#c0392b')}${chip('special','💎','מחיר מיוחד',special.length,'#8a6d1a')}${chip('noted','📝','הערות',noted.length,'#2f6fb0')}${chip('define','⚙️','הגדרת קבוצות רגילות',null)}</div>
+    ${body}
+    <div class="mktpl" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><button class="btn sm ghost" id="aud_renew">🧾 מנוי בלי חיוב »</button><button class="btn sm ghost" id="aud_csv">⬇️ אקסל (החריגים)</button></div>`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  rs.querySelectorAll('[data-aud]').forEach(b=>b.onclick=()=>{MKAUD.tab=b.dataset.aud;mkAuditWin();});
+  rs.querySelectorAll('[data-ao]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.ao);if(!c)return;MK_BACK={cid:c.id,go:()=>mkAuditWin()};mkOpen(c);});
+  const rn=document.getElementById('aud_renew');if(rn)rn.onclick=()=>mkRenewCheck();
+  // הגדרת קבוצות רגילות
+  rs.querySelectorAll('[data-gon]').forEach(cb=>cb.onchange=()=>{const s=new Set(MKAUD.dirty||REG.filter(g=>g.on).map(g=>g.id));if(cb.checked)s.add(cb.dataset.gon);else s.delete(cb.dataset.gon);MKAUD.dirty=s;mkAuditWin();});
+  const all=document.getElementById('aud_all');if(all)all.onclick=()=>{MKAUD.dirty=new Set(REG.map(g=>g.id));mkAuditWin();};
+  const none=document.getElementById('aud_none');if(none)none.onclick=()=>{MKAUD.dirty=new Set();mkAuditWin();};
+  const sv=document.getElementById('aud_save');if(sv)sv.onclick=async()=>{sv.disabled=true;const sst=document.getElementById('aud_sst');if(sst)sst.textContent='⏳ שומר…';
+    const ids=[...(MKAUD.dirty||new Set())];const y=await api('POST','/api/mikveh/price_groups',{ids});
+    if(!y||!y.ok){sv.disabled=false;if(sst){sst.style.color='#c0392b';sst.textContent='⚠️ לא נשמר';}return;}
+    REG.forEach(g=>g.on=MKAUD.dirty.has(g.id));MKAUD.saved=true;MKAUD.dirty=null;toast('הסימון נשמר ✓');mkAuditWin();};
+  const cv=document.getElementById('aud_csv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const rows=T==='special'?special:T==='noted'?noted:irr;
+    const csv=['שם,טלפון,מספר לקוח,קבוצה,מחיר מיוחד,הערה ללקוח,הערה כללית,מנוי עד'].concat(rows.map(c=>[mkName(c),c.phone||'',c.code||'',gName(c.group),c.fix||'',c.remark||'',c.message||'',mkDate(c.sub_end)].map(q).join(','))).join('\n');
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='בדיקת המקווה.csv';document.body.appendChild(a);a.click();a.remove();};}
 // 🔎 מאיר: "יש לקוחות שמכניסים טלפונים אחרים ממה שמעודכן במקווה — שיהיה חכם ויבדוק אם יש שם דומה ויציע,
 // שיראו שהוא לא קיים וזה רק הצעה, או שיבדוק לפי מייל וכו'". exact = אותו טלפון בדיוק; sug = הצעות בלבד, עם הסיבה
 const mkN9=p=>{const d=String(p||'').replace(/\D/g,'').replace(/^972/,'0');return d.length>=9&&d.length<=10?d.slice(-9):'';};
@@ -2514,7 +2588,8 @@ function renderMikveh(){
           <button class="mkibtn" id="mkdebtsb" title="כל החובות הפתוחים במקווה — מי חייב, כמה ועל מה">🧾 חובות פתוחים</button>
       <button class="mkibtn" id="mkgrpw" title="סוגי המנוי במקווה — והעתקה של מנוי עם כל השעות וההגדרות">📋 סוגי מנוי</button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי או הרישיון שלו הסתיים, ולמה (חידוש אוטומטי כבוי / אין אמצעי תשלום / חיוב נכשל)">🔍 בדיקת פג תוקף</button>
-      <button class="mkibtn" id="mkrenewchk" title="מי שיש לו מנוי בתוקף ולא נמצא לו שום חיוב בחודשים האחרונים — לבדיקה אם חודש בלי שנגבה תשלום">🧾 מנוי בלי חיוב</button></div></div>
+      <button class="mkibtn" id="mkrenewchk" title="מי שיש לו מנוי בתוקף ולא נמצא לו שום חיוב בחודשים האחרונים — לבדיקה אם חודש בלי שנגבה תשלום">🧾 מנוי בלי חיוב</button>
+      <button class="mkibtn" id="mkaudit" title="מעקב וחריגים — מי בקבוצה שלא סומנה רגילה, מי עם מחיר מיוחד, ומי שיש עליו הערה">🔎 בדיקת המקווה</button></div></div>
         <div class="mkhg"><span>💬 פניות והודעות</span><div><button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📨 פניות מנדרים${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
           <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
           <button class="mkibtn hidden" id="mksched">⏰ מתוזמנות</button></div></div></div></details></div>`;
@@ -2539,6 +2614,7 @@ function renderMikveh(){
   const _mz=document.getElementById('mkzklist'); if(_mz)_mz.onclick=()=>mkCreditOpen('zk');
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mkrenewchk').onclick=()=>mkRenewCheck();
+  {const ab=document.getElementById('mkaudit');if(ab)ab.onclick=()=>mkAuditOpen();}
   document.getElementById('mkgrpw').onclick=()=>mkGroupsWin();
   document.getElementById('mkselfg').onclick=()=>mkSelfGroupOpen();
   document.getElementById('mkvmb').onclick=()=>mkVmOpen();
