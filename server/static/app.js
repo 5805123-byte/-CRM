@@ -801,6 +801,7 @@ const remSeen=()=>{try{return JSON.parse(localStorage.getItem('kc_remseen')||'{}
 function remMarkSeen(items){const s=remSeen();items.forEach(x=>{s[x.id+':'+x.stage.key]=1;});try{localStorage.setItem('kc_remseen',JSON.stringify(s));}catch(e){}}
 function remUnseen(items){const s=remSeen();return items.filter(x=>!s[x.id+':'+x.stage.key]);}
 function remNotify(items){
+  return; // מאיר (19.11.2026): בלי התראות קופצות מהיומן בטאבלט
   if(!('Notification' in window)||Notification.permission!=='granted')return;
   items.slice(0,4).forEach(x=>{try{new Notification('⏰ '+x.stage.label+' — '+(x.donor||'משימה'),{body:(x.note||'')+(x.at_time?(' · '+x.at_time):'')+(x.place?(' · '+x.place):''),tag:'kc-rem-'+x.id+'-'+x.stage.key});}catch(e){}});
 }
@@ -919,8 +920,8 @@ function checkReminders(){
   // שלב תזכורת חדש (יומיים לפני / מחר / 3 שעות / שעה) קופץ פעם אחת, גם כהתראת דפדפן
   // "נראה" נרשם רק כשסוגרים את החלון — אחרת רענון אוטומטי של הדף בולע את התזכורת
   const fresh=remUnseen(up);
-  if(fresh.length){remNotify(fresh);openRemPopup();return;}
-  if(due.length&&!sessionStorage.getItem('remseen')){openRemPopup();sessionStorage.setItem('remseen','1');}
+  if(fresh.length){remMarkSeen(fresh);return;}   // מאיר: בלי חלון קופץ — רק הפס האדום למעלה
+  // מאיר (19.11.2026): לא לפתוח חלון תזכורות לבד — רק בלחיצה על הפס
 }
 setInterval(()=>{try{if((DB&&DB.length)||ROLE==='comm'||ROLE==='gabbai')checkReminders();}catch(e){}},60*1000);
 // מסך שנשאר פתוח — אחרי 48 שעות מבקש כניסה מחדש גם בלי פעולה וגם בלי רשת
@@ -12141,7 +12142,7 @@ async function renderAvByAv(){
   const q2=String(q||'').trim();
   const rows=avFiltered();
   view.innerHTML=`<div class="avbar">
-      <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button>
+      <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcertlist" title="רשימה לפי שמות האברכים — לעריכה ולהדפסה, למי להכין תעודה חדשה">📜 רשימה לתעודות</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button>
       <button class="btn sm" id="avymbtn2" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל ·
       <button type="button" id="avfreebtn" class="avfreebtn${avFreeOnly?' on':''}"
@@ -12161,6 +12162,7 @@ async function renderAvByAv(){
   document.getElementById('avizhist').onclick=()=>{izHist=true;renderIzHistory();};
   document.getElementById('avprint').onclick=()=>{avView='avprint';render();};
   document.getElementById('avslips').onclick=()=>window.open('/iz-slips','_blank');
+  document.getElementById('avcertlist').onclick=()=>window.open('/iz-certs','_blank');
   wireByAv();
 }
 // יומן כללי — כל שינוי שנעשה ביששכר־זבולון, אצל כל האברכים והתורמים

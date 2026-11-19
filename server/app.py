@@ -5493,6 +5493,35 @@ def ensure_schema():
         con.rollback()
         print('  parnes dup error:', e)
 
+    # מאיר (16.11.2026): "Daniella bat Orly, David ben Daniella, Eliyahu ben Daniella — תוסיף את השמות האלו בעברית
+    # אצל עזרא ביטש" — לקוויטל שלו (פעם אחת; רק כשיש כרטיס אחד בשם הזה)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='bitsch_kvittel_v1'").fetchone():
+            c_ = con.execute("SELECT id, tier FROM donors WHERE (last LIKE '%ביטש%' OR last LIKE '%בייטש%') AND first LIKE '%עזרא%'").fetchall()
+            if len(c_) == 1:
+                did_ = c_[0]['id']
+                add_ = ['דניאלה בת אורלי', 'דוד בן דניאלה', 'אליהו בן דניאלה']
+                rows_ = con.execute("SELECT id, text, tier FROM prayers WHERE donor_id=? ORDER BY id", (did_,)).fetchall()
+                have_ = '\n'.join(str(r_['text'] or '') for r_ in rows_)
+                new_ = [n_ for n_ in add_ if n_ not in have_]
+                if new_:
+                    if rows_:
+                        last_ = rows_[-1]
+                        con.execute("UPDATE prayers SET text=? WHERE id=?",
+                                    ((str(last_['text'] or '').rstrip() + '\n' + '\n'.join(new_)).strip(), last_['id']))
+                    else:
+                        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,'',?,?)", (did_, '\n'.join(new_), c_[0]['tier'] or ''))
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (did_, today_iso(), 'קוויטל', '🕯️ נוספו לקוויטל: ' + ' · '.join(new_), '', now_iso()))
+                con.execute("INSERT INTO seed_flags(name) VALUES('bitsch_kvittel_v1')")
+                con.commit()
+                print('  עזרא ביטש: נוספו לקוויטל %d שמות' % len(new_))
+            else:
+                print('  עזרא ביטש: נמצאו %d כרטיסים — לא נוסף' % len(c_))
+    except Exception as e:
+        con.rollback()
+        print('  bitsch kvittel error:', e)
+
     # מאיר: "כן, על שם החברה B & C Lead Consultants LLC" — הקבלה השנתית 2025 של ברגר על שם החברה
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='stmt_berger_name_v1'").fetchone():
@@ -8303,6 +8332,30 @@ def ensure_schema():
             _ns = con.execute("DELETE FROM stipends WHERE kind='monthly' AND period>='2026-10' AND name LIKE '%פיליפס%' AND name LIKE '%יונתן%'").rowcount
             if _ns:
                 print('  פיליפס יונתן: הוסר מ-%d רשימות חודשיות מחשון' % _ns)
+        # מאיר (18.11.2026): "תוציא את שלום פראנק ופיליפס וגלזר מהרשימה של הכולל חצות… שניהם בכלל לא,
+        # אם יש להם יששכר זבולון אז תשאיר ריק את הזבולון… מהכולל חצות לגמרי מחשוון" — פראנק יוצא מהכולל
+        # (המקום אצל הזבולון שלו נפתח), ונמחק מהרשימות החודשיות מחשון תשפ"ז
+        _sf = con.execute("SELECT name FROM avreichim WHERE name LIKE '%פראנק%' AND name LIKE '%שלום%'").fetchall()
+        if len(_sf) == 1:
+            _out.append(_sf[0]['name'])
+            if not con.execute("SELECT 1 FROM seed_flags WHERE name='frank_out_v1'").fetchone():
+                _ns = con.execute("DELETE FROM stipends WHERE kind='monthly' AND period>='2026-10' AND name LIKE '%פראנק%' AND name LIKE '%שלום%'").rowcount
+                con.execute("INSERT INTO seed_flags(name) VALUES('frank_out_v1')")
+                con.commit()
+                print('  פראנק שלום: הוסר מ-%d רשימות חודשיות מחשון' % _ns)
+        # גלזר מנחם דוד — "רק לומד בכולל הוראה": עובר לרשימת כולל הוראה בלבד, ונמחק מרשימות כולל חצות
+        # מחשון. נשאר אברך (בכולל הוראה), ולכן השותפות שלו ביששכר־זבולון לא נוגעים בה כאן.
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='glazer_horaa_only_v1'").fetchone():
+            _gz = con.execute("SELECT id,name FROM avreichim WHERE name LIKE '%גלזר%' AND name LIKE '%מנחם%'").fetchall()
+            if len(_gz) == 1:
+                con.execute("UPDATE avreichim SET seder='הוראה' WHERE id=?", (_gz[0]['id'],))
+                _ns = con.execute("DELETE FROM stipends WHERE kollel='חצות' AND kind='monthly' AND period>='2026-10' "
+                                  "AND name LIKE '%גלזר%' AND name LIKE '%מנחם%'").rowcount
+                iz_log(con, _gz[0]['name'], None, 'עבר לכולל הוראה בלבד — יצא מרשימת כולל חצות מחשון תשפ"ז',
+                       now_iso(), greg_to_heb_full(today_iso()) or today_iso())
+                print('  גלזר מנחם דוד: כולל הוראה בלבד, הוסר מ-%d רשימות חצות' % _ns)
+                con.execute("INSERT INTO seed_flags(name) VALUES('glazer_horaa_only_v1')")
+                con.commit()
         _left = 0
         for anm in _out:
             r = con.execute("SELECT id,ended FROM avreichim WHERE name=?", (anm,)).fetchone()
@@ -14471,6 +14524,51 @@ def av_phones_from_nd(con):
     return out
 
 
+def izcerts_data(con):
+    """📜 מאיר: "תעודות חדשות ליששכר זבולון… לפי מה שיש עכשיו מי שיש לו יששכר זבולון ותכניס את התאריך שכתוב
+    אצלנו ואני ישנה כל אחד" — לכל תורם עם שותפות פעילה: השם, האברכים שלו, הסכום לחודש לכל אברך, ממתי;
+    ומה שמאיר כבר שינה (נשמר ב-izcert:<תורם>)."""
+    # מאיר: "אני לא מחפש תעודות וגרפיקה — אני מתכוון לרשימה שיש לנו במערכת אצל אברכים, יששכר זבולון שלהם
+    # לפי שמות האברכים" — שורה לכל אברך ושותף: האברך, הזבולון, ממתי, הסכום. השינויים לרשימת התעודות נשמרים
+    # בנפרד (izcert:<שותפות>) ולא משנים את השותפות עצמה במערכת.
+    old = set()
+    try:
+        old = {r['ref_id'] for r in con.execute("SELECT DISTINCT ref_id FROM files WHERE kind='iz'")}
+    except Exception:
+        pass
+    gone = set()
+    try:
+        gone = {r['name'] for r in con.execute("SELECT name FROM avreichim WHERE COALESCE(TRIM(ended),'')<>''")}
+    except Exception:
+        pass
+    out = []
+    for r in con.execute("SELECT p.id pid, p.donor_id did, TRIM(p.avreich) a, p.start_date, p.amount, p.share, "
+                         "d.last, d.first, COALESCE(d.region,'') region FROM partners p JOIN donors d ON d.id=p.donor_id "
+                         "WHERE COALESCE(p.active,1)<>0 AND COALESCE(TRIM(p.avreich),'')<>''"):
+        if not _is_avreich(r['a']) or r['a'] in gone:
+            continue
+        raw = str(r['share'] if (r['share'] not in (None, '')) else (r['amount'] or ''))
+        cur = '₪' if ('₪' in raw or r['region'] == 'il') else '$'
+        a = _amt2(re.sub(r'[^\d.]', '', raw))
+        dt = str(r['start_date'] or '').strip()
+        if re.fullmatch(r'\d{4}-\d\d-\d\d', dt):
+            try:
+                dt = greg_to_heb_full(dt) or dt
+            except Exception:
+                pass
+        try:
+            saved = json.loads(kv_get(con, 'izcert:p%d' % r['pid'], '') or '{}')
+        except ValueError:
+            saved = {}
+        l, f = _split_av(r['a'])
+        out.append({'pid': r['pid'], 'did': r['did'], 'av': r['a'], 'av_last': l,
+                    'donor': ((r['last'] or '') + ' ' + (r['first'] or '')).strip(),
+                    'amt': ('%g' % a) if a else '', 'cur': cur, 'date': dt, 'old_cert': r['did'] in old,
+                    'saved': saved if isinstance(saved, dict) else {}})
+    out.sort(key=lambda x: (x['av_last'], x['av'], x['donor']))
+    return {'ok': True, 'rows': out}
+
+
 def _split_av(name):
     """שם אברך נשמר כ"משפחה פרטי" — מפרידים כדי למיין לפי שם משפחה."""
     p = re.sub(r'\s+', ' ', (name or '').strip()).split(' ')
@@ -15713,6 +15811,7 @@ def auth_hours(role):
 AUTH_PUBLIC = ('/api/yemot/ivr/', '/api/yemot/mkgroup/', '/api/yemot/mkrec/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/',
                '/mcp/',   # ✍️ חיבור ל-Claude (הודעות ליומן) — מוגן בטוקן הסודי שבכתובת (CAL_MCP_TOKEN)
                '/u/', '/api/u/',   # קישור אישי לתורם לעדכון כרטיס (חתום, 30 יום) — בלי כניסה
+               '/d/',   # אותו קישור באנגלית בקוד קצר (כמו /k/ בעברית)
                '/k/', '/api/k/',   # 🔗 הקישור האישי בעברית — קהילה / תורמים בארץ (חתום, 30 יום) — בלי כניסה
                '/o.png')   # פיקסל מעקב הפתיחות — נטען אצל מי שקיבל את המייל, בלי כניסה (חתום בטוקן)   # תחיליות; הכניסה עצמה מטופלת לפני
 # כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
@@ -16507,6 +16606,10 @@ def push_scan():
     יום לפני (9:00), 3 שעות לפני, שעה לפני, ובזמן עצמו; משימה בלי שעה — ב-8:00 בבוקר של אותו יום."""
     con = db()
     try:
+        # מאיר (19.11.2026): "שהיומן לא ישלח לי יותר תזכורות בטאבלט... שלא יקפוץ למסך ולא כלום" —
+        # כבוי עד שמחזירים: app_kv push_tasks_on=1
+        if kv_get(con, 'push_tasks_on', '') != '1':
+            return
         # מאיר: "Registration failed - push service error" — כשהטלפון לא נרשם לדחיפה, אותן תזכורות יוצאות
         # בוואטסאפ (ALERT_WHATSAPP) / SMS (ALERT_SMS) אם הופעל בכפתור
         alt = kv_get(con, 'push_alt', '') == '1'
@@ -17757,17 +17860,25 @@ def cardlink_message(d, url, con=None):
             'May the zechus of supporting Torah learning at the eis ratzon of chatzos halailah protect and shield you and your entire family, and may all the brachos and tefillos we daven for you at chatzos be fulfilled \u2014 Amen!\n\n'
             + CL_SIGNATURE) % (nm, url)
     # מאיר: "לווצאפ צריך לקצר משמעותית את הטקסט… בלי הרבה הסברים"
-    wa = ('%s\n'
-          'With deep appreciation for the great zechus you hold \u2013 supporting Torah learning at the eis ratzon of chatzos halailah. We daven for you at chatzos.\n'
-          + ((iz + '\n') if iz else '') +
-          'Your personal secure link \u2013 update your credit card, your Kvittel names and address, dedicate a night of learning, or download your tax receipts:\n'
-          '%s\n'
-          'Valid for 30 days.\n\n'
-          'With deep appreciation,\nRabbi Yehoshua Meir Deutsch \u00b7 Kollel Chatzot') % (nm, url)
+    # \u05de\u05d0\u05d9\u05e8: "\u05d0\u05e0\u05d9 \u05e8\u05d5\u05e6\u05d4 \u05e9\u05d4\u05e7\u05d9\u05e9\u05d5\u05e8 \u05d9\u05e8\u05d0\u05d4 \u05d9\u05d5\u05ea\u05e8 \u05de\u05db\u05d5\u05d1\u05d3 \u05d5\u05de\u05e2\u05d5\u05e6\u05d1 \u05d1\u05d5\u05d5\u05e6\u05d0\u05e4" \u2014 \u05db\u05de\u05d5 \u05d1\u05e7\u05d9\u05e9\u05d5\u05e8 \u05d1\u05e2\u05d1\u05e8\u05d9\u05ea: \u05d4\u05e7\u05d9\u05e9\u05d5\u05e8 \u05d1\u05e9\u05d5\u05e8\u05d4 \u05d4\u05e8\u05d0\u05e9\u05d5\u05e0\u05d4 (\u05db\u05da
+    # \u05d5\u05d5\u05d0\u05d8\u05e1\u05d0\u05e4 \u05de\u05e6\u05d9\u05d2 \u05d0\u05ea \u05d4\u05ea\u05de\u05d5\u05e0\u05d4 \u05d4\u05d2\u05d3\u05d5\u05dc\u05d4 \u05e2\u05dd \u05d4\u05db\u05e4\u05ea\u05d5\u05e8), \u05d0\u05d7\u05e8\u05d9\u05d5 \u05d4\u05e9\u05dd \u05de\u05d5\u05d3\u05d2\u05e9 \u05d5\u05e8\u05e9\u05d9\u05de\u05d4 \u05e7\u05e6\u05e8\u05d4; \u05d1\u05dc\u05d9 \u05d0\u05d9\u05de\u05d5\u05d2'\u05d9 (\u05e0\u05e9\u05d1\u05e8\u05d9\u05dd \u05d1\u05d3\u05e8\u05da)
+    wa = ('%s\n\n'
+          '*%s*\n\n'
+          'With deep appreciation for the great zechus you hold \u2013 supporting Torah learning at the eis ratzon of chatzos halailah. We daven for you at chatzos.'
+          + (('\n' + iz) if iz else '') + '\n\n'
+          'Your personal secure page:\n'
+          # \u200e \u05d1\u05ea\u05d7\u05d9\u05dc\u05ea \u05d4\u05e9\u05d5\u05e8\u05d4 \u2014 \u05d0\u05d7\u05e8\u05ea \u05d5\u05d5\u05d0\u05d8\u05e1\u05d0\u05e4 \u05de\u05d9\u05d9\u05e9\u05e8 \u05d0\u05ea \u05e9\u05d5\u05e8\u05d5\u05ea \u05d4\u05e0\u05e7\u05d5\u05d3\u05d4 \u05dc\u05d9\u05de\u05d9\u05df (\u05d1\u05d2\u05dc\u05dc \u05d4\u05e9\u05dd \u05d1\u05e2\u05d1\u05e8\u05d9\u05ea \u05dc\u05de\u05e2\u05dc\u05d4)
+          '\u200e\u2022 *Update your credit card*\n'
+          '\u200e\u2022 *Review your Kvittel names*\n'
+          '\u200e\u2022 *Dedicate a night of learning*\n'
+          '\u200e\u2022 *Download your tax receipts*\n\n'
+          '*Tap the image above to open your page*\n'
+          '_Personal and secure \u00b7 valid for 30 days_\n\n'
+          'With deep appreciation,\n\u200eRabbi Yehoshua Meir Deutsch \u00b7 Kollel Chatzot') % (url, nm)
     return {'subject': 'Card & Kvittel Updates \u2014 Your Secure Portal', 'body': body, 'wa': wa, 'monthly': mo}
 
 
-_CL_URL = re.compile(r'https?://\S+/u/\S+')
+_CL_URL = re.compile(r'https?://\S+/(?:u|d)/\S+')
 _LH_CACHE = {}
 
 
@@ -17875,10 +17986,47 @@ def cardlink_mail_html(body, url, letter=False):
             '</table></td></tr></table></body></html>' % ''.join(out))
 
 
-CARDLINK_PAGE = '<!doctype html><html lang="en" translate="no" class="notranslate"><head><meta charset="utf-8"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1">\n<title>Kollel Chatzos · Secure Update Portal</title><meta property="og:title" content="Kollel Chatzos · Secure Update Portal"><meta property="og:description" content="Your personal secure page: update your card, review your Kvitel names and confirm your address."><meta property="og:image" content="%(base)s/logo_og.png"><meta property="og:image:width" content="200"><meta property="og:image:height" content="200"><meta property="og:type" content="website">\n<style>body{margin:0;background:#efe9db;font-family:Georgia,\'Times New Roman\',serif;color:#3a2f1a}\n.wrap{max-width:600px;margin:22px auto;padding:0 0 28px;background:#fffdf8;border:1px solid #c9b57a;border-radius:4px;box-shadow:0 0 0 5px #fffdf8,0 0 0 6px #d9c89a,0 10px 30px rgba(90,70,30,.12)}@media(max-width:640px){.wrap{margin:10px 8px}}.in{padding:0 20px}.hd{text-align:center;padding:14px 16px 10px;border-bottom:1px solid #c9b57a;margin:0 20px 6px;position:relative}.hd:after{content:\'\';display:block;width:80px;height:2px;background:#9c7a2e;margin:0 auto;position:absolute;left:0;right:0;bottom:-1px}.hd img{width:64px;max-width:30%%;display:inline-block}\nh3{font-size:16px;color:#7a1f1f;margin:28px 0 10px;background:#f6f1e5;border:1px solid #e3d3a3;border-left:5px solid #9c7a2e;padding:9px 12px;border-radius:4px;letter-spacing:.2px}label{display:block;font-size:13px;color:#6b6249;margin:10px 0 3px}\ninput,textarea{width:100%%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7}\ntextarea{min-height:90px;direction:rtl;text-align:right;font-family:Arial,sans-serif}textarea.ltr{direction:ltr;text-align:left;font-family:Georgia,serif}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n.cardbox{background:#fffdf7;border:1px solid #d9cfb5;border-radius:8px;padding:6px 8px 0;min-height:0;overflow:hidden}.cardbox iframe{height:64px!important;max-height:64px}.small{font-size:12px;color:#6b6249;margin-top:6px}\n.warn{background:#fff3cd;border:1px solid #e0c36a;border-radius:8px;padding:10px;font-size:14px}\nbutton{width:100%%;margin-top:14px;background:#7a1f1f;color:#fff;border:2px solid #9c7a2e;border-radius:12px;padding:14px;font:inherit;font-size:17px;font-weight:bold;cursor:pointer;box-shadow:0 2px 6px rgba(122,31,31,.18)}\nbutton.sec{background:#fffdf7;color:#7a1f1f;border:2px solid #9c7a2e}button.gold{background:#9c7a2e;border-color:#7a1f1f}.dbox{background:#f6f1e5;border:1px solid #e3d3a3;border-radius:8px;padding:4px 12px 12px;margin-top:12px}button:disabled{opacity:.55;cursor:default}\n.ok{background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:14px;font-size:16px;margin-top:12px}\n.err{color:#8f2a1b;font-size:15px;margin-top:10px}.err:not(:empty){background:#fde8e4;border:1px solid #e3a094;border-radius:8px;padding:10px 12px}\n.hecal{font-family:Arial,sans-serif;font-weight:normal;font-size:14px;color:#6b6249;direction:rtl;unicode-bidi:isolate;margin-right:6px}.cd .he{font-size:13px;color:#7a1f1f;font-weight:normal;font-family:Arial,sans-serif;unicode-bidi:isolate}\n.cal{background:#fffdf7;border:1px solid #d9cfb5;border-radius:10px;padding:10px;margin-top:10px}.calhd{display:flex;align-items:center;justify-content:space-between;font-weight:bold;color:#7a1f1f;font-size:16px}\n.calnav{width:auto;margin:0;padding:6px 14px;font-size:20px;background:#fffdf7;color:#7a1f1f;border:1px solid #d9cfb5}.calgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px}\n.cd{border:1px solid #d9cfb5;border-radius:8px;padding:6px 4px;text-align:center;font-size:13px;cursor:pointer;background:#e8f3ea;line-height:1.25}.cd b{display:block;font-size:17px}.cd small{display:block;font-size:11px;color:#6b6249}\n.cd.taken{background:#ececec;color:#9a9a9a;cursor:not-allowed}.cd.block{background:#f6f1e5;color:#b0a890;cursor:not-allowed}.cd.mine{background:#f3e3a8;border-color:#9c7a2e}.cd.sel{outline:3px solid #7a1f1f}\n.callg{font-size:11px;color:#6b6249;margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.lg{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid #d9cfb5}.lg.free{background:#e8f3ea}.lg.taken{background:#ececec}.lg.mine{background:#f3e3a8}.lg.block{background:#f6f1e5}\n.price{background:#f6f1e5;border-right:4px solid #9c7a2e;border-radius:6px;padding:8px 12px;font-size:13px;color:#3a2f1a;margin:8px 0}\n.sig{margin-top:26px;font-size:15px;line-height:1.6;color:#3a2f1a}</style></head>\n<body><div class="wrap"><div class="hd"><img src="%(logo)s" alt="Kollel Chatzos"></div><div class="in">\n<h3>1 &middot; Credit card <span class="hecal">כרטיס אשראי</span></h3>\n<div class="small" style="margin-bottom:8px">Enter your card to donate now, or to update the card on file for your monthly donation.</div>\n%(card)s\n<button type="button" id="go">Update my card</button><div class="err" id="err"></div><div class="ok" id="done" hidden></div>\n<button type="button" class="gold" id="c_open">Donate now</button>\n<div class="dbox" id="c_box" hidden><div class="two"><div><label>Amount ($)</label><input id="c_amt" inputmode="decimal" placeholder="0"></div><div><label>For (optional)</label><input id="c_for" placeholder="e.g. Kvitel, Kimcha D\'Pischa"></div></div>\n<button type="button" class="gold" id="c_go">Charge my card now</button><div class="err" id="c_err"></div><div class="ok" id="c_done" hidden></div></div>\n<h3>2 &middot; Names on your Kvittel <span class="hecal">השמות בקוויטל</span></h3>\n<div class="small">For whom we daven nightly at Kollel Chatzos &mdash; correct anything that has changed.</div>\n<textarea id="names" placeholder="e.g. Avraham ben Sarah">%(names)s</textarea>\n<button type="button" id="k_go">Save my Kvittel names</button><div class="err" id="k_err"></div><div class="ok" id="k_done" hidden></div>\n<h3>3 &middot; Mailing address and contact details</h3>\n<label>Mailing address</label><input id="addr" value="%(addr)s">\n<div class="two"><div><label>City</label><input id="city" value="%(city)s"></div><div><label>ZIP</label><input id="zip" value="%(zip)s"></div></div>\n<label>Country</label><input id="country" value="%(country)s">\n<label>Email</label><input id="email" type="email" value="%(email)s">\n<label>Phone</label><input id="phone" value="%(phone)s">\n<button type="button" id="a_go">Update my details</button><div class="err" id="a_err"></div><div class="ok" id="a_done" hidden></div>\n<h3>4 &middot; Dedicate a night of learning <span class="hecal">הקדשת לילה לימוד בחצות</span></h3>\n<div class="small">Select an available night on the calendar &mdash; for a birthday, yahrtzeit, or special occasion. Green nights are available; grey ones are taken.</div>\n<div class="price">A night of learning of the entire Kollel, for your zechus &mdash; <b>$480</b> (charged to the card entered in section 1).</div>\n<label>Names for the night (for prayer and learning)</label><textarea id="n_names" style="min-height:70px" placeholder="e.g. Avraham ben Sarah"></textarea>\n<label>Occasion (optional)</label><input id="n_occ" placeholder="e.g. my birthday, or a birthday of a family member">\n<div class="cal"><div class="calhd"><button type="button" class="calnav" id="cal_prev">&lsaquo;</button><div id="cal_title"></div><button type="button" class="calnav" id="cal_next">&rsaquo;</button></div>\n<div class="calgrid" id="cal_grid"></div><div class="callg"><span class="lg free"></span> available <span class="lg taken"></span> taken <span class="lg mine"></span> yours <span class="lg block"></span> Shabbos / Yom Tov</div></div>\n<div class="small" id="n_status"></div>\n<button type="button" id="n_pay" disabled>Reserve this night &amp; donate $480 now</button>\n<div class="err" id="n_err"></div><div class="ok" id="n_done" hidden></div>\n<h3>5 &middot; Your donation receipts <span class="hecal">קבלות</span></h3>\n<div class="small">Download U.S. tax receipts (501(c)(3), EIN 20-0447034) for your donations &mdash; choose a period.</div>\n<div class="two" style="margin-top:8px"><div><label>From</label><input id="r_from" type="date"></div><div><label>To</label><input id="r_to" type="date"></div></div>\n<div class="small" style="margin-top:6px"><a href="#" class="rq" data-q="12m">Last 12 months</a> &middot; <a href="#" class="rq" data-q="ytd">This year</a> &middot; <a href="#" class="rq" data-q="last">Last year</a></div>\n<button type="button" class="sec" id="r_show">Show my donations</button>\n<div id="r_list"></div><div class="err" id="r_err"></div>\n<button type="button" class="gold" id="r_all" hidden>Download one receipt for this period (PDF)</button>\n</div></div>\n<script>\nvar KEY=%(key)s,HT=null,API=location.pathname.replace(\'/u/\',\'/api/u/\');\nfunction mount(){if(!KEY||!window.HostedTokenization)return;try{HT=new HostedTokenization(KEY,{target:\'#card\',showZip:false,showFieldErrors:false,\n  styles:{card:\'border:1px solid #d9cfb5;border-radius:8px;padding:8px;font-size:16px\',expiryMonth:\'border:1px solid #d9cfb5;border-radius:8px\',\n  expiryYear:\'border:1px solid #d9cfb5;border-radius:8px\',cvv2:\'border:1px solid #d9cfb5;border-radius:8px\',labelType:\'static-top\'}});}\n  catch(e){document.getElementById(\'card\').innerHTML=\'<div class="warn">The card form could not be loaded. Please call us.</div>\';}}\nif(KEY){var sc=document.createElement(\'script\');sc.src=%(js)s;sc.onload=mount;document.head.appendChild(sc);}\nvar g=function(id){return document.getElementById(id);};\nfunction v(id){return g(id).value.trim();}\nasync function postJ(path,body){try{return await (await fetch(API+path,{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify(body)})).json();}catch(e){return null;}}\n// הכרטיס מהטופס המאובטח: null = לא הוקלד כלום; שגיאה = הוקלד חלקית / לא תקין\nasync function getCard(){if(!HT)throw new Error(\'The secure card form is not loaded yet. Please wait a moment.\');\n  try{var tk=await HT.getNonceToken();return {nonce:tk.nonce,exp_m:tk.expiryMonth,exp_y:tk.expiryYear,last4:tk.last4,card_type:tk.cardType};}\n  catch(e){var fe=(e&&e.fieldErrors)||[];if(fe.length&&fe.some(function(x){return /card\\s*number.*required/i.test(String(x));}))return null;\n    throw new Error(\'Please check the card number, expiry date and CVV\'+(fe.length?(\' (\'+fe.join(\', \')+\')\'):\'\')+\'.\');}}\nfunction busy(btn,on,txt){btn.disabled=on;if(on){btn.dataset.t=btn.textContent;btn.textContent=txt;}else if(btn.dataset.t){btn.textContent=btn.dataset.t;}}\n// 💳 עדכון כרטיס בלבד (הכרטיס חובה כאן)\ng(\'go\').onclick=async function(){var err=g(\'err\'),btn=this;err.textContent=\'\';g(\'c_err\').textContent=\'\';\n  busy(btn,true,\'Checking your card...\');var tk=null;\n  try{tk=await getCard();}catch(e){busy(btn,false);err.innerHTML=\'<b>Your card was not saved.</b> \'+e.message;return;}\n  if(!tk){busy(btn,false);err.innerHTML=\'<b>Your card was not saved.</b> Please enter the card number, expiry date and CVV.\';return;}\n  btn.textContent=\'Saving...\';var r=await postJ(\'/save\',tk);\n  if(!r||!r.ok){busy(btn,false);err.innerHTML=\'<b>Your card was not saved.</b> \'+((r&&r.error)||\'Something went wrong. Please try again or call us.\');return;}\n  busy(btn,false);var d=g(\'done\');d.hidden=false;\n  d.innerHTML=\'<b>Thank you!</b> Your card ending in \'+r.last4+\' was saved securely\'+(r.moved?\' and your monthly donation will be charged to it from now on\':\'\')+\'. May you merit all the Brachos of the Torah of Chatzot.\';\n  try{HT.resetForm();}catch(e){}};\n// 📜 שמות בקוויטל / 🏠 פרטים — בלי לגעת בכרטיס בכלל\nasync function saveOnly(btn,err,done,body,msg){err.textContent=\'\';busy(btn,true,\'Saving...\');var r=await postJ(\'/save\',body);busy(btn,false);\n  if(!r||!r.ok){err.innerHTML=\'<b>Not saved.</b> \'+((r&&r.error)||\'Something went wrong. Please try again or call us.\');return;}\n  done.hidden=false;done.innerHTML=\'<b>Thank you!</b> \'+msg(r);}\ng(\'k_go\').onclick=function(){if(!v(\'names\')){g(\'k_err\').textContent=\'Please enter the names.\';g(\'names\').focus();return;}\n  saveOnly(this,g(\'k_err\'),g(\'k_done\'),{names:v(\'names\')},function(r){return r.names_changed?\'The names were updated in our Kvitel.\':\'Your Kvitel names are unchanged.\';});};\ng(\'a_go\').onclick=function(){saveOnly(this,g(\'a_err\'),g(\'a_done\'),{addr:v(\'addr\'),city:v(\'city\'),zip:v(\'zip\'),country:v(\'country\'),email:v(\'email\'),phone:v(\'phone\')},function(r){return r.changes?\'Your details were updated.\':\'Your details are unchanged.\';});};\n// 🌙 לוח\nvar CAL={m:\'\',y:\'\',sel:null,data:null},MON=[\'Jan\',\'Feb\',\'Mar\',\'Apr\',\'May\',\'Jun\',\'Jul\',\'Aug\',\'Sep\',\'Oct\',\'Nov\',\'Dec\'];\nfunction gshort(gg){if(!gg)return \'\';var p=gg.split(\'-\');return MON[+p[1]-1]+\' \'+(+p[2]);}\nasync function calLoad(m,y){var r=null;try{r=await (await fetch(API+\'/month?m=\'+encodeURIComponent(m||\'\')+\'&y=\'+encodeURIComponent(y||\'\'))).json();}catch(e){}\n  if(!r||!r.ok){g(\'cal_title\').textContent=\'Calendar unavailable\';return;}\n  CAL.data=r;CAL.m=r.month;CAL.y=r.year;CAL.sel=null;g(\'n_pay\').disabled=true;g(\'n_status\').textContent=\'\';\n  g(\'cal_title\').innerHTML=r.en+\' \'+(r.ynum||r.year)+\' <span class="hecal">\'+r.month+\' \'+r.year+\'</span>\';\n  var grid=g(\'cal_grid\'),h=\'\';\n  for(var d=1;d<=r.len;d++){var dv=r.days[String(d)]||{};var cls=dv.block?\'block\':(dv.taken?\'taken\':(dv.mine?\'mine\':\'free\'));\n    h+=\'<div class="cd \'+cls+\'" data-d="\'+d+\'"><b>\'+d+\' <span class="he">\'+(dv.he||\'\')+\'</span></b><small>\'+(dv.block?((dv.why||\'Shabbos\')+\' · \'+(/Shabbos/.test(dv.why||\'\')?\'שבת\':\'יו"ט\')):(dv.taken?\'Taken · תפוס\':(dv.mine?\'Yours · שלך\':gshort(dv.greg))))+\'</small></div>\';}\n  grid.innerHTML=h;\n  Array.prototype.forEach.call(grid.querySelectorAll(\'.cd\'),function(el){el.onclick=function(){var d=+el.dataset.d,dv=r.days[String(d)]||{};var st=g(\'n_status\');\n    if(dv.block){st.innerHTML=\'<span style="color:#8f2a1b">\'+d+\' \'+r.en+\' is \'+(dv.why||\'Shabbos\')+\' and cannot be dedicated.</span>\';return;}\n    if(dv.taken){st.innerHTML=\'<span style="color:#8f2a1b"><b>This date is already taken · התאריך הזה תפוס.</b> Please choose another night.</span>\';return;}\n    Array.prototype.forEach.call(grid.querySelectorAll(\'.cd.sel\'),function(x){x.classList.remove(\'sel\');});el.classList.add(\'sel\');CAL.sel=d;\n    st.innerHTML=\'<span style="color:#2e7d4f"><b>\'+d+\' \'+r.en+\' \'+(r.ynum||\'\')+\' · \'+(dv.he||\'\')+\' \'+r.month+\' \'+r.year+\'</b> (\'+gshort(dv.greg)+\') is available · פנוי\'+(dv.mine?\' and already reserved for you\':\'\')+\'.</span>\';\n    g(\'n_pay\').disabled=false;};});}\ng(\'cal_prev\').onclick=function(){if(CAL.data&&CAL.data.prev)calLoad(CAL.data.prev.m,CAL.data.prev.y);};\ng(\'cal_next\').onclick=function(){if(CAL.data&&CAL.data.next)calLoad(CAL.data.next.m,CAL.data.next.y);};\nfunction nightBody(){return {m:CAL.m,y:CAL.y,d:CAL.sel,names:v(\'n_names\'),occasion:v(\'n_occ\')};}\nfunction nightCheck(err){err.textContent=\'\';if(!v(\'n_names\')){err.textContent=\'Please enter the names for the night.\';g(\'n_names\').focus();return false;}if(!CAL.sel){err.textContent=\'Please choose a night in the calendar.\';return false;}return true;}\n/* reserve-without-payment button removed (Meir) */\nasync function _nGo(){var err=g(\'n_err\'),btn=g(\'n_pay\');if(!nightCheck(err))return;busy(btn,true,\'Reserving...\');\n  var r=await postJ(\'/night\',nightBody());\n  if(!r||!r.ok){busy(btn,false);err.innerHTML=\'<b>Not reserved.</b> \'+((r&&r.error)||\'Please try again.\');if(r&&/taken/i.test(r.error||\'\'))calLoad(CAL.m,CAL.y);return;}\n  busy(btn,false);var dn=g(\'n_done\');dn.hidden=false;\n  dn.innerHTML=\'<b>Thank you!</b> The night of <b>\'+r.en+\' · \'+r.date_text+\' \'+r.year+\'</b> (\'+gshort(r.greg)+\') is reserved for you. Our office will be in touch about the details.\';calLoad(CAL.m,CAL.y);};\n// 💳 חיוב — לילה ($480) או סכום חופשי\nasync function charge(btn,err,done,amount,purpose,night){err.textContent=\'\';busy(btn,true,\'Checking your card...\');\n  var tk=null;try{tk=await getCard();}catch(e){busy(btn,false);err.innerHTML=\'<b>Not charged.</b> \'+e.message;return;}\n  if(!tk){busy(btn,false);err.innerHTML=\'<b>Not charged.</b> Please enter your card details first.\';window.scrollTo({top:0,behavior:\'smooth\'});return;}\n  btn.textContent=\'Charging...\';\n  var body=Object.assign({amount:amount,purpose:purpose},tk);if(night)body.night=night;\n  var r=await postJ(\'/charge\',body);\n  if(!r||!r.ok){busy(btn,false);err.innerHTML=\'<b>Not charged.</b> \'+((r&&r.error)||\'Something went wrong. Please try again or call us.\');if(r&&/taken/i.test(r.error||\'\'))calLoad(CAL.m,CAL.y);return;}\n  busy(btn,false);done.hidden=false;try{HT.resetForm();}catch(e){}\n  done.innerHTML=\'<b>Thank you!</b> Your donation of <b>\'+r.amount+\'</b> was received\'+(r.auth?\' (confirmation \'+r.auth+\')\':\'\')+\'.\'+(r.night?\' The night of <b>\'+r.night.en+\' · \'+r.night.date_text+\' \'+r.night.year+\'</b> (\'+gshort(r.night.greg)+\') is reserved for you.\':\'\')+(r.night_error?\' <span style="color:#8f2a1b">The night could not be reserved: \'+r.night_error+\' Our office will contact you.</span>\':\'\')+\' A receipt will follow from our office. May you merit all the Brachos of the Torah of Chatzot.\';\n  if(night)calLoad(CAL.m,CAL.y);};\ng(\'n_pay\').onclick=function(){if(!nightCheck(g(\'n_err\')))return;charge(this,g(\'n_err\'),g(\'n_done\'),480,\'Night of Torah learning\',nightBody());};\ng(\'c_open\').onclick=function(){var bx=g(\'c_box\');bx.hidden=!bx.hidden;if(!bx.hidden)g(\'c_amt\').focus();};\ng(\'c_go\').onclick=function(){var a=parseFloat(String(v(\'c_amt\')).replace(/[^\\d.]/g,\'\'))||0;if(!a){g(\'c_err\').textContent=\'Please enter the amount.\';g(\'c_amt\').focus();return;}charge(this,g(\'c_err\'),g(\'c_done\'),a,v(\'c_for\'),null);};\n// 🧾 קבלות לפי תקופה\nfunction iso(d){return d.getFullYear()+\'-\'+String(d.getMonth()+1).padStart(2,\'0\')+\'-\'+String(d.getDate()).padStart(2,\'0\');}\nfunction rq(q){var n=new Date(),f,t=n;if(q===\'12m\'){f=new Date(n);f.setFullYear(n.getFullYear()-1);f.setDate(f.getDate()+1);}else if(q===\'ytd\'){f=new Date(n.getFullYear(),0,1);}else{f=new Date(n.getFullYear()-1,0,1);t=new Date(n.getFullYear()-1,11,31);}\n  g(\'r_from\').value=iso(f);g(\'r_to\').value=iso(t);rShow();}\nArray.prototype.forEach.call(document.querySelectorAll(\'.rq\'),function(a){a.onclick=function(e){e.preventDefault();rq(a.dataset.q);};});\nfunction money(a){return \'$\'+Number(a).toLocaleString(\'en-US\',{minimumFractionDigits:2,maximumFractionDigits:2});}\nasync function rShow(){var err=g(\'r_err\'),box=g(\'r_list\'),f=v(\'r_from\'),t=v(\'r_to\');err.textContent=\'\';box.innerHTML=\'\';g(\'r_all\').hidden=true;\n  if(!f||!t){err.textContent=\'Please choose the period.\';return;}\n  var r=null;try{r=await (await fetch(API+\'/receipts?from=\'+f+\'&to=\'+t)).json();}catch(e){}\n  if(!r||!r.ok){err.textContent=r&&r.error===\'expired\'?\'This link has expired. Please contact our office.\':\'Could not load your donations. Please try again.\';return;}\n  if(r.il){box.innerHTML=\'<div class="small">Receipts for donations in shekels are issued by our office in Israel. Please contact us at chatzot18@gmail.com.</div>\';}\n  if(!r.items.length){box.innerHTML+=\'<div class="small">No donations recorded for \'+r.from+\' – \'+r.to+\'.</div>\';return;}\n  var h=\'<table style="width:100%%;border-collapse:collapse;font-size:14px;margin-top:8px">\';\n  r.items.forEach(function(it){h+=\'<tr style="border-bottom:1px solid #e3d3a3"><td style="padding:6px 2px">\'+it.date+\'</td><td style="padding:6px 2px">\'+it.purpose+\'</td><td style="padding:6px 2px;text-align:right;white-space:nowrap">\'+money(it.amount)+\'</td><td style="padding:6px 2px;text-align:right"><a href="\'+API+\'/receipt/\'+it.id+\'.pdf">PDF</a></td></tr>\';});\n  h+=\'<tr><td colspan="2" style="padding:8px 2px;font-weight:bold">Total · \'+r.items.length+\' donation\'+(r.items.length>1?\'s\':\'\')+\'</td><td style="padding:8px 2px;text-align:right;font-weight:bold">\'+money(r.total)+\'</td><td></td></tr></table>\';\n  box.innerHTML+=h;g(\'r_all\').hidden=false;}\ng(\'r_show\').onclick=rShow;\ng(\'r_all\').onclick=function(){window.location.href=API+\'/receipt.pdf?from=\'+v(\'r_from\')+\'&to=\'+v(\'r_to\');};\ncalLoad(\'\',\'\');\n</script></body></html>'
+CARDLINK_PAGE = '<!doctype html><html lang="en" translate="no" class="notranslate"><head><meta charset="utf-8"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1">\n<title>Kollel Chatzos · Secure Update Portal</title>%(ogtags)s\n<style>body{margin:0;background:#efe9db;font-family:Georgia,\'Times New Roman\',serif;color:#3a2f1a}\n.wrap{max-width:600px;margin:22px auto;padding:0 0 28px;background:#fffdf8;border:1px solid #c9b57a;border-radius:4px;box-shadow:0 0 0 5px #fffdf8,0 0 0 6px #d9c89a,0 10px 30px rgba(90,70,30,.12)}@media(max-width:640px){.wrap{margin:10px 8px}}.in{padding:0 20px}.hd{text-align:center;padding:14px 16px 10px;border-bottom:1px solid #c9b57a;margin:0 20px 6px;position:relative}.hd:after{content:\'\';display:block;width:80px;height:2px;background:#9c7a2e;margin:0 auto;position:absolute;left:0;right:0;bottom:-1px}.hd img{width:64px;max-width:30%%;display:inline-block}\nh3{font-size:16px;color:#7a1f1f;margin:28px 0 10px;background:#f6f1e5;border:1px solid #e3d3a3;border-left:5px solid #9c7a2e;padding:9px 12px;border-radius:4px;letter-spacing:.2px}label{display:block;font-size:13px;color:#6b6249;margin:10px 0 3px}\ninput,textarea{width:100%%;box-sizing:border-box;border:1px solid #d9cfb5;border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7}\ntextarea{min-height:90px;direction:rtl;text-align:right;font-family:Arial,sans-serif}textarea.ltr{direction:ltr;text-align:left;font-family:Georgia,serif}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n.cardbox{background:#fffdf7;border:1px solid #d9cfb5;border-radius:8px;padding:6px 8px 0;min-height:0;overflow:hidden}.cardbox iframe{height:64px!important;max-height:64px}@media(max-width:560px){.cardbox iframe{height:132px!important;max-height:none}}.small{font-size:12px;color:#6b6249;margin-top:6px}\n.warn{background:#fff3cd;border:1px solid #e0c36a;border-radius:8px;padding:10px;font-size:14px}\nbutton{width:100%%;margin-top:14px;background:#7a1f1f;color:#fff;border:2px solid #9c7a2e;border-radius:12px;padding:14px;font:inherit;font-size:17px;font-weight:bold;cursor:pointer;box-shadow:0 2px 6px rgba(122,31,31,.18)}\nbutton.sec{background:#fffdf7;color:#7a1f1f;border:2px solid #9c7a2e}button.gold{background:#9c7a2e;border-color:#7a1f1f}.dbox{background:#f6f1e5;border:1px solid #e3d3a3;border-radius:8px;padding:4px 12px 12px;margin-top:12px}button:disabled{opacity:.55;cursor:default}\n.ok{background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:14px;font-size:16px;margin-top:12px}\n.err{color:#8f2a1b;font-size:15px;margin-top:10px}.err:not(:empty){background:#fde8e4;border:1px solid #e3a094;border-radius:8px;padding:10px 12px}\n.hecal{font-family:Arial,sans-serif;font-weight:normal;font-size:14px;color:#6b6249;direction:rtl;unicode-bidi:isolate;margin-right:6px}.cd .he{font-size:13px;color:#7a1f1f;font-weight:normal;font-family:Arial,sans-serif;unicode-bidi:isolate}\n.cal{background:#fffdf7;border:1px solid #d9cfb5;border-radius:10px;padding:10px;margin-top:10px}.calhd{display:flex;align-items:center;justify-content:space-between;font-weight:bold;color:#7a1f1f;font-size:16px}\n.calnav{width:auto;margin:0;padding:6px 14px;font-size:20px;background:#fffdf7;color:#7a1f1f;border:1px solid #d9cfb5}.calgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px}\n.cd{border:1px solid #d9cfb5;border-radius:8px;padding:6px 4px;text-align:center;font-size:13px;cursor:pointer;background:#e8f3ea;line-height:1.25}.cd b{display:block;font-size:17px}.cd small{display:block;font-size:11px;color:#6b6249}\n.cd.taken{background:#ececec;color:#9a9a9a;cursor:not-allowed}.cd.block{background:#f6f1e5;color:#b0a890;cursor:not-allowed}.cd.mine{background:#f3e3a8;border-color:#9c7a2e}.cd.sel{outline:3px solid #7a1f1f}\n.callg{font-size:11px;color:#6b6249;margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.lg{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid #d9cfb5}.lg.free{background:#e8f3ea}.lg.taken{background:#ececec}.lg.mine{background:#f3e3a8}.lg.block{background:#f6f1e5}\n.price{background:#f6f1e5;border-right:4px solid #9c7a2e;border-radius:6px;padding:8px 12px;font-size:13px;color:#3a2f1a;margin:8px 0}\n.sig{margin-top:26px;font-size:15px;line-height:1.6;color:#3a2f1a}</style></head>\n<body><div class="wrap"><div class="hd"><img src="%(logo)s" alt="Kollel Chatzos"></div><div class="in">\n<h3>1 &middot; Credit card <span class="hecal">כרטיס אשראי</span></h3>\n<div class="small" style="margin-bottom:8px">Enter your card to donate now, or to update the card on file for your monthly donation.</div>\n%(card)s\n<button type="button" id="go">Update my card</button><div class="err" id="err"></div><div class="ok" id="done" hidden></div>\n<button type="button" class="gold" id="c_open">Donate now</button>\n<div class="dbox" id="c_box" hidden><div class="two"><div><label>Amount ($)</label><input id="c_amt" inputmode="decimal" placeholder="0"></div><div><label>For (optional)</label><input id="c_for" placeholder="e.g. Kvitel, Kimcha D\'Pischa"></div></div>\n<button type="button" class="gold" id="c_go">Charge my card now</button><div class="err" id="c_err"></div><div class="ok" id="c_done" hidden></div></div>\n<h3>2 &middot; Names on your Kvittel <span class="hecal">השמות בקוויטל</span></h3>\n<div class="small">For whom we daven nightly at Kollel Chatzos &mdash; correct anything that has changed.</div>\n<textarea id="names" placeholder="e.g. Avraham ben Sarah">%(names)s</textarea>\n<button type="button" id="k_go">Save my Kvittel names</button><div class="err" id="k_err"></div><div class="ok" id="k_done" hidden></div>\n<h3>3 &middot; Mailing address and contact details</h3>\n<label>Mailing address</label><input id="addr" value="%(addr)s">\n<div class="two"><div><label>City</label><input id="city" value="%(city)s"></div><div><label>ZIP</label><input id="zip" value="%(zip)s"></div></div>\n<label>Country</label><input id="country" value="%(country)s">\n<label>Email</label><input id="email" type="email" value="%(email)s">\n<label>Phone</label><input id="phone" value="%(phone)s">\n<button type="button" id="a_go">Update my details</button><div class="err" id="a_err"></div><div class="ok" id="a_done" hidden></div>\n<h3>4 &middot; Dedicate a night of learning <span class="hecal">הקדשת לילה לימוד בחצות</span></h3>\n<div class="small">Select an available night on the calendar &mdash; for a birthday, yahrtzeit, or special occasion. Green nights are available; grey ones are taken.</div>\n<div class="price">A night of learning of the entire Kollel, for your zechus &mdash; <b>$480</b> (charged to the card entered in section 1).</div>\n<label>Names for the night (for prayer and learning)</label><textarea id="n_names" style="min-height:70px" placeholder="e.g. Avraham ben Sarah"></textarea>\n<label>Occasion (optional)</label><input id="n_occ" placeholder="e.g. my birthday, or a birthday of a family member">\n<div class="cal"><div class="calhd"><button type="button" class="calnav" id="cal_prev">&lsaquo;</button><div id="cal_title"></div><button type="button" class="calnav" id="cal_next">&rsaquo;</button></div>\n<div class="calgrid" id="cal_grid"></div><div class="callg"><span class="lg free"></span> available <span class="lg taken"></span> taken <span class="lg mine"></span> yours <span class="lg block"></span> Shabbos / Yom Tov</div></div>\n<div class="small" id="n_status"></div>\n<button type="button" id="n_pay" disabled>Reserve this night &amp; donate $480 now</button>\n<div class="err" id="n_err"></div><div class="ok" id="n_done" hidden></div>\n<h3>5 &middot; Your donation receipts <span class="hecal">קבלות</span></h3>\n<div class="small">Download U.S. tax receipts (501(c)(3), EIN 20-0447034) for your donations &mdash; choose a period.</div>\n<div class="two" style="margin-top:8px"><div><label>From</label><input id="r_from" type="date"></div><div><label>To</label><input id="r_to" type="date"></div></div>\n<div class="small" style="margin-top:6px"><a href="#" class="rq" data-q="12m">Last 12 months</a> &middot; <a href="#" class="rq" data-q="ytd">This year</a> &middot; <a href="#" class="rq" data-q="last">Last year</a></div>\n<button type="button" class="sec" id="r_show">Show my donations</button>\n<div id="r_list"></div><div class="err" id="r_err"></div>\n<button type="button" class="gold" id="r_all" hidden>Download one receipt for this period (PDF)</button>\n</div></div>\n<script>\nvar KEY=%(key)s,HT=null,API=%(api)s||location.pathname.replace(\'/u/\',\'/api/u/\');\nfunction mount(){if(!KEY||!window.HostedTokenization)return;try{HT=new HostedTokenization(KEY,{target:\'#card\',showZip:false,showFieldErrors:false,\n  styles:{card:\'border:1px solid #d9cfb5;border-radius:8px;padding:8px;font-size:16px\',expiryMonth:\'border:1px solid #d9cfb5;border-radius:8px\',\n  expiryYear:\'border:1px solid #d9cfb5;border-radius:8px\',cvv2:\'border:1px solid #d9cfb5;border-radius:8px\',labelType:\'static-top\'}});}\n  catch(e){document.getElementById(\'card\').innerHTML=\'<div class="warn">The card form could not be loaded. Please call us.</div>\';}}\nif(KEY){var sc=document.createElement(\'script\');sc.src=%(js)s;sc.onload=mount;document.head.appendChild(sc);}\nvar g=function(id){return document.getElementById(id);};\nfunction v(id){return g(id).value.trim();}\nasync function postJ(path,body){try{return await (await fetch(API+path,{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify(body)})).json();}catch(e){return null;}}\n// הכרטיס מהטופס המאובטח: null = לא הוקלד כלום; שגיאה = הוקלד חלקית / לא תקין\nasync function getCard(){if(!HT)throw new Error(\'The secure card form is not loaded yet. Please wait a moment.\');\n  try{var tk=await HT.getNonceToken();return {nonce:tk.nonce,exp_m:tk.expiryMonth,exp_y:tk.expiryYear,last4:tk.last4,card_type:tk.cardType};}\n  catch(e){var fe=(e&&e.fieldErrors)||[];if(fe.length&&fe.some(function(x){return /card\\s*number.*required/i.test(String(x));}))return null;\n    throw new Error(\'Please check the card number, expiry date and CVV\'+(fe.length?(\' (\'+fe.join(\', \')+\')\'):\'\')+\'.\');}}\nfunction busy(btn,on,txt){btn.disabled=on;if(on){btn.dataset.t=btn.textContent;btn.textContent=txt;}else if(btn.dataset.t){btn.textContent=btn.dataset.t;}}\n// 💳 עדכון כרטיס בלבד (הכרטיס חובה כאן)\ng(\'go\').onclick=async function(){var err=g(\'err\'),btn=this;err.textContent=\'\';g(\'c_err\').textContent=\'\';\n  busy(btn,true,\'Checking your card...\');var tk=null;\n  try{tk=await getCard();}catch(e){busy(btn,false);err.innerHTML=\'<b>Your card was not saved.</b> \'+e.message;return;}\n  if(!tk){busy(btn,false);err.innerHTML=\'<b>Your card was not saved.</b> Please enter the card number, expiry date and CVV.\';return;}\n  btn.textContent=\'Saving...\';var r=await postJ(\'/save\',tk);\n  if(!r||!r.ok){busy(btn,false);err.innerHTML=\'<b>Your card was not saved.</b> \'+((r&&r.error)||\'Something went wrong. Please try again or call us.\');return;}\n  busy(btn,false);var d=g(\'done\');d.hidden=false;\n  d.innerHTML=\'<b>Thank you!</b> Your card ending in \'+r.last4+\' was saved securely\'+(r.moved?\' and your monthly donation will be charged to it from now on\':\'\')+\'. May you merit all the Brachos of the Torah of Chatzot.\';\n  try{HT.resetForm();}catch(e){}};\n// 📜 שמות בקוויטל / 🏠 פרטים — בלי לגעת בכרטיס בכלל\nasync function saveOnly(btn,err,done,body,msg){err.textContent=\'\';busy(btn,true,\'Saving...\');var r=await postJ(\'/save\',body);busy(btn,false);\n  if(!r||!r.ok){err.innerHTML=\'<b>Not saved.</b> \'+((r&&r.error)||\'Something went wrong. Please try again or call us.\');return;}\n  done.hidden=false;done.innerHTML=\'<b>Thank you!</b> \'+msg(r);}\ng(\'k_go\').onclick=function(){if(!v(\'names\')){g(\'k_err\').textContent=\'Please enter the names.\';g(\'names\').focus();return;}\n  saveOnly(this,g(\'k_err\'),g(\'k_done\'),{names:v(\'names\')},function(r){return r.names_changed?\'The names were updated in our Kvitel.\':\'Your Kvitel names are unchanged.\';});};\ng(\'a_go\').onclick=function(){saveOnly(this,g(\'a_err\'),g(\'a_done\'),{addr:v(\'addr\'),city:v(\'city\'),zip:v(\'zip\'),country:v(\'country\'),email:v(\'email\'),phone:v(\'phone\')},function(r){return r.changes?\'Your details were updated.\':\'Your details are unchanged.\';});};\n// 🌙 לוח\nvar CAL={m:\'\',y:\'\',sel:null,data:null},MON=[\'Jan\',\'Feb\',\'Mar\',\'Apr\',\'May\',\'Jun\',\'Jul\',\'Aug\',\'Sep\',\'Oct\',\'Nov\',\'Dec\'];\nfunction gshort(gg){if(!gg)return \'\';var p=gg.split(\'-\');return MON[+p[1]-1]+\' \'+(+p[2]);}\nasync function calLoad(m,y){var r=null;try{r=await (await fetch(API+\'/month?m=\'+encodeURIComponent(m||\'\')+\'&y=\'+encodeURIComponent(y||\'\'))).json();}catch(e){}\n  if(!r||!r.ok){g(\'cal_title\').textContent=\'Calendar unavailable\';return;}\n  CAL.data=r;CAL.m=r.month;CAL.y=r.year;CAL.sel=null;g(\'n_pay\').disabled=true;g(\'n_status\').textContent=\'\';\n  g(\'cal_title\').innerHTML=r.en+\' \'+(r.ynum||r.year)+\' <span class="hecal">\'+r.month+\' \'+r.year+\'</span>\';\n  var grid=g(\'cal_grid\'),h=\'\';\n  for(var d=1;d<=r.len;d++){var dv=r.days[String(d)]||{};var cls=dv.block?\'block\':(dv.taken?\'taken\':(dv.mine?\'mine\':\'free\'));\n    h+=\'<div class="cd \'+cls+\'" data-d="\'+d+\'"><b>\'+d+\' <span class="he">\'+(dv.he||\'\')+\'</span></b><small>\'+(dv.block?((dv.why||\'Shabbos\')+\' · \'+(/Shabbos/.test(dv.why||\'\')?\'שבת\':\'יו"ט\')):(dv.taken?\'Taken · תפוס\':(dv.mine?\'Yours · שלך\':gshort(dv.greg))))+\'</small></div>\';}\n  grid.innerHTML=h;\n  Array.prototype.forEach.call(grid.querySelectorAll(\'.cd\'),function(el){el.onclick=function(){var d=+el.dataset.d,dv=r.days[String(d)]||{};var st=g(\'n_status\');\n    if(dv.block){st.innerHTML=\'<span style="color:#8f2a1b">\'+d+\' \'+r.en+\' is \'+(dv.why||\'Shabbos\')+\' and cannot be dedicated.</span>\';return;}\n    if(dv.taken){st.innerHTML=\'<span style="color:#8f2a1b"><b>This date is already taken · התאריך הזה תפוס.</b> Please choose another night.</span>\';return;}\n    Array.prototype.forEach.call(grid.querySelectorAll(\'.cd.sel\'),function(x){x.classList.remove(\'sel\');});el.classList.add(\'sel\');CAL.sel=d;\n    st.innerHTML=\'<span style="color:#2e7d4f"><b>\'+d+\' \'+r.en+\' \'+(r.ynum||\'\')+\' · \'+(dv.he||\'\')+\' \'+r.month+\' \'+r.year+\'</b> (\'+gshort(dv.greg)+\') is available · פנוי\'+(dv.mine?\' and already reserved for you\':\'\')+\'.</span>\';\n    g(\'n_pay\').disabled=false;};});}\ng(\'cal_prev\').onclick=function(){if(CAL.data&&CAL.data.prev)calLoad(CAL.data.prev.m,CAL.data.prev.y);};\ng(\'cal_next\').onclick=function(){if(CAL.data&&CAL.data.next)calLoad(CAL.data.next.m,CAL.data.next.y);};\nfunction nightBody(){return {m:CAL.m,y:CAL.y,d:CAL.sel,names:v(\'n_names\'),occasion:v(\'n_occ\')};}\nfunction nightCheck(err){err.textContent=\'\';if(!v(\'n_names\')){err.textContent=\'Please enter the names for the night.\';g(\'n_names\').focus();return false;}if(!CAL.sel){err.textContent=\'Please choose a night in the calendar.\';return false;}return true;}\n/* reserve-without-payment button removed (Meir) */\nasync function _nGo(){var err=g(\'n_err\'),btn=g(\'n_pay\');if(!nightCheck(err))return;busy(btn,true,\'Reserving...\');\n  var r=await postJ(\'/night\',nightBody());\n  if(!r||!r.ok){busy(btn,false);err.innerHTML=\'<b>Not reserved.</b> \'+((r&&r.error)||\'Please try again.\');if(r&&/taken/i.test(r.error||\'\'))calLoad(CAL.m,CAL.y);return;}\n  busy(btn,false);var dn=g(\'n_done\');dn.hidden=false;\n  dn.innerHTML=\'<b>Thank you!</b> The night of <b>\'+r.en+\' · \'+r.date_text+\' \'+r.year+\'</b> (\'+gshort(r.greg)+\') is reserved for you. Our office will be in touch about the details.\';calLoad(CAL.m,CAL.y);};\n// 💳 חיוב — לילה ($480) או סכום חופשי\nasync function charge(btn,err,done,amount,purpose,night){err.textContent=\'\';busy(btn,true,\'Checking your card...\');\n  var tk=null;try{tk=await getCard();}catch(e){busy(btn,false);err.innerHTML=\'<b>Not charged.</b> \'+e.message;return;}\n  if(!tk){busy(btn,false);err.innerHTML=\'<b>Not charged.</b> Please enter your card details first.\';window.scrollTo({top:0,behavior:\'smooth\'});return;}\n  btn.textContent=\'Charging...\';\n  var body=Object.assign({amount:amount,purpose:purpose},tk);if(night)body.night=night;\n  var r=await postJ(\'/charge\',body);\n  if(!r||!r.ok){busy(btn,false);err.innerHTML=\'<b>Not charged.</b> \'+((r&&r.error)||\'Something went wrong. Please try again or call us.\');if(r&&/taken/i.test(r.error||\'\'))calLoad(CAL.m,CAL.y);return;}\n  busy(btn,false);done.hidden=false;try{HT.resetForm();}catch(e){}\n  done.innerHTML=\'<b>Thank you!</b> Your donation of <b>\'+r.amount+\'</b> was received\'+(r.auth?\' (confirmation \'+r.auth+\')\':\'\')+\'.\'+(r.night?\' The night of <b>\'+r.night.en+\' · \'+r.night.date_text+\' \'+r.night.year+\'</b> (\'+gshort(r.night.greg)+\') is reserved for you.\':\'\')+(r.night_error?\' <span style="color:#8f2a1b">The night could not be reserved: \'+r.night_error+\' Our office will contact you.</span>\':\'\')+\' A receipt will follow from our office. May you merit all the Brachos of the Torah of Chatzot.\';\n  if(night)calLoad(CAL.m,CAL.y);};\ng(\'n_pay\').onclick=function(){if(!nightCheck(g(\'n_err\')))return;charge(this,g(\'n_err\'),g(\'n_done\'),480,\'Night of Torah learning\',nightBody());};\ng(\'c_open\').onclick=function(){var bx=g(\'c_box\');bx.hidden=!bx.hidden;if(!bx.hidden)g(\'c_amt\').focus();};\ng(\'c_go\').onclick=function(){var a=parseFloat(String(v(\'c_amt\')).replace(/[^\\d.]/g,\'\'))||0;if(!a){g(\'c_err\').textContent=\'Please enter the amount.\';g(\'c_amt\').focus();return;}charge(this,g(\'c_err\'),g(\'c_done\'),a,v(\'c_for\'),null);};\n// 🧾 קבלות לפי תקופה\nfunction iso(d){return d.getFullYear()+\'-\'+String(d.getMonth()+1).padStart(2,\'0\')+\'-\'+String(d.getDate()).padStart(2,\'0\');}\nfunction rq(q){var n=new Date(),f,t=n;if(q===\'12m\'){f=new Date(n);f.setFullYear(n.getFullYear()-1);f.setDate(f.getDate()+1);}else if(q===\'ytd\'){f=new Date(n.getFullYear(),0,1);}else{f=new Date(n.getFullYear()-1,0,1);t=new Date(n.getFullYear()-1,11,31);}\n  g(\'r_from\').value=iso(f);g(\'r_to\').value=iso(t);rShow();}\nArray.prototype.forEach.call(document.querySelectorAll(\'.rq\'),function(a){a.onclick=function(e){e.preventDefault();rq(a.dataset.q);};});\nfunction money(a){return \'$\'+Number(a).toLocaleString(\'en-US\',{minimumFractionDigits:2,maximumFractionDigits:2});}\nasync function rShow(){var err=g(\'r_err\'),box=g(\'r_list\'),f=v(\'r_from\'),t=v(\'r_to\');err.textContent=\'\';box.innerHTML=\'\';g(\'r_all\').hidden=true;\n  if(!f||!t){err.textContent=\'Please choose the period.\';return;}\n  var r=null;try{r=await (await fetch(API+\'/receipts?from=\'+f+\'&to=\'+t)).json();}catch(e){}\n  if(!r||!r.ok){err.textContent=r&&r.error===\'expired\'?\'This link has expired. Please contact our office.\':\'Could not load your donations. Please try again.\';return;}\n  if(r.il){box.innerHTML=\'<div class="small">Receipts for donations in shekels are issued by our office in Israel. Please contact us at chatzot18@gmail.com.</div>\';}\n  if(!r.items.length){box.innerHTML+=\'<div class="small">No donations recorded for \'+r.from+\' – \'+r.to+\'.</div>\';return;}\n  var h=\'<table style="width:100%%;border-collapse:collapse;font-size:14px;margin-top:8px">\';\n  r.items.forEach(function(it){h+=\'<tr style="border-bottom:1px solid #e3d3a3"><td style="padding:6px 2px">\'+it.date+\'</td><td style="padding:6px 2px">\'+it.purpose+\'</td><td style="padding:6px 2px;text-align:right;white-space:nowrap">\'+money(it.amount)+\'</td><td style="padding:6px 2px;text-align:right"><a href="\'+API+\'/receipt/\'+it.id+\'.pdf">PDF</a></td></tr>\';});\n  h+=\'<tr><td colspan="2" style="padding:8px 2px;font-weight:bold">Total · \'+r.items.length+\' donation\'+(r.items.length>1?\'s\':\'\')+\'</td><td style="padding:8px 2px;text-align:right;font-weight:bold">\'+money(r.total)+\'</td><td></td></tr></table>\';\n  box.innerHTML+=h;g(\'r_all\').hidden=false;}\ng(\'r_show\').onclick=rShow;\ng(\'r_all\').onclick=function(){window.location.href=API+\'/receipt.pdf?from=\'+v(\'r_from\')+\'&to=\'+v(\'r_to\');};\ncalLoad(\'\',\'\');\n</script></body></html>'
 
 
-def cardlink_page(con, did, base=''):
+def cardlink_og_tags(base, url=''):
+    """תצוגת הקישור באנגלית בוואטסאפ — מאיר: "שהקישור יראה יותר מכובד ומעוצב בווצאפ": תמונה רחבה גדולה עם כפתור
+    (static/kl_og_en.png), כמו בקישור בעברית."""
+    import html as _h
+    e = _h.escape
+    t = 'Kollel Chatzos · Your Personal Secure Page'
+    dsc = 'Update your card · Review your Kvittel names · Dedicate a night of learning · Download your tax receipts'
+    im = '%s/kl_og_en.png?v=1' % base
+    return ('<meta name="description" content="%s"><meta property="og:title" content="%s"><meta property="og:description" content="%s">'
+            '<meta property="og:site_name" content="Kollel Chatzos"><meta property="og:locale" content="en_US"><meta property="og:type" content="website">%s'
+            '<meta property="og:image" content="%s"><meta property="og:image:secure_url" content="%s"><meta property="og:image:type" content="image/png">'
+            '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="%s">'
+            '<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="%s"><meta name="twitter:image" content="%s">'
+            % (e(dsc), e(t), e(dsc), ('<meta property="og:url" content="%s">' % e(url)) if url else '', e(im), e(im), e(t), e(t), e(im)))
+
+
+def cardlink_short(con, tok):
+    """מאיר: "לא השתנה" (הקישור באנגלית בוואטסאפ בלי תמונה, כשהקישור בעברית עם תמונה) — גם הקישור באנגלית
+    קצר עכשיו, כמו בעברית: /d/<קוד> שמצביע על הקישור החתום."""
+    code = klink_short(con, 'u:' + tok)
+    return code if not code.startswith('u:') else tok
+
+
+def cardlink_resolve(code):
+    """קוד קצר -> הקישור החתום (או '' אם לא קיים / פג)."""
+    if not re.fullmatch(r'[A-Za-z0-9]{6,12}', str(code or '')):
+        return ''
+    con = db()
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS klink_code(code TEXT PRIMARY KEY, tok TEXT, created TEXT)")
+        r = con.execute("SELECT tok FROM klink_code WHERE code=?", (code,)).fetchone()
+    finally:
+        con.close()
+    tok = (r['tok'] or '')[2:] if (r and str(r['tok'] or '').startswith('u:')) else ''
+    return tok if cardlink_check(tok) else ''
+
+
+def cardlink_page(con, did, base='', api=''):
     import banquest as _bq
     import html as _h
     d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
@@ -17893,7 +18041,7 @@ def cardlink_page(con, did, base=''):
             if key else '<div class="warn">The secure card form is temporarily unavailable. Please call us at 718-972-7169.</div>')
     return (CARDLINK_PAGE % {'name': e(cardlink_salute(d)), 'card': card, 'names': e(names), 'addr': e(cardlink_addr_clean(d['addr'], d['city'], d['zip'], d['country'])), 'city': e(d['city'] or ''),
                              'zip': e(d['zip'] or ''), 'country': e(d['country'] or ''), 'email': e(em), 'phone': e(cardlink_phone_clean(d['phone'])),
-                             'key': json.dumps(key or ''), 'js': json.dumps(js), 'base': e(base),
+                             'key': json.dumps(key or ''), 'js': json.dumps(js), 'base': e(base), 'ogtags': cardlink_og_tags(base), 'api': json.dumps(api or ''),
                              'iz': (' <span class="iz">%s</span>' % e(cardlink_iz(con, d))) if cardlink_iz(con, d) else '',
                              'logo': 'data:image/png;base64,' + base64.b64encode(letterhead_logo(300)).decode('ascii')}).encode('utf-8')
 
@@ -18289,7 +18437,7 @@ g('rc_go').onclick=async function(){var b=this,er=g('rc_err'),st=g('rc_st');er.t
   rcPaint();busy(b,false);rcPaint();
   await rcRefresh();
   var R=rcRange().filter(function(x){return x.rc;}),have=R.length,ready=R.filter(function(x){return x.ready;}).length;
-  if(have){var a=g('rc_pdf');a.href=location.pathname+'/receipts.pdf?from='+encodeURIComponent(g('rc_from').value)+'&to='+encodeURIComponent(g('rc_to').value);a.hidden=false;
+  if(have){var a=g('rc_pdf');a.href=location.pathname+'/receipts.pdf?from='+encodeURIComponent(g('rc_from').value)+'&to='+encodeURIComponent(g('rc_to').value)+'&t='+Date.now();a.hidden=false;
     st.innerHTML=(made?'<b style="color:#2e7d4f">✓ הופקו '+made+' קבלות.</b> ':'')+(ready>=have?('כל '+have+' הקבלות בקובץ אחד — לחצו לפתיחה:')
       :('בקובץ עכשיו '+ready+' מתוך '+have+' קבלות. <b>עוד '+(have-ready)+' קבלות בהכנה</b> — לחצו שוב על הכפתור בעוד כמה דקות, והן יופיעו בקובץ.'));
     a.scrollIntoView({behavior:'smooth',block:'center'});}};
@@ -22573,6 +22721,17 @@ def bump_data():
 
 
 class H(BaseHTTPRequestHandler):
+    def end_headers(self):
+        # מאיר (ליפשיץ): "לוחץ… ונותן לו רק 2 קבלות" — Cloudflare שומר כברירת מחדל כל קישור שנגמר ב-.pdf, ולכן
+        # בישראל חזר שוב ושוב הקובץ הישן (עם 2 קבלות). קבצי PDF שהמערכת מייצרת — לא נשמרים בדרך.
+        try:
+            if self.path.split('?')[0].lower().endswith('.pdf'):
+                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+                self.send_header('CDN-Cache-Control', 'no-store')
+        except Exception:
+            pass
+        super().end_headers()
+
     def _send_cached(self, c):
         """תשובה שכבר מוכנה במטמון. אם ללקוח יש בדיוק אותה גרסה — 304 בלי גוף."""
         if (self.headers.get('If-None-Match') or '') == c['etag']:
@@ -23219,6 +23378,15 @@ class H(BaseHTTPRequestHandler):
             return
         if self.path.split('?')[0] == '/iz-slips':
             return self._send(200, open(os.path.join(STATIC, 'izslips.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/iz-certs':
+            return self._send(200, open(os.path.join(STATIC, 'izcerts.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/izcerts':
+            con = db()
+            try:
+                out = izcerts_data(con)
+            finally:
+                con.close()
+            return self._send(200, out)
         m = re.match(r'/api/parnes/(\d+)/cert$', self.path.split('?')[0])
         if m:
             # התעודה טוענת את הטקסט והעריכות השמורות של הלילה (מאיר: "איפה אני עושה פה שמור?")
@@ -23401,14 +23569,39 @@ class H(BaseHTTPRequestHandler):
             if not page:
                 return self._send(404, {'ok': False})
             return self._send(200, page, 'text/html')
+        m = re.match(r'/d/([A-Za-z0-9]{6,12})$', self.path.split('?')[0])
+        if m:
+            # 🔗 הקישור הקצר באנגלית — אותו דף כמו /u/<קישור חתום>
+            tok_ = cardlink_resolve(m.group(1))
+            did = cardlink_check(tok_) if tok_ else 0
+            if not did:
+                return self._send(404, '<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;padding:30px">This link has expired. Please contact Kollel Chatzot at 718-972-7169.</body>'.encode('utf-8'), 'text/html')
+            base_url = (os.environ.get('PUBLIC_URL') or ('https://' + (self.headers.get('Host') or 'kollel-chatzot-crm.onrender.com'))).rstrip('/')
+            if re.search(r'WhatsApp|facebookexternalhit|Facebot|TelegramBot|Twitterbot|Slackbot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot|bingbot|Applebot',
+                         self.headers.get('User-Agent') or '', re.I):
+                return self._send(200, ('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Kollel Chatzos · Your Personal Secure Page</title>%s</head><body></body></html>'
+                                        % cardlink_og_tags(base_url, base_url + self.path.split('?')[0])).encode('utf-8'), 'text/html')
+            con = db()
+            try:
+                page = cardlink_page(con, did, base_url, '/api/u/' + tok_)
+            finally:
+                con.close()
+            if not page:
+                return self._send(404, {'ok': False})
+            return self._send(200, page, 'text/html')
         m = re.match(r'/u/([0-9.a-f]+)$', self.path.split('?')[0])
         if m:
             did = cardlink_check(m.group(1))
             if not did:
                 return self._send(404, '<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;padding:30px">This link has expired. Please contact Kollel Chatzot at 718-972-7169.</body>'.encode('utf-8'), 'text/html')
+            base_url = (os.environ.get('PUBLIC_URL') or ('https://' + (self.headers.get('Host') or 'kollel-chatzot-crm.onrender.com'))).rstrip('/')
+            if re.search(r'WhatsApp|facebookexternalhit|Facebot|TelegramBot|Twitterbot|Slackbot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot|bingbot|Applebot',
+                         self.headers.get('User-Agent') or '', re.I):
+                # לתצוגה המקדימה — דף קטן עם התגיות בלבד, כמו בקישור בעברית
+                return self._send(200, ('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Kollel Chatzos · Your Personal Secure Page</title>%s</head><body></body></html>'
+                                        % cardlink_og_tags(base_url, base_url + self.path.split('?')[0])).encode('utf-8'), 'text/html')
             con = db()
             try:
-                base_url = (os.environ.get('PUBLIC_URL') or ('https://' + (self.headers.get('Host') or 'kollel-chatzot-crm.onrender.com'))).rstrip('/')
                 page = cardlink_page(con, did, base_url)
             finally:
                 con.close()
@@ -34406,6 +34599,22 @@ class H(BaseHTTPRequestHandler):
                          _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        if self.path == '/api/izcerts/save':
+            # 📜 מה שמאיר שינה בתעודה של תורם (שם, אברכים, סכום, תאריך, להדפיס או לא) — נשמר במערכת
+            try:
+                pid_ = int(b.get('pid') or 0)
+            except (TypeError, ValueError):
+                pid_ = 0
+            if not pid_:
+                return self._send(200, {'ok': False, 'error': 'חסרה שותפות'})
+            data_ = b.get('data') if isinstance(b.get('data'), dict) else {}
+            con = db()
+            try:
+                kv_set(con, 'izcert:p%d' % pid_, json.dumps(data_, ensure_ascii=False)[:4000])
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
         m = re.match(r'/api/k/([A-Za-z0-9.]+)/(save|card|donate|day|receipt|rcdone)$', self.path)
         if m:
             kind, pid = klink_resolve(m.group(1))
@@ -34586,7 +34795,7 @@ class H(BaseHTTPRequestHandler):
                 if not d:
                     return self._send(200, {'ok': False, 'error': 'התורם לא נמצא'})
                 base_url = (os.environ.get('PUBLIC_URL') or ('https://' + (self.headers.get('Host') or 'kollel-chatzot-crm.onrender.com'))).rstrip('/')
-                url = base_url + '/u/' + cardlink_token(d['id'])
+                url = base_url + '/d/' + cardlink_short(con, cardlink_token(d['id']))
                 msg = cardlink_message(d, url, con)
                 if not m.group(2):
                     return self._send(200, {'ok': True, 'url': url, 'subject': msg['subject'], 'body': msg['body'], 'wa': msg['wa'], 'monthly': msg.get('monthly') or 0,
