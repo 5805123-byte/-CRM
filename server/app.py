@@ -3603,6 +3603,35 @@ def ensure_schema():
     except Exception as e:
         print('  אוטרייז ספטמבר error:', e)
 
+    # מאיר (19.11.2026): "אני צריך את הקבלה במערכת שלנו… תכניס את זה למערכת ואפיק קבלה" — מיכאל ג'קובסון
+    # (Michael Jacobsen) ביקש קבלה רשמית על 2025. התרומה היחידה שלו ב-2025: אוטרייז 10-Mar-2025, $360,
+    # Visa 7515, מס' עסקה 80930462159 (מהקבלה שהוא העביר במייל). נרשמת בכרטיס שלו באותו מסלול כמו
+    # שאר חיובי אוטרייז — בלי כפילות אם כבר רשומה. הכרטיס: לפי החיובים הקודמים שלו מאוטרייז, או לפי המייל.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='jacobsen_2025_v1'").fetchone():
+            _src = 'Authorize 2025'
+            _ids = {r['donor_id'] for r in con.execute(
+                "SELECT donor_id FROM recon WHERE donor_id IS NOT NULL AND LOWER(TRIM(first))='michael' "
+                "AND LOWER(TRIM(last))='jacobsen'")}
+            if len(_ids) != 1:
+                _ids = {r['id'] for r in con.execute(
+                    "SELECT id FROM donors WHERE LOWER(COALESCE(email,'')) LIKE '%mjacobsen@%'")}
+            did0 = next(iter(_ids)) if len(_ids) == 1 else None
+            con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,state,zip,
+                               phone,email,recurring,donor_id,category,processed,source,status,note)
+                           VALUES('80930462159','Michael','Jacobsen','360.00','10-Mar-2025','619 Beach 8th St.',
+                                  'Far Rockaway','NY','11691','6467531435','mjacobsen@normanbobrow.com',0,?,'כללי',0,?,
+                                  'settled','Visa 7515')""", (did0, _src))
+            if did0:
+                ins, merged, had, unk, by = banquest_post(con, _src, ['80930462159'])
+                print('  ג\'קובסון 2025 (תורם %s): נרשמו %d, אומתו %d, היו כבר %d' % (did0, ins, merged, had))
+                con.execute("INSERT INTO seed_flags(name) VALUES('jacobsen_2025_v1')")
+            else:
+                print('  ג\'קובסון 2025: לא נמצא כרטיס יחיד — החיוב נשאר בתור לשיוך ידני')
+            con.commit()
+    except Exception as e:
+        print('  jacobsen 2025 error:', e)
+
     # מאיר (על הדף המודפס של אוטרייז ספטמבר): "רשמתי בהערות מה עבור סוכות תשפ"ז,
     # קראתי לזה יו"ט… תתאם את זה ישירות. יש אחד גרוס שהוא תורם חדש, צריך להקים לו
     # כרטיס חדש, השם בעברית הוא אלי גרוס, שאר הפרטים יש לך מאוטרייז." וגם:
