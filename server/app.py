@@ -21806,77 +21806,138 @@ def cal_day_pdf(con, day):
     except Exception:
         pn = []
     e = lambda x: _h.escape(str(x or ''))
+    # מאיר (19.11.2026): "יוצא ממש קטן בהדפסה — גופן יותר גדול ומרווח, הכל בדף אחד, אפשר טורים באותו דף,
+    # והריבוע של ה-וי בצד ימין, הכל ישר" — פריסה ידנית: ריבוע מצויר בקצה הימני של כל שורה, טקסט מיושר לימין,
+    # טור אחד כשנכנס בגופן גדול, אחרת שני טורים (קודם הימני ואז השמאלי) — והגופן הכי גדול שעוד נכנס בעמוד אחד.
+    items = []      # (kind, time, text, sub)  kind: 'h' כותרת / 't' משימה
 
-    def line(t):
+    def add_task(t):
         who = ((t.get('dl') or '') + ' ' + (t.get('df') or '')).strip()
         txt = (t.get('note') or KIND_HE.get(t.get('kind') or '', '') or 'משימה').strip()
         txt = re.sub(r'^[^\w"\'(]+', '', txt)
-        sub = ' · '.join(x for x in [who, ('מקום: ' + t['place']) if (t.get('place') or '').strip() else '',
+        sub = ' · '.join(x for x in [who if who and who not in txt else '',
+                                     ('📍 ' + t['place']) if (t.get('place') or '').strip() else '',
                                      ('הועבר מ-' + datetime.date.fromisoformat(t['orig_date']).strftime('%d/%m')) if t.get('orig_date') and t['orig_date'] < day else ''] if x)
-        tm = (t.get('at_time') or '').strip()
-        return ('<tr><td class="bx"><div class="sq"></div></td><td class="tx">%s<b>%s</b>%s</td></tr>'
-                % (('<b class="tm">%s</b>&nbsp;&nbsp;' % e(tm)) if tm else '', e(txt), ('<div class="sb">%s</div>' % e(sub)) if sub else ''))
+        items.append(('t', (t.get('at_time') or '').strip(), txt, sub))
     timed = [t for t in rows if (t.get('at_time') or '').strip()]
     untimed = [t for t in rows if not (t.get('at_time') or '').strip()]
-    parts = []
     if timed:
-        parts.append('<h2>לפי שעה</h2><table>%s</table>' % ''.join(line(t) for t in timed))
+        items.append(('h', '', 'לפי שעה', ''))
+        for t in timed: add_task(t)
     if untimed:
-        parts.append('<h2>במשך היום</h2><table>%s</table>' % ''.join(line(t) for t in untimed))
+        items.append(('h', '', 'במשך היום', ''))
+        for t in untimed: add_task(t)
     if pn:
-        parts.append('<h2>לימוד לזכות / פרנס</h2><table>%s</table>' % ''.join(
-            '<tr><td class="bx"><div class="sq"></div></td><td class="tx"><b>%s</b>%s</td></tr>'
-            % (e(((p.get('last') or '') + ' ' + (p.get('first') or '')).strip() or 'פרנס'),
-               ('<div class="sb">%s</div>' % e(' · '.join(x for x in [p.get('date_text') or '', p.get('dedication') or ''] if x))) if (p.get('date_text') or p.get('dedication')) else '')
-            for p in pn))
-    if not parts:
-        parts.append('<p class="none">אין משימות פתוחות ביום הזה.</p>')
+        items.append(('h', '', 'לימוד לזכות / פרנס', ''))
+        for p in pn:
+            items.append(('t', '', ((p.get('last') or '') + ' ' + (p.get('first') or '')).strip() or 'פרנס',
+                          ' · '.join(x for x in [p.get('date_text') or '', p.get('dedication') or ''] if x)))
     n = len(rows) + len(pn)
     DOW = ['שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון']
-    html_ = ('<div class="hd"><div class="k">כולל חצות · משימות היום</div><h1>%s</h1><div class="g">יום %s · %s · %s</div></div>%s'
-             '<div class="ft">הודפס %s</div>') % (
-        e(heb or d.strftime('%d/%m/%Y')), DOW[d.weekday()], d.strftime('%d/%m/%Y'),
-        'משימה אחת' if n == 1 else '%d משימות' % n, ''.join(parts), il_now().strftime('%d/%m/%Y %H:%M'))
-    # מאיר: "תמיד שזה יהיה הדפסה רק על דף אחד — שזה יצטמצם אם יש הרבה ויהיה גדול אם יש קצת" —
-    # מחפשים את גודל האותיות הגדול ביותר (פי 0.35 עד פי 1.9) שעוד נכנס בעמוד אחד
-    def css_(k):
-        f = lambda pt: '%.1fpt' % (pt * k)
-        px = lambda v: '%.1fpx' % (v * k)
-        return ('@font-face{font-family:fr;src:url(frankruhl-regular.ttf)}@font-face{font-family:fr;font-weight:bold;src:url(frankruhl-bold.ttf)}'
-                '*{font-family:fr}body{direction:rtl;text-align:right;color:#2a2416;font-size:%s}' % f(14) +
-                '.hd{text-align:center;border-bottom:2px solid #9c7a2e;padding-bottom:%s;margin-bottom:%s}' % (px(8), px(6)) +
-                '.k{color:#9c7a2e;font-size:%s;font-weight:bold}h1{font-size:%s;margin:2px 0;color:#3b357a}.g{font-size:%s;color:#6b6249}' % (f(12), f(26), f(13)) +
-                'h2{font-size:%s;color:#7a5a12;margin:%s 0 %s;border-bottom:1px solid #e0d4b0}' % (f(15), px(14), px(4)) +
-                'table{width:100%%;border-collapse:collapse}td{padding:%s 4px;border-bottom:1px solid #eee5cc;vertical-align:top}' % px(7) +
-                '.bx{width:%s}.sq{width:%s;height:%s;border:1.6px solid #3b357a;margin-top:%s}' % (px(26), px(15), px(15), px(3)) +
-                '.tm{font-weight:bold;color:#3b357a;font-size:%s}.tx b{font-size:%s}.sb{font-size:%s;color:#6b6249}' % (f(14), f(14), f(12)) +
-                '.none{text-align:center;color:#6b6249;margin-top:30px}.ft{margin-top:%s;font-size:%s;color:#9a9080;text-align:center}' % (px(18), f(10)))
+    INK, BLUE, GOLD, SOFT, LINE = (0.16, 0.14, 0.09), (0.23, 0.21, 0.48), (0.61, 0.48, 0.18), (0.42, 0.38, 0.29), (0.88, 0.83, 0.70)
+    FONTS = ('@font-face{font-family:fr;src:url(frankruhl-regular.ttf)}'
+             '@font-face{font-family:fr;font-weight:bold;src:url(frankruhl-bold.ttf)}')
     arch = _pm.Archive(STATIC)
-    mb = _pm.paper_rect('a4')
-    where = mb + (36, 36, -36, -36)
+    W, H = _pm.paper_rect('a4').width, _pm.paper_rect('a4').height
+    M = 30
+    # ב-MuPDF עם direction:rtl — "left" הוא בעצם יישור לימין (נבדק)
+    def css(fs):
+        return (FONTS + '*{font-family:fr;margin:0;padding:0}div{text-align:left}body{direction:rtl;color:#2a2416;font-size:%.1fpt;line-height:1.3}'
+                '.tm{color:#3b357a;font-weight:bold}.sb{font-size:%.1fpt;color:#6b6249}.h{color:#7a5a12;font-weight:bold;font-size:%.1fpt}'
+                % (fs, fs * 0.8, fs * 1.05))
 
-    def fits(k):
-        st = _pm.Story(html=html_, user_css=css_(k), archive=arch)
-        more, _ = st.place(where)
-        return not more
-    lo, hi = 0.35, 1.9
-    if fits(hi):
-        k = hi
-    else:
-        for _ in range(9):
+    def html_of(it):
+        k, tm, txt, sub = it
+        if k == 'h':
+            return '<div class="h">%s</div>' % e(txt)
+        return '<div><b>%s%s</b>%s</div>' % (('<span class="tm">%s</span>&nbsp;&nbsp;' % e(tm)) if tm else '', e(txt),
+                                             ('<div class="sb">%s</div>' % e(sub)) if sub else '')
+    MC = {}
+
+    def measure(it, fs, cw):
+        box = cw - (0 if it[0] == 'h' else fs * 1.6)
+        key = (it, fs, round(box))
+        if key not in MC:
+            st = _pm.Story(html=html_of(it), user_css=css(fs), archive=arch)
+            _more, filled = st.place(_pm.Rect(0, 0, box, H * 4))
+            MC[key] = _pm.Rect(filled).height + fs * (0.6 if it[0] == 't' else 0.4)
+        return MC[key]
+
+    TOP = M + 92          # מתחת לכותרת
+    BOT = H - M - 14
+    avail = BOT - TOP
+
+    def layout(cols, fs):
+        gap = 18
+        cw = (W - 2 * M - gap * (cols - 1)) / cols
+        hs = [measure(it, fs, cw) for it in items]
+        placed, c, y = [], 0, 0
+        for it, h in zip(items, hs):
+            if y + h > avail and y > 0:
+                c += 1; y = 0
+                if c >= cols:
+                    return None
+            x1 = W - M - c * (cw + gap)          # טור ראשון = הימני
+            placed.append((it, x1 - cw, x1, TOP + y, h))
+            y += h
+        return placed, cw
+
+    best = None
+    for cols, lo_fs in ((1, 14.0), (2, 8.0), (3, 6.0)):     # בגופן קטן מ-14 — עדיף שני טורים
+        if layout(cols, 20.0):
+            best = (cols, 20.0, layout(cols, 20.0)); break
+        if not layout(cols, lo_fs):
+            continue
+        lo, hi = lo_fs, 20.0
+        for _ in range(6):
             mid = (lo + hi) / 2
-            if fits(mid): lo = mid
+            if layout(cols, mid): lo = mid
             else: hi = mid
-        k = lo
-    story = _pm.Story(html=html_, user_css=css_(k), archive=arch)
-    buf = io.BytesIO()
-    wr = _pm.DocumentWriter(buf)
-    dev = wr.begin_page(mb)
-    story.place(where)
-    story.draw(dev)
-    wr.end_page()
-    wr.close()
-    return buf.getvalue()
+        best = (cols, lo, layout(cols, lo)); break
+    if not best:                                  # לא נכנס בשום מצב — שלושה טורים בגופן הכי קטן, מה שנכנס
+        fs = 6.0
+        gap = 18; cw = (W - 2 * M - gap * 2) / 3
+        placed, c, y = [], 0, 0
+        for it in items:
+            h = measure(it, fs, cw)
+            if y + h > avail and y > 0:
+                c += 1; y = 0
+            if c >= 3:
+                break
+            x1 = W - M - c * (cw + gap)
+            placed.append((it, x1 - cw, x1, TOP + y, h)); y += h
+        best = (3, fs, (placed, cw))
+    cols, fs, (placed, cw) = best
+    doc = _pm.open()
+    pg = doc.new_page(width=W, height=H)
+    # כותרת
+    pg.insert_htmlbox(_pm.Rect(M, M, W - M, M + 88),
+                      '<div style="text-align:center"><div class="k">כולל חצות · משימות היום</div><div class="t">%s</div><div class="g">יום %s · %s · %s</div></div>'
+                      % (e(heb or d.strftime('%d/%m/%Y')), DOW[d.weekday()], d.strftime('%d/%m/%Y'), 'משימה אחת' if n == 1 else '%d משימות' % n),
+                      css=FONTS + '*{font-family:fr}body{direction:rtl}.k{color:#9c7a2e;font-weight:bold;font-size:12pt}'
+                                  '.t{color:#3b357a;font-weight:bold;font-size:26pt}.g{color:#6b6249;font-size:13pt}', archive=arch)
+    pg.draw_line(_pm.Point(M, M + 86), _pm.Point(W - M, M + 86), color=GOLD, width=1.6)
+    for ci in range(1, cols):                    # קו בין הטורים
+        xm = W - M - ci * (cw + 18) + 9
+        pg.draw_line(_pm.Point(xm, TOP), _pm.Point(xm, BOT - 4), color=LINE, width=0.8)
+    if not placed:
+        pg.insert_htmlbox(_pm.Rect(M, TOP + 40, W - M, TOP + 120), '<div style="text-align:center">אין משימות פתוחות ביום הזה.</div>',
+                          css=FONTS + '*{font-family:fr}body{direction:rtl;font-size:16pt;color:#6b6249}', archive=arch)
+    for it, x0, x1, y, h in placed:
+        if it[0] == 'h':
+            pg.insert_htmlbox(_pm.Rect(x0, y + fs * 0.2, x1, y + h), html_of(it), css=css(fs), archive=arch)
+            pg.draw_line(_pm.Point(x0, y + h - 2), _pm.Point(x1, y + h - 2), color=GOLD, width=0.8)
+            continue
+        s = fs * 1.05                            # הריבוע — בקצה הימני, בגובה השורה הראשונה
+        sq = _pm.Rect(x1 - s, y + fs * 0.35, x1, y + fs * 0.35 + s)
+        pg.draw_rect(sq, color=BLUE, width=1.4)
+        pg.insert_htmlbox(_pm.Rect(x0, y + fs * 0.25, x1 - fs * 1.6, y + h), html_of(it), css=css(fs), archive=arch)
+        pg.draw_line(_pm.Point(x0, y + h - 1), _pm.Point(x1, y + h - 1), color=LINE, width=0.6)
+    pg.insert_htmlbox(_pm.Rect(M, H - M - 10, W - M, H - M + 6), '<div style="text-align:center">הודפס %s</div>' % il_now().strftime('%d/%m/%Y %H:%M'),
+                      css=FONTS + '*{font-family:fr}body{direction:rtl;font-size:9pt;color:#9a9080}', archive=arch)
+    out = doc.tobytes()
+    doc.close()
+    return out
 
 
 def tasks_roll_scan():
