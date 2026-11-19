@@ -30587,17 +30587,6 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
-        if self.path == '/api/mikveh/price_groups':
-            # 🔎 מאיר מסמן אילו קבוצות "רגילות" (מושמעות בטלפון). מה שלא מסומן = חריג.
-            # נשמר אצלנו בלבד (mk_price_groups) — אותה בחירה שמשרתת גם את חלון הבדיקה וגם את המחירון.
-            ids = [str(x) for x in (b.get('ids') or []) if re.fullmatch(r'[0-9a-fA-F-]{36}', str(x))][:400]
-            con = db()
-            try:
-                kv_set(con, 'mk_price_groups', json.dumps(ids))
-                con.commit()
-            finally:
-                con.close()
-            return self._send(200, {'ok': True, 'n': len(ids)})
         if self.path == '/api/mikveh/group_sync':
             # 🗂️ "לערוך הכל ביחד": ההגדרות והשעות של מנוי אחד → לכל המנויים שנבחרו (כל אחד נשאר עם השם והמחיר שלו)
             import mikveh as _mk
