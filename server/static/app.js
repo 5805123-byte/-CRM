@@ -801,6 +801,7 @@ const remSeen=()=>{try{return JSON.parse(localStorage.getItem('kc_remseen')||'{}
 function remMarkSeen(items){const s=remSeen();items.forEach(x=>{s[x.id+':'+x.stage.key]=1;});try{localStorage.setItem('kc_remseen',JSON.stringify(s));}catch(e){}}
 function remUnseen(items){const s=remSeen();return items.filter(x=>!s[x.id+':'+x.stage.key]);}
 function remNotify(items){
+  return; // מאיר (19.11.2026): בלי התראות קופצות מהיומן בטאבלט
   if(!('Notification' in window)||Notification.permission!=='granted')return;
   items.slice(0,4).forEach(x=>{try{new Notification('⏰ '+x.stage.label+' — '+(x.donor||'משימה'),{body:(x.note||'')+(x.at_time?(' · '+x.at_time):'')+(x.place?(' · '+x.place):''),tag:'kc-rem-'+x.id+'-'+x.stage.key});}catch(e){}});
 }
@@ -919,8 +920,8 @@ function checkReminders(){
   // שלב תזכורת חדש (יומיים לפני / מחר / 3 שעות / שעה) קופץ פעם אחת, גם כהתראת דפדפן
   // "נראה" נרשם רק כשסוגרים את החלון — אחרת רענון אוטומטי של הדף בולע את התזכורת
   const fresh=remUnseen(up);
-  if(fresh.length){remNotify(fresh);openRemPopup();return;}
-  if(due.length&&!sessionStorage.getItem('remseen')){openRemPopup();sessionStorage.setItem('remseen','1');}
+  if(fresh.length){remMarkSeen(fresh);return;}   // מאיר: בלי חלון קופץ — רק הפס האדום למעלה
+  // מאיר (19.11.2026): לא לפתוח חלון תזכורות לבד — רק בלחיצה על הפס
 }
 setInterval(()=>{try{if((DB&&DB.length)||ROLE==='comm'||ROLE==='gabbai')checkReminders();}catch(e){}},60*1000);
 // מסך שנשאר פתוח — אחרי 48 שעות מבקש כניסה מחדש גם בלי פעולה וגם בלי רשת

@@ -16600,6 +16600,10 @@ def push_scan():
     יום לפני (9:00), 3 שעות לפני, שעה לפני, ובזמן עצמו; משימה בלי שעה — ב-8:00 בבוקר של אותו יום."""
     con = db()
     try:
+        # מאיר (19.11.2026): "שהיומן לא ישלח לי יותר תזכורות בטאבלט... שלא יקפוץ למסך ולא כלום" —
+        # כבוי עד שמחזירים: app_kv push_tasks_on=1
+        if kv_get(con, 'push_tasks_on', '') != '1':
+            return
         # מאיר: "Registration failed - push service error" — כשהטלפון לא נרשם לדחיפה, אותן תזכורות יוצאות
         # בוואטסאפ (ALERT_WHATSAPP) / SMS (ALERT_SMS) אם הופעל בכפתור
         alt = kv_get(con, 'push_alt', '') == '1'
