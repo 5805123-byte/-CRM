@@ -3631,6 +3631,65 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  jacobsen 2025 error:', e)
+    # מאיר: "תכין לי טיוטה עם הקבלה שלו" — הקבלה האמריקאית מופקת כאן (מספר אמיתי, נשמרת בחלון הקבלות),
+    # ונכנסת כטיוטה בג'ימייל (IMAP APPEND לתיקיית הטיוטות) כתשובה למייל שלו. שום דבר לא נשלח — מאיר שולח בעצמו.
+    try:
+        if os.environ.get('GMAIL_USER') and os.environ.get('GMAIL_APP_PASSWORD') \
+           and con.execute("SELECT 1 FROM seed_flags WHERE name='jacobsen_2025_v1'").fetchone() \
+           and not con.execute("SELECT 1 FROM seed_flags WHERE name='jacobsen_2025_draft_v1'").fetchone():
+            _dn = con.execute("SELECT id FROM donations WHERE tid='80930462159'").fetchone()
+            if _dn:
+                import imaplib, email.utils as _eu
+                from email.mime.multipart import MIMEMultipart
+                from email.mime.text import MIMEText
+                from email.mime.application import MIMEApplication
+                _doc = receipt_issue(con, _dn['id'], 'us', send=False)
+                _pdf, _fn = receipt_pdf(con, _doc['id'])
+                _num = _doc.get('num')
+                _txt = ('Dear Michael,\n\n'
+                        'Thank you for reaching out. Attached is our official receipt (No. %s) for your contribution of '
+                        '$360.00 on March 10, 2025. It includes our Tax ID (EIN 20-0447034) and our tax-exempt status '
+                        'under Section 501(c)(3).\n'
+                        'No goods or services were provided in exchange for this contribution.\n\n'
+                        'With deep appreciation for your partnership in the Torah of Chatzot,\n\n'
+                        'Rabbi Yehoshua Meir Deutsch\nKollel Chatzot\nEIN 20-0447034' % _num)
+                _mid = '<DSVPR16MB175736A293E5A0B036D89B90E5D37B2@DSVPR16MB175736.namprd16.prod.outlook.com>'
+                _m = MIMEMultipart()
+                _m['From'] = os.environ['GMAIL_USER'].strip()
+                _m['To'] = 'mjacobsen@bobrowmanagement.com'
+                _m['Subject'] = 'RE: FW: Transaction Receipt from Kollel Chatzos for $360.00 (USD)'
+                _m['In-Reply-To'] = _mid
+                _m['References'] = '<67cf0384.670a0220.213d75.ec32SMTPIN_ADDED_MISSING@mx.google.com> ' + _mid
+                _m['Date'] = _eu.formatdate(localtime=False)
+                _m['Message-ID'] = _eu.make_msgid(domain='kollelchatzot.com')
+                _m.attach(MIMEText(_txt, 'plain', 'utf-8'))
+                _a = MIMEApplication(_pdf, 'pdf')
+                _a.add_header('Content-Disposition', 'attachment', filename='Receipt-%s-Michael-Jacobsen.pdf' % _num)
+                _m.attach(_a)
+                M = imaplib.IMAP4_SSL('imap.gmail.com', timeout=25)
+                try:
+                    M.login(os.environ['GMAIL_USER'].strip(), os.environ['GMAIL_APP_PASSWORD'])
+                    _box = '"[Gmail]/Drafts"'
+                    for _ln in (M.list()[1] or []):
+                        _s = _ln.decode('utf-8', 'replace') if isinstance(_ln, bytes) else str(_ln)
+                        if '\\Drafts' in _s:
+                            _box = _s.rsplit(' "/" ', 1)[-1].strip()
+                            break
+                    _typ, _r = M.append(_box, '(\\Draft)', imaplib.Time2Internaldate(time.time()), _m.as_bytes())
+                finally:
+                    try: M.logout()
+                    except Exception: pass
+                if _typ == 'OK':
+                    con.execute("INSERT INTO seed_flags(name) VALUES('jacobsen_2025_draft_v1')")
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (_doc.get('donor_id'), today_iso(), 'מייל',
+                                 '🧾 הופקה קבלה %s על 2025 ($360, 10.3.2025) — טיוטה בג\'ימייל, ממתינה לשליחה' % _num, '', now_iso()))
+                    con.commit()
+                    print('  ג\'קובסון: קבלה %s הופקה, טיוטה נכנסה ל-%s' % (_num, _box))
+                else:
+                    print('  ג\'קובסון: הטיוטה לא נכנסה —', _typ, _r)
+    except Exception as e:
+        print('  jacobsen draft error:', e)
 
     # מאיר (על הדף המודפס של אוטרייז ספטמבר): "רשמתי בהערות מה עבור סוכות תשפ"ז,
     # קראתי לזה יו"ט… תתאם את זה ישירות. יש אחד גרוס שהוא תורם חדש, צריך להקים לו
