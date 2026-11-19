@@ -10325,6 +10325,32 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_tishrei_5787_v1')")
             con.commit()
             print('  מלגות תשרי תשפ"ז: נטענו %d שורות (חצות + הוראה)' % n)
+        # מאיר (19.11.2026): "תכניס את זה למערכת באברכים מלגות חשוון תשפ"ז כולל חצות וכולל הוראה, אם יש
+        # אברכים חדשים ברשימה פה אז תוסיף אותם לרשימה במערכת של האברכים" — מהקובץ "מלגות חשון תשפ"ז – סופי":
+        # כולל חצות 94 אברכים ₪165,991, כולל הוראה 33 ₪32,837. מי שלומד בשניהם — בשניהם, ובפירוט הסכום בכולל השני.
+        # 5 אברכים חדשים בכולל הוראה (לא היו ברשימות הקודמות) נכנסים לרשימת האברכים — רק אם אין שם זהה/דומה.
+        _hf = os.path.join(HERE, 'stipends_cheshvan_5787_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_cheshvan_5787_v1'").fetchone() and os.path.exists(_hf):
+            n = 0
+            for r in json.load(open(_hf, encoding='utf-8')):
+                con.execute("INSERT INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) VALUES(?,?,?,?,?,0,'',?,?,?,?) "
+                            "ON CONFLICT(kollel,kind,period,name) DO UPDATE SET amount=excluded.amount, details=excluded.details, att=excluded.att",
+                            (r['kollel'], r['kind'], r['period'], r['name'], float(r['amount'] or 0), r.get('details') or '', r.get('att') or '', 'קובץ', today_iso()))
+                n += 1
+            _st = greg_to_heb_full('2026-10-12') or 'א\' חשון תשפ"ז'
+            _new = []
+            for nm in ('בינדר אהרן', 'וינגוט שלמה זלמן', 'חזן שמואל', 'טרייטל שמעון צבי', 'רואף נתנאל יצחק'):
+                _l = nm.split(' ', 1)
+                if con.execute("SELECT 1 FROM avreichim WHERE TRIM(name)=? OR TRIM(name) LIKE ? OR ? LIKE TRIM(name) || ' %'",
+                               (nm, nm + ' %', nm)).fetchone():
+                    continue
+                con.execute("INSERT INTO avreichim(name,last,first,note,started,seder,created) VALUES(?,?,?,'',?,'הוראה',?)",
+                            (nm, _l[0], _l[1] if len(_l) > 1 else '', _st, today_iso()))
+                iz_log(con, nm, None, '➕ אברך חדש בכולל הוראה — מחשון תשפ"ז (מרשימת המלגות)', now_iso(), _st)
+                _new.append(nm)
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_cheshvan_5787_v1')")
+            con.commit()
+            print('  מלגות חשון תשפ"ז: נטענו %d שורות; אברכים חדשים: %s' % (n, ', '.join(_new) or 'אין'))
         # מאיר: "חלוקה נוספת לסוכות תשפ"ז לאברכי כולל חצות — שיהיה עוד רשימה של
         # 'מזומנים' ערב סוכות תשפ"ז" — 75 אברכים שקיבלו, ₪48,920 (מהקובץ "חלוקת ערב סוכות").
         _mf = os.path.join(HERE, 'stipends_sukkos_cash_seed.json')
