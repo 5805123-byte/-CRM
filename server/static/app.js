@@ -21155,11 +21155,11 @@ function recItems(r){const a=(r.anet||[]).map(x=>({src:'anet',id:x.sid,amount:x.
 function recRowHTML(x,inCard){return `<div class="recrow"><div class="recw">${inCard?'':`<b class="${x.did?'reclink':''}" data-recdid="${x.did||''}">${esc(x.name)}</b>${x.did?'':' <small class="recnot">'+(x.multi?'כמה כרטיסים באותו שם — לא שויך':'לא שויך לכרטיס')+'</small>'}`}
     <small>${x.src==='anet'?'💳 אוטורייז':'🏦 בנק ווסט'}${x.card?' · '+esc(x.card):''}${x.sub&&x.sub!==x.name&&!inCard?' · '+esc(x.sub):''}${x.extra?' · '+esc(x.extra):''}</small></div>
     <b class="reca">${recMoney(x.amount)}</b>
-    <button class="btn sm ghost danger recstop" data-src="${x.src}" data-id="${esc(x.id)}" data-amt="${x.amount}" data-did="${x.did||''}" data-nm="${esc(x.name)}">⛔ להפסיק</button></div>`;}
+    ${inCard?'':'<span class="recopen">פתח כרטיס ‹</span>'}${!inCard?'':`<button class="btn sm ghost danger recstop" data-src="${x.src}" data-id="${esc(x.id)}" data-amt="${x.amount}" data-did="${x.did||''}" data-nm="${esc(x.name)}">⛔ להפסיק</button>`}</div>`;}
 const REC_CSS=`<style>.recbox{background:#fff;border:1px solid #e6dcc6;border-radius:12px;padding:8px 10px;margin:8px 0}
   .recbox summary{cursor:pointer;font-weight:700}.recrow{display:flex;align-items:center;gap:8px;border-top:1px solid #f0e8d6;padding:7px 2px}
   .recrow .recw{flex:1;min-width:0}.recrow .recw small{display:block;color:#8a8274;font-size:12px}.reca{white-space:nowrap}
-  .reclink{cursor:pointer;color:#3b2f7a;text-decoration:underline}.recnot{color:#b3261e}.recrow .recstop{width:auto;white-space:nowrap}
+  .reclink{cursor:pointer;color:#3b2f7a;text-decoration:underline}.recopen{font-size:12px;color:#8a8274;white-space:nowrap}.recrow:has(.reclink){cursor:pointer}.recnot{color:#b3261e}.recrow .recstop{width:auto;white-space:nowrap}
   .recsrch{width:100%;padding:8px 10px;border:1px solid #ddd3bd;border-radius:8px;font:inherit;margin:6px 0}</style>`;
 async function recStop(b,after){const src=b.dataset.src,id=b.dataset.id,amt=+b.dataset.amt,did=+b.dataset.did||0,nm=b.dataset.nm||'';
   const o=document.createElement('div');o.className='confirmov';
@@ -21182,12 +21182,12 @@ async function renderRecBox(){const box=document.getElementById('recbox');if(!bo
   const all=recItems(RECALL),qq=(recQ||'').trim(),L=qq?all.filter(x=>(x.name+' '+x.sub+' '+x.card+' '+x.amount).includes(qq)):all;
   const tot=all.reduce((s,x)=>s+(+x.amount||0),0);
   box.innerHTML=REC_CSS+`<details class="recbox" open><summary>🔁 כל הוראות הקבע החודשיות — ${all.length} · ${recMoney(tot)} לחודש</summary>
-    ${RECALL.anet_err?`<div class="hintxt">⚠️ אוטורייז: ${esc(RECALL.anet_err)}</div>`:''}
+    <div class="hintxt">לחץ על שם כדי להיכנס לכרטיס — שם אפשר להפסיק.${RECALL.anet_err?' · הוראות הקבע של אוטורייז לא מוצגות כאן (אין חיבור ישיר לאוטורייז).':''}</div>
     <input class="recsrch" id="rec_q" placeholder="חיפוש לפי שם / 4 ספרות / סכום…" value="${esc(recQ)}">
     <div id="rec_list">${L.map(x=>recRowHTML(x,false)).join('')||'<div class="hintxt">לא נמצא</div>'}</div></details>`;
   const qi=document.getElementById('rec_q');qi.oninput=()=>{recQ=qi.value;const qq2=recQ.trim();document.getElementById('rec_list').innerHTML=(qq2?all.filter(x=>(x.name+' '+x.sub+' '+x.card+' '+x.amount).includes(qq2)):all).map(x=>recRowHTML(x,false)).join('')||'<div class="hintxt">לא נמצא</div>';recWire(box);};
   recWire(box);}
-function recWire(box){box.querySelectorAll('.reclink').forEach(e=>e.onclick=()=>{const d=DB.find(y=>y.id==e.dataset.recdid);if(d)openDonor(d);});
+function recWire(box){box.querySelectorAll('.reclink').forEach(e=>{const rw=e.closest('.recrow');(rw||e).onclick=()=>{const d=DB.find(y=>y.id==e.dataset.recdid);if(d)openDonor(d);};});
   box.querySelectorAll('.recstop').forEach(b=>b.onclick=()=>recStop(b,()=>{if(tab==='charges')renderRecBox();}));}
 async function renderDonorRec(d,body){const el=document.getElementById('dnrec');if(!el)return;
   const r=await api('GET','/api/recurring?donor='+d.id).catch(()=>null);const el2=document.getElementById('dnrec');if(!el2)return;
