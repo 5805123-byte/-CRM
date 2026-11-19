@@ -1880,8 +1880,8 @@ async function mkRenewCheck(start){
 // 🔎 מאיר: "אני צריך סדר במקווה ולעקוב אחרי כולם" — חלון בדיקה מרוכז. "קבוצה רגילה" = מה שמסומן בשלוחת
 // שינוי סוג מנוי (cfg.groups — הקטגוריות שסומנו מושמעות בטלפון), ולא סימון נפרד. חריג = קבוצה לא רגילה או
 // מחיר מיוחד. בכל שורה רואים הכל: הקבוצה, המחיר המיוחד, וההערות (ללקוח / כללית). אנחנו לא מנחשים — רק הסימון.
-let MKAUD={tab:'all',reg:null};
-function mkAuditOpen(){MKAUD.reg=null;MKAUD.tab='all';mkAuditWin();}
+let MKAUD={tab:'all',reg:null,grp:'',val:'all',q:''};
+function mkAuditOpen(){MKAUD.reg=null;MKAUD.tab='all';MKAUD.grp='';MKAUD.val='all';MKAUD.q='';mkAuditWin();}
 async function mkAuditWin(){
   const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
   remov.classList.add('show');
@@ -1907,9 +1907,21 @@ async function mkAuditWin(){
   const anyFlag=c=>isIrr(c)||c.fix;                 // "חריג" = קבוצה לא רגילה או מחיר מיוחד
   const flagged=clients.filter(anyFlag);
   const T=MKAUD.tab;
-  const list=T==='group'?irr:T==='special'?special:T==='noted'?noted:flagged;
-  // מיון: קודם קבוצה חריגה, אחר כך מחיר מיוחד, לפי שם
-  list.sort((a,b)=>(isIrr(b)-isIrr(a))||((b.fix?1:0)-(a.fix?1:0))||mkName(a).localeCompare(mkName(b),'he'));
+  const base=T==='group'?irr:T==='special'?special:T==='noted'?noted:T==='everyone'?clients:flagged;
+  // 🔎 סינונים נוספים (על גבי הלשונית): קבוצה, תוקף, וחיפוש חופשי
+  const isExp=c=>!c.sub_end||mkPast(c.sub_end);
+  const qn=s=>String(s||'').toLowerCase().replace(/[^0-9a-zא-ת ]/g,'');
+  const applyF=L=>{let r=L;
+    if(MKAUD.grp)r=r.filter(c=>String(c.group)===MKAUD.grp);
+    if(MKAUD.val==='valid')r=r.filter(c=>!isExp(c)); else if(MKAUD.val==='exp')r=r.filter(isExp);
+    const q=qn(MKAUD.q); if(q)r=r.filter(c=>qn(mkName(c)+' '+(c.phone||'')+' '+(c.code||'')).includes(q));
+    return r;};
+  const sortF=L=>L.slice().sort((a,b)=>(isIrr(b)-isIrr(a))||((b.fix?1:0)-(a.fix?1:0))||mkName(a).localeCompare(mkName(b),'he'));
+  let curList=sortF(applyF(base));
+  // רשימת הקבוצות לסינון (לפי כמות לקוחות) — כולל קבוצות רגילות כמו "מנהלים"
+  const gcnt={}; clients.forEach(c=>{gcnt[c.group]=(gcnt[c.group]||0)+1;});
+  const gopts=Object.keys(gcnt).sort((a,b)=>gcnt[b]-gcnt[a]||gName(a).localeCompare(gName(b),'he'))
+    .map(id=>`<option value="${esc_(id)}"${MKAUD.grp===id?' selected':''}>${!regSet.has(String(id))?'🔴 ':''}${esc_(gName(id))} (${gcnt[id]})</option>`).join('');
   const chip=(t,ico,lbl,n,col)=>`<button class="mkchip${T===t?' on':''}" data-aud="${t}">${ico} ${lbl}<b style="background:${T===t?'rgba(255,255,255,.3)':col||'#c0392b'};color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:3px">${n}</b></button>`;
   const noteBox=c=>{const o=[];if(c.remark&&c.remark.trim())o.push(`<b>📝 הערה ללקוח:</b> ${esc_(c.remark.trim())}`);if(c.message&&c.message.trim())o.push(`<b>💬 הערה כללית:</b> ${esc_(c.message.trim())}`);
     return o.length?`<div class="audnote">${o.join('<br>')}</div>`:'';};
@@ -1924,21 +1936,37 @@ async function mkAuditWin(){
       <span class="mktag ${mkPast(c.sub_end)?'bad':'ok'}" style="align-self:center">${c.sub_end?'מנוי עד '+esc_(mkDate(c.sub_end)):'אין מנוי'}</span></div>`;};
   const hint=!MKAUD.hasCfg?'<div class="mksub" style="margin:2px 2px 8px;color:#b9770e">⚠️ עדיין לא סומנו קבוצות רגילות בשלוחת שינוי סוג מנוי — לכן כל הקבוצות מופיעות כחריגות. פתח את השלוחה וסמן אילו קטגוריות מושמעות בטלפון.</div>'
       :'<div class="mksub" style="margin:2px 2px 8px;color:#555">קבוצה חריגה = קבוצה שלא מסומנת כרגילה בשלוחת שינוי סוג מנוי. לחיצה על לקוח פותחת את הכרטיס המלא.</div>';
-  const empty=T==='group'?'✓ כל הלקוחות בקבוצות רגילות.':T==='special'?'אין לקוחות עם מחיר מיוחד.':T==='noted'?'אין הערות.':'✓ אין חריגים — כולם בקבוצה רגילה ובלי מחיר מיוחד.';
+  const fnone=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();
+  const empty=fnone?'אין לקוח שמתאים לסינון.':T==='group'?'✓ כל הלקוחות בקבוצות רגילות.':T==='special'?'אין לקוחות עם מחיר מיוחד.':T==='noted'?'אין הערות.':T==='everyone'?'אין לקוחות.':'✓ אין חריגים — כולם בקבוצה רגילה ובלי מחיר מיוחד.';
   rs.innerHTML=`<button class="x" id="rx">✕</button>
     <div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">🔎</div><div><h2>בדיקת המקווה — מעקב וחריגים</h2>
-      <div class="mksub">${flagged.length} חריגים · ${irr.length} בקבוצה חריגה · ${special.length} מחיר מיוחד · ${noted.length} עם הערה</div></div></div>
-    <div class="mktpl" style="margin:8px 0;flex-wrap:wrap">${chip('all','📋','הכל',flagged.length,'#2f6fb0')}${chip('group','🔴','קבוצה חריגה',irr.length,'#c0392b')}${chip('special','💎','מחיר מיוחד',special.length,'#8a6d1a')}${chip('noted','📝','הערות',noted.length,'#2f6fb0')}</div>
+      <div class="mksub">${flagged.length} חריגים · ${irr.length} בקבוצה חריגה · ${special.length} מחיר מיוחד · ${noted.length} עם הערה · ${clients.length} לקוחות</div></div></div>
+    <div class="mktpl" style="margin:8px 0;flex-wrap:wrap">${chip('all','📋','הכל',flagged.length,'#2f6fb0')}${chip('group','🔴','קבוצה חריגה',irr.length,'#c0392b')}${chip('special','💎','מחיר מיוחד',special.length,'#8a6d1a')}${chip('noted','📝','הערות',noted.length,'#2f6fb0')}${chip('everyone','👥','כל הלקוחות',clients.length,'#555')}</div>
+    <div class="audfilters">
+      <select id="aud_grp" class="audsel"><option value="">כל הקבוצות</option>${gopts}</select>
+      <select id="aud_val" class="audsel"><option value="all"${MKAUD.val==='all'?' selected':''}>כל התוקף</option><option value="valid"${MKAUD.val==='valid'?' selected':''}>בתוקף</option><option value="exp"${MKAUD.val==='exp'?' selected':''}>פג תוקף / אין</option></select>
+      <input id="aud_q" class="audq" placeholder="🔍 שם / טלפון / מספר לקוח" value="${esc_(MKAUD.q)}">
+      ${fnone?'<button class="btn sm ghost" id="aud_clr">✕ נקה סינון</button>':''}
+    </div>
     ${hint}
-    <div class="mklist">${list.map(row).join('')||'<div class="hintxt">'+empty+'</div>'}</div>
+    <div class="mksub" id="aud_cnt" style="margin:2px 2px 6px;font-weight:700">${curList.length} לקוחות ברשימה</div>
+    <div class="mklist" id="aud_list">${curList.map(row).join('')||'<div class="hintxt">'+empty+'</div>'}</div>
     <div class="mktpl" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;flex-wrap:wrap"><button class="btn sm ghost" id="aud_self">🔄 קבוצות רגילות (שלוחת שינוי סוג מנוי)</button><button class="btn sm ghost" id="aud_renew">🧾 מנוי בלי חיוב »</button><button class="btn sm ghost" id="aud_csv">⬇️ אקסל</button></div>`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  const wireRows=()=>rs.querySelectorAll('[data-ao]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.ao);if(!c)return;MK_BACK={cid:c.id,go:()=>mkAuditWin()};mkOpen(c);});
+  const repaint=()=>{curList=sortF(applyF(base));const lst=document.getElementById('aud_list'),cnt=document.getElementById('aud_cnt');
+    if(cnt)cnt.textContent=curList.length+' לקוחות ברשימה';
+    if(lst){const fn=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();lst.innerHTML=curList.map(row).join('')||'<div class="hintxt">'+(fn?'אין לקוח שמתאים לסינון.':empty)+'</div>';wireRows();}};
+  wireRows();
   rs.querySelectorAll('[data-aud]').forEach(b=>b.onclick=()=>{MKAUD.tab=b.dataset.aud;mkAuditWin();});
-  rs.querySelectorAll('[data-ao]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.ao);if(!c)return;MK_BACK={cid:c.id,go:()=>mkAuditWin()};mkOpen(c);});
+  {const g=document.getElementById('aud_grp');if(g)g.onchange=()=>{MKAUD.grp=g.value;repaint();};}
+  {const v=document.getElementById('aud_val');if(v)v.onchange=()=>{MKAUD.val=v.value;repaint();};}
+  {const qi=document.getElementById('aud_q');if(qi)qi.oninput=()=>{MKAUD.q=qi.value;repaint();};}
+  {const c=document.getElementById('aud_clr');if(c)c.onclick=()=>{MKAUD.grp='';MKAUD.val='all';MKAUD.q='';mkAuditWin();};}
   {const b=document.getElementById('aud_self');if(b)b.onclick=()=>mkSelfGroupOpen();}
   {const b=document.getElementById('aud_renew');if(b)b.onclick=()=>mkRenewCheck();}
   const cv=document.getElementById('aud_csv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
-    const csv=['שם,טלפון,מספר לקוח,קבוצה,קבוצה חריגה,מחיר מיוחד,הערה ללקוח,הערה כללית,מנוי עד'].concat(list.map(c=>[mkName(c),c.phone||'',c.code||'',gName(c.group),isIrr(c)?'כן':'לא',c.fix||'',c.remark||'',c.message||'',mkDate(c.sub_end)].map(q).join(','))).join('\n');
+    const csv=['שם,טלפון,מספר לקוח,קבוצה,קבוצה חריגה,מחיר מיוחד,תוקף,הערה ללקוח,הערה כללית,מנוי עד'].concat(curList.map(c=>[mkName(c),c.phone||'',c.code||'',gName(c.group),isIrr(c)?'כן':'לא',c.fix||'',isExp(c)?'פג':'בתוקף',c.remark||'',c.message||'',mkDate(c.sub_end)].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='בדיקת המקווה.csv';document.body.appendChild(a);a.click();a.remove();};}
 // 🔎 מאיר: "יש לקוחות שמכניסים טלפונים אחרים ממה שמעודכן במקווה — שיהיה חכם ויבדוק אם יש שם דומה ויציע,
 // שיראו שהוא לא קיים וזה רק הצעה, או שיבדוק לפי מייל וכו'". exact = אותו טלפון בדיוק; sug = הצעות בלבד, עם הסיבה
