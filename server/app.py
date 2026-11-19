@@ -10351,6 +10351,26 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_cheshvan_5787_v1')")
             con.commit()
             print('  מלגות חשון תשפ"ז: נטענו %d שורות; אברכים חדשים: %s' % (n, ', '.join(_new) or 'אין'))
+        # מאיר (19.11.2026): "אני רוצה שבמערכת תהיה גם לשונית של העברות ומלגות שכל ההעברות מתחילת תשפ"ז יהיו
+        # שם באופן מסודר לפי תאריכים" — טבלת העברות (מס"ב): כל שורה = העברה אחת. נטען מקבצי ההעברות שבדרייב
+        # (תיקיית "מלגות והעברות תשפ"ז"), ומשם והלאה — נוספות מהלשונית.
+        try:
+            con.execute("""CREATE TABLE IF NOT EXISTS transfers(id INTEGER PRIMARY KEY AUTOINCREMENT, skey TEXT UNIQUE,
+                date TEXT, payee TEXT, idnum TEXT, bank TEXT, branch TEXT, account TEXT, purpose TEXT, category TEXT,
+                amount REAL DEFAULT 0, src TEXT, note TEXT, created TEXT, updated TEXT)""")
+            _tf = os.path.join(HERE, 'transfers_5787_seed.json')
+            if not con.execute("SELECT 1 FROM seed_flags WHERE name='transfers_5787_v1'").fetchone() and os.path.exists(_tf):
+                n = 0
+                for r in json.load(open(_tf, encoding='utf-8')):
+                    n += con.execute("INSERT OR IGNORE INTO transfers(skey,date,payee,idnum,bank,branch,account,purpose,category,amount,src,note,created) "
+                                     "VALUES(?,?,?,?,?,?,?,?,?,?,?,'',?)",
+                                     (r['key'], r['date'], r['payee'], r['idnum'], r['bank'], r['branch'], r['account'], r['purpose'],
+                                      r['category'], float(r['amount']), r['src'], now_iso())).rowcount
+                con.execute("INSERT INTO seed_flags(name) VALUES('transfers_5787_v1')")
+                con.commit()
+                print('  העברות תשפ"ז: נטענו %d העברות מקבצי הדרייב' % n)
+        except Exception as e:
+            print('  transfers seed error:', e)
         # מאיר: "חלוקה נוספת לסוכות תשפ"ז לאברכי כולל חצות — שיהיה עוד רשימה של
         # 'מזומנים' ערב סוכות תשפ"ז" — 75 אברכים שקיבלו, ₪48,920 (מהקובץ "חלוקת ערב סוכות").
         _mf = os.path.join(HERE, 'stipends_sukkos_cash_seed.json')
@@ -23494,6 +23514,25 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'izslips.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/iz-certs':
             return self._send(200, open(os.path.join(STATIC, 'izcerts.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/transfers':
+            # 🏦 לשונית העברות ומלגות — כל ההעברות מתחילת תשפ"ז, לפי תאריך, עם תאריך עברי וחודש עברי
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute("SELECT * FROM transfers ORDER BY date DESC, src, id")]
+            except Exception:
+                rows = []
+            finally:
+                con.close()
+            hd = {}
+            for r in rows:
+                d = (r.get('date') or '')[:10]
+                if d not in hd:
+                    try:
+                        hd[d] = (greg_to_heb_full(d) or '', greg_to_heb_monthyear(d) or '')
+                    except Exception:
+                        hd[d] = ('', '')
+                r['hdate'], r['hmonth'] = hd[d]
+            return self._send(200, {'ok': True, 'rows': rows})
         if self.path.split('?')[0] == '/api/izcerts':
             con = db()
             try:
@@ -34713,6 +34752,40 @@ class H(BaseHTTPRequestHandler):
                          _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        if self.path in ('/api/transfers/save', '/api/transfers/delete'):
+            # 🏦 הוספה / עריכה / מחיקה של העברה בלשונית "העברות ומלגות"
+            try:
+                tid_ = int(b.get('id') or 0)
+            except (TypeError, ValueError):
+                tid_ = 0
+            con = db()
+            try:
+                if self.path.endswith('/delete'):
+                    if tid_:
+                        con.execute("DELETE FROM transfers WHERE id=?", (tid_,))
+                        con.commit()
+                    return self._send(200, {'ok': bool(tid_)})
+                f = {k: str(b.get(k) or '').strip()[:300] for k in ('date', 'payee', 'idnum', 'bank', 'branch', 'account', 'purpose', 'category', 'src', 'note')}
+                try:
+                    amt = float(str(b.get('amount') or '0').replace(',', '').replace('₪', '').strip() or 0)
+                except ValueError:
+                    return self._send(200, {'ok': False, 'error': 'סכום לא תקין'})
+                if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', f['date']) or not f['payee']:
+                    return self._send(200, {'ok': False, 'error': 'חסר תאריך או שם מוטב'})
+                if tid_:
+                    con.execute("UPDATE transfers SET date=?,payee=?,idnum=?,bank=?,branch=?,account=?,purpose=?,category=?,amount=?,note=?,updated=? WHERE id=?",
+                                (f['date'], f['payee'], f['idnum'], f['bank'], f['branch'], f['account'], f['purpose'], f['category'] or 'לבדוק',
+                                 amt, f['note'], now_iso(), tid_))
+                else:
+                    con.execute("INSERT INTO transfers(skey,date,payee,idnum,bank,branch,account,purpose,category,amount,src,note,created) "
+                                "VALUES(NULL,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                (f['date'], f['payee'], f['idnum'], f['bank'], f['branch'], f['account'], f['purpose'], f['category'] or 'לבדוק',
+                                 amt, f['src'] or 'הוזן ידנית', f['note'], now_iso()))
+                    tid_ = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'id': tid_})
         if self.path == '/api/izcerts/save':
             # 📜 מה שמאיר שינה בתעודה של תורם (שם, אברכים, סכום, תאריך, להדפיס או לא) — נשמר במערכת
             try:

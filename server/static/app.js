@@ -1738,7 +1738,7 @@ async function load(){
       const r=await api('POST','/api/logout_all',{});authExpSet(0);if(r&&r.ok){toast('כל המכשירים נותקו');}setTimeout(()=>location.reload(),600);};};document.querySelector('.brand').appendChild(b);}
   if(cardBusy())return;      // טופס כרטיס פתוח — הנתונים התעדכנו, המסך נשאר כמו שהוא
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{let st=localStorage.getItem('kc_tab');try{const qt=new URLSearchParams(location.search).get('tab');if(qt)st=qt;}catch(e){}const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh','bldghq'];if(PORTAL==='parnes'&&valid.includes('parnes'))st='parnes';if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{let st=localStorage.getItem('kc_tab');try{const qt=new URLSearchParams(location.search).get('tab');if(qt)st=qt;}catch(e){}const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','trf','cal','comm','rcpt','gifts','mikveh','bldghq'];if(PORTAL==='parnes'&&valid.includes('parnes'))st='parnes';if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1793,6 +1793,7 @@ function render(){
   if(tab==='gifts') return renderGifts();
   if(tab==='avreich') return renderAvreich();
   if(tab==='stip') return renderStip();
+  if(tab==='trf') return renderTrf();
   if(tab==='debts') return renderDebts();
   if(tab==='missed') return renderMissed();
   if(tab==='mails') return renderMails();
@@ -21054,3 +21055,87 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   x.eq=String(v); toast('💱 נרשם — נספר עכשיו מול ההתחייבות ✓'); openDonor(d);});
 netInit();
 load();
+
+/* 🏦 העברות ומלגות — מאיר (19.11.2026): "לשונית של העברות ומלגות שכל ההעברות מתחילת תשפ"ז יהיו שם
+   באופן מסודר לפי תאריכים". כל העברה בשורה, מקובצות לפי יום ההעברה (עם תאריך עברי), סינון לפי חודש עברי
+   וסוג, חיפוש, סה"כ, והוספה/עריכה/מחיקה ידנית. */
+let TRF=null,trfQ='',trfCat='',trfMon='',trfEdit=0;
+const TRF_CATS=['מלגה','ספק','משכורת','זיכוי לרב דויטש','לבדוק'];
+function trfMoney(n){return '₪'+(Math.round((+n||0)*100)/100).toLocaleString('he-IL',{maximumFractionDigits:2});}
+function trfForm(r){r=r||{};const v=k=>esc(r[k]==null?'':r[k]);
+  return `<div class="trfform" data-tf="${r.id||0}">
+    <label>תאריך<input type="date" data-k="date" value="${v('date')||new Date().toISOString().slice(0,10)}"></label>
+    <label>שם מוטב<input data-k="payee" value="${v('payee')}"></label>
+    <label>סכום ₪<input data-k="amount" inputmode="decimal" value="${v('amount')}"></label>
+    <label>סוג<select data-k="category">${TRF_CATS.map(c=>`<option ${(r.category||'מלגה')===c?'selected':''}>${c}</option>`).join('')}</select></label>
+    <label class="wide">מטרה<input data-k="purpose" value="${v('purpose')}"></label>
+    <label>ת"ז / ח.פ.<input data-k="idnum" value="${v('idnum')}"></label>
+    <label>בנק<input data-k="bank" value="${v('bank')}" style="width:60px"></label>
+    <label>סניף<input data-k="branch" value="${v('branch')}" style="width:60px"></label>
+    <label>חשבון<input data-k="account" value="${v('account')}"></label>
+    <label class="wide">הערה<input data-k="note" value="${v('note')}"></label>
+    <div class="trfbtns"><button class="btn sm" data-trf="save">💾 שמירה</button><button class="btn sm ghost" data-trf="cancel">ביטול</button>${r.id?'<button class="btn sm ghost danger" data-trf="del">🗑 מחיקה</button>':''}</div></div>`;}
+async function renderTrf(){
+  chips.innerHTML='';
+  if(!TRF){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען…</div>';const r=await api('GET','/api/transfers');TRF=(r&&r.rows)||[];if(tab!=='trf')return;}
+  const mons=[...new Set(TRF.map(r=>r.hmonth).filter(Boolean))];
+  const L=TRF.filter(r=>(!trfMon||r.hmonth===trfMon)&&(!trfCat||r.category===trfCat)&&(!trfQ||[r.payee,r.purpose,r.idnum,r.note,r.src].join(' ').includes(trfQ)));
+  const sum=a=>a.reduce((s,r)=>s+(+r.amount||0),0);
+  const byCat={};L.forEach(r=>byCat[r.category||'לבדוק']=(byCat[r.category||'לבדוק']||0)+(+r.amount||0));
+  const days=[];const idx={};L.forEach(r=>{const k=r.date;if(!(k in idx)){idx[k]=days.length;days.push({date:k,hdate:r.hdate,rows:[]});}days[idx[k]].rows.push(r);});
+  const catCls=c=>({'מלגה':'c1','ספק':'c2','משכורת':'c3','זיכוי לרב דויטש':'c4','לבדוק':'c5'}[c]||'c5');
+  const row=r=>trfEdit===r.id?`<tr><td colspan="6">${trfForm(r)}</td></tr>`:
+    `<tr><td class="py"><b>${esc(r.payee)}</b>${r.idnum?`<small>${esc(r.idnum)}</small>`:''}</td>
+      <td><span class="trfcat ${catCls(r.category)}">${esc(r.category||'לבדוק')}</span> ${esc(r.purpose||'')}${r.note?`<div class="hintxt">📝 ${esc(r.note)}</div>`:''}</td>
+      <td class="bk">${r.bank?esc(r.bank)+'-'+esc(r.branch)+'-'+esc(r.account):''}</td>
+      <td class="am">${trfMoney(r.amount)}</td>
+      <td class="src">${esc(r.src||'')}</td>
+      <td><button class="btn sm ghost" data-trfe="${r.id}" title="עריכה">✏️</button></td></tr>`;
+  view.innerHTML=`<style>
+    .trfw{padding:10px 12px 40px}.trfw .rbtitle{margin-bottom:4px}
+    .trftop{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+    .trftop input,.trftop select{padding:7px 9px;border:1px solid #ddd3bd;border-radius:8px;font:inherit}
+    .trfsum{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 10px}.trfsum span{background:#fff;border:1px solid #e6dcc6;border-radius:10px;padding:6px 10px;font-size:13.5px}
+    .trfday{background:#fff;border:1px solid #e6dcc6;border-radius:12px;margin:10px 0;overflow:hidden}
+    .trfdh{display:flex;justify-content:space-between;gap:8px;background:#f6f0e2;padding:8px 12px;font-weight:700}
+    .trfdh small{font-weight:400;color:#6b6249}
+    .trfday table{width:100%;border-collapse:collapse;font-size:14px}.trfday td{border-top:1px solid #f0e8d6;padding:6px 8px;vertical-align:top}
+    .trfday td{border-left:0!important;border-right:0!important;box-shadow:none!important}.trfday td.py{width:24%}
+    .trfday td.py small{display:block;color:#8a8274;font-size:11.5px}.trfday td.am{white-space:nowrap;font-weight:700;text-align:left}
+    .trfday td.bk,.trfday td.src{color:#8a8274;font-size:12px;white-space:nowrap}
+    .trfcat{display:inline-block;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:700}
+    .trfcat.c1{background:#e6f3ea;color:#2e7d4f}.trfcat.c2{background:#e8eef8;color:#2f5597}.trfcat.c3{background:#f3e8f8;color:#7a3f97}.trfcat.c4{background:#fdf1d8;color:#9a6a00}.trfcat.c5{background:#fdeaea;color:#b3261e}
+    .trfform{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;background:#fffdf6;border:1px dashed #d8c89c;border-radius:10px;padding:10px;margin:8px 0}
+    .trfform label{display:flex;flex-direction:column;font-size:12px;color:#6b6249;gap:2px}.trfform label.wide{flex:1 1 220px}
+    .trfform input,.trfform select{padding:6px 8px;border:1px solid #ddd3bd;border-radius:7px;font:inherit;font-size:14px}
+    .trfbtns{display:flex;gap:6px}
+    @media(max-width:700px){.trfday td.src,.trfday td.bk{display:none}}
+  </style>
+  <div class="trfw">
+    <div class="rbtitle">🏦 העברות ומלגות — תשפ"ז</div>
+    <div class="hintxt">כל ההעברות (מס"ב) מתחילת תשפ"ז, לפי תאריך. נטען מקבצי ההעברות בדרייב; העברה חדשה — "➕ העברה חדשה".</div>
+    <div class="trftop">
+      <input id="trf_q" type="search" placeholder="חיפוש שם / מטרה / ת״ז…" value="${esc(trfQ)}">
+      <select id="trf_m"><option value="">כל החודשים</option>${mons.map(m=>`<option ${m===trfMon?'selected':''}>${esc(m)}</option>`).join('')}</select>
+      <select id="trf_c"><option value="">כל הסוגים</option>${TRF_CATS.map(c=>`<option ${c===trfCat?'selected':''}>${c}</option>`).join('')}</select>
+      <button class="btn sm" id="trf_add">➕ העברה חדשה</button>
+    </div>
+    ${trfEdit===-1?trfForm({}):''}
+    <div class="trfsum"><span>${L.length} העברות · סה"כ <b>${trfMoney(sum(L))}</b></span>${Object.entries(byCat).map(([c,v])=>`<span><span class="trfcat ${catCls(c)}">${esc(c)}</span> ${trfMoney(v)}</span>`).join('')}</div>
+    ${days.map(d=>`<div class="trfday"><div class="trfdh"><span>${esc(d.date.split('-').reverse().join('/'))} <small>${esc(d.hdate||'')}</small></span><span>${d.rows.length} · ${trfMoney(sum(d.rows))}</span></div>
+      <table>${d.rows.map(row).join('')}</table></div>`).join('')||'<div class="hintxt" style="padding:20px;text-align:center">אין העברות</div>'}
+  </div>`;
+  const g=id=>document.getElementById(id);
+  g('trf_q').oninput=e=>{trfQ=e.target.value.trim();renderTrf().then(()=>{const q=g('trf_q');if(q){q.focus();q.setSelectionRange(q.value.length,q.value.length);}});};
+  g('trf_m').onchange=e=>{trfMon=e.target.value;renderTrf();};
+  g('trf_c').onchange=e=>{trfCat=e.target.value;renderTrf();};
+  g('trf_add').onclick=()=>{trfEdit=-1;renderTrf();};
+  view.querySelectorAll('[data-trfe]').forEach(b=>b.onclick=()=>{trfEdit=+b.dataset.trfe;renderTrf();});
+  view.querySelectorAll('[data-trf]').forEach(b=>b.onclick=async()=>{const f=b.closest('.trfform'),id=+f.dataset.tf,a=b.dataset.trf;
+    if(a==='cancel'){trfEdit=0;return renderTrf();}
+    if(a==='del'){if(!await uiConfirm('למחוק את ההעברה?','🗑 כן, למחוק','ביטול'))return;await api('POST','/api/transfers/delete',{id});trfEdit=0;TRF=null;toast('נמחק');return renderTrf();}
+    const body={id};f.querySelectorAll('[data-k]').forEach(x=>body[x.dataset.k]=x.value);
+    const r=await api('POST','/api/transfers/save',body);
+    if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return;}
+    trfEdit=0;TRF=null;toast('✓ נשמר');renderTrf();});
+}
