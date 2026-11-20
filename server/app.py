@@ -27088,8 +27088,16 @@ class H(BaseHTTPRequestHandler):
             accts = [{'mosad': a['mosad'], 'name': a['name'], 'mk': a['mosad'] == mk_mosad()} for a in _nd.accounts()]
             lk = [{'id': x, 'name': ((byid.get(x) or {}).get('firstName', '') + ' ' + ((byid.get(x) or {}).get('lastName') or '')).strip(),
                    'code': (byid.get(x) or {}).get('clientCode')} for x in locked]
+            con3 = db()
+            try:
+                try:
+                    bachur = json.loads(kv_get(con3, 'mk_bachur_groups', '') or '[]') or []
+                except Exception:
+                    bachur = []
+            finally:
+                con3.close()
             return self._send(200, {'ok': True, 'cfg': cfg, 'groups': groups, 'link': link, 'log': log, 'reqs': reqs, 'locked': lk, 'accounts': accts,
-                                    'keva_cats': keva_cats,
+                                    'keva_cats': keva_cats, 'bachur_groups': bachur,
                                     'new_reqs': sum(1 for r in reqs if r['status'] == 'new'),
                                     'month': {'n': month['n'], 'fees': month['f']}})
         if self.path.split('?')[0] == '/api/mikveh/selfgroup_lock':
@@ -30587,6 +30595,16 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/bachur_groups':
+            # 🧍 מאיר: "מי שבקבוצת בחורים, אין לו מנוי, ונכנס בפעימות" — הקבוצות שמאיר מגדיר כ"בחורים". נשמר אצלנו.
+            ids = [str(x) for x in (b.get('ids') or []) if re.fullmatch(r'[0-9a-fA-F-]{36}', str(x))][:200]
+            con = db()
+            try:
+                kv_set(con, 'mk_bachur_groups', json.dumps(ids))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'n': len(ids)})
         if self.path == '/api/mikveh/group_sync':
             # 🗂️ "לערוך הכל ביחד": ההגדרות והשעות של מנוי אחד → לכל המנויים שנבחרו (כל אחד נשאר עם השם והמחיר שלו)
             import mikveh as _mk

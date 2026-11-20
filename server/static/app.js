@@ -1894,6 +1894,8 @@ async function mkAuditWin(){
     // הקבוצות הרגילות = מה שמושמע בשלוחת שינוי סוג מנוי (cfg.groups). אם אין הגדרה — אין רגילות, הכל חריג.
     MKAUD.reg=new Set((sg&&sg.ok&&sg.cfg&&Array.isArray(sg.cfg.groups))?sg.cfg.groups.map(String):[]);
     MKAUD.hasCfg=!!(sg&&sg.ok&&sg.cfg&&(sg.cfg.groups||[]).length);
+    MKAUD.bg=new Set((sg&&sg.ok&&Array.isArray(sg.bachur_groups))?sg.bachur_groups.map(String):[]);  // קבוצות הבחורים שמאיר בחר
+    MKAUD.bgDirty=false;
   }
   const regSet=MKAUD.reg, esc_=esc;
   const gName=id=>{const g=MK.groups.find(z=>z.id===id);return g?g.name:'—';};
@@ -1907,9 +1909,13 @@ async function mkAuditWin(){
   const anyFlag=c=>isIrr(c)||c.fix;                 // "חריג" = קבוצה לא רגילה או מחיר מיוחד
   const flagged=clients.filter(anyFlag);
   const T=MKAUD.tab;
-  const base=T==='group'?irr:T==='special'?special:T==='noted'?noted:T==='everyone'?clients:flagged;
   // 🔎 סינונים נוספים (על גבי הלשונית): קבוצה, תוקף, וחיפוש חופשי
   const isExp=c=>!c.sub_end||mkPast(c.sub_end);
+  // 🧍 בחורים בפעימות: בקבוצת בחורים שמאיר בחר, אין מנוי בתוקף, ונכנס בפועל בחודש האחרון (≈32 יום)
+  const recentEntry=c=>{if(!c.last_in)return false;const d=new Date(c.last_in);return !isNaN(d)&&(Date.now()-d.getTime())<=32*864e5;};
+  const bachurMatch=c=>MKAUD.bg&&MKAUD.bg.has(String(c.group))&&isExp(c)&&recentEntry(c);
+  const bachur=clients.filter(bachurMatch);
+  const baseOf=()=>T==='group'?irr:T==='special'?special:T==='noted'?noted:T==='bachur'?clients.filter(bachurMatch):T==='everyone'?clients:flagged;
   const qn=s=>String(s||'').toLowerCase().replace(/[^0-9a-zא-ת ]/g,'');
   const applyF=L=>{let r=L;
     if(MKAUD.grp)r=r.filter(c=>String(c.group)===MKAUD.grp);
@@ -1917,7 +1923,7 @@ async function mkAuditWin(){
     const q=qn(MKAUD.q); if(q)r=r.filter(c=>qn(mkName(c)+' '+(c.phone||'')+' '+(c.code||'')).includes(q));
     return r;};
   const sortF=L=>L.slice().sort((a,b)=>(isIrr(b)-isIrr(a))||((b.fix?1:0)-(a.fix?1:0))||mkName(a).localeCompare(mkName(b),'he'));
-  let curList=sortF(applyF(base));
+  let curList=sortF(applyF(baseOf()));
   // רשימת הקבוצות לסינון (לפי כמות לקוחות) — כולל קבוצות רגילות כמו "מנהלים"
   const gcnt={}; clients.forEach(c=>{gcnt[c.group]=(gcnt[c.group]||0)+1;});
   const gopts=Object.keys(gcnt).sort((a,b)=>gcnt[b]-gcnt[a]||gName(a).localeCompare(gName(b),'he'))
@@ -1929,19 +1935,28 @@ async function mkAuditWin(){
     if(isIrr(c))tags.push('<span class="mktag bad">🔴 קבוצה חריגה</span>');
     if(c.fix)tags.push(`<span class="mktag fix">💎 מחיר מיוחד ${esc_(mkNis(c.fix))}</span>`);
     if(c.blocked)tags.push('<span class="mktag bad">🚫 חסום</span>');
+    const bx=T==='bachur'?`<div class="mksub" style="color:#1d6fb8">⏱️ כניסה אחרונה: <b>${esc_(mkDate(c.last_in))}</b>${c.balance!=null?` · יתרת פעימות ${esc_(mkNis(c.balance))}`:''}</div>`:'';
     return `<div class="mkrow" data-ao="${esc_(c.id)}" style="grid-template-columns:1fr auto;cursor:pointer">
       <div class="mknm"><b>${esc_(mkName(c))}</b>
         <div class="mksub"><span dir="ltr">${esc_(c.phone||'אין טלפון')}</span> · #${esc_(c.code||'')} · <b>${esc_(gName(c.group))}</b>${c.fix&&gp!=null?` <span class="mkmut">(מחיר הקבוצה ${esc_(mkNis(gp))})</span>`:''}</div>
-        ${tags.length?`<div class="audtags">${tags.join(' ')}</div>`:''}${noteBox(c)}</div>
+        ${bx}${tags.length?`<div class="audtags">${tags.join(' ')}</div>`:''}${noteBox(c)}</div>
       <span class="mktag ${mkPast(c.sub_end)?'bad':'ok'}" style="align-self:center">${c.sub_end?'מנוי עד '+esc_(mkDate(c.sub_end)):'אין מנוי'}</span></div>`;};
-  const hint=!MKAUD.hasCfg?'<div class="mksub" style="margin:2px 2px 8px;color:#b9770e">⚠️ עדיין לא סומנו קבוצות רגילות בשלוחת שינוי סוג מנוי — לכן כל הקבוצות מופיעות כחריגות. פתח את השלוחה וסמן אילו קטגוריות מושמעות בטלפון.</div>'
+  let hint=!MKAUD.hasCfg?'<div class="mksub" style="margin:2px 2px 8px;color:#b9770e">⚠️ עדיין לא סומנו קבוצות רגילות בשלוחת שינוי סוג מנוי — לכן כל הקבוצות מופיעות כחריגות. פתח את השלוחה וסמן אילו קטגוריות מושמעות בטלפון.</div>'
       :'<div class="mksub" style="margin:2px 2px 8px;color:#555">קבוצה חריגה = קבוצה שלא מסומנת כרגילה בשלוחת שינוי סוג מנוי. לחיצה על לקוח פותחת את הכרטיס המלא.</div>';
+  // 🧍 לשונית בחורים: בורר קבוצות הבחורים + הסבר על הבדיקה
+  if(T==='bachur'){
+    const sorted=MK.groups.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name),'he'));
+    hint=`<div class="mksub" style="margin:2px 2px 6px;color:#555">בחורים שבקבוצת בחורים, <b>אין להם מנוי בתוקף</b>, ו<b>נכנסו בפועל בחודש האחרון</b> (כלומר נכנסים בפעימות בלי מנוי). בחר אילו קבוצות הן "בחורים":</div>
+      <div class="audpick"><div class="mksub" style="font-weight:700;margin-bottom:4px">🧍 קבוצות הבחורים — <span id="bg_cnt">${MKAUD.bg.size}</span> נבחרו</div>
+        <div class="bgwrap">${sorted.map(g=>`<label class="bgchk${MKAUD.bg.has(String(g.id))?' on':''}"><input type="checkbox" data-bg="${esc_(g.id)}"${MKAUD.bg.has(String(g.id))?' checked':''}><span>${esc_(g.name)}</span></label>`).join('')}</div>
+        <div class="mktpl" style="margin-top:8px"><button class="btn sm" id="bg_save">💾 שמור קבוצות בחורים</button><span id="bg_st" class="mksub"${MKAUD.bgDirty?' style="color:#b9770e"':''}>${MKAUD.bgDirty?'יש שינוי שלא נשמר':''}</span></div></div>`;
+  }
   const fnone=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();
-  const empty=fnone?'אין לקוח שמתאים לסינון.':T==='group'?'✓ כל הלקוחות בקבוצות רגילות.':T==='special'?'אין לקוחות עם מחיר מיוחד.':T==='noted'?'אין הערות.':T==='everyone'?'אין לקוחות.':'✓ אין חריגים — כולם בקבוצה רגילה ובלי מחיר מיוחד.';
+  const empty=fnone?'אין לקוח שמתאים לסינון.':T==='group'?'✓ כל הלקוחות בקבוצות רגילות.':T==='special'?'אין לקוחות עם מחיר מיוחד.':T==='noted'?'אין הערות.':T==='everyone'?'אין לקוחות.':T==='bachur'?(MKAUD.bg.size?'✓ אין בחורים בלי מנוי שנכנסו החודש.':'בחר קבוצות בחורים למעלה כדי לראות את הבדיקה.'):'✓ אין חריגים — כולם בקבוצה רגילה ובלי מחיר מיוחד.';
   rs.innerHTML=`<button class="x" id="rx">✕</button>
     <div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">🔎</div><div><h2>בדיקת המקווה — מעקב וחריגים</h2>
       <div class="mksub">${flagged.length} חריגים · ${irr.length} בקבוצה חריגה · ${special.length} מחיר מיוחד · ${noted.length} עם הערה · ${clients.length} לקוחות</div></div></div>
-    <div class="mktpl" style="margin:8px 0;flex-wrap:wrap">${chip('all','📋','הכל',flagged.length,'#2f6fb0')}${chip('group','🔴','קבוצה חריגה',irr.length,'#c0392b')}${chip('special','💎','מחיר מיוחד',special.length,'#8a6d1a')}${chip('noted','📝','הערות',noted.length,'#2f6fb0')}${chip('everyone','👥','כל הלקוחות',clients.length,'#555')}</div>
+    <div class="mktpl" style="margin:8px 0;flex-wrap:wrap">${chip('all','📋','הכל',flagged.length,'#2f6fb0')}${chip('group','🔴','קבוצה חריגה',irr.length,'#c0392b')}${chip('special','💎','מחיר מיוחד',special.length,'#8a6d1a')}${chip('noted','📝','הערות',noted.length,'#2f6fb0')}${chip('bachur','🧍','בחורים בפעימות',bachur.length,'#8a6d1a')}${chip('everyone','👥','כל הלקוחות',clients.length,'#555')}</div>
     <div class="audfilters">
       <select id="aud_grp" class="audsel"><option value="">כל הקבוצות</option>${gopts}</select>
       <select id="aud_val" class="audsel"><option value="all"${MKAUD.val==='all'?' selected':''}>כל התוקף</option><option value="valid"${MKAUD.val==='valid'?' selected':''}>בתוקף</option><option value="exp"${MKAUD.val==='exp'?' selected':''}>פג תוקף / אין</option></select>
@@ -1954,7 +1969,7 @@ async function mkAuditWin(){
     <div class="mktpl" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;flex-wrap:wrap"><button class="btn sm ghost" id="aud_self">🔄 קבוצות רגילות (שלוחת שינוי סוג מנוי)</button><button class="btn sm ghost" id="aud_renew">🧾 מנוי בלי חיוב »</button><button class="btn sm ghost" id="aud_csv">⬇️ אקסל</button></div>`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   const wireRows=()=>rs.querySelectorAll('[data-ao]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.ao);if(!c)return;MK_BACK={cid:c.id,go:()=>mkAuditWin()};mkOpen(c);});
-  const repaint=()=>{curList=sortF(applyF(base));const lst=document.getElementById('aud_list'),cnt=document.getElementById('aud_cnt');
+  const repaint=()=>{curList=sortF(applyF(baseOf()));const lst=document.getElementById('aud_list'),cnt=document.getElementById('aud_cnt');
     if(cnt)cnt.textContent=curList.length+' לקוחות ברשימה';
     if(lst){const fn=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();lst.innerHTML=curList.map(row).join('')||'<div class="hintxt">'+(fn?'אין לקוח שמתאים לסינון.':empty)+'</div>';wireRows();}};
   wireRows();
@@ -1963,6 +1978,16 @@ async function mkAuditWin(){
   {const v=document.getElementById('aud_val');if(v)v.onchange=()=>{MKAUD.val=v.value;repaint();};}
   {const qi=document.getElementById('aud_q');if(qi)qi.oninput=()=>{MKAUD.q=qi.value;repaint();};}
   {const c=document.getElementById('aud_clr');if(c)c.onclick=()=>{MKAUD.grp='';MKAUD.val='all';MKAUD.q='';mkAuditWin();};}
+  // 🧍 בורר קבוצות הבחורים — סימון מעדכן את הרשימה מיד; שמירה שומרת בשרת
+  rs.querySelectorAll('[data-bg]').forEach(cb=>cb.onchange=()=>{if(cb.checked)MKAUD.bg.add(cb.dataset.bg);else MKAUD.bg.delete(cb.dataset.bg);
+    const lab=cb.closest('.bgchk');if(lab)lab.classList.toggle('on',cb.checked);
+    const cnt=document.getElementById('bg_cnt');if(cnt)cnt.textContent=MKAUD.bg.size;
+    MKAUD.bgDirty=true;const st=document.getElementById('bg_st');if(st){st.style.color='#b9770e';st.textContent='יש שינוי שלא נשמר';}
+    repaint();});
+  {const s=document.getElementById('bg_save');if(s)s.onclick=async()=>{s.disabled=true;const st=document.getElementById('bg_st');if(st){st.style.color='#555';st.textContent='⏳ שומר…';}
+    const y=await api('POST','/api/mikveh/bachur_groups',{ids:[...MKAUD.bg]});s.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ לא נשמר';}return;}
+    MKAUD.bgDirty=false;if(st){st.style.color='#1e7a3c';st.textContent='✓ נשמר';}toast('נשמר ✓');};}
   {const b=document.getElementById('aud_self');if(b)b.onclick=()=>mkSelfGroupOpen();}
   {const b=document.getElementById('aud_renew');if(b)b.onclick=()=>mkRenewCheck();}
   const cv=document.getElementById('aud_csv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
