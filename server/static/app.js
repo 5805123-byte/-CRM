@@ -7444,6 +7444,7 @@ function cardDetails(d,body){
   const pdebtcur=pdebts.length?pCur(pdebts[0],d):curd;
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     <button class="btn dnqc" data-did="${d.id}" type="button">💳 תרומה באשראי — חיוב מהיר + קבלה במייל</button>
+    <button class="btn dnman" type="button" style="background:#3b2f7a;color:#fff">✍️ רישום תרומה שנכנסה — סכום, תאריך ועבור מה</button>
     <button class="btn ghost dncl" data-did="${d.id}" type="button">🔗 קישור לתורם לעדכון כרטיס — וואטסאפ / מייל</button>
     <div id="dnrec"></div>
     ${(curd==='₪'||d.region==='il')?`<button class="btn ghost dnkl" data-did="${d.id}" type="button">🇮🇱 קישור אישי בעברית (נדרים פלוס) — פרטים, כרטיס ותרומה</button>`:''}
@@ -7550,6 +7551,13 @@ function cardDetails(d,body){
     toast('נמחק'); cardDetails(d,body);});
   wireSplit(d, body, ()=>{const x=DB.find(y=>y.id===d.id)||d; cardDetails(x, body);});
   renderDonorRec(d, body);
+  // מאיר: "אני נכנס לכרטיס תורם, אני רוצה לכתוב תרומה שלו באופן ידני שהוא תרם בתאריך כך וכך עבור כך וכך — איפה?
+  // זה מידי מבולגן" — כפתור אחד למעלה שפותח ישר את טופס "תרומה שנכנסה" (כמה, מתי, איך, עבור מה)
+  const dman=body.querySelector('.dnman');if(dman)dman.onclick=()=>{const cmb=body.querySelector('.cmbody'),cmt=body.querySelector('.cmtoggle');
+    if(cmb){cmb.hidden=false;if(cmt)cmt.textContent='▾ סגור';}
+    const ng=body.querySelector('.ng[data-ng="paid"]');if(ng){ng.click();return;}
+    const dn=document.getElementById('dnbox');if(dn){dn.open=true;dn.scrollIntoView({block:'start'});const a2=document.getElementById('dn_amt');if(a2)a2.focus();}
+    else toast('לא נמצא טופס רישום תרומה בכרטיס הזה');};
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='details';renderCard(d);};
   // ⛔ מאיר: "איך מגדירים במערכת באופן פשוט וקל שהוא הפסיק — ולהפסיק את החיוב שלו וההתחייבות"
   const ms=document.getElementById('mstop'); if(ms)ms.onclick=async()=>{const on=ms.dataset.on==='1',nm=((d.last||'')+' '+(d.first||'')).trim();
