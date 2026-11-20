@@ -1738,7 +1738,7 @@ async function load(){
       const r=await api('POST','/api/logout_all',{});authExpSet(0);if(r&&r.ok){toast('כל המכשירים נותקו');}setTimeout(()=>location.reload(),600);};};document.querySelector('.brand').appendChild(b);}
   if(cardBusy())return;      // טופס כרטיס פתוח — הנתונים התעדכנו, המסך נשאר כמו שהוא
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{let st=localStorage.getItem('kc_tab');try{const qt=new URLSearchParams(location.search).get('tab');if(qt)st=qt;}catch(e){}const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh','bldghq'];if(PORTAL==='parnes'&&valid.includes('parnes'))st='parnes';if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{let st=localStorage.getItem('kc_tab');try{const qt=new URLSearchParams(location.search).get('tab');if(qt)st=qt;}catch(e){}const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','trf','cal','comm','rcpt','gifts','mikveh','bldghq'];if(PORTAL==='parnes'&&valid.includes('parnes'))st='parnes';if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1793,6 +1793,7 @@ function render(){
   if(tab==='gifts') return renderGifts();
   if(tab==='avreich') return renderAvreich();
   if(tab==='stip') return renderStip();
+  if(tab==='trf') return renderTrf();
   if(tab==='debts') return renderDebts();
   if(tab==='missed') return renderMissed();
   if(tab==='mails') return renderMails();
@@ -7468,7 +7469,9 @@ function cardDetails(d,body){
   const pdebtcur=pdebts.length?pCur(pdebts[0],d):curd;
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     <button class="btn dnqc" data-did="${d.id}" type="button">💳 תרומה באשראי — חיוב מהיר + קבלה במייל</button>
+    <button class="btn dnman" type="button" style="background:#3b2f7a;color:#fff">✍️ רישום תרומה שנכנסה — סכום, תאריך ועבור מה</button>
     <button class="btn ghost dncl" data-did="${d.id}" type="button">🔗 קישור לתורם לעדכון כרטיס — וואטסאפ / מייל</button>
+    <div id="dnrec"></div>
     ${(curd==='₪'||d.region==='il')?`<button class="btn ghost dnkl" data-did="${d.id}" type="button">🇮🇱 קישור אישי בעברית (נדרים פלוס) — פרטים, כרטיס ותרומה</button>`:''}
     ${pdebts.length?`<div class="debtbanner">🌙 פרנס שטרם נגבה: <b>${pdebtsum?(pdebtcur+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
     ${debtHTML(d)}
@@ -7572,6 +7575,14 @@ function cardDetails(d,body){
     d.files=(d.files||[]).filter(x=>x.id!=b2.dataset.fid);
     toast('נמחק'); cardDetails(d,body);});
   wireSplit(d, body, ()=>{const x=DB.find(y=>y.id===d.id)||d; cardDetails(x, body);});
+  renderDonorRec(d, body);
+  // מאיר: "אני נכנס לכרטיס תורם, אני רוצה לכתוב תרומה שלו באופן ידני שהוא תרם בתאריך כך וכך עבור כך וכך — איפה?
+  // זה מידי מבולגן" — כפתור אחד למעלה שפותח ישר את טופס "תרומה שנכנסה" (כמה, מתי, איך, עבור מה)
+  const dman=body.querySelector('.dnman');if(dman)dman.onclick=()=>{const cmb=body.querySelector('.cmbody'),cmt=body.querySelector('.cmtoggle');
+    if(cmb){cmb.hidden=false;if(cmt)cmt.textContent='▾ סגור';}
+    const ng=body.querySelector('.ng[data-ng="paid"]');if(ng){ng.click();return;}
+    const dn=document.getElementById('dnbox');if(dn){dn.open=true;dn.scrollIntoView({block:'start'});const a2=document.getElementById('dn_amt');if(a2)a2.focus();}
+    else toast('לא נמצא טופס רישום תרומה בכרטיס הזה');};
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='details';renderCard(d);};
   // ⛔ מאיר: "איך מגדירים במערכת באופן פשוט וקל שהוא הפסיק — ולהפסיק את החיוב שלו וההתחייבות"
   const ms=document.getElementById('mstop'); if(ms)ms.onclick=async()=>{const on=ms.dataset.on==='1',nm=((d.last||'')+' '+(d.first||'')).trim();
@@ -9922,7 +9933,7 @@ function renderCharges(){
   rows=rows.filter(x=>matchQ((x.d.last||'')+' '+(x.d.first||'')+' '+(x.t.category||'')));
   const paid=all.filter(x=>x.t.status==='settled'||x.t.status==='approved').reduce((s,x)=>s+amtNum(x.t.amount),0);
   const pend=all.filter(x=>x.t.status==='pending').reduce((s,x)=>s+amtNum(x.t.amount),0);
-  view.innerHTML=`<div id="bqbox" class="bqbox"></div>
+  view.innerHTML=`<div id="recbox"></div><div id="bqbox" class="bqbox"></div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn" id="chwizbtn" style="background:#6b1d1d;color:#fff">📝 חיובים בלי תורם — לענות אחד־אחד</button></div>
     <div class="rbtitle">💳 טיפול והתאמת תרומות — לפי שיטת תשלום (ינואר–אוגוסט 2026)</div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_mailsync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>
@@ -9935,6 +9946,7 @@ function renderCharges(){
     (rows.length?`<div class="cnt">${rows.length} חיובים</div><div class="list">`:'<div class="list hidden">')+
     (rows.map(({t,d})=>{const st=TXST[t.status]||TXST.pending;const rc=curSym(d);return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="purp">${rc}${esc(t.amount)} ${t.category?('· '+esc(t.category)):''}${txInst(t,rc)}${txUntil(t)}</div></div><div class="meta"><span class="txbadge ${st.c}">${st.t}</span><span class="ph">${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}</span></div></div>`;}).join('')||'<div class="empty">אין חיובים</div>')+`</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
+  renderRecBox();
   renderBQ();
   renderLedger();
   const can=document.getElementById('ch_anet');
@@ -20252,6 +20264,11 @@ async function rcSendFlow(rc){
   // מאיר: "ואכתוב לו כמה מילים תודה" — חלון אישור עם מקום למילים אישיות, לפני הנוסח הקבוע של הקבלה
   const w=document.createElement('div');w.className='confirmov';
   w.innerHTML=`<div class="confirmbox qcbox"><div class="cm"><b>📧 אישור סופי לפני שליחה — קבלה ${esc(rc.num)}</b><br><small>אל: <span dir="ltr">${esc(em)}</span>${rc.name?(' · '+esc(rc.name)):''}</small></div>
+    <div class="rcsfprev" style="margin:8px 0;text-align:center">
+      <a href="/api/receipts/${rc.id}.png?t=${Date.now()}" target="_blank" title="לחץ לראות בגדול"><img src="/api/receipts/${rc.id}.png?t=${Date.now()}" alt="הקבלה" style="max-width:100%;max-height:260px;border:1px solid #e3d9c2;border-radius:8px;background:#fff" onerror="this.closest('a').outerHTML='<div class=hintxt>אין תצוגה של הקבלה</div>'"></a>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:6px">
+        <a class="btn sm ghost" style="width:auto" href="/api/receipts/${rc.id}.png?t=${Date.now()}" target="_blank">👁 לראות את הקבלה</a>
+        <a class="btn sm ghost" style="width:auto" href="/api/receipts/${rc.id}.pdf?t=${Date.now()}" download>⬇️ להוריד PDF</a></div></div>
     <label class="fld"><span>✍️ כמה מילים אישיות (לא חובה) — יופיעו בתחילת המייל, לפני הנוסח הקבוע</span><textarea id="rc_extra" rows="5" placeholder="למשל: תודה רבה על התרומה בערב יום כיפור…"></textarea></label>
     <div class="cbtns"><button class="btn bqgo cyes">✅ אישור ושליחה</button><button class="btn ghost cno">ביטול</button></div></div>`;
   document.body.appendChild(w);addMics(w,['#rc_extra']);
@@ -21079,3 +21096,141 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   x.eq=String(v); toast('💱 נרשם — נספר עכשיו מול ההתחייבות ✓'); openDonor(d);});
 netInit();
 load();
+
+/* 🏦 העברות ומלגות — מאיר (19.11.2026): "לשונית של העברות ומלגות שכל ההעברות מתחילת תשפ"ז יהיו שם
+   באופן מסודר לפי תאריכים". כל העברה בשורה, מקובצות לפי יום ההעברה (עם תאריך עברי), סינון לפי חודש עברי
+   וסוג, חיפוש, סה"כ, והוספה/עריכה/מחיקה ידנית. */
+let TRF=null,trfQ='',trfCat='',trfMon='',trfEdit=0;
+const TRF_CATS=['מלגה','ספק','משכורת','זיכוי לרב דויטש','לבדוק'];
+function trfMoney(n){return '₪'+(Math.round((+n||0)*100)/100).toLocaleString('he-IL',{maximumFractionDigits:2});}
+function trfForm(r){r=r||{};const v=k=>esc(r[k]==null?'':r[k]);
+  return `<div class="trfform" data-tf="${r.id||0}">
+    <label>תאריך<input type="date" data-k="date" value="${v('date')||new Date().toISOString().slice(0,10)}"></label>
+    <label>שם מוטב<input data-k="payee" value="${v('payee')}"></label>
+    <label>סכום ₪<input data-k="amount" inputmode="decimal" value="${v('amount')}"></label>
+    <label>סוג<select data-k="category">${TRF_CATS.map(c=>`<option ${(r.category||'מלגה')===c?'selected':''}>${c}</option>`).join('')}</select></label>
+    <label class="wide">מטרה<input data-k="purpose" value="${v('purpose')}"></label>
+    <label>ת"ז / ח.פ.<input data-k="idnum" value="${v('idnum')}"></label>
+    <label>בנק<input data-k="bank" value="${v('bank')}" style="width:60px"></label>
+    <label>סניף<input data-k="branch" value="${v('branch')}" style="width:60px"></label>
+    <label>חשבון<input data-k="account" value="${v('account')}"></label>
+    <label class="wide">הערה<input data-k="note" value="${v('note')}"></label>
+    <div class="trfbtns"><button class="btn sm" data-trf="save">💾 שמירה</button><button class="btn sm ghost" data-trf="cancel">ביטול</button>${r.id?'<button class="btn sm ghost danger" data-trf="del">🗑 מחיקה</button>':''}</div></div>`;}
+async function renderTrf(){
+  chips.innerHTML='';
+  if(!TRF){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען…</div>';const r=await api('GET','/api/transfers');TRF=(r&&r.rows)||[];if(tab!=='trf')return;}
+  const mons=[...new Set(TRF.map(r=>r.hmonth).filter(Boolean))];
+  const L=TRF.filter(r=>(!trfMon||r.hmonth===trfMon)&&(!trfCat||r.category===trfCat)&&(!trfQ||[r.payee,r.purpose,r.idnum,r.note,r.src].join(' ').includes(trfQ)));
+  const sum=a=>a.reduce((s,r)=>s+(+r.amount||0),0);
+  const byCat={};L.forEach(r=>byCat[r.category||'לבדוק']=(byCat[r.category||'לבדוק']||0)+(+r.amount||0));
+  const days=[];const idx={};L.forEach(r=>{const k=r.date;if(!(k in idx)){idx[k]=days.length;days.push({date:k,hdate:r.hdate,rows:[]});}days[idx[k]].rows.push(r);});
+  const catCls=c=>({'מלגה':'c1','ספק':'c2','משכורת':'c3','זיכוי לרב דויטש':'c4','לבדוק':'c5'}[c]||'c5');
+  const row=r=>trfEdit===r.id?`<tr><td colspan="6">${trfForm(r)}</td></tr>`:
+    `<tr><td class="py"><b>${esc(r.payee)}</b>${r.idnum?`<small>${esc(r.idnum)}</small>`:''}</td>
+      <td><span class="trfcat ${catCls(r.category)}">${esc(r.category||'לבדוק')}</span> ${esc(r.purpose||'')}${r.note?`<div class="hintxt">📝 ${esc(r.note)}</div>`:''}</td>
+      <td class="bk">${r.bank?esc(r.bank)+'-'+esc(r.branch)+'-'+esc(r.account):''}</td>
+      <td class="am">${trfMoney(r.amount)}</td>
+      <td class="src">${esc(r.src||'')}</td>
+      <td><button class="btn sm ghost" data-trfe="${r.id}" title="עריכה">✏️</button></td></tr>`;
+  view.innerHTML=`<style>
+    .trfw{padding:10px 12px 40px}.trfw .rbtitle{margin-bottom:4px}
+    .trftop{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+    .trftop input,.trftop select{padding:7px 9px;border:1px solid #ddd3bd;border-radius:8px;font:inherit}
+    .trfsum{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 10px}.trfsum span{background:#fff;border:1px solid #e6dcc6;border-radius:10px;padding:6px 10px;font-size:13.5px}
+    .trfday{background:#fff;border:1px solid #e6dcc6;border-radius:12px;margin:10px 0;overflow:hidden}
+    .trfdh{display:flex;justify-content:space-between;gap:8px;background:#f6f0e2;padding:8px 12px;font-weight:700}
+    .trfdh small{font-weight:400;color:#6b6249}
+    .trfday table{width:100%;border-collapse:collapse;font-size:14px}.trfday td{border-top:1px solid #f0e8d6;padding:6px 8px;vertical-align:top}
+    .trfday td{border-left:0!important;border-right:0!important;box-shadow:none!important}.trfday td.py{width:24%}
+    .trfday td.py small{display:block;color:#8a8274;font-size:11.5px}.trfday td.am{white-space:nowrap;font-weight:700;text-align:left}
+    .trfday td.bk,.trfday td.src{color:#8a8274;font-size:12px;white-space:nowrap}
+    .trfcat{display:inline-block;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:700}
+    .trfcat.c1{background:#e6f3ea;color:#2e7d4f}.trfcat.c2{background:#e8eef8;color:#2f5597}.trfcat.c3{background:#f3e8f8;color:#7a3f97}.trfcat.c4{background:#fdf1d8;color:#9a6a00}.trfcat.c5{background:#fdeaea;color:#b3261e}
+    .trfform{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;background:#fffdf6;border:1px dashed #d8c89c;border-radius:10px;padding:10px;margin:8px 0}
+    .trfform label{display:flex;flex-direction:column;font-size:12px;color:#6b6249;gap:2px}.trfform label.wide{flex:1 1 220px}
+    .trfform input,.trfform select{padding:6px 8px;border:1px solid #ddd3bd;border-radius:7px;font:inherit;font-size:14px}
+    .trfbtns{display:flex;gap:6px}
+    @media(max-width:700px){.trfday td.src,.trfday td.bk{display:none}}
+  </style>
+  <div class="trfw">
+    <div class="rbtitle">🏦 העברות ומלגות — תשפ"ז</div>
+    <div class="hintxt">כל ההעברות (מס"ב) מתחילת תשפ"ז, לפי תאריך. נטען מקבצי ההעברות בדרייב; העברה חדשה — "➕ העברה חדשה".</div>
+    <div class="trftop">
+      <input id="trf_q" type="search" placeholder="חיפוש שם / מטרה / ת״ז…" value="${esc(trfQ)}">
+      <select id="trf_m"><option value="">כל החודשים</option>${mons.map(m=>`<option ${m===trfMon?'selected':''}>${esc(m)}</option>`).join('')}</select>
+      <select id="trf_c"><option value="">כל הסוגים</option>${TRF_CATS.map(c=>`<option ${c===trfCat?'selected':''}>${c}</option>`).join('')}</select>
+      <button class="btn sm" id="trf_add">➕ העברה חדשה</button>
+    </div>
+    ${trfEdit===-1?trfForm({}):''}
+    <div class="trfsum"><span>${L.length} העברות · סה"כ <b>${trfMoney(sum(L))}</b></span>${Object.entries(byCat).map(([c,v])=>`<span><span class="trfcat ${catCls(c)}">${esc(c)}</span> ${trfMoney(v)}</span>`).join('')}</div>
+    ${days.map(d=>`<div class="trfday"><div class="trfdh"><span>${esc(d.date.split('-').reverse().join('/'))} <small>${esc(d.hdate||'')}</small></span><span>${d.rows.length} · ${trfMoney(sum(d.rows))}</span></div>
+      <table>${d.rows.map(row).join('')}</table></div>`).join('')||'<div class="hintxt" style="padding:20px;text-align:center">אין העברות</div>'}
+  </div>`;
+  const g=id=>document.getElementById(id);
+  g('trf_q').oninput=e=>{trfQ=e.target.value.trim();renderTrf().then(()=>{const q=g('trf_q');if(q){q.focus();q.setSelectionRange(q.value.length,q.value.length);}});};
+  g('trf_m').onchange=e=>{trfMon=e.target.value;renderTrf();};
+  g('trf_c').onchange=e=>{trfCat=e.target.value;renderTrf();};
+  g('trf_add').onclick=()=>{trfEdit=-1;renderTrf();};
+  view.querySelectorAll('[data-trfe]').forEach(b=>b.onclick=()=>{trfEdit=+b.dataset.trfe;renderTrf();});
+  view.querySelectorAll('[data-trf]').forEach(b=>b.onclick=async()=>{const f=b.closest('.trfform'),id=+f.dataset.tf,a=b.dataset.trf;
+    if(a==='cancel'){trfEdit=0;return renderTrf();}
+    if(a==='del'){if(!await uiConfirm('למחוק את ההעברה?','🗑 כן, למחוק','ביטול'))return;await api('POST','/api/transfers/delete',{id});trfEdit=0;TRF=null;toast('נמחק');return renderTrf();}
+    const body={id};f.querySelectorAll('[data-k]').forEach(x=>body[x.dataset.k]=x.value);
+    const r=await api('POST','/api/transfers/save',body);
+    if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return;}
+    trfEdit=0;TRF=null;toast('✓ נשמר');renderTrf();});
+}
+
+/* 🔁 הוראות קבע — מאיר: "איך אני נכנס במהירות לכרטיס תורם… איפה שכתוב חיוב מהיר שיהיה שם את האפשרות של
+   הפסקה, ושזה יהיה מסונכרן שהוא הפסיק" ו"איפה אני מוצא בחיובים את כל ההוראות קבע החודשיות? לא נפתח לי לפי
+   חיפוש שם". אוטורייז (חי) + בנק ווסט — רשימה אחת בחיובים, ובכרטיס התורם מתחת ל"חיוב מהיר". */
+let RECALL=null,recQ='';
+const recMoney=n=>'$'+(Math.round((+n||0)*100)/100).toLocaleString('en-US');
+function recItems(r){const a=(r.anet||[]).map(x=>({src:'anet',id:x.sid,amount:x.amount,did:x.donor_id,name:x.donor_name||((x.last||'')+' '+(x.first||'')).trim(),
+    sub:((x.first||'')+' '+(x.last||'')).trim(),card:x.card,extra:(x.past!=null?('שולמו '+x.past+' תשלומים'):'')+(x.status&&x.status!=='active'?' · '+x.status:''),multi:x.multi}));
+  const b=(r.bq||[]).map(x=>({src:'bq',id:x.id,amount:x.amount,did:x.donor_id,name:x.donor_name||x.bq_name||x.title||'?',sub:x.bq_name||'',card:'',extra:(x.next_run?'הבא '+fmtGreg(String(x.next_run).slice(0,10)):'')}));
+  return a.concat(b).sort((x,y)=>String(x.name).localeCompare(String(y.name),'he'));}
+function recRowHTML(x,inCard){return `<div class="recrow"><div class="recw">${inCard?'':`<b class="${x.did?'reclink':''}" data-recdid="${x.did||''}">${esc(x.name)}</b>${x.did?'':' <small class="recnot">'+(x.multi?'כמה כרטיסים באותו שם — לא שויך':'לא שויך לכרטיס')+'</small>'}`}
+    <small>${x.src==='anet'?'💳 אוטורייז':'🏦 בנק ווסט'}${x.card?' · '+esc(x.card):''}${x.sub&&x.sub!==x.name&&!inCard?' · '+esc(x.sub):''}${x.extra?' · '+esc(x.extra):''}</small></div>
+    <b class="reca">${recMoney(x.amount)}</b>
+    ${inCard?'':'<span class="recopen">פתח כרטיס ‹</span>'}${!inCard?'':`<button class="btn sm ghost danger recstop" data-src="${x.src}" data-id="${esc(x.id)}" data-amt="${x.amount}" data-did="${x.did||''}" data-nm="${esc(x.name)}">⛔ להפסיק</button>`}</div>`;}
+const REC_CSS=`<style>.recbox{background:#fff;border:1px solid #e6dcc6;border-radius:12px;padding:8px 10px;margin:8px 0}
+  .recbox summary{cursor:pointer;font-weight:700}.recrow{display:flex;align-items:center;gap:8px;border-top:1px solid #f0e8d6;padding:7px 2px}
+  .recrow .recw{flex:1;min-width:0}.recrow .recw small{display:block;color:#8a8274;font-size:12px}.reca{white-space:nowrap}
+  .reclink{cursor:pointer;color:#3b2f7a;text-decoration:underline}.recopen{font-size:12px;color:#8a8274;white-space:nowrap}.recrow:has(.reclink){cursor:pointer}.recnot{color:#b3261e}.recrow .recstop{width:auto;white-space:nowrap}
+  .recsrch{width:100%;padding:8px 10px;border:1px solid #ddd3bd;border-radius:8px;font:inherit;margin:6px 0}</style>`;
+async function recStop(b,after){const src=b.dataset.src,id=b.dataset.id,amt=+b.dataset.amt,did=+b.dataset.did||0,nm=b.dataset.nm||'';
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox"><div class="cm">⛔ להפסיק את הוראת הקבע של ${esc(nm)}?<br><b>${recMoney(amt)} כל חודש · ${src==='anet'?'אוטורייז':'בנק ווסט'}</b><br><small>${src==='anet'?'המנוי יבוטל באוטורייז — לא יהיו עוד חיובים.':'הוראת הקבע תושהה בבנק ווסט.'}</small></div>
+    ${did?`<label class="gvall"><input type="checkbox" id="rs_mark" checked> לסמן בכרטיס שהפסיק לתרום כל חודש (ההתחייבות מסתיימת, יורד מ"חסר" ו"לא עבר")</label>
+    <label class="fld" style="margin:8px 0"><span>📅 מאיזה תאריך הפסיק?</span><input type="date" id="rs_date" value="${todayStr()}"></label>`:'<div class="hintxt">לא משויך לכרטיס — יבוטל רק אצל חברת האשראי.</div>'}
+    <label class="fld" style="margin:8px 0"><span>📝 סיבה / הערה (לא חובה)</span><input id="rs_why" placeholder="למשל: ביקש להפסיק"></label>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">⛔ כן, להפסיק</button></div></div>`;
+  document.body.appendChild(o);
+  const ok=await new Promise(res=>{o.querySelector('.cno').onclick=()=>res(false);o.querySelector('.cyes').onclick=()=>res(true);});
+  const mark=did&&o.querySelector('#rs_mark')&&o.querySelector('#rs_mark').checked,date=(o.querySelector('#rs_date')||{}).value||todayStr(),why=o.querySelector('#rs_why').value.trim();o.remove();if(!ok)return;
+  b.disabled=true;b.textContent='מפסיק…';let r;
+  if(src==='anet')r=await api('POST','/api/recurring/anet_stop',{sid:id,donor_id:did||'',mark_stop:mark?1:0,date,reason:why}).catch(()=>null);
+  else{r=await api('POST','/api/bq/sched/'+id,{active:false}).catch(()=>null);
+    if(r&&r.ok&&mark)await api('POST','/api/donor/'+did+'/stop_monthly',{on:1,stop_charge:0,date,reason:why}).catch(()=>null);}
+  if(!r||!r.ok){b.disabled=false;b.textContent='⛔ להפסיק';await uiAlert('לא הופסק:\n'+((r&&r.error)||'שגיאה'));return;}
+  toast('⛔ הוראת הקבע הופסקה'+(mark?' · סומן בכרטיס שהפסיק':''));RECALL=null;await load();if(after)after();}
+async function renderRecBox(){const box=document.getElementById('recbox');if(!box)return;
+  if(!RECALL){box.innerHTML='<div class="hintxt">טוען הוראות קבע…</div>';RECALL=await api('GET','/api/recurring').catch(()=>null)||{anet:[],bq:[]};}
+  const all=recItems(RECALL),qq=(recQ||'').trim(),L=qq?all.filter(x=>(x.name+' '+x.sub+' '+x.card+' '+x.amount).includes(qq)):all;
+  const tot=all.reduce((s,x)=>s+(+x.amount||0),0);
+  box.innerHTML=REC_CSS+`<details class="recbox" open><summary>🔁 כל הוראות הקבע החודשיות — ${all.length} · ${recMoney(tot)} לחודש</summary>
+    <div class="hintxt">לחץ על שם כדי להיכנס לכרטיס — שם אפשר להפסיק.${RECALL.anet_err?' · הוראות הקבע של אוטורייז לא מוצגות כאן (אין חיבור ישיר לאוטורייז).':''}</div>
+    <input class="recsrch" id="rec_q" placeholder="חיפוש לפי שם / 4 ספרות / סכום…" value="${esc(recQ)}">
+    <div id="rec_list">${L.map(x=>recRowHTML(x,false)).join('')||'<div class="hintxt">לא נמצא</div>'}</div></details>`;
+  const qi=document.getElementById('rec_q');qi.oninput=()=>{recQ=qi.value;const qq2=recQ.trim();document.getElementById('rec_list').innerHTML=(qq2?all.filter(x=>(x.name+' '+x.sub+' '+x.card+' '+x.amount).includes(qq2)):all).map(x=>recRowHTML(x,false)).join('')||'<div class="hintxt">לא נמצא</div>';recWire(box);};
+  recWire(box);}
+function recWire(box){box.querySelectorAll('.reclink').forEach(e=>{const rw=e.closest('.recrow');(rw||e).onclick=()=>{const d=DB.find(y=>y.id==e.dataset.recdid);if(d)openDonor(d);};});
+  box.querySelectorAll('.recstop').forEach(b=>b.onclick=()=>recStop(b,()=>{if(tab==='charges')renderRecBox();}));}
+async function renderDonorRec(d,body){const el=document.getElementById('dnrec');if(!el)return;
+  const r=await api('GET','/api/recurring?donor='+d.id).catch(()=>null);const el2=document.getElementById('dnrec');if(!el2)return;
+  const L=r?recItems(r):[];
+  el2.innerHTML=REC_CSS+(L.length?`<div class="recbox"><b>🔁 הוראות קבע פעילות</b>${L.map(x=>recRowHTML(x,true)).join('')}</div>`:'')
+    +(d.monthly_stop?'':`<button class="btn ghost" id="dnmstop" type="button" style="color:#b3261e;border-color:#e8b4b0">⛔ הפסיק לתרום כל חודש${L.length?' — לעצור הכל':''}</button>`);
+  el2.querySelectorAll('.recstop').forEach(b=>b.onclick=()=>recStop(b,()=>{const nd=DB.find(x=>x.id==d.id);if(nd){Object.assign(d,nd);cardDetails(d,body);}}));
+  const ms=document.getElementById('dnmstop');if(ms)ms.onclick=()=>{const m=document.getElementById('mstop');if(m)m.click();};}
