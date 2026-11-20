@@ -20239,6 +20239,11 @@ async function rcSendFlow(rc){
   // מאיר: "ואכתוב לו כמה מילים תודה" — חלון אישור עם מקום למילים אישיות, לפני הנוסח הקבוע של הקבלה
   const w=document.createElement('div');w.className='confirmov';
   w.innerHTML=`<div class="confirmbox qcbox"><div class="cm"><b>📧 אישור סופי לפני שליחה — קבלה ${esc(rc.num)}</b><br><small>אל: <span dir="ltr">${esc(em)}</span>${rc.name?(' · '+esc(rc.name)):''}</small></div>
+    <div class="rcsfprev" style="margin:8px 0;text-align:center">
+      <a href="/api/receipts/${rc.id}.png?t=${Date.now()}" target="_blank" title="לחץ לראות בגדול"><img src="/api/receipts/${rc.id}.png?t=${Date.now()}" alt="הקבלה" style="max-width:100%;max-height:260px;border:1px solid #e3d9c2;border-radius:8px;background:#fff" onerror="this.closest('a').outerHTML='<div class=hintxt>אין תצוגה של הקבלה</div>'"></a>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:6px">
+        <a class="btn sm ghost" style="width:auto" href="/api/receipts/${rc.id}.png?t=${Date.now()}" target="_blank">👁 לראות את הקבלה</a>
+        <a class="btn sm ghost" style="width:auto" href="/api/receipts/${rc.id}.pdf?t=${Date.now()}" download>⬇️ להוריד PDF</a></div></div>
     <label class="fld"><span>✍️ כמה מילים אישיות (לא חובה) — יופיעו בתחילת המייל, לפני הנוסח הקבוע</span><textarea id="rc_extra" rows="5" placeholder="למשל: תודה רבה על התרומה בערב יום כיפור…"></textarea></label>
     <div class="cbtns"><button class="btn bqgo cyes">✅ אישור ושליחה</button><button class="btn ghost cno">ביטול</button></div></div>`;
   document.body.appendChild(w);addMics(w,['#rc_extra']);
