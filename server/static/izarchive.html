@@ -58,6 +58,7 @@ $('#print').onclick=()=>{const k=Q;Q='';paint();setTimeout(()=>{window.print();Q
   ROWS=r.rows||[];document.title=r.title;$('#h1').textContent='📂 '+r.title;$('#ph').textContent=r.title+' — כולל חצות';
   const na=new Set(ROWS.map(x=>x.av)).size;
   $('#sum').innerHTML=ROWS.length?`הרשימה כמו שהייתה לפני רשימת תשפ"ז${r.at?' (נשמרה '+esc(r.at.split('-').reverse().join('/'))+')':''} · <b>${na}</b> אברכים · <b>${ROWS.length}</b> שותפויות · לקריאה בלבד`:'הרשימה הקודמת עוד לא נשמרה — היא תישמר בעדכון הבא של המערכת.';
+  const rp=r.report||{};if(rp.updated!==undefined)$('#sum').innerHTML+=`<br>רשימת תשפ"ז: עודכנו <b>${rp.updated}</b> תאריכים · לא להדפסה: <b>${rp.nocert}</b>${(rp.ended||[]).length?' · הפסיקו: '+esc(rp.ended.join(', ')):''}`+((rp.miss||[]).length?`<br><b style="color:#b3261e">⚠️ לא עודכנו (לא נמצאה התאמה אחת ברורה) — לתקן ידנית:</b> ${esc(rp.miss.join(' · '))}`:' · ✓ כל השורות הותאמו');
   paint();})();
 </script>
 </body>
