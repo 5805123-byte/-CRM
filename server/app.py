@@ -3667,6 +3667,35 @@ def ensure_schema():
                 print('  מיטמן שניאור זלמן: נמצאו %d כרטיסים — לא בוצע' % len(_ds))
     except Exception as e:
         print('  mittman iz end error:', e)
+    # מאיר (22.11.2026): "אצל טעפר זה $500… כבר אמרנו שזה $500, תתקן את זה במערכת דחוף, שנותן כל חודש $500.
+    # הוא אף פעם לא התחייב על 5,000, זה 500, תסמן את זה על הכל, וכנראה כתוב לו שם שהוא חייב הרבה כסף בגלל זה"
+    # — יצחק טעפפער: כל שורה של 5000 (השותפות עם פילמר מאיר וההתחייבויות החודשיות) → 500 לחודש.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='tepper_500_v1'").fetchone():
+            _td = con.execute("SELECT id FROM donors WHERE last LIKE '%טעפפער%' AND first LIKE '%יצחק%'").fetchall()
+            if len(_td) == 1:
+                _did = _td[0]['id']
+                _np = 0
+                for _p in con.execute("SELECT id,amount,share FROM partners WHERE donor_id=?", (_did,)).fetchall():
+                    if abs(_amt2(_p['amount']) - 5000) < 0.5:
+                        con.execute("UPDATE partners SET amount='500' WHERE id=?", (_p['id'],)); _np += 1
+                    if abs(_amt2(_p['share']) - 5000) < 0.5:
+                        con.execute("UPDATE partners SET share='500' WHERE id=?", (_p['id'],))
+                _nl = 0
+                for _l in con.execute("SELECT id,amount,permo FROM pledges WHERE donor_id=? AND COALESCE(monthly,0)=1", (_did,)).fetchall():
+                    if abs(_amt2(_l['amount']) - 5000) < 0.5 or abs(_amt2(_l['permo']) - 5000) < 0.5:
+                        con.execute("UPDATE pledges SET amount='500', permo='500' WHERE id=?", (_l['id'],)); _nl += 1
+                con.execute("UPDATE donors SET notes=TRIM(COALESCE(notes,'') || CASE WHEN COALESCE(TRIM(notes),'')='' THEN '' ELSE char(10) END || ?) WHERE id=?",
+                            ('נותן $500 לחודש ליששכר־זבולון (פילמר מאיר, יחד עם סלקוביץ) — אף פעם לא התחייב על 5,000', _did))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (_did, today_iso(), 'הערה', '✏️ תוקן: $500 לחודש ולא $5,000 (%d שותפויות, %d התחייבויות)' % (_np, _nl)))
+                con.execute("INSERT INTO seed_flags(name) VALUES('tepper_500_v1')")
+                con.commit()
+                print('  טעפפער יצחק: 5000 → 500 (%d שותפויות, %d התחייבויות)' % (_np, _nl))
+            else:
+                print('  טעפפער יצחק: נמצאו %d כרטיסים — לא תוקן' % len(_td))
+    except Exception as e:
+        print('  tepper 500 error:', e)
     # מאיר (21.11.2026): "כולל הוראה אין להם יששכר זבולון… גם גלזר יצא מכולל חצות, יכולים למחוק אותו גם מכולל
     # חצות" — גלזר מנחם דוד (כולל הוראה בלבד) יוצא מיששכר־זבולון: המקום אצל הזבולון שלו (שמעון עשור) נשאר פתוח
     # עם הסכום, כמו "יצא מהכולל", כדי לשבץ לו אברך של כולל חצות.
