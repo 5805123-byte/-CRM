@@ -3631,6 +3631,42 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  jacobsen 2025 error:', e)
+    # מאיר (21.11.2026): "שניאור זלמן מיטמן הפסיק את היששכר זבולון שלו מא' כסליו, אז תוציא אותו מהרשימה של
+    # יששכר זבולון" — כל השותפויות הפעילות שלו נסגרות מ-א' כסלו תשפ"ז (11.11.2026), וגם ההתחייבות החודשית
+    # ליששכר־זבולון. האברך עצמו נשאר בכולל (בלי זבולון). החיוב האוטומטי שלו — לא נוגעים (מאיר יחליט מהכרטיס).
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='mittman_sz_iz_end_v1'").fetchone():
+            _ds = con.execute("SELECT id FROM donors WHERE TRIM(last)='מיטמן' AND TRIM(first) LIKE 'שניאור%'").fetchall()
+            if len(_ds) == 1:
+                _did = _ds[0]['id']
+                _hd = 'א\' כסלו תשפ"ז'
+                _ps = con.execute("SELECT id,avreich FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0", (_did,)).fetchall()
+                for _p in _ps:
+                    con.execute("UPDATE partners SET active=0, ended_date='2026-11-11' WHERE id=?", (_p['id'],))
+                    iz_log(con, _p['avreich'] or '', _did, '❌ הפסיק את יששכר־זבולון עם האברך %s — מ%s' % (_p['avreich'] or '', _hd),
+                           now_iso(), _hd)
+                _np = con.execute("UPDATE pledges SET status='הסתיים' WHERE donor_id=? AND COALESCE(monthly,0)=1 "
+                                  "AND category LIKE '%יששכר%' AND COALESCE(status,'')<>'הסתיים'", (_did,)).rowcount
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (_did, today_iso(), 'הערה', '❌ הפסיק את יששכר־זבולון מ%s (%d אברכים, %d התחייבויות)' % (_hd, len(_ps), _np)))
+                # "וגם הוא מפסיק את התרומות החודשיות — מעכשיו אם הוא לא תורם אין לו חוב, לציין בהערות בכרטיס"
+                # — "הפסיק לתרום כל חודש" מ-11.11.2026 (ההתחייבות נסגרת, אין חוב, יורד מ"חסר" ו"לא עבר", והחיוב
+                # האוטומטי נעצר), ושורה בהערות של הכרטיס
+                _nt = 'הפסיק את היששכר־זבולון ואת התרומות החודשיות מא\' כסלו תשפ"ז (11.11.2026) — מאז אין לו חוב'
+                con.execute("UPDATE donors SET monthly_stop='2026-11-11', monthly_stop_charge=1, monthly_stop_note=?, "
+                            "notes=TRIM(COALESCE(notes,'') || CASE WHEN COALESCE(TRIM(notes),'')='' THEN '' ELSE char(10) END || ?) WHERE id=?",
+                            (_nt, _nt, _did))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (_did, today_iso(), 'הערה', '⛔ הפסיק לתרום כל חודש — מ-11/11/2026 · ' + _nt))
+                _mo = mstop_apply(con, _did)
+                print('  מיטמן שניאור זלמן: הפסיק לתרום כל חודש — חיוב אוטומטי שנעצר: %s %s' % (_mo.get('sched'), _mo.get('sched_err') or ''))
+                con.execute("INSERT INTO seed_flags(name) VALUES('mittman_sz_iz_end_v1')")
+                con.commit()
+                print('  מיטמן שניאור זלמן: יששכר־זבולון הסתיים מא\' כסלו — %d אברכים, %d התחייבויות' % (len(_ps), _np))
+            else:
+                print('  מיטמן שניאור זלמן: נמצאו %d כרטיסים — לא בוצע' % len(_ds))
+    except Exception as e:
+        print('  mittman iz end error:', e)
     # מאיר: "תכין לי טיוטה עם הקבלה שלו" — הקבלה האמריקאית מופקת כאן (מספר אמיתי, נשמרת בחלון הקבלות),
     # ונכנסת כטיוטה בג'ימייל (IMAP APPEND לתיקיית הטיוטות) כתשובה למייל שלו. שום דבר לא נשלח — מאיר שולח בעצמו.
     try:
