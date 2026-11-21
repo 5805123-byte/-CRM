@@ -8577,6 +8577,125 @@ def ensure_schema():
     except Exception as e:
         print('  alis avreich error:', e)
 
+    # מאיר (22.11.2026): רשימת יששכר־זבולון תשפ"ז — מהדף המודפס עם התיקונים בכתב יד (אושר: "סופי v4").
+    # "הרשימה הקודמת שיש לך, אל תוציא אותה… שיהיה כתוב תשפ"ה–תשפ"ו. ועל זה תכתוב יששכר זבולון תשפ"ז, ושזה יהיה
+    # בראשי עכשיו". לכן: (1) צילום של כל השותפויות הפעילות כמו שהן היום → iz_snapshot_5785_5786 (בלי פאק דוד —
+    # "תמחק אותו גם מהקודם"); (2) תאריך תשפ"ז לכל שורה שכתב לידה תאריך (התאמה יחידה בלבד, לפי האברך והזבולון);
+    # (3) המלי/פינטער → $1,000; (4) פאק דוד (רוזנפלד יצחק) וקאהן אורי (גולדמן) הפסיקו מא' כסלו תשפ"ז;
+    # (5) X = "לא להדפסה" → ברשימת התעודות "לא צריך"; (6) שמות שנמחקו לגמרי — יצאו מהכולל.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_5787_v1'").fetchone():
+            _hk = 'א\' כסלו תשפ"ז'
+            _seed = json.load(open(os.path.join(HERE, 'iz_5787_seed.json'), encoding='utf-8'))
+
+            def _dn(r):
+                return re.sub(r'\s+', ' ', ((r['last'] or '') + ' ' + (r['first'] or '')).strip())
+
+            def _act(av=None):
+                q_ = ("SELECT p.id, p.donor_id, TRIM(p.avreich) av, p.start_date, p.amount, p.share, d.last, d.first "
+                      "FROM partners p JOIN donors d ON d.id=p.donor_id WHERE COALESCE(p.active,1)<>0 AND COALESCE(TRIM(p.avreich),'')<>''")
+                return con.execute(q_ + (" AND TRIM(p.avreich)=?" if av else "") + " ORDER BY TRIM(p.avreich), d.last",
+                                   ((av,) if av else ())).fetchall()
+
+            def _cert(pid, **kw):
+                try:
+                    s_ = json.loads(kv_get(con, 'izcert:p%d' % pid, '') or '{}')
+                except ValueError:
+                    s_ = {}
+                if not isinstance(s_, dict):
+                    s_ = {}
+                for k_, v_ in kw.items():
+                    if v_ is None:
+                        s_.pop(k_, None)
+                    else:
+                        s_[k_] = v_
+                kv_set(con, 'izcert:p%d' % pid, json.dumps(s_, ensure_ascii=False)[:4000])
+
+            _pak = [r for r in _act() if 'פאק' in (r['last'] or '') and 'דוד' in (r['first'] or '') and r['av'].startswith('רוזנפלד יצחק')]
+            _kahn = [r for r in _act() if re.search(r'קאהן|קהן|כהן', r['last'] or '') and 'אורי' in (r['first'] or '') and r['av'].startswith('גולדמן')]
+            _skip = {r['id'] for r in _pak}
+            # (1) הרשימה הקודמת — נשמרת כמו שהיא
+            _snap = [{'pid': r['id'], 'did': r['donor_id'], 'av': r['av'], 'donor': _dn(r), 'start': r['start_date'] or '',
+                      'amt': str(r['share'] if r['share'] not in (None, '') else (r['amount'] or ''))}
+                     for r in _act() if r['id'] not in _skip and _is_avreich(r['av'])]
+            kv_set(con, 'iz_snapshot_5785_5786', json.dumps({'title': 'יששכר־זבולון תשפ"ה–תשפ"ו', 'at': today_iso(), 'rows': _snap},
+                                                            ensure_ascii=False))
+            # (2)+(3)+(5) התאריכים, הסכום ו"לא להדפסה"
+            _miss, _upd, _nc = [], 0, 0
+            _byav = {}
+            for e_ in _seed:
+                _byav.setdefault(e_['av'], []).append(e_)
+            for av_, es_ in _byav.items():
+                cands = _act(av_)
+                for e_ in es_:
+                    if not e_['new'] and not e_['nocert'] and not (av_ == 'המלי שמואל חיים'):
+                        continue
+                    hit = [r for r in cands if _dn(r) == re.sub(r'\s+', ' ', e_['donor'])]
+                    if not hit:
+                        w_ = e_['donor'].split()
+                        hit = [r for r in cands if w_ and (r['last'] or '').strip() == w_[0]
+                               and (len(w_) < 2 or (r['first'] or '').strip().startswith(w_[1]))]
+                    if not hit and len(cands) == 1 and len(es_) == 1:
+                        hit = cands
+                    if len(hit) != 1:
+                        _miss.append('%s ← %s (%d)' % (av_, e_['donor'], len(hit)))
+                        continue
+                    p_ = hit[0]
+                    kw_ = {}
+                    if e_['new'] and e_['new'] != (p_['start_date'] or '').strip():
+                        _pt = e_['new'].split()
+                        try:
+                            _g = heb_greg_year(' '.join(_pt[:-1]), _pt[-1]) if len(_pt) >= 3 else None
+                        except Exception:
+                            _g = None
+                        _rn = heb_anniv(e_['new'])
+                        con.execute("UPDATE partners SET start_date=?, start_greg=?, renew_date=? WHERE id=?",
+                                    (e_['new'], _g.isoformat() if _g else None, _rn.isoformat() if _rn else None, p_['id']))
+                        iz_log(con, av_, p_['donor_id'], '📅 יששכר־זבולון תשפ"ז: מתאריך %s (קודם: %s)' % (e_['new'], p_['start_date'] or '—'),
+                               now_iso(), e_['new'])
+                        kw_['date'] = None
+                        _upd += 1
+                    if av_ == 'המלי שמואל חיים' and abs(_amt2(p_['share'] or p_['amount']) - 1000) > 0.5:
+                        con.execute("UPDATE partners SET amount='1000', share=CASE WHEN COALESCE(share,'')='' THEN share ELSE '1000' END WHERE id=?",
+                                    (p_['id'],))
+                        iz_log(con, av_, p_['donor_id'], '✏️ הסכום תוקן ל-$1,000 לחודש', now_iso(), '')
+                        kw_['amt'] = None
+                    if e_['nocert']:
+                        kw_['st'] = 'no'
+                        _nc += 1
+                    if kw_:
+                        _cert(p_['id'], **kw_)
+            # (4) פאק דוד וקאהן אורי הפסיקו מא' כסלו תשפ"ז — השותפות נסגרת וההתחייבות החודשית ליששכר־זבולון מסתיימת
+            _ended = []
+            for r in _pak + _kahn:
+                con.execute("UPDATE partners SET active=0, ended_date='2026-11-11' WHERE id=?", (r['id'],))
+                iz_log(con, r['av'], r['donor_id'], '❌ %s הפסיק את יששכר־זבולון עם האברך %s — מ%s' % (_dn(r), r['av'], _hk),
+                       now_iso(), _hk)
+                _np = con.execute("UPDATE pledges SET status='הסתיים' WHERE donor_id=? AND COALESCE(monthly,0)=1 "
+                                  "AND category LIKE '%יששכר%' AND COALESCE(status,'')<>'הסתיים'", (r['donor_id'],)).rowcount
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (r['donor_id'], today_iso(), 'הערה', '❌ הפסיק את יששכר־זבולון עם %s מ%s (%d התחייבויות נסגרו)' % (r['av'], _hk, _np)))
+                _ended.append(_dn(r))
+            # (6) שמות שנמחקו לגמרי — לא בכולל (רק אם אין להם שותף פעיל)
+            _gone = []
+            for anm in ('חשין יט נחמן', 'מרגליות שמעון בריצ', 'פרידמן צמח דוד'):
+                a_ = con.execute("SELECT id,ended FROM avreichim WHERE TRIM(name)=?", (anm,)).fetchone()
+                if not a_ or (a_['ended'] or '').strip() or _act(anm):
+                    continue
+                con.execute("UPDATE avreichim SET ended=? WHERE id=?", (today_iso(), a_['id']))
+                iz_log(con, anm, None, '🚪 %s — לא בכולל (נמחק ברשימת תשפ"ז)' % anm, now_iso(), '')
+                _gone.append(anm)
+            # עליס — "ההערה 'תאריך לידה' נמחקה"
+            con.execute("UPDATE avreichim SET note=TRIM(REPLACE(COALESCE(note,''),'תאריך לידה: 21.11.1969','')) WHERE name='עליס שמואל דוד'")
+            kv_set(con, 'iz_5787_report', json.dumps({'updated': _upd, 'nocert': _nc, 'miss': _miss, 'ended': _ended,
+                                                      'gone': _gone, 'snapshot': len(_snap)}, ensure_ascii=False))
+            con.execute("INSERT INTO seed_flags(name) VALUES('iz_5787_v1')")
+            con.commit()
+            print('  יששכר־זבולון תשפ"ז: %d תאריכים, %d לא להדפסה, הסתיימו: %s, יצאו: %s, לא הותאמו: %s'
+                  % (_upd, _nc, ', '.join(_ended) or '—', ', '.join(_gone) or '—', '; '.join(_miss) or '—'))
+    except Exception as e:
+        print('  iz 5787 error:', e)
+
     # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
     # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
     try:
@@ -23661,6 +23780,24 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'izslips.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/iz-certs':
             return self._send(200, open(os.path.join(STATIC, 'izcerts.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/iz-5786':
+            return self._send(200, open(os.path.join(STATIC, 'izarchive.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/iz/archive':
+            # 📂 הרשימה הקודמת — "יששכר־זבולון תשפ"ה–תשפ"ו", כמו שהייתה לפני רשימת תשפ"ז (לקריאה ולהדפסה)
+            con = db()
+            try:
+                try:
+                    snap = json.loads(kv_get(con, 'iz_snapshot_5785_5786', '') or '{}')
+                except ValueError:
+                    snap = {}
+                try:
+                    rep = json.loads(kv_get(con, 'iz_5787_report', '') or '{}')
+                except ValueError:
+                    rep = {}
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'title': snap.get('title') or 'יששכר־זבולון תשפ"ה–תשפ"ו',
+                                    'at': snap.get('at') or '', 'rows': snap.get('rows') or [], 'report': rep})
         if self.path.split('?')[0] == '/api/recurring':
             # 🔁 הוראות הקבע — מאיר: "איפה אני מוצא במערכת בחיובים את כל ההוראות קבע החודשיות?"
             # אוטורייז (חי, מנויי ARB) + בנק ווסט (מהסנכרון). ?donor=ID — רק של התורם הזה (לכרטיס).
