@@ -24214,6 +24214,11 @@ class H(BaseHTTPRequestHandler):
                 g.setdefault('log', []).append({'date': r['date'] or '', 'hdate': r['hdate'] or '',
                                                 'text': r['text'] or '',
                                                 'donor': names.get(r['donor_id'], '')})
+            # מאיר (21.11.2026): "כל האברכים של כולל הוראה לא אמורים להיות ברשימה של יששכר זבולון בכלל…
+            # יששכר זבולון זה רק לכולל חצות" — אברך שרשום רק בכולל הוראה (סדר 'הוראה') לא נכנס לרשימה הזו.
+            # (מי שיש לו בכל זאת שותפות פעילה — נשאר מוצג, כדי שהשותפות לא תיעלם בשקט; מאיר יחליט עליה)
+            for k in [k for k, g in out.items() if (g.get('seder') or '').strip() == 'הוראה' and not g['holders']]:
+                del out[k]
             rows = sorted(out.values(), key=lambda x: (_srt(x['last']), _srt(x['first'])))
             pend = []
             try:
