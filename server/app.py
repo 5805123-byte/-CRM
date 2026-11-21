@@ -3667,6 +3667,27 @@ def ensure_schema():
                 print('  מיטמן שניאור זלמן: נמצאו %d כרטיסים — לא בוצע' % len(_ds))
     except Exception as e:
         print('  mittman iz end error:', e)
+    # מאיר (21.11.2026): "כולל הוראה אין להם יששכר זבולון… גם גלזר יצא מכולל חצות, יכולים למחוק אותו גם מכולל
+    # חצות" — גלזר מנחם דוד (כולל הוראה בלבד) יוצא מיששכר־זבולון: המקום אצל הזבולון שלו (שמעון עשור) נשאר פתוח
+    # עם הסכום, כמו "יצא מהכולל", כדי לשבץ לו אברך של כולל חצות.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='glazer_iz_out_v1'").fetchone():
+            _gz = con.execute("SELECT name FROM avreichim WHERE name LIKE '%גלזר%' AND name LIKE '%מנחם%'").fetchall()
+            if len(_gz) == 1:
+                _anm = _gz[0]['name']
+                _hd = greg_to_heb_full(today_iso()) or today_iso()
+                _held = con.execute("SELECT id,donor_id FROM partners WHERE TRIM(avreich)=? AND COALESCE(active,1)<>0", (_anm,)).fetchall()
+                for _x in _held:
+                    con.execute("UPDATE partners SET avreich='', start_date='', renew_date=NULL, prev_avreich=?, prev_ended=? WHERE id=?",
+                                (_anm, _hd, _x['id']))
+                    iz_log(con, _anm, _x['donor_id'], '🚪 האברך %s יצא מיששכר־זבולון (כולל הוראה בלבד) — המקום פתוח לאברך של כולל חצות' % _anm,
+                           now_iso(), _hd)
+                con.execute("UPDATE avreichim SET seder='הוראה' WHERE name=?", (_anm,))
+                con.execute("INSERT INTO seed_flags(name) VALUES('glazer_iz_out_v1')")
+                con.commit()
+                print('  גלזר מנחם דוד: יצא מיששכר־זבולון — %d מקומות נפתחו' % len(_held))
+    except Exception as e:
+        print('  glazer iz out error:', e)
     # מאיר: "תכין לי טיוטה עם הקבלה שלו" — הקבלה האמריקאית מופקת כאן (מספר אמיתי, נשמרת בחלון הקבלות),
     # ונכנסת כטיוטה בג'ימייל (IMAP APPEND לתיקיית הטיוטות) כתשובה למייל שלו. שום דבר לא נשלח — מאיר שולח בעצמו.
     try:
