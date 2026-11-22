@@ -20846,6 +20846,10 @@ def mk_bachur_enforce(con):
     if not bg:
         return {'blocked': 0, 'opened': 0, 'checked': 0, 'empty': True}
     rows = [c for c in _mk.clients() if _mk.visible(c) and str(c.get('groupId') or '') in bg]
+    try:
+        held = set(json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or [])
+    except Exception:
+        held = set()
     for c in rows:
         cid = c.get('id')
         if not cid:
@@ -20858,17 +20862,52 @@ def mk_bachur_enforce(con):
                 _mk.set_blocked(cid, True, MK_BACHUR_BLOCK_REASON)
                 con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                             (cid, now_iso(), 'block', '⛔ נחסם אוטומטית — בחור בלי מנוי בתוקף'))
-                blocked += 1
+                held.add(str(cid)); blocked += 1
             elif valid and is_blk and reason == MK_BACHUR_BLOCK_REASON:
                 _mk.set_blocked(cid, False, '')
                 con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                             (cid, now_iso(), 'block', '✅ נפתח אוטומטית — יש מנוי בתוקף'))
-                opened += 1
+                held.discard(str(cid)); opened += 1
+            elif not valid and is_blk and reason == MK_BACHUR_BLOCK_REASON:
+                held.add(str(cid))      # עדיין חסום — לשמור במעקב לפתיחה מהירה
         except Exception as e:
             print('  mk bachur enforce error:', cid, e)
-    if blocked or opened:
-        con.commit()
+    kv_set(con, 'mk_bachur_blocked', json.dumps(sorted(held)))
+    con.commit()
     return {'blocked': blocked, 'opened': opened, 'checked': len(rows), 'empty': False}
+
+
+def mk_bachur_fast_open(con):
+    """פתיחה כמעט-מיידית: בודק רק את הבחורים שאנחנו חסמנו (רשימה קצרה), טרי מהמקווה —
+    מי שכבר יש לו מנוי בתוקף נפתח מיד (כל ~10 שניות), בלי לחכות לסבב המלא."""
+    import mikveh as _mk
+    try:
+        held = [str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or [])]
+    except Exception:
+        held = []
+    if not held:
+        return 0
+    opened = 0
+    keep = []
+    for cid in held:
+        try:
+            c = _mk.client(cid, max_age=0)        # טרי — בלי מטמון
+            if not c or not c.get('isBlocked') or str(c.get('blockReason') or '') != MK_BACHUR_BLOCK_REASON:
+                continue                            # כבר לא חסום על ידינו — מסירים מהמעקב
+            if _mk_sub_valid(c):
+                _mk.set_blocked(cid, False, '')
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'block', '✅ נפתח מיד — נטען מנוי בתוקף'))
+                opened += 1
+            else:
+                keep.append(cid)
+        except Exception as e:
+            print('  mk bachur fast-open error:', cid, e)
+            keep.append(cid)
+    if opened:
+        kv_set(con, 'mk_bachur_blocked', json.dumps(sorted(set(keep))))
+        con.commit()
+    return opened
 
 
 def con_open_blocks(cid, except_id):
@@ -21087,6 +21126,21 @@ def _mk_diff_loop():
                 if waiting:
                     MK_DIFF_STATE['closed'] += mk_diff_check(only_blocked=True) or 0
                     MK_DIFF_STATE['last_fast'] = now_iso()
+                # 🧍 פתיחה כמעט-מיידית של בחורים שטענו מנוי (כל ~10 שניות) — רק אם המתג פעיל
+                try:
+                    con = db()
+                    try:
+                        if mk_bachur_block_cfg(con)['on']:
+                            op = mk_bachur_fast_open(con)
+                            if op:
+                                stc = mk_bachur_block_cfg(con)
+                                kv_set(con, 'mk_bachur_block', json.dumps({'on': True, 'last': now_iso(),
+                                        'blocked': stc['blocked'], 'opened': op, 'error': ''}, ensure_ascii=False))
+                                con.commit()
+                    finally:
+                        con.close()
+                except Exception as e:
+                    print('  mk bachur fast-open loop error:', e)
         except Exception as e:
             print('  mk diff loop error:', e)
             MK_DIFF_STATE.update(last_error=str(e)[:200], error_at=now_iso())

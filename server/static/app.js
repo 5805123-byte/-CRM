@@ -1959,7 +1959,7 @@ async function mkAuditWin(){
         <div class="mktpl" style="margin-top:6px"><button class="btn sm" id="bn_go">📺 הוסף לכל הבחורים ברשימה</button><span id="bn_st" class="mksub"></span></div></div>
       <div class="audpick" style="margin-top:8px;border-color:#e0b4b4;background:#fff6f4">
         <div class="mksub" style="font-weight:700;margin-bottom:2px">⛔ חסימה אוטומטית — בחור בלי מנוי נחסם, עם מנוי נפתח</div>
-        <div class="mksub">כש<b>פעיל</b>: המערכת בודקת ברקע (כל ~5 דק') וחוסמת בחורים בלי מנוי בתוקף, ופותחת את מי שהיא חסמה כשמסדירים מנוי. חסימות ידניות לא נגעים בהן.</div>
+        <div class="mksub">כש<b>פעיל</b>: חוסם בחורים בלי מנוי בתוקף (בדיקה ברקע כל ~5 דק'), ו<b>פותח כמעט מיד — תוך שניות</b> את מי שטוען מנוי (בדיקה כל ~10 שניות). חסימות ידניות לא נגעים בהן.</div>
         <div class="mktpl" style="margin-top:6px">
           <button class="btn sm${MKAUD.bblock.on?'':' ghost'}" id="bb_toggle">${MKAUD.bblock.on?'🟢 פעיל — לכבות':'⚪ כבוי — להפעיל'}</button>
           <button class="btn sm ghost" id="bb_run">▶️ הרץ עכשיו ידנית</button>
