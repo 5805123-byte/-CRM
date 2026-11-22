@@ -7543,7 +7543,7 @@ function cardDetails(d,body){
     ${catTotalsHTML(d)}
     ${give}
     ${(d.parnes||[]).length?`<details class="dsec"><summary>🗓️ ימים משובצים (פרנס / קפה / בוקר)${(d.parnes||[]).some(p=>p.status==='suggested')?' <small class="suggn">· יש הצעה לשנה הבאה</small>':''}</summary><div id="parnes"></div></details>`:''}
-    ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון — האברכים שהוא מחזיק</summary><div id="partners"></div>
+    ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון תשפ"ז — האברכים שהוא מחזיק</summary><div id="partners"></div>
       <button type="button" class="opnlink" id="pa_opn" style="margin-top:6px">➕ הוסף עוד אברך</button>
       <div class="opnbox hidden" id="pa_opnbox">
         <div class="addrow"><select id="pa_name">${avOpts('')}</select></div>
@@ -10157,7 +10157,7 @@ function renderPartners(d){
   const shtarHTML=`<div class="izshtar iztop"><div class="izshtar-t">📄 שטר שותפות יששכר־זבולון:</div><div class="avfiles">${izfiles.map(fileChip).join('')||'<span class="hintxt">אין שטר עדיין — אפשר להעלות כאן</span>'}<label class="filebtn">📎 העלה שטר הסכם<input type="file" accept="application/pdf,image/*" class="pshtar" hidden></label></div></div>`;
   // מאיר: "כשתורם מחזיק 2 אברכים או יותר — שכל האברכים שלומדים בשבילו יהיו
   // על אותו דף, גם במקופל וגם בדף שלם, וגם כל אברך דף בפני עצמו"
-  el.innerHTML=shtarHTML+(act.length>1?`<div class="addrow" style="margin-bottom:8px">
+  el.innerHTML=shtarHTML+izYearsCardHTML(d)+(act.length>1?`<div class="addrow" style="margin-bottom:8px">
       <button class="btn sm ghost izall" data-mode="full">🕯️ דף אחד לתורם — כל ${act.length} האברכים</button>
       <button class="btn sm ghost izsep">🕯️ כל אברך בדף נפרד</button></div>`:'')
     +act.map(p=>`<div class="pledge" style="flex-direction:column;align-items:stretch;gap:4px">
@@ -10249,6 +10249,7 @@ function renderPartners(d){
   });
   // מאיר: "אני מנסה להכניס תאריך התחלה… זה נותן לי לכתוב לבד במקום לבחור מהלוח
   // העברי" — התאריך העברי נבחר מיום/חודש/שנה, והלועזי מתעדכן ממנו (וגם להפך).
+  fillIzYearsCard(d);
   el.querySelectorAll('.izall').forEach(b=>b.onclick=()=>window.open('/iz-slips?donor='+d.id+'&grp=donor&mode='+b.dataset.mode,'_blank'));
   el.querySelectorAll('.izsep').forEach(b=>b.onclick=()=>window.open('/iz-slips?donor='+d.id+'&grp=av&mode=full','_blank'));
   el.querySelectorAll('.pstart').forEach(box=>box.querySelectorAll('select').forEach(sl=>sl.onchange=async()=>{
@@ -12321,8 +12322,8 @@ async function renderAvByAv(){
   const st=AVSTAT||{total:AVLIST.length,free:AVLIST.filter(a=>!a.holders.length).length};
   const q2=String(q||'').trim();
   const rows=avFiltered();
-  view.innerHTML=`<h2 class="izttl" style="margin:2px 2px 8px;color:#7a1f1f;font-size:20px">יששכר־זבולון תשפ"ז</h2><div class="avbar">
-      <button class="btn sm ghost" id="avizold" title="הרשימה הקודמת — כמו שהייתה לפני תשפ&quot;ז (לקריאה ולהדפסה)">📂 תשפ"ה–תשפ"ו</button><button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcertlist" title="רשימה לפי שמות האברכים — לעריכה ולהדפסה, למי להכין תעודה חדשה">📜 רשימה לתעודות</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button>
+  view.innerHTML=izYearHeadHTML()+`<div class="avbar">
+      <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcertlist" title="רשימה לפי שמות האברכים — לעריכה ולהדפסה, למי להכין תעודה חדשה">📜 רשימה לתעודות</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button>
       <button class="btn sm" id="avymbtn2" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל ·
       <button type="button" id="avfreebtn" class="avfreebtn${avFreeOnly?' on':''}"
@@ -12343,8 +12344,50 @@ async function renderAvByAv(){
   document.getElementById('avprint').onclick=()=>{avView='avprint';render();};
   document.getElementById('avslips').onclick=()=>window.open('/iz-slips','_blank');
   document.getElementById('avcertlist').onclick=()=>window.open('/iz-certs','_blank');
-  document.getElementById('avizold').onclick=()=>window.open('/iz-5786','_blank');
+  wireIzYears();
   wireByAv();
+}
+// 📅 מאיר: "תכניס למערכת ברשימת האברכים בלשונית יששכר זבולון על תשפ"ז, שהקודם יישאר ויהיה כתוב עליו בכותרת
+// תשפ"ה–תשפ"ו… שרואים מיד באופן יפה, וגם אצל התורמים… וגם אצל כל תורם בכרטיס שלו ממתי מתחיל החדש, והיסטוריה של
+// השנים הקודמות — הכל מסונכרן". הרשימה החדשה = השותפויות עצמן (אותו מקור לאברכים, לתורמים ולכרטיס); הקודמת =
+// הצילום שנשמר לפני העדכון (/api/iz/archive).
+let IZARCH=null, izOld=false, izOldBy='av';
+async function loadIzArch(){if(IZARCH)return IZARCH;try{const r=await api('GET','/api/iz/archive');if(r&&r.ok)IZARCH=r;}catch(e){}return IZARCH||{rows:[]};}
+function izYearHeadHTML(){
+  return `<div class="izyears"><button type="button" class="izy${izOld?'':' on'}" data-old="0"><b>🤝 יששכר־זבולון תשפ"ז</b><small>הרשימה הנוכחית</small></button>
+    <button type="button" class="izy${izOld?' on':''}" data-old="1"><b>📂 תשפ"ה–תשפ"ו</b><small>הרשימה הקודמת</small></button></div>`;}
+function wireIzYears(){view.querySelectorAll('.izy').forEach(b=>b.onclick=()=>{const o=b.dataset.old==='1';if(o===izOld)return;izOld=o;render();});}
+async function renderIzOld(){
+  view.innerHTML=izYearHeadHTML()+'<div class="cnt">טוען את הרשימה הקודמת…</div>';wireIzYears();
+  const r=await loadIzArch(), rows=(r.rows||[]).slice(), q2=String(q||'').trim();
+  const L=rows.filter(x=>!q2||(x.av+' '+x.donor).includes(q2));
+  const key=izOldBy==='av'?'av':'donor', oth=izOldBy==='av'?'donor':'av';
+  L.sort((a,b)=>(a[key]||'').localeCompare(b[key]||'','he')||(a[oth]||'').localeCompare(b[oth]||'','he'));
+  let prev='',i=0;
+  const body=L.map(x=>{const first=x[key]!==prev;prev=x[key];if(first)i++;
+    return `<tr class="${first?'izof':''}"><td class="n">${first?i:''}</td><td><b>${first?esc(x[key]):''}</b></td><td${izOldBy==='donor'?'':` class="izodn" data-did="${x.did}"`}>${esc(x[oth])}</td><td>${esc(x.start||'')}</td><td>${esc(x.amt||'')}</td></tr>`;}).join('');
+  view.innerHTML=izYearHeadHTML()+`<div class="avbar"><button class="btn sm${izOldBy==='av'?'':' ghost'}" data-by="av">👨‍🎓 לפי אברכים</button><button class="btn sm${izOldBy==='donor'?'':' ghost'}" data-by="donor">👥 לפי תורמים</button><button class="btn sm ghost" id="izoprint">🖨️ הדפסה</button></div>
+    <div class="avstat">📂 <b>${esc(r.title||'יששכר־זבולון תשפ"ה–תשפ"ו')}</b> · ${new Set(rows.map(x=>x.av)).size} אברכים · ${rows.length} שותפויות · כמו שהייתה לפני תשפ"ז — לקריאה בלבד${q2?` · מוצגים ${L.length}`:''}</div>
+    <div class="avwrap"><table class="izotbl"><thead><tr><th>#</th><th>${izOldBy==='av'?'האברך':'התורם (הזבולון)'}</th><th>${izOldBy==='av'?'הזבולון':'האברך'}</th><th>מתאריך</th><th>סכום</th></tr></thead><tbody>${body||'<tr><td colspan="5" class="empty">אין תוצאות</td></tr>'}</tbody></table></div>`;
+  wireIzYears();
+  view.querySelectorAll('[data-by]').forEach(b=>b.onclick=()=>{izOldBy=b.dataset.by;renderIzOld();});
+  document.getElementById('izoprint').onclick=()=>window.open('/iz-5786','_blank');
+  view.querySelectorAll('.izodn').forEach(t=>t.onclick=()=>{const d=DB.find(y=>y.id==t.dataset.did);if(d)openDonor(d);});
+}
+// בכרטיס התורם: ממתי מתחיל היששכר־זבולון החדש (תשפ"ז), ומה היה בשנים הקודמות
+function izYearsCardHTML(d){
+  const act=(d.partners||[]).filter(p=>p.active!=0&&String(p.avreich||'').trim());
+  const now=act.length?`<div class="izyc"><div class="izyc-t">📅 יששכר־זבולון תשפ"ז — ממתי מתחיל</div>${act.map(p=>`<div class="izrow"><span>👨‍🎓 ${esc(p.avreich)}</span><b>${esc(p.start_date||'—')}</b></div>`).join('')}</div>`:'';
+  return now+`<div class="izyc old" id="izyc_old_${d.id}"></div>`;
+}
+async function fillIzYearsCard(d){
+  const r=await loadIzArch();const el=document.getElementById('izyc_old_'+d.id);if(!el)return;
+  const mine=(r.rows||[]).filter(x=>x.did==d.id);
+  const past=(d.partners||[]).filter(p=>p.active==0&&String(p.avreich||'').trim());
+  if(!mine.length&&!past.length){el.remove();return;}
+  el.innerHTML=`<details><summary>📂 שנים קודמות (${mine.length+past.length})</summary>
+    ${mine.length?`<div class="izyc-s">תשפ"ה–תשפ"ו</div>`+mine.map(x=>`<div class="izrow"><span>👨‍🎓 ${esc(x.av)}</span><b>${esc(x.start||'—')}${x.amt?(' · '+esc(x.amt)):''}</b></div>`).join(''):''}
+    ${past.length?`<div class="izyc-s">הסתיימו</div>`+past.map(p=>`<div class="izrow"><span>👨‍🎓 ${esc(p.avreich)}</span><b>${esc(p.start_date||'?')} — עד ${esc(p.ended_date?(hebOfIso(p.ended_date)||gregLabel(p.ended_date)):'?')}</b></div>`).join(''):''}</details>`;
 }
 // יומן כללי — כל שינוי שנעשה ביששכר־זבולון, אצל כל האברכים והתורמים
 async function renderIzHistory(){
@@ -12692,11 +12735,12 @@ function renderAvTable(){
 }
 function renderAvreich(){
   chips.innerHTML='';
+  if(izOld) return renderIzOld();
   if(avView==='table') return renderAvTable();
   if(avView==='byav') return renderAvByAv();
   if(avView==='avprint') return renderAvPrint();
   const totalAv=DB.reduce((s,d)=>s+(d.partners||[]).filter(p=>p.active!=0).length,0);
-  view.innerHTML=`<div class="avbar">
+  view.innerHTML=izYearHeadHTML()+`<div class="avbar">
       ${avSortSel('avsort')}
       <button class="btn sm" id="avbyavbtn">👨‍🎓 לפי אברכים</button><button class="btn sm" id="avtablebtn">🖨️ טבלה</button><button class="btn sm" id="avrptbtn" style="background:#6b1d1d;color:#fff">📊 דו"ח תשלומים</button>
       <button class="btn sm" id="avymbtn" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
@@ -12727,6 +12771,7 @@ function renderAvreich(){
   document.getElementById('avtablebtn').onclick=()=>{avView='table';render();};
   document.getElementById('avbyavbtn').onclick=()=>{avView='byav';render();};
   document.getElementById('avymbtn').onclick=avYmOpen;
+  wireIzYears();
   sortSel.onchange=()=>{avSort=sortSel.value;paintList();};
   paintList();
 }
