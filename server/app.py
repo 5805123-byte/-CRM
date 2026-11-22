@@ -8897,6 +8897,22 @@ def ensure_schema():
             print('  גדולד: ₪1,000 לחודש — %d שותפויות תוקנו' % len(_gp))
     except Exception as e:
         print('  gdold ils error:', e)
+    # מאיר (22.11.2026): "יעקב מוקאי יש לו 3 אברכים, שכחת את שמעון ברלב" — ברלב כן בתעודה (בטל ה"לא להדפסה")
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='berlev_cert_v1'").fetchone():
+            for _p in con.execute("SELECT p.id FROM partners p JOIN donors d ON d.id=p.donor_id WHERE COALESCE(p.active,1)<>0 "
+                                  "AND TRIM(p.avreich) LIKE 'ברלב%' AND d.last LIKE '%מוקאי%'").fetchall():
+                try:
+                    _s = json.loads(kv_get(con, 'izcert:p%d' % _p['id'], '') or '{}')
+                except ValueError:
+                    _s = {}
+                if isinstance(_s, dict) and _s.get('st') == 'no':
+                    _s.pop('st', None)
+                    kv_set(con, 'izcert:p%d' % _p['id'], json.dumps(_s, ensure_ascii=False))
+            con.execute("INSERT INTO seed_flags(name) VALUES('berlev_cert_v1')")
+            con.commit()
+    except Exception as e:
+        print('  berlev cert error:', e)
 
     # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
     # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
