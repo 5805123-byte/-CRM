@@ -24176,6 +24176,22 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'izcerts.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/iz-5786':
             return self._send(200, open(os.path.join(STATIC, 'izarchive.html'), 'rb').read(), 'text/html')
+        m = re.match(r'/api/iz/doc/(full|print)$', self.path.split('?')[0])
+        if m:
+            # 📄 מאיר: "שלח לי את כל היששכר זבולון המעודכן כולל מה שלא להדפסה, ותכניס את זה למערכת, וגם את להדפסה
+            # תכניס למערכת בשם 'להדפסה שטרות כסליו תשפ"ז'" — שני הקבצים שמורים בשרת (לא בתיקייה הציבורית), רק למחוברים
+            fn = {'full': ('iz_5787_full.pdf', 'יששכר זבולון תשפז - רשימה מלאה.pdf'),
+                  'print': ('iz_5787_print_kislev.pdf', 'להדפסה שטרות כסליו תשפז.pdf')}[m.group(1)]
+            fp = os.path.join(HERE, 'iz_docs', fn[0])
+            if not os.path.isfile(fp):
+                return self._send(404, {'ok': False, 'error': 'הקובץ לא נמצא'})
+            data = open(fp, 'rb').read()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/pdf')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Content-Disposition', "inline; filename*=UTF-8''" + urllib.parse.quote(fn[1]))
+            self.end_headers(); self.wfile.write(data)
+            return
         if self.path.split('?')[0] == '/api/iz/archive':
             # 📂 הרשימה הקודמת — "יששכר־זבולון תשפ"ה–תשפ"ו", כמו שהייתה לפני רשימת תשפ"ז (לקריאה ולהדפסה)
             con = db()

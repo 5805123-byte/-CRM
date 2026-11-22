@@ -12323,6 +12323,7 @@ async function renderAvByAv(){
   const q2=String(q||'').trim();
   const rows=avFiltered();
   view.innerHTML=izYearHeadHTML()+`<div class="avbar">
+      <button class="btn sm" id="avizfull" title="כל רשימת יששכר־זבולון תשפ&quot;ז, כולל מה שלא להדפסה">📄 רשימה מלאה תשפ"ז</button><button class="btn sm" id="avizprt" style="background:#7a1f1f;color:#fff" title="הטבלה שנשלחה לגרפיקאי — רק מי שמקבל תעודה">🖨️ להדפסה שטרות כסליו תשפ"ז</button>
       <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcertlist" title="רשימה לפי שמות האברכים — לעריכה ולהדפסה, למי להכין תעודה חדשה">📜 רשימה לתעודות</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button>
       <button class="btn sm" id="avymbtn2" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל ·
@@ -12345,6 +12346,8 @@ async function renderAvByAv(){
   document.getElementById('avslips').onclick=()=>window.open('/iz-slips','_blank');
   document.getElementById('avcertlist').onclick=()=>window.open('/iz-certs','_blank');
   wireIzYears();
+  document.getElementById('avizfull').onclick=()=>window.open('/api/iz/doc/full','_blank');
+  document.getElementById('avizprt').onclick=()=>window.open('/api/iz/doc/print','_blank');
   wireByAv();
 }
 // 📅 מאיר: "תכניס למערכת ברשימת האברכים בלשונית יששכר זבולון על תשפ"ז, שהקודם יישאר ויהיה כתוב עליו בכותרת
