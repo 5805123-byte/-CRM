@@ -8843,6 +8843,44 @@ def ensure_schema():
             print('  יששכר־זבולון תשפ"ז — תיקונים 2: ' + ' · '.join(_log))
     except Exception as e:
         print('  iz 5787 v2 error:', e)
+    # מאיר (22.11.2026): "עליס 700 כמו אצל אחרים, פאק דוד וקאהן אורי הפסיקו לגמרי ולא משלמים יותר — תעדכן במערכת
+    # שלנו גם" — עליס ← מוקאי $700; פאק דוד וקאהן אורי: "הפסיק לתרום כל חודש" מא' כסלו תשפ"ז (11.11.2026) — אין חוב
+    # מאז, ההתחייבויות נסגרות והחיוב האוטומטי נעצר (כמו אצל מיטמן שניאור זלמן), ושורה בהערות בכרטיס.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_5787_v3'").fetchone():
+            _log = []
+            _n = con.execute("UPDATE partners SET amount='700' WHERE TRIM(avreich)='עליס שמואל דוד' AND COALESCE(TRIM(amount),'')='' "
+                             "AND COALESCE(active,1)<>0 AND donor_id IN (SELECT id FROM donors WHERE last LIKE '%מוקאי%')").rowcount
+            _log.append('עליס $700: %d' % _n)
+            _stop = {}
+            for r in con.execute("SELECT DISTINCT d.id, d.last, d.first, TRIM(p.avreich) av FROM partners p JOIN donors d ON d.id=p.donor_id "
+                                 "WHERE p.ended_date='2026-11-11'").fetchall():
+                if ('פאק' in (r['last'] or '') and 'דוד' in (r['first'] or '') and (r['av'] or '').startswith('רוזנפלד יצחק')) or \
+                   (re.search(r'קאהן|קהן|כהן', r['last'] or '') and 'אורי' in (r['first'] or '') and (r['av'] or '').startswith('גולדמן')):
+                    _stop[r['id']] = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+            for _did, _nm in _stop.items():
+                _nt = 'הפסיק לגמרי את יששכר־זבולון ואת התרומות החודשיות מא\' כסלו תשפ"ז (11.11.2026) — מאז אין לו חוב'
+                con.execute("UPDATE donors SET monthly_stop='2026-11-11', monthly_stop_charge=1, monthly_stop_note=?, "
+                            "notes=TRIM(COALESCE(notes,'') || CASE WHEN COALESCE(TRIM(notes),'')='' THEN '' ELSE char(10) END || ?) WHERE id=?",
+                            (_nt, _nt, _did))
+                con.execute("UPDATE pledges SET status='הסתיים' WHERE donor_id=? AND COALESCE(monthly,0)=1 AND COALESCE(status,'')<>'הסתיים'", (_did,))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (_did, today_iso(), 'הערה', '⛔ הפסיק לתרום כל חודש — מ-11/11/2026 · ' + _nt))
+                _mo = mstop_apply(con, _did)
+                _log.append('%s: הפסיק (חיוב אוטומטי: %s %s)' % (_nm, _mo.get('sched'), _mo.get('sched_err') or ''))
+            if len(_stop) < 2:
+                _log.append('⚠️ נמצאו רק %d מתוך 2 (פאק דוד / קאהן אורי)' % len(_stop))
+            try:
+                _rep = json.loads(kv_get(con, 'iz_5787_report', '') or '{}')
+            except ValueError:
+                _rep = {}
+            _rep['fix3'] = _log
+            kv_set(con, 'iz_5787_report', json.dumps(_rep, ensure_ascii=False))
+            con.execute("INSERT INTO seed_flags(name) VALUES('iz_5787_v3')")
+            con.commit()
+            print('  יששכר־זבולון תשפ"ז — תיקונים 3: ' + ' · '.join(_log))
+    except Exception as e:
+        print('  iz 5787 v3 error:', e)
 
     # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
     # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
