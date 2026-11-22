@@ -1897,6 +1897,7 @@ async function mkAuditWin(){
     MKAUD.hasCfg=!!(sg&&sg.ok&&sg.cfg&&(sg.cfg.groups||[]).length);
     MKAUD.bg=new Set((sg&&sg.ok&&Array.isArray(sg.bachur_groups))?sg.bachur_groups.map(String):[]);  // קבוצות הבחורים שמאיר בחר
     MKAUD.bgDirty=false;
+    MKAUD.bblock=(sg&&sg.ok&&sg.bachur_block)?sg.bachur_block:{on:false,last:'',blocked:0,opened:0};  // חסימה אוטומטית
   }
   const regSet=MKAUD.reg, esc_=esc;
   const gName=id=>{const g=MK.groups.find(z=>z.id===id);return g?g.name:'—';};
@@ -1950,7 +1951,20 @@ async function mkAuditWin(){
     hint=`<div class="mksub" style="margin:2px 2px 6px;color:#555">בחורים שבקבוצת בחורים, <b>אין להם מנוי בתוקף</b>, ו<b>נכנסו בפועל בחודש האחרון</b> (כלומר נכנסים בפעימות בלי מנוי). בחר אילו קבוצות הן "בחורים":</div>
       <div class="audpick"><div class="mksub" style="font-weight:700;margin-bottom:4px">🧍 קבוצות הבחורים — <span id="bg_cnt">${MKAUD.bg.size}</span> נבחרו</div>
         <div class="bgwrap">${sorted.map(g=>`<label class="bgchk${MKAUD.bg.has(String(g.id))?' on':''}"><input type="checkbox" data-bg="${esc_(g.id)}"${MKAUD.bg.has(String(g.id))?' checked':''}><span>${esc_(g.name)}</span></label>`).join('')}</div>
-        <div class="mktpl" style="margin-top:8px"><button class="btn sm" id="bg_save">💾 שמור קבוצות בחורים</button><span id="bg_st" class="mksub"${MKAUD.bgDirty?' style="color:#b9770e"':''}>${MKAUD.bgDirty?'יש שינוי שלא נשמר':''}</span></div></div>`;
+        <div class="mktpl" style="margin-top:8px"><button class="btn sm" id="bg_save">💾 שמור קבוצות בחורים</button><span id="bg_st" class="mksub"${MKAUD.bgDirty?' style="color:#b9770e"':''}>${MKAUD.bgDirty?'יש שינוי שלא נשמר':''}</span></div></div>
+      <div class="audpick" style="margin-top:8px">
+        <div class="mksub" style="font-weight:700;margin-bottom:2px">📺 הודעת מסך לכל הבחורים ברשימה</div>
+        <div class="mksub">מתווספת למה שכבר כתוב אצל כל אחד — <b>בלי למחוק</b>. (למשל: "אין מנוי בתוקף — יש להסדיר מנוי בכולל").</div>
+        <textarea id="bn_txt" rows="2" class="audq" style="width:100%;box-sizing:border-box;margin-top:6px" placeholder="טקסט ההודעה שתופיע במסך המקווה"></textarea>
+        <div class="mktpl" style="margin-top:6px"><button class="btn sm" id="bn_go">📺 הוסף לכל הבחורים ברשימה</button><span id="bn_st" class="mksub"></span></div></div>
+      <div class="audpick" style="margin-top:8px;border-color:#e0b4b4;background:#fff6f4">
+        <div class="mksub" style="font-weight:700;margin-bottom:2px">⛔ חסימה אוטומטית — בחור בלי מנוי נחסם, עם מנוי נפתח</div>
+        <div class="mksub">כש<b>פעיל</b>: המערכת בודקת ברקע (כל ~5 דק') וחוסמת בחורים בלי מנוי בתוקף, ופותחת את מי שהיא חסמה כשמסדירים מנוי. חסימות ידניות לא נגעים בהן.</div>
+        <div class="mktpl" style="margin-top:6px">
+          <button class="btn sm${MKAUD.bblock.on?'':' ghost'}" id="bb_toggle">${MKAUD.bblock.on?'🟢 פעיל — לכבות':'⚪ כבוי — להפעיל'}</button>
+          <button class="btn sm ghost" id="bb_run">▶️ הרץ עכשיו ידנית</button>
+          <span id="bb_st" class="mksub">${MKAUD.bblock.last?('נבדק '+esc_(mkDate(MKAUD.bblock.last))+' · נחסמו '+(MKAUD.bblock.blocked||0)+' · נפתחו '+(MKAUD.bblock.opened||0)):'עדיין לא רץ'}</span>
+        </div></div>`;
   }
   const fnone=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();
   const empty=fnone?'אין לקוח שמתאים לסינון.':T==='group'?'✓ כל הלקוחות בקבוצות רגילות.':T==='special'?'אין לקוחות עם מחיר מיוחד.':T==='noted'?'אין הערות.':T==='everyone'?'אין לקוחות.':T==='bachur'?(MKAUD.bg.size?'✓ אין בחורים בלי מנוי שנכנסו החודש.':'בחר קבוצות בחורים למעלה כדי לראות את הבדיקה.'):'✓ אין חריגים — כולם בקבוצה רגילה ובלי מחיר מיוחד.';
@@ -1989,6 +2003,33 @@ async function mkAuditWin(){
     const y=await api('POST','/api/mikveh/bachur_groups',{ids:[...MKAUD.bg]});s.disabled=false;
     if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ לא נשמר';}return;}
     MKAUD.bgDirty=false;if(st){st.style.color='#1e7a3c';st.textContent='✓ נשמר';}toast('נשמר ✓');};}
+  // 📺 הודעת מסך לכל הבחורים ברשימה (append)
+  {const g=document.getElementById('bn_go');if(g)g.onclick=async()=>{const txt=(document.getElementById('bn_txt').value||'').trim();const st=document.getElementById('bn_st');
+    if(!txt){if(st){st.style.color='#c0392b';st.textContent='חסר טקסט';}return;}
+    const ids=curList.map(c=>c.id);
+    if(!ids.length){if(st){st.style.color='#c0392b';st.textContent='אין בחורים ברשימה';}return;}
+    if(!await uiConfirm('להוסיף את ההודעה למסך של '+ids.length+' בחורים?\n"'+txt+'"\n(מתווסף למה שכבר כתוב, בלי למחוק)','📺 כן, להוסיף','ביטול'))return;
+    g.disabled=true;if(st){st.style.color='#555';st.textContent='⏳ מוסיף…';}
+    const y=await api('POST','/api/mikveh/bachur_note',{ids,text:txt});g.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'לא נוסף');}return;}
+    if(st){st.style.color='#1e7a3c';st.textContent='✓ נוסף ל-'+y.done+(y.skipped?' · דילג על '+y.skipped+' (כבר קיים)':'')+(y.failed?' · '+y.failed+' נכשלו':'');}
+    toast('ההודעה נוספה ✓');document.getElementById('bn_txt').value='';};}
+  // ⛔ חסימה אוטומטית — מתג + הרצה ידנית
+  {const t=document.getElementById('bb_toggle');if(t)t.onclick=async()=>{const turnOn=!MKAUD.bblock.on;const st=document.getElementById('bb_st');
+    if(turnOn&&!await uiConfirm('להפעיל חסימה אוטומטית?\nמעכשיו בחורים בלי מנוי בתוקף ייחסמו אוטומטית (ומי שמסדיר מנוי ייפתח). זה ירוץ מיד ואז כל ~5 דקות.','🟢 כן, להפעיל','ביטול'))return;
+    t.disabled=true;if(st){st.style.color='#555';st.textContent='⏳…';}
+    const y=await api('POST','/api/mikveh/bachur_block',{on:turnOn});t.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
+    MKAUD.bblock.on=y.on;MKAUD.bblock.last=y.last;MKAUD.bblock.blocked=y.blocked;MKAUD.bblock.opened=y.opened;
+    toast(y.on?'חסימה אוטומטית הופעלה':'חסימה אוטומטית כובתה');mkAuditWin();};}
+  {const r=document.getElementById('bb_run');if(r)r.onclick=async()=>{const st=document.getElementById('bb_st');
+    if(!await uiConfirm('להריץ עכשיו? ייחסמו בחורים בלי מנוי בתוקף וייפתחו מי שיש להם מנוי (מתוך הקבוצות שסימנת).','▶️ כן, להריץ','ביטול'))return;
+    r.disabled=true;if(st){st.style.color='#555';st.textContent='⏳ רץ…';}
+    const y=await api('POST','/api/mikveh/bachur_block',{run:true});r.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
+    MKAUD.bblock.last=y.last;MKAUD.bblock.blocked=y.blocked;MKAUD.bblock.opened=y.opened;
+    if(st){st.style.color='#1e7a3c';st.textContent='✓ נחסמו '+y.blocked+' · נפתחו '+y.opened;}
+    toast('הורץ ✓');};}
   {const b=document.getElementById('aud_self');if(b)b.onclick=()=>mkSelfGroupOpen();}
   {const b=document.getElementById('aud_renew');if(b)b.onclick=()=>mkRenewCheck();}
   const cv=document.getElementById('aud_csv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';

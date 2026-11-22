@@ -20600,6 +20600,72 @@ def mk_msg_remove(cur, txt):
     return re.sub(r'\s{2,}', ' ', out).strip(' ·')
 
 
+# 🧍 מאיר: "בחורים" — קבוצות שמאיר מגדיר. בחור בלי מנוי בתוקף נחסם, עם מנוי נפתח. חסימה אוטומטית ברקע,
+# ברירת מחדל כבויה. הסימון שחוסם אוטומטית נבדל מחסימה ידנית לפי הנימוק, כדי שלא נשחרר חסימות ידניות.
+MK_BACHUR_BLOCK_REASON = 'אין מנוי בתוקף — בחורים (אוטומטי)'
+
+
+def mk_bachur_group_ids(con):
+    try:
+        return set(str(x) for x in (json.loads(kv_get(con, 'mk_bachur_groups', '') or '[]') or []))
+    except Exception:
+        return set()
+
+
+def mk_bachur_block_cfg(con):
+    try:
+        c = json.loads(kv_get(con, 'mk_bachur_block', '') or '{}') or {}
+    except Exception:
+        c = {}
+    return {'on': bool(c.get('on')), 'last': c.get('last') or '', 'blocked': int(c.get('blocked') or 0),
+            'opened': int(c.get('opened') or 0), 'error': c.get('error') or ''}
+
+
+def _mk_sub_valid(c):
+    """מנוי בתוקף — subscriptionEndDate היום או בעתיד"""
+    e = str(c.get('subscriptionEndDate') or '')[:10]
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', e):
+        return False
+    try:
+        return datetime.date.fromisoformat(e) >= il_now().date()
+    except Exception:
+        return False
+
+
+def mk_bachur_enforce(con):
+    """חוסם בחורים (בקבוצות שנבחרו) בלי מנוי בתוקף, ופותח את מי שחסמנו אוטומטית וכעת יש לו מנוי.
+    רק קריאה/כתיבה למקווה דרך set_blocked. לא נוגע בחסימות ידניות (נימוק אחר)."""
+    import mikveh as _mk
+    bg = mk_bachur_group_ids(con)
+    blocked = opened = 0
+    if not bg:
+        return {'blocked': 0, 'opened': 0, 'checked': 0, 'empty': True}
+    rows = [c for c in _mk.clients() if _mk.visible(c) and str(c.get('groupId') or '') in bg]
+    for c in rows:
+        cid = c.get('id')
+        if not cid:
+            continue
+        valid = _mk_sub_valid(c)
+        is_blk = bool(c.get('isBlocked'))
+        reason = str(c.get('blockReason') or '')
+        try:
+            if not valid and not is_blk:
+                _mk.set_blocked(cid, True, MK_BACHUR_BLOCK_REASON)
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'block', '⛔ נחסם אוטומטית — בחור בלי מנוי בתוקף'))
+                blocked += 1
+            elif valid and is_blk and reason == MK_BACHUR_BLOCK_REASON:
+                _mk.set_blocked(cid, False, '')
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'block', '✅ נפתח אוטומטית — יש מנוי בתוקף'))
+                opened += 1
+        except Exception as e:
+            print('  mk bachur enforce error:', cid, e)
+    if blocked or opened:
+        con.commit()
+    return {'blocked': blocked, 'opened': opened, 'checked': len(rows), 'empty': False}
+
+
 def con_open_blocks(cid, except_id):
     """עוד חובות הפרש פתוחים שבגללם הוא חסום (חוץ מזה) — אם יש, לא משחררים עדיין"""
     con = db()
@@ -20793,6 +20859,20 @@ def _mk_diff_loop():
                 MK_DIFF_STATE['closed'] += mk_diff_check() or 0
                 last_full = time.time()
                 MK_DIFF_STATE['last_full'] = now_iso()
+                # 🧍 חסימה אוטומטית של בחורים בלי מנוי — רק אם מאיר הפעיל את המתג (ברירת מחדל כבוי)
+                try:
+                    con = db()
+                    try:
+                        if mk_bachur_block_cfg(con)['on']:
+                            r = mk_bachur_enforce(con)
+                            st = mk_bachur_block_cfg(con)
+                            kv_set(con, 'mk_bachur_block', json.dumps({'on': True, 'last': now_iso(),
+                                    'blocked': r['blocked'], 'opened': r['opened'], 'error': ''}, ensure_ascii=False))
+                            con.commit()
+                    finally:
+                        con.close()
+                except Exception as e:
+                    print('  mk bachur auto-block error:', e)
             else:
                 con = db()
                 try:
@@ -27334,10 +27414,11 @@ class H(BaseHTTPRequestHandler):
                     bachur = json.loads(kv_get(con3, 'mk_bachur_groups', '') or '[]') or []
                 except Exception:
                     bachur = []
+                bblock = mk_bachur_block_cfg(con3)
             finally:
                 con3.close()
             return self._send(200, {'ok': True, 'cfg': cfg, 'groups': groups, 'link': link, 'log': log, 'reqs': reqs, 'locked': lk, 'accounts': accts,
-                                    'keva_cats': keva_cats, 'bachur_groups': bachur,
+                                    'keva_cats': keva_cats, 'bachur_groups': bachur, 'bachur_block': bblock,
                                     'new_reqs': sum(1 for r in reqs if r['status'] == 'new'),
                                     'month': {'n': month['n'], 'fees': month['f']}})
         if self.path.split('?')[0] == '/api/mikveh/selfgroup_lock':
@@ -30845,6 +30926,57 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'n': len(ids)})
+        if self.path == '/api/mikveh/bachur_note':
+            # ✍️ מאיר: "הערה שהם יראו בלקוח לכל הבחורים — שלא ימחוק את ההערה שלהם" — מתווסף להודעת המסך (message),
+            # בלי למחוק מה שכתוב. אם הטקסט כבר שם — מדלגים. על הלקוחות שנשלחו ברשימה (הבחורים שמוצגים).
+            import mikveh as _mk
+            text = re.sub(r'\s+', ' ', str(b.get('text') or '')).strip()[:200]
+            ids = [str(x) for x in (b.get('ids') or []) if re.fullmatch(r'[0-9a-fA-F-]{36}', str(x))][:400]
+            if not text:
+                return self._send(200, {'ok': False, 'error': 'חסר טקסט להערה'})
+            if not ids:
+                return self._send(200, {'ok': False, 'error': 'אין בחורים ברשימה'})
+            con = db()
+            done = skip = fail = 0
+            try:
+                for cid in ids:
+                    try:
+                        full = _mk.client(cid)
+                        cur = str(full.get('message') or '').strip()
+                        if text in cur:
+                            skip += 1
+                            continue
+                        _mk.update_client(cid, {'message': mk_msg_add(cur, text)})
+                        con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                    (cid, now_iso(), 'note', '📺 נוספה הודעת מסך: ' + text))
+                        done += 1
+                    except Exception as e:
+                        print('  mk bachur note error:', cid, e)
+                        fail += 1
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'done': done, 'skipped': skip, 'failed': fail})
+        if self.path == '/api/mikveh/bachur_block':
+            # ⛔ חסימה אוטומטית של בחורים בלי מנוי (מתג — כבוי כברירת מחדל). run=הפעלה ידנית עכשיו.
+            con = db()
+            try:
+                cfg = mk_bachur_block_cfg(con)
+                if 'on' in b:
+                    cfg['on'] = bool(b.get('on'))
+                res = None
+                if b.get('run') or ('on' in b and cfg['on']):
+                    res = mk_bachur_enforce(con)
+                    cfg['last'] = now_iso(); cfg['blocked'] = res['blocked']; cfg['opened'] = res['opened']; cfg['error'] = ''
+                kv_set(con, 'mk_bachur_block', json.dumps({'on': cfg['on'], 'last': cfg['last'],
+                        'blocked': cfg['blocked'], 'opened': cfg['opened'], 'error': cfg['error']}, ensure_ascii=False))
+                con.commit()
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'on': cfg['on'], 'last': cfg['last'],
+                                    'blocked': cfg['blocked'], 'opened': cfg['opened'], 'ran': res is not None})
         if self.path == '/api/mikveh/group_sync':
             # 🗂️ "לערוך הכל ביחד": ההגדרות והשעות של מנוי אחד → לכל המנויים שנבחרו (כל אחד נשאר עם השם והמחיר שלו)
             import mikveh as _mk
