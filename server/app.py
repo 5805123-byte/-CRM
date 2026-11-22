@@ -20807,7 +20807,7 @@ def mk_msg_remove(cur, txt):
 
 # 🧍 מאיר: "בחורים" — קבוצות שמאיר מגדיר. בחור בלי מנוי בתוקף נחסם, עם מנוי נפתח. חסימה אוטומטית ברקע,
 # ברירת מחדל כבויה. הסימון שחוסם אוטומטית נבדל מחסימה ידנית לפי הנימוק, כדי שלא נשחרר חסימות ידניות.
-MK_BACHUR_BLOCK_REASON = 'אין מנוי בתוקף — בחורים (אוטומטי)'
+MK_BACHUR_DEFAULT_REASON = 'אין מנוי בתוקף — בחורים (אוטומטי)'
 
 
 def mk_bachur_group_ids(con):
@@ -20822,8 +20822,20 @@ def mk_bachur_block_cfg(con):
         c = json.loads(kv_get(con, 'mk_bachur_block', '') or '{}') or {}
     except Exception:
         c = {}
+    reason = re.sub(r'\s+', ' ', str(c.get('reason') or '')).strip()[:200] or MK_BACHUR_DEFAULT_REASON
+    try:
+        secs = int(c.get('secs') or 5)
+    except Exception:
+        secs = 5
+    secs = max(3, min(120, secs))     # לא פחות מ-3 שניות (עומס על המקווה), לא יותר מ-2 דקות
     return {'on': bool(c.get('on')), 'last': c.get('last') or '', 'blocked': int(c.get('blocked') or 0),
-            'opened': int(c.get('opened') or 0), 'error': c.get('error') or ''}
+            'opened': int(c.get('opened') or 0), 'error': c.get('error') or '', 'reason': reason, 'secs': secs}
+
+
+def mk_bachur_block_save(con, cfg):
+    kv_set(con, 'mk_bachur_block', json.dumps({'on': bool(cfg.get('on')), 'last': cfg.get('last') or '',
+            'blocked': int(cfg.get('blocked') or 0), 'opened': int(cfg.get('opened') or 0), 'error': cfg.get('error') or '',
+            'reason': cfg.get('reason') or MK_BACHUR_DEFAULT_REASON, 'secs': int(cfg.get('secs') or 5)}, ensure_ascii=False))
 
 
 def _mk_sub_valid(c):
@@ -20842,6 +20854,7 @@ def mk_bachur_enforce(con):
     רק קריאה/כתיבה למקווה דרך set_blocked. לא נוגע בחסימות ידניות (נימוק אחר)."""
     import mikveh as _mk
     bg = mk_bachur_group_ids(con)
+    the_reason = mk_bachur_block_cfg(con)['reason']   # הנוסח שמאיר כתב (מזהה את החסימות שלנו)
     blocked = opened = 0
     if not bg:
         return {'blocked': 0, 'opened': 0, 'checked': 0, 'empty': True}
@@ -20857,19 +20870,20 @@ def mk_bachur_enforce(con):
         valid = _mk_sub_valid(c)
         is_blk = bool(c.get('isBlocked'))
         reason = str(c.get('blockReason') or '')
+        ours = str(cid) in held or reason == the_reason
         try:
             if not valid and not is_blk:
-                _mk.set_blocked(cid, True, MK_BACHUR_BLOCK_REASON)
+                _mk.set_blocked(cid, True, the_reason)
                 con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                             (cid, now_iso(), 'block', '⛔ נחסם אוטומטית — בחור בלי מנוי בתוקף'))
                 held.add(str(cid)); blocked += 1
-            elif valid and is_blk and reason == MK_BACHUR_BLOCK_REASON:
+            elif valid and is_blk and ours:
                 _mk.set_blocked(cid, False, '')
                 con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                             (cid, now_iso(), 'block', '✅ נפתח אוטומטית — יש מנוי בתוקף'))
                 held.discard(str(cid)); opened += 1
-            elif not valid and is_blk and reason == MK_BACHUR_BLOCK_REASON:
-                held.add(str(cid))      # עדיין חסום — לשמור במעקב לפתיחה מהירה
+            elif not valid and is_blk and ours:
+                held.add(str(cid))      # עדיין חסום על ידינו — לשמור במעקב לפתיחה מהירה
         except Exception as e:
             print('  mk bachur enforce error:', cid, e)
     kv_set(con, 'mk_bachur_blocked', json.dumps(sorted(held)))
@@ -20879,8 +20893,9 @@ def mk_bachur_enforce(con):
 
 def mk_bachur_fast_open(con):
     """פתיחה כמעט-מיידית: בודק רק את הבחורים שאנחנו חסמנו (רשימה קצרה), טרי מהמקווה —
-    מי שכבר יש לו מנוי בתוקף נפתח מיד (כל ~10 שניות), בלי לחכות לסבב המלא."""
+    מי שכבר יש לו מנוי בתוקף נפתח מיד, בלי לחכות לסבב המלא."""
     import mikveh as _mk
+    the_reason = mk_bachur_block_cfg(con)['reason']
     try:
         held = [str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or [])]
     except Exception:
@@ -20892,7 +20907,7 @@ def mk_bachur_fast_open(con):
     for cid in held:
         try:
             c = _mk.client(cid, max_age=0)        # טרי — בלי מטמון
-            if not c or not c.get('isBlocked') or str(c.get('blockReason') or '') != MK_BACHUR_BLOCK_REASON:
+            if not c or not c.get('isBlocked') or str(c.get('blockReason') or '') != the_reason:
                 continue                            # כבר לא חסום על ידינו — מסירים מהמעקב
             if _mk_sub_valid(c):
                 _mk.set_blocked(cid, False, '')
@@ -21103,16 +21118,15 @@ def _mk_diff_loop():
                 MK_DIFF_STATE['closed'] += mk_diff_check() or 0
                 last_full = time.time()
                 MK_DIFF_STATE['last_full'] = now_iso()
-                # 🧍 חסימה אוטומטית של בחורים בלי מנוי — רק אם מאיר הפעיל את המתג (ברירת מחדל כבוי)
+                # 🧍 חסימת בחורים בלי מנוי — סבב מלא כל 5 דקות, רק אם המתג פעיל (ברירת מחדל כבוי)
                 try:
                     con = db()
                     try:
-                        if mk_bachur_block_cfg(con)['on']:
+                        cfg = mk_bachur_block_cfg(con)
+                        if cfg['on']:
                             r = mk_bachur_enforce(con)
-                            st = mk_bachur_block_cfg(con)
-                            kv_set(con, 'mk_bachur_block', json.dumps({'on': True, 'last': now_iso(),
-                                    'blocked': r['blocked'], 'opened': r['opened'], 'error': ''}, ensure_ascii=False))
-                            con.commit()
+                            cfg['last'] = now_iso(); cfg['blocked'] = r['blocked']; cfg['opened'] = r['opened']; cfg['error'] = ''
+                            mk_bachur_block_save(con, cfg); con.commit()
                     finally:
                         con.close()
                 except Exception as e:
@@ -21126,25 +21140,33 @@ def _mk_diff_loop():
                 if waiting:
                     MK_DIFF_STATE['closed'] += mk_diff_check(only_blocked=True) or 0
                     MK_DIFF_STATE['last_fast'] = now_iso()
-                # 🧍 פתיחה כמעט-מיידית של בחורים שטענו מנוי (כל ~10 שניות) — רק אם המתג פעיל
-                try:
-                    con = db()
-                    try:
-                        if mk_bachur_block_cfg(con)['on']:
-                            op = mk_bachur_fast_open(con)
-                            if op:
-                                stc = mk_bachur_block_cfg(con)
-                                kv_set(con, 'mk_bachur_block', json.dumps({'on': True, 'last': now_iso(),
-                                        'blocked': stc['blocked'], 'opened': op, 'error': ''}, ensure_ascii=False))
-                                con.commit()
-                    finally:
-                        con.close()
-                except Exception as e:
-                    print('  mk bachur fast-open loop error:', e)
         except Exception as e:
             print('  mk diff loop error:', e)
             MK_DIFF_STATE.update(last_error=str(e)[:200], error_at=now_iso())
         time.sleep(MK_DIFF_FAST)
+
+
+def _mk_bachur_loop():
+    """🧍 פתיחה מהירה: רק את הבחורים שאנחנו חסמנו (רשימה קצרה), כל cfg.secs שניות — ורק כשהמתג פעיל.
+    לא עושה כלום כשהמתג כבוי או כשאין אף בחור חסום (לולאה זולה)."""
+    time.sleep(45)
+    while True:
+        secs = 5
+        try:
+            con = db()
+            try:
+                cfg = mk_bachur_block_cfg(con)
+                secs = cfg['secs']
+                if cfg['on']:
+                    op = mk_bachur_fast_open(con)
+                    if op:
+                        cfg['last'] = now_iso(); cfg['opened'] = op; cfg['error'] = ''
+                        mk_bachur_block_save(con, cfg); con.commit()
+            finally:
+                con.close()
+        except Exception as e:
+            print('  mk bachur fast loop error:', e)
+        time.sleep(max(3, min(120, secs)))
 
 
 def _mk_req_loop():
@@ -31241,23 +31263,46 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'done': done, 'skipped': skip, 'failed': fail})
         if self.path == '/api/mikveh/bachur_block':
             # ⛔ חסימה אוטומטית של בחורים בלי מנוי (מתג — כבוי כברירת מחדל). run=הפעלה ידנית עכשיו.
+            # reason=נוסח החסימה שמאיר כותב · secs=כל כמה שניות לבדוק פתיחה
+            import mikveh as _mk
             con = db()
             try:
                 cfg = mk_bachur_block_cfg(con)
+                old_reason = cfg['reason']
+                if 'reason' in b:
+                    cfg['reason'] = re.sub(r'\s+', ' ', str(b.get('reason') or '')).strip()[:200] or MK_BACHUR_DEFAULT_REASON
+                if 'secs' in b:
+                    try:
+                        cfg['secs'] = max(3, min(120, int(b.get('secs'))))
+                    except Exception:
+                        pass
                 if 'on' in b:
                     cfg['on'] = bool(b.get('on'))
+                # שינוי נוסח: לעדכן את מי שכבר חסום על ידינו, כדי שנמשיך לזהות אותו
+                retag = 0
+                if cfg['reason'] != old_reason:
+                    try:
+                        held = [str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or [])]
+                    except Exception:
+                        held = []
+                    for cid in held:
+                        try:
+                            cc = _mk.client(cid, max_age=0)
+                            if cc and cc.get('isBlocked') and str(cc.get('blockReason') or '') == old_reason:
+                                _mk.set_blocked(cid, True, cfg['reason']); retag += 1
+                        except Exception:
+                            pass
                 res = None
                 if b.get('run') or ('on' in b and cfg['on']):
                     res = mk_bachur_enforce(con)
                     cfg['last'] = now_iso(); cfg['blocked'] = res['blocked']; cfg['opened'] = res['opened']; cfg['error'] = ''
-                kv_set(con, 'mk_bachur_block', json.dumps({'on': cfg['on'], 'last': cfg['last'],
-                        'blocked': cfg['blocked'], 'opened': cfg['opened'], 'error': cfg['error']}, ensure_ascii=False))
+                mk_bachur_block_save(con, cfg)
                 con.commit()
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:300]})
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'on': cfg['on'], 'last': cfg['last'],
+            return self._send(200, {'ok': True, 'on': cfg['on'], 'last': cfg['last'], 'reason': cfg['reason'], 'secs': cfg['secs'],
                                     'blocked': cfg['blocked'], 'opened': cfg['opened'], 'ran': res is not None})
         if self.path == '/api/mikveh/group_sync':
             # 🗂️ "לערוך הכל ביחד": ההגדרות והשעות של מנוי אחד → לכל המנויים שנבחרו (כל אחד נשאר עם השם והמחיר שלו)
@@ -41281,6 +41326,7 @@ def serve():
     threading.Thread(target=_ym_sched_loop, daemon=True).start()
     threading.Thread(target=_mk_req_loop, daemon=True).start()
     threading.Thread(target=_mk_diff_loop, daemon=True).start()
+    threading.Thread(target=_mk_bachur_loop, daemon=True).start()
     threading.Thread(target=_nd_err_loop, daemon=True).start()
     threading.Thread(target=_push_loop, daemon=True).start()
     threading.Thread(target=_weekly_report_loop, daemon=True).start()
