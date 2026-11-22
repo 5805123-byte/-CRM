@@ -8881,6 +8881,22 @@ def ensure_schema():
             print('  יששכר־זבולון תשפ"ז — תיקונים 3: ' + ' · '.join(_log))
     except Exception as e:
         print('  iz 5787 v3 error:', e)
+    # מאיר (22.11.2026): "גדולד נותן רק 1000 שקל, זה 350 דולר" — השותפות של גדולד מרדכי פרץ עם רובינפיין חיים נחמן
+    # היא ₪1,000 לחודש (לא $1,000)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='gdold_ils_v1'").fetchone():
+            _gp = con.execute("SELECT p.id, p.donor_id, TRIM(p.avreich) av FROM partners p JOIN donors d ON d.id=p.donor_id "
+                              "WHERE COALESCE(p.active,1)<>0 AND TRIM(p.avreich) LIKE 'רובינפיין%' AND d.last LIKE '%גדולד%'").fetchall()
+            if len(_gp) == 1:
+                con.execute("UPDATE partners SET amount='1000', cur='₪' WHERE id=?", (_gp[0]['id'],))
+                iz_log(con, _gp[0]['av'], _gp[0]['donor_id'], '✏️ הסכום תוקן: ₪1,000 לחודש (לא $1,000)', now_iso(), '')
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (_gp[0]['donor_id'], today_iso(), 'הערה', '✏️ יששכר־זבולון עם %s: ₪1,000 לחודש (לא $1,000)' % _gp[0]['av']))
+            con.execute("INSERT INTO seed_flags(name) VALUES('gdold_ils_v1')")
+            con.commit()
+            print('  גדולד: ₪1,000 לחודש — %d שותפויות תוקנו' % len(_gp))
+    except Exception as e:
+        print('  gdold ils error:', e)
 
     # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
     # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
