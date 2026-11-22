@@ -8913,6 +8913,26 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  berlev cert error:', e)
+    # מאיר (22.11.2026): "אצל סימס תעלה את זה ל-700 דולר וגם במערכת שלנו תציין שזה 700" — שבע רחל סימס, עם עקשטיין גמליאל
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='sims_700_v1'").fetchone():
+            _sp = con.execute("SELECT p.id, p.donor_id, TRIM(p.avreich) av, p.amount FROM partners p JOIN donors d ON d.id=p.donor_id "
+                              "WHERE COALESCE(p.active,1)<>0 AND d.last LIKE '%סימס%' AND COALESCE(TRIM(p.avreich),'')<>''").fetchall()
+            if len(_sp) == 1:
+                con.execute("UPDATE partners SET amount='700', share=CASE WHEN COALESCE(share,'')='' THEN share ELSE '700' END WHERE id=?",
+                            (_sp[0]['id'],))
+                _n = con.execute("UPDATE pledges SET amount='700', permo='700' WHERE donor_id=? AND COALESCE(monthly,0)=1 "
+                                 "AND category LIKE '%יששכר%' AND COALESCE(status,'')<>'הסתיים'", (_sp[0]['donor_id'],)).rowcount
+                iz_log(con, _sp[0]['av'], _sp[0]['donor_id'], '✏️ הסכום עלה ל-$700 לחודש (קודם: $%s)' % (_sp[0]['amount'] or '—'), now_iso(), '')
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (_sp[0]['donor_id'], today_iso(), 'הערה', '✏️ יששכר־זבולון עם %s: $700 לחודש (%d התחייבויות עודכנו)' % (_sp[0]['av'], _n)))
+                print('  סימס: $700 לחודש')
+            else:
+                print('  סימס: נמצאו %d שותפויות — לא עודכן' % len(_sp))
+            con.execute("INSERT INTO seed_flags(name) VALUES('sims_700_v1')")
+            con.commit()
+    except Exception as e:
+        print('  sims 700 error:', e)
 
     # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
     # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
