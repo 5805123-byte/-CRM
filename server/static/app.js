@@ -12312,8 +12312,8 @@ async function renderAvByAv(){
   const st=AVSTAT||{total:AVLIST.length,free:AVLIST.filter(a=>!a.holders.length).length};
   const q2=String(q||'').trim();
   const rows=avFiltered();
-  view.innerHTML=`<div class="avbar">
-      <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcertlist" title="רשימה לפי שמות האברכים — לעריכה ולהדפסה, למי להכין תעודה חדשה">📜 רשימה לתעודות</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button>
+  view.innerHTML=`<h2 class="izttl" style="margin:2px 2px 8px;color:#7a1f1f;font-size:20px">יששכר־זבולון תשפ"ז</h2><div class="avbar">
+      <button class="btn sm ghost" id="avizold" title="הרשימה הקודמת — כמו שהייתה לפני תשפ&quot;ז (לקריאה ולהדפסה)">📂 תשפ"ה–תשפ"ו</button><button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcertlist" title="רשימה לפי שמות האברכים — לעריכה ולהדפסה, למי להכין תעודה חדשה">📜 רשימה לתעודות</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button>
       <button class="btn sm" id="avymbtn2" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל ·
       <button type="button" id="avfreebtn" class="avfreebtn${avFreeOnly?' on':''}"
@@ -12334,6 +12334,7 @@ async function renderAvByAv(){
   document.getElementById('avprint').onclick=()=>{avView='avprint';render();};
   document.getElementById('avslips').onclick=()=>window.open('/iz-slips','_blank');
   document.getElementById('avcertlist').onclick=()=>window.open('/iz-certs','_blank');
+  document.getElementById('avizold').onclick=()=>window.open('/iz-5786','_blank');
   wireByAv();
 }
 // יומן כללי — כל שינוי שנעשה ביששכר־זבולון, אצל כל האברכים והתורמים
@@ -15183,19 +15184,21 @@ async function avCard(name){
   const sec=t=>`<div class="mksec" style="margin-top:16px">${t}</div>`;
   const hold=(r.holders||[]).filter(h=>h.active!==0), old=(r.holders||[]).filter(h=>h.active===0);
   const st=r.stip||[], stT=st.reduce((a,x)=>a+(+x.amount||0)+(+x.extra||0),0);
+  // מאיר: "כולל הוראה אין להם יששכר זבולון וזה לא קשור בכלל" — אברך של כולל הוראה בלבד: בלי פרק יששכר־זבולון
+  const horaa=!hold.length&&((I.seder||'')==='הוראה'||(st.length>0&&st.every(x=>x.kollel==='הוראה')));
   const nd=r.nd||[], ndT=nd.reduce((a,x)=>a+(+x.amount||0),0);
   rs.innerHTML=`<button class="x" id="rx">✕</button>
     <h2>📇 ${esc(I.name||name)}</h2>
-    <div class="hintxt">${[I.seder?'סדר: '+esc(I.seder):'',I.started?'נכנס: '+esc(I.started):'',I.ended?'🚪 יצא מהכולל: '+esc(I.ended):''].filter(Boolean).join(' · ')||(I.found?'':'⚠️ לא נמצא ברשימת האברכים של יששכר־זבולון — מוצג לפי השם')}</div>
+    <div class="hintxt">${[I.seder?'סדר: '+esc(I.seder):'',I.started?'נכנס: '+esc(I.started):'',I.ended?'🚪 יצא מהכולל: '+esc(I.ended):''].filter(Boolean).join(' · ')||(I.found||horaa?'':'⚠️ לא נמצא ברשימת האברכים של יששכר־זבולון — מוצג לפי השם')}</div>
     ${I.note?`<div class="hintxt">📝 ${esc(I.note)}</div>`:''}
     ${sec('📞 פרטי קשר')}
     ${(r.phones||[]).map(p=>`<div class="remitem"><div class="ri"><b dir="ltr">${esc(p)}</b></div><div style="display:flex;gap:6px"><a class="btn sm" href="tel:${esc(p)}">📞 חיוג</a><a class="btn sm ghost" href="${wa(p)}" target="_blank" rel="noopener">💬 וואטסאפ</a></div></div>`).join('')
       ||(I.phone?`<div class="hintxt">טלפון: ${esc(I.phone)}</div>`:'<div class="hintxt">אין טלפון ברשימה</div>')}
     ${I.email?`<div class="remitem"><div class="ri"><b dir="ltr">${esc(I.email)}</b></div><a class="btn sm ghost" href="mailto:${esc(I.email)}">✉️ מייל</a></div>`:''}
     ${I.addr?`<div class="hintxt">🏠 ${esc(I.addr)}</div>`:''}
-    ${sec('🤝 יששכר־זבולון')}
-    ${hold.map(h=>`<div class="remitem"><div class="ri"><a href="#" class="avcd" data-did="${h.did}"><b>${esc(((h.last||'')+' '+(h.first||'')).trim()||'—')} ↗</b></a><br><small>${h.amount?'$'+esc(h.amount):''}${h.start_date?' · מ'+esc(h.start_date):''}</small></div></div>`).join('')||'<div class="hintxt">אין לו כרגע זבולון</div>'}
-    ${old.length?`<div class="hintxt">היו בעבר: ${old.map(h=>esc(((h.last||'')+' '+(h.first||'')).trim())+(h.ended_date?' (עד '+esc(h.ended_date)+')':'')).join(', ')}</div>`:''}
+    ${horaa?'':sec('🤝 יששכר־זבולון')}
+    ${horaa?'':hold.map(h=>`<div class="remitem"><div class="ri"><a href="#" class="avcd" data-did="${h.did}"><b>${esc(((h.last||'')+' '+(h.first||'')).trim()||'—')} ↗</b></a><br><small>${h.amount?'$'+esc(h.amount):''}${h.start_date?' · מ'+esc(h.start_date):''}</small></div></div>`).join('')||'<div class="hintxt">אין לו כרגע זבולון</div>'}
+    ${(!horaa&&old.length)?`<div class="hintxt">היו בעבר: ${old.map(h=>esc(((h.last||'')+' '+(h.first||'')).trim())+(h.ended_date?' (עד '+esc(h.ended_date)+')':'')).join(', ')}</div>`:''}
     ${sec(`🎓 מלגות <small>${st.length} · סה״כ ${stMoney(stT)}</small>`)}
     ${st.length?`<div class="mklist">${st.slice(0,24).map(x=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(stipLabel(x.kind,x.period))}</b><div class="mksub">${esc(x.kollel||'')}${x.note?' · '+esc(x.note):''}${+x.got?' · ✓ קיבל':''}</div></div><b>${stMoney((+x.amount||0)+(+x.extra||0))}</b></div>`).join('')}</div>${st.length>24?`<div class="hintxt">ועוד ${st.length-24}</div>`:''}`:'<div class="hintxt">אין מלגות רשומות</div>'}
     ${sec(`💳 תרומות בנדרים פלוס <small>${nd.length} · סה״כ ₪${Math.round(ndT).toLocaleString('he-IL')}</small>`)}
