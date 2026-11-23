@@ -20141,10 +20141,11 @@ def give_iz(con, did, b, amt=1000, cat='יששכר־זבולון', en='Yissachar
         sched_ok = False
     con.execute("INSERT INTO pledges(donor_id,category,amount,permo,monthly,status,note,date,since,cur) VALUES(?,?,?,?,1,?,?,?,?,'$')",
                 (did, cat, str(amt), str(amt), 'נתן', 'מהדף האונליין — %s, 12 חודשים מ-%s' % (he_title, today_iso()), today_iso(), today_iso()))
-    if tier == 'יששכר_זבולון':
+    # מאיר: "כל תרומה חודשית נכנסת לקוויטל של הכולל" — מעלים דרגה לפי הסדר, אף פעם לא מורידים
+    _prio = {'יששכר_זבולון': 3, 'קוויטל_101': 2, 'קוויטל_שבועי': 1}
+    _cur = (con.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone() or {'tier': ''})['tier'] or ''
+    if tier and _prio.get(tier, 0) > _prio.get(_cur, 0):
         con.execute("UPDATE donors SET tier=? WHERE id=?", (tier, did))
-    elif tier:   # לא מורידים דרגה של תורם קיים — רק למי שאין דרגה
-        con.execute("UPDATE donors SET tier=? WHERE id=? AND COALESCE(tier,'')=''", (tier, did))
     con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
                 (did, today_iso(), 'followup', '🤝 נרשם מהדף האונליין: %s, %s × 12. החודש הראשון נגבה; ' % (he_title, usd)
                  + ('הוראת קבע ל-11 חודשים הוקמה בבנק ווסט. ' if sched_ok else '⚠️ הוראת הקבע לא הוקמה — להקים ידנית ל-11 חודשים. ') + task))
