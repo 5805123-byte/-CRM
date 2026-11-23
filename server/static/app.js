@@ -3190,6 +3190,7 @@ function mkOpen(c){
       <div id="mkhist" data-id="${esc(c.id)}">${mkHistHTML(c.id)}</div>
       <div id="mkcvm" data-id="${esc(c.id)}"></div></div>
       <div data-ct="money">
+      <div id="mkdrain" data-id="${esc(c.id)}"></div>
       <div class="mksec" style="margin-top:4px">🧾 חובות <small>החובות שרשומים לו במקווה</small></div>
       <div id="mkdebt" data-id="${esc(c.id)}">${mkDebtHTML(c.id)}</div>
       <div class="mksec" style="margin-top:18px">💳 תשלומים <small>מה ששילם במקווה — במכשיר ובמערכת המקווה</small></div>
@@ -3204,7 +3205,7 @@ function mkOpen(c){
     document.getElementById('mkctabs').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;MKCT=b.dataset.t;ctShow();};
     if(pick||state)MKCT='grp';
     ctShow();
-    mkHistLoad(c.id); mkPayLoad(c.id); mkDebtLoad(c.id); mkVmCard(c.id);
+    mkHistLoad(c.id); mkPayLoad(c.id); mkDebtLoad(c.id); mkVmCard(c.id); mkDrainLoad(c.id);
     document.getElementById('mkzikui').onclick=()=>mkZikui(c);
     document.getElementById('mkzk').onclick=()=>mkZikui(c);
     document.getElementById('mkblock').onclick=()=>mkBlock(c,draw);
@@ -3516,6 +3517,22 @@ async function mkRedial(b){
   if(r&&r.ok){toast('📞 יצא חיוג חוזר');const he=document.getElementById('mkhist');if(he&&he.dataset.id)setTimeout(()=>mkHistLoad(he.dataset.id),1500);if(document.getElementById('mklogr'))setTimeout(()=>mkLogOpen(),1500);}
   else uiAlert('החיוג החוזר לא יצא:\n'+((r&&r.error)||'שגיאה'));}
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.mkredial');if(!b)return;e.preventDefault();e.stopPropagation();mkRedial(b);},true);
+// 🧹 ערך צבור שרוקן — חיווי בכרטיס + כפתור החזרה
+async function mkDrainLoad(cid){const el=document.getElementById('mkdrain');if(!el||el.dataset.id!==cid)return;
+  const r=await api('GET','/api/mikveh/drain/'+encodeURIComponent(cid)).catch(()=>null);
+  const el2=document.getElementById('mkdrain');if(!el2||el2.dataset.id!==cid)return;
+  const op=(r&&r.ok&&r.open)||[], rf=(r&&r.ok&&r.refunded)||[];
+  if(!op.length){el2.innerHTML=rf.length?`<div class="mksub" style="color:#1e7a3c;margin:4px 0">↩️ הוחזר לו ערך צבור שרוקן (₪${(rf.reduce((t,x)=>t+(x.bal||0)+(x.temp||0),0)).toLocaleString('he-IL')})</div>`:'';return;}
+  const tot=op.reduce((t,x)=>t+(x.bal||0)+(x.temp||0),0), o=op[0];
+  el2.innerHTML=`<div class="pimpbar warn" style="flex-direction:column;align-items:stretch;gap:6px;margin:4px 0">
+    <div><b>🧹 הוחרם לו ערך צבור — ₪${tot.toLocaleString('he-IL')}</b> <small class="mksub">פעימות ₪${o.bal||0}${o.temp?' · זיכוי ₪'+o.temp:''} · ${esc(String(o.at||'').slice(0,16))}</small></div>
+    <div><button class="btn sm" id="mkdrain_rf">↩️ להחזיר לו את הכסף</button> <span id="mkdrain_st" class="mksub"></span></div></div>`;
+  const b=document.getElementById('mkdrain_rf');if(b)b.onclick=async()=>{if(!await uiConfirm('להחזיר לו ₪'+tot+' (פעימות + זיכוי) שרוקן?','↩️ כן, להחזיר','ביטול'))return;
+    b.disabled=true;const st=document.getElementById('mkdrain_st');if(st)st.textContent='⏳ מחזיר…';
+    const y=await api('POST','/api/mikveh/bachur_refund',{ids:[cid]});
+    if(!y||!y.ok){b.disabled=false;if(st)st.textContent='⚠️ שגיאה';return;}
+    toast('הוחזר ₪'+(y.total_ils||tot));mkDrainLoad(cid);mkHistLoad(cid);};
+}
 async function mkHistLoad(cid){const r=await api('GET','/api/mikveh/log/'+encodeURIComponent(cid));if(!r||!r.ok)return;MKHIST[cid]=r.rows||[];
   const el=document.getElementById('mkhist');if(el&&el.dataset.id===cid)el.innerHTML=mkHistHTML(cid);
   // תוצאה שעוד לא הגיעה — שוב בעוד דקה, כל עוד הכרטיס פתוח

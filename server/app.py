@@ -28733,6 +28733,20 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows})
+        m = re.match(r'/api/mikveh/drain/([0-9a-fA-F-]{36})$', self.path.split('?')[0])
+        if m:
+            # 🧹 ערך צבור שרוקן ללקוח — לכרטיס: פתוחים (ניתנים להחזרה) ושכבר הוחזרו
+            cid = m.group(1)
+            con = db()
+            try:
+                con.execute("CREATE TABLE IF NOT EXISTS mk_drain(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, "
+                            "name TEXT, bal REAL, temp REAL, at TEXT, refunded INTEGER DEFAULT 0, refunded_at TEXT)")
+                mk_drain_backfill(con)
+                op = [dict(r) for r in con.execute("SELECT bal,temp,at FROM mk_drain WHERE cid=? AND COALESCE(refunded,0)=0 ORDER BY at DESC", (cid,))]
+                rf = [dict(r) for r in con.execute("SELECT bal,temp,at,refunded_at FROM mk_drain WHERE cid=? AND refunded=1 ORDER BY refunded_at DESC", (cid,))]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'open': op, 'refunded': rf})
         if self.path.split('?')[0] == '/api/mikveh/templates':
             con = db()
             try:
