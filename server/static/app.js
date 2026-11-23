@@ -1966,9 +1966,24 @@ async function mkAuditWin(){
           <button class="btn sm" id="bb_savecfg">💾 שמור נוסח</button>
           <button class="btn sm${MKAUD.bblock.on?'':' ghost'}" id="bb_toggle">${MKAUD.bblock.on?'🟢 פעיל — לכבות':'⚪ כבוי — להפעיל'}</button>
           <button class="btn sm ghost" id="bb_run">▶️ הרץ עכשיו</button>
-          <button class="btn sm ghost" id="bb_reset" title="לפתוח את כל מי שהמערכת חסמה">🔓 בטל את כל החסימות</button>
+          <button class="btn sm ghost" id="bb_reset" title="לפתוח את כל מי שחסום בקבוצות הבחורים">🔓 בטל את כל החסימות</button>
           <span id="bb_st" class="mksub">${MKAUD.bblock.last?('נבדק '+esc_(mkDate(MKAUD.bblock.last))+' · נחסמו '+(MKAUD.bblock.blocked||0)+(MKAUD.bblock.opened?' · בוטלו '+MKAUD.bblock.opened:'')):'עדיין לא רץ'}</span>
-        </div></div>`;
+        </div></div>
+      <div class="audpick" style="margin-top:8px">
+        <div class="mksub" style="font-weight:700;margin-bottom:2px">⛔ מי חסום כרגע + היסטוריה</div>
+        <div class="mktpl"><button class="btn sm" id="bk_adm_load">🔄 הצג מי חסום (טרי מהמקווה)</button><span id="bk_adm_st" class="mksub">${MKAUD.admin?('חסומים כרגע: '+((MKAUD.admin.blocked||[]).length)):''}</span></div>
+        ${MKAUD.admin?`<div style="margin-top:6px"><div class="mklist">${(MKAUD.admin.blocked||[]).map(x=>`<div class="mkrow" data-ao="${esc_(x.id)}" style="grid-template-columns:1fr auto;cursor:pointer"><div class="mknm"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}${x.reason?' · '+esc_(x.reason):''}</div></div><span class="mktag bad" style="align-self:center">חסום</span></div>`).join('')||'<div class="hintxt">✓ אין אף אחד חסום בקבוצות הבחורים.</div>'}</div>
+          <div class="mksub" style="font-weight:700;margin-top:8px">🕘 היסטוריה</div>
+          <div class="mklist">${(MKAUD.admin.history||[]).slice(0,40).map(h=>`<div class="mksub" style="border-bottom:1px solid var(--line);padding:3px 0">${esc_(String(h.at||'').slice(0,16).replace('T',' '))}${h.name?' · '+esc_(h.name):''} — ${esc_(h.summary||'')}</div>`).join('')||'<div class="hintxt">אין היסטוריה.</div>'}</div></div>`:''}
+      </div>
+      <div class="audpick" style="margin-top:8px">
+        <div class="mksub" style="font-weight:700;margin-bottom:2px">🔑 טוקן לחיבור חיצוני — לתת לקלוד כדי שיראה ויפעל מרחוק</div>
+        ${MKAUD.admin&&MKAUD.admin.token?`<div class="mksub" dir="ltr" style="word-break:break-all;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 8px" id="bk_tok_val">${esc_(MKAUD.admin.token)}</div>
+          <div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bk_tok_copy">📋 העתק</button><button class="btn sm ghost" id="bk_tok_new">🔁 טוקן חדש</button><button class="btn sm ghost" id="bk_tok_rev">🗑 בטל טוקן</button></div>`
+          :`<div class="mksub">אין טוקן פעיל. ליצור טוקן יאפשר חיבור חיצוני (רק למי שמחזיק את הטוקן). מסור אותו רק למי שאתה סומך עליו.</div>
+          <div class="mktpl" style="margin-top:4px"><button class="btn sm" id="bk_tok_new">🔑 צור טוקן</button></div>`}
+        <div class="mksub" style="margin-top:4px" dir="ltr">${esc_((MKAUD.admin&&MKAUD.admin.ops_url)||'/api/mikveh/ops')}?token=…&amp;action=status</div>
+      </div>`;
   }
   const fnone=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();
   const empty=fnone?'אין לקוח שמתאים לסינון.':T==='group'?'✓ כל הלקוחות בקבוצות רגילות.':T==='special'?'אין לקוחות עם מחיר מיוחד.':T==='noted'?'אין הערות.':T==='everyone'?'אין לקוחות.':T==='bachur'?(MKAUD.bg.size?'✓ אין בחורים בלי מנוי שנכנסו החודש.':'בחר קבוצות בחורים למעלה כדי לראות את הבדיקה.'):'✓ אין חריגים — כולם בקבוצה רגילה ובלי מחיר מיוחד.';
@@ -2043,7 +2058,18 @@ async function mkAuditWin(){
     rb.disabled=true;if(st){st.style.color='#555';st.textContent='⏳ מבטל…';}
     const y=await api('POST','/api/mikveh/bachur_block',{reset:true,reason:bbReason()});rb.disabled=false;
     if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
-    if(st){st.style.color='#1e7a3c';st.textContent='✓ בוטלו '+(y.reset||0)+' חסימות';}toast('בוטלו '+(y.reset||0)+' חסימות');};}
+    toast('בוטלו '+(y.reset||0)+' חסימות');MKAUD.admin=await api('GET','/api/mikveh/bachur_admin').catch(()=>null);mkAuditWin();};}
+  // ⛔ מי חסום + היסטוריה
+  {const l=document.getElementById('bk_adm_load');if(l)l.onclick=async()=>{const st=document.getElementById('bk_adm_st');l.disabled=true;if(st)st.textContent='⏳ טוען מהמקווה…';
+    const y=await api('GET','/api/mikveh/bachur_admin').catch(()=>null);
+    if(!y||!y.ok){l.disabled=false;if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
+    MKAUD.admin=y;mkAuditWin();};}
+  // 🔑 טוקן
+  const tokPost=async act=>{const y=await api('POST','/api/mikveh/ops_token',{action:act}).catch(()=>null);
+    if(!y||!y.ok){toast('שגיאה');return;}MKAUD.admin=Object.assign(MKAUD.admin||{},{token:y.token});mkAuditWin();};
+  {const n=document.getElementById('bk_tok_new');if(n)n.onclick=async()=>{if(MKAUD.admin&&MKAUD.admin.token&&!await uiConfirm('ליצור טוקן חדש? הטוקן הישן יפסיק לעבוד.','🔁 כן','ביטול'))return;tokPost('generate');toast('נוצר טוקן');};}
+  {const rv=document.getElementById('bk_tok_rev');if(rv)rv.onclick=async()=>{if(!await uiConfirm('לבטל את הטוקן? חיבור חיצוני יפסיק לעבוד.','🗑 כן, לבטל','ביטול'))return;tokPost('revoke');toast('הטוקן בוטל');};}
+  {const cp=document.getElementById('bk_tok_copy');if(cp)cp.onclick=()=>{const v=(document.getElementById('bk_tok_val')||{}).textContent||'';try{navigator.clipboard.writeText(v);toast('הועתק ✓');}catch(e){toast('העתק ידנית');}};}
   {const b=document.getElementById('aud_self');if(b)b.onclick=()=>mkSelfGroupOpen();}
   {const b=document.getElementById('aud_renew');if(b)b.onclick=()=>mkRenewCheck();}
   const cv=document.getElementById('aud_csv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
