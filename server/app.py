@@ -21255,37 +21255,39 @@ def mk_bachur_state(con, action='status'):
     return {'blocked': blocked, 'history': hist, 'offenders': offenders, 'unblocked': unblocked, 'note': ''}
 
 
-def _mk_bachur_scan(con, bg, members, days):
-    """כניסות ב-days הימים האחרונים — מי שנכנס בפועל בלי שמנוי כיסה את הכניסה (= נכנס בפעימות בלי מנוי).
-    מחזיר {cid: createdAt האחרון של כניסה כזו}. קריאה בלבד."""
+def _mk_bachur_members(con, fresh=False):
+    """בחורים בקבוצות שסומנו (raw מהמקווה). fresh=True — טרי, לתפוס כניסה אחרונה מעודכנת."""
     import mikveh as _mk
-    d1 = today_iso()[:10]
-    d0 = (il_now().date() - datetime.timedelta(days=int(days))).isoformat()
-    rows = _mk.activity_log(d0, d1) or []
-    offenders = {}
-    for r in rows:
-        cid = str(r.get('clientId') or '')
-        if cid not in members:
-            continue
-        is_ent = str(r.get('id') or '').startswith('entrance:')
-        ok = r.get('status') == 1
-        sub_covered = (r.get('subLine') or {}).get('key') == 'Activity_Log_SubLine_SubscriptionValidUntil'
-        if is_ent and ok and not sub_covered:
-            t = str(r.get('createdAt') or '')
-            if t > offenders.get(cid, ''):
-                offenders[cid] = t
-    return offenders
+    bg = mk_bachur_group_ids(con)
+    if not bg:
+        return {}
+    return {str(c.get('id')): c for c in _mk.clients(fresh=fresh)
+            if _mk.visible(c) and str(c.get('groupId') or '') in bg and not (c.get('firstName') or '').strip().startswith('[')}
+
+
+def _mk_bachur_scan(members, days):
+    """מי נכנס בפעימות בלי מנוי: הכניסה האחרונה (lastEntrance) מאוחרת מתום המנוי (subscriptionEndDate) —
+    כלומר נכנס אחרי שהמנוי פג, מה שבקבוצות הבחורים נעשה דרך ערך צבור (פעימות). בתוך חלון days הימים.
+    מחזיר {cid: lastEntrance}. קריאה בלבד, בלי קריאות נוספות למקווה (מתוך רשימת הלקוחות)."""
+    cutoff = (il_now().date() - datetime.timedelta(days=int(days))).isoformat()
+    off = {}
+    for cid, c in members.items():
+        li = str(c.get('lastEntrance') or '')
+        lid = li[:10]
+        if not (re.fullmatch(r'\d{4}-\d{2}-\d{2}', lid) and lid >= cutoff):
+            continue                       # לא נכנס בחלון — לא רלוונטי
+        se = str(c.get('subscriptionEndDate') or '')[:10]
+        se_valid = re.fullmatch(r'\d{4}-\d{2}-\d{2}', se)
+        # נכנס אחרי שהמנוי פג (se < lid), או שאין לו מנוי בכלל — כלומר נכנס בפעימות בלי מנוי בתוקף
+        if (not se_valid) or se < lid:
+            off[cid] = li
+    return off
 
 
 def mk_bachur_offenders(con, days=31):
     """רשימה לתצוגה (בלי לחסום): מי נכנס בפעימות בלי מנוי, עם התאריך והאם כבר חסום."""
-    import mikveh as _mk
-    bg = mk_bachur_group_ids(con)
-    if not bg:
-        return []
-    members = {str(c.get('id')): c for c in _mk.clients()
-               if _mk.visible(c) and str(c.get('groupId') or '') in bg and not (c.get('firstName') or '').strip().startswith('[')}
-    off = _mk_bachur_scan(con, bg, members, days)
+    members = _mk_bachur_members(con, fresh=True)
+    off = _mk_bachur_scan(members, days)
     out = []
     for cid, t in sorted(off.items(), key=lambda kv: kv[1], reverse=True):
         c = members[cid]
@@ -21305,13 +21307,12 @@ def mk_bachur_enforce(con, days=31, fresh=False):
     reason = mk_bachur_block_cfg(con)['reason']
     if not bg:
         return {'blocked': 0, 'reset': 0, 'checked': 0, 'offenders': 0, 'empty': True}
-    members = {str(c.get('id')): c for c in _mk.clients()
-               if _mk.visible(c) and str(c.get('groupId') or '') in bg and not (c.get('firstName') or '').strip().startswith('[')}
+    members = _mk_bachur_members(con, fresh=True)
     if not members:
         return {'blocked': 0, 'reset': 0, 'checked': 0, 'offenders': 0, 'empty': False}
     if fresh:
         kv_set(con, 'mk_bachur_seen', '{}')
-    offenders = _mk_bachur_scan(con, bg, members, days)
+    offenders = _mk_bachur_scan(members, days)
     try:
         held = set(str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or []))
     except Exception:
