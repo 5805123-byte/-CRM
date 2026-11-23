@@ -24250,6 +24250,45 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'izcerts.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/iz-5786':
             return self._send(200, open(os.path.join(STATIC, 'izarchive.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/avreichim/roster':
+            # 📋 מאיר: "לשונית מיוחדת שיש שם ממוספר את שמות האברכים העדכני לפי אלף בית שם משפחה, גם בכולל הוראה…
+            # להדפסה, ותמיד טור להערות בצד" — העדכני = מי שמופיע במלגות החודשיות של החודש האחרון של אותו כולל
+            # (בלי מי שסומן "יצא מהכולל"); שם משפחה ופרטי מרשימת האברכים
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            kol = (qs.get('kollel') or ['חצות'])[0]
+            con = db()
+            try:
+                per = con.execute("SELECT MAX(period) p FROM stipends WHERE kollel=? AND kind='monthly'", (kol,)).fetchone()['p']
+                names = []
+                if per:
+                    seen = set()
+                    for r in con.execute("SELECT TRIM(name) n FROM stipends WHERE kollel=? AND kind='monthly' AND period=? ORDER BY id", (kol, per)):
+                        n = re.sub(r'\s+', ' ', r['n'] or '').strip()
+                        if n and n not in seen:
+                            seen.add(n); names.append(n)
+                av = {}
+                for a in con.execute("SELECT name,last,first,phone,ended FROM avreichim"):
+                    av[re.sub(r'\s+', ' ', (a['name'] or '').strip())] = a
+                rows = []
+                for n in names:
+                    a = av.get(n)
+                    if a is not None and (a['ended'] or '').strip():
+                        continue
+                    l = (a['last'] or '').strip() if a is not None else ''
+                    f = (a['first'] or '').strip() if a is not None else ''
+                    if not l:
+                        l, f = _split_av(n)
+                    rows.append({'name': n, 'last': l, 'first': f, 'phone': (a['phone'] or '') if a is not None else ''})
+                rows.sort(key=lambda x: (x['last'], x['first']))
+                lbl = ''
+                if per and re.match(r'^\d{4}-\d{2}$', per):
+                    try:
+                        lbl = greg_to_heb_monthyear(per + '-15') or ''
+                    except Exception:
+                        lbl = ''
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'kollel': kol, 'period': per or '', 'label': lbl, 'rows': rows})
         if self.path.split('?')[0] == '/api/building/unlinked':
             # 🏛️ הקדשות מדף "נוסחי ההקדשות" שעוד לא שויכו לכרטיס תורם (אין התאמה ברורה אחת)
             con = db()

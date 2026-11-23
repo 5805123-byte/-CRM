@@ -15301,14 +15301,46 @@ async function avCard(name){
     MKPAY[cid]=p&&p.ok?p:{ok:false,error:(p&&p.error)||'לא נטען'};MKPAY[cid]._at=Date.now();
     const el=document.getElementById('avmkpay');if(el)el.innerHTML=mkPayHTML(cid);}
 }
+// 📋 מאיר: "לשונית מיוחדת שיש שם ממוספר את שמות האברכים העדכני לפי אלף בית שם משפחה, גם בכולל הוראה…
+// ולהדפסה, וכשזה מדפיס תמיד שיהיה בדף טור להערות בצד"
+async function renderAvRoster(){
+  const kol=stipKollel, kl=(STIP_KOL.find(x=>x[0]===kol)||['',''])[1].replace(/^\S+ /,'');
+  view.innerHTML='<div class="cnt">טוען את רשימת האברכים…</div>';
+  let r=null;try{r=await api('GET','/api/avreichim/roster?kollel='+encodeURIComponent(kol));}catch(e){}
+  if(kol!==stipKollel||stipView!=='list')return;
+  const rows=(r&&r.rows)||[], qq=String(q||'').trim();
+  const shown=qq?rows.filter(x=>(x.name+' '+x.phone).includes(qq)):rows;
+  const src=r&&r.period?('לפי המלגות של '+(r.label||r.period)):'';
+  view.innerHTML=`<div class="avbar"><button class="btn sm" id="rosprint" style="background:#7a1f1f;color:#fff">🖨️ הדפסה</button></div>
+    <div class="avstat">📋 <b>${rows.length}</b> אברכים ב${esc(kl)}${src?' · '+esc(src):''} · מסודר לפי א"ב של שם המשפחה${qq?` · מוצגים ${shown.length}`:''}</div>
+    <div class="avwrap"><table class="izotbl rostbl"><thead><tr><th style="width:36px">#</th><th>שם משפחה</th><th>שם פרטי</th><th>טלפון</th><th style="width:40%">הערות</th></tr></thead><tbody>
+    ${shown.map((x,i)=>`<tr><td class="n">${rows.indexOf(x)+1}</td><td><b>${esc(x.last)}</b></td><td>${esc(x.first)}</td><td dir="ltr" style="text-align:right">${esc(x.phone||'')}</td><td></td></tr>`).join('')||'<tr><td colspan="5" class="empty">אין אברכים ברשימה — עדיין לא נטענו מלגות חודשיות לכולל הזה</td></tr>'}
+    </tbody></table></div>`;
+  document.getElementById('rosprint').onclick=()=>{
+    const w=window.open('','_blank');if(!w){toast('הדפדפן חסם חלון — אפשר חלונות קופצים');return;}
+    const today=new Date().toLocaleDateString('he-IL');
+    w.document.write(`<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>רשימת האברכים — ${esc(kl)}</title><style>
+      @page{size:A4 portrait;margin:12mm}body{font-family:Arial,sans-serif;color:#111;font-size:13px;margin:0}
+      h1{font-size:19px;margin:0 0 2px}.sub{color:#555;font-size:12px;margin-bottom:8px}
+      table{width:100%;border-collapse:collapse}th{background:#e6e6e6;border:1px solid #888;padding:5px 6px;text-align:right}
+      td{border:1px solid #999;padding:6px;height:20px}td.n{width:28px;text-align:center;color:#444}td.nt{width:45%}
+      thead{display:table-header-group}tr{page-break-inside:avoid}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      </style></head><body><h1>רשימת האברכים — ${esc(kl)}</h1><div class="sub">${rows.length} אברכים${src?' · '+esc(src):''} · הודפס ${esc(today)}</div>
+      <table><thead><tr><th>#</th><th>שם משפחה</th><th>שם פרטי</th><th>הערות</th></tr></thead><tbody>
+      ${rows.map((x,i)=>`<tr><td class="n">${i+1}</td><td><b>${esc(x.last)}</b></td><td>${esc(x.first)}</td><td class="nt"></td></tr>`).join('')}
+      </tbody></table><script>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+    w.document.close();};
+}
 async function renderStip(){
   if(!STIP){chips.innerHTML='';view.innerHTML='<div class="cnt">טוען מלגות…</div>';await loadStip();}
   // מאיר: "איפה מופיע פה הטלפונים" — הטלפון של כל אברך (מכרטיס האברך) ליד השם
   if(!(AVLIST||[]).length)await loadAvList();
   const has=k=>STIP.some(r=>r.kollel===k);
-  chips.innerHTML=STIP_KOL.filter(([k])=>k!=='חיים טובים'||has(k)).map(([k,l])=>`<button class="chip ${stipKollel===k?'on':''}" data-k="${k}">${l}</button>`).join('')
+  // מאיר: "כולל חיים טובים נסגר — תמחק את הריבוע הזה"
+  if(stipKollel==='חיים טובים')stipKollel='חצות';
+  chips.innerHTML=STIP_KOL.filter(([k])=>k!=='חיים טובים').map(([k,l])=>`<button class="chip ${stipKollel===k?'on':''}" data-k="${k}">${l}</button>`).join('')
     +'<span style="flex-basis:100%"></span>'
-    +[['monthly','📅 מלגות חודשיות'],['holiday','🎉 מלגות חגים']].concat(stipKollel==='חצות'?[['iz','🤝 יששכר־זבולון']]:[]).map(([k,l])=>`<button class="chip ${stipView===k?'on':''}" data-v="${k}">${l}</button>`).join('')
+    +[['list','📋 רשימת האברכים'],['monthly','📅 מלגות חודשיות'],['holiday','🎉 מלגות חגים']].concat(stipKollel==='חצות'?[['iz','🤝 יששכר־זבולון']]:[]).map(([k,l])=>`<button class="chip ${stipView===k?'on':''}" data-v="${k}">${l}</button>`).join('')
     // מאיר: "אני רוצה את זה כאן בלשונית אברכים, זה הכי ריאלי" — השיחה הקולית לכל האברכים מכאן
     +'<button class="chip" id="stymbtn" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button>'
     +'<button class="chip" id="stpaidbtn" title="מי שילם בנדרים פלוס מאז שעה מסוימת, בסכום מסוים (למשל 20 ₪ על מירון)">💳 מי שילם בנדרים פלוס</button>';
@@ -15319,6 +15351,7 @@ async function renderStip(){
     chips.querySelectorAll('.chip[data-k]').forEach(c=>c.onclick=()=>{stipKollel=c.dataset.k;if(stipKollel!=='חצות')stipView='monthly';renderStip();});
     chips.querySelectorAll('.chip[data-v]').forEach(c=>c.onclick=()=>{stipView=c.dataset.v;renderStip();});
     {const sb=document.getElementById('stymbtn');if(sb)sb.onclick=avYmOpen;const pb=document.getElementById('stpaidbtn');if(pb)pb.onclick=()=>avPaidOpen();}return;}
+  if(stipView==='list')return renderAvRoster();
   const rows=STIP.filter(r=>r.kollel===stipKollel&&r.kind===stipView);
   const qq=String(q||'').trim();
   // קבוצות לפי תקופה — חודשים מהחדש לישן; חגים לפי סדר הוספה (החדש למעלה)
