@@ -21222,36 +21222,31 @@ def mk_bachur_reset(con, reason=None, clear_seen=False):
 
 
 def mk_bachur_state(con, action='status'):
-    """מצב החסימה לבחורים: מי חסום כרגע בקבוצות שסומנו (טרי מהמקווה), ויומן החסימות/הפתיחות.
-    action='unblock_bachur' מבטל קודם את כל החסימות. משמש גם את הלשונית באתר וגם את ה-ops בטוקן."""
-    import mikveh as _mk
+    """מצב החסימה לבחורים: מי נכנס בפעימות בלי מנוי, מי חסום, ויומן. פנייה אחת בלבד למקווה (לא להעמיס).
+    action='unblock_bachur' מבטל קודם את כל החסימות."""
     bg = mk_bachur_group_ids(con)
     if not bg:
-        return {'note': 'לא סומנו קבוצות בחורים', 'blocked': [], 'history': [], 'unblocked': None}
+        return {'note': 'לא סומנו קבוצות בחורים', 'blocked': [], 'offenders': [], 'history': [], 'unblocked': None}
     unblocked = None
     if action == 'unblock_bachur':
         unblocked = mk_bachur_reset(con, clear_seen=False)
-    names, blocked = {}, []
-    try:
-        for c in _mk.clients(fresh=True):
-            cid = str(c.get('id') or '')
-            names[cid] = ((c.get('firstName') or '') + ' ' + (c.get('lastName') or '')).strip()
-            if str(c.get('groupId') or '') in bg and _mk.visible(c) and c.get('isBlocked'):
-                blocked.append({'id': cid, 'name': names[cid], 'code': c.get('clientCode'),
-                                'phone': (c.get('phone') or '').strip(), 'reason': c.get('blockReason') or ''})
-    except Exception as e:
-        print('  mk bachur state list error:', e)
+    # מהמטמון (עד 2 דק') — הלולאה שרצה כל דקה שומרת אותו טרי; כך צפייה בלשונית לא מעמיסה על המקווה
+    members = _mk_bachur_members(con, fresh=False)
+    nm = lambda c: ((c.get('firstName') or '') + ' ' + (c.get('lastName') or '')).strip()
+    names = {cid: nm(c) for cid, c in members.items()}
+    blocked = [{'id': cid, 'name': names[cid], 'code': c.get('clientCode'),
+                'phone': (c.get('phone') or '').strip(), 'reason': c.get('blockReason') or ''}
+               for cid, c in members.items() if c.get('isBlocked')]
+    off = _mk_bachur_scan(members, 31)
+    offenders = [{'id': cid, 'name': names.get(cid, ''), 'code': members[cid].get('clientCode'),
+                  'phone': (members[cid].get('phone') or '').strip(), 'last': t, 'blocked': bool(members[cid].get('isBlocked'))}
+                 for cid, t in sorted(off.items(), key=lambda kv: kv[1], reverse=True)]
     hist = []
     try:
         for r in con.execute("SELECT cid,at,summary FROM mk_log WHERE kind='block' ORDER BY id DESC LIMIT 80"):
             hist.append({'cid': r['cid'], 'name': names.get(str(r['cid']), ''), 'at': r['at'], 'summary': r['summary']})
     except Exception:
         pass
-    offenders = []
-    try:
-        offenders = mk_bachur_offenders(con, 31)
-    except Exception as e:
-        print('  mk bachur state offenders error:', e)
     return {'blocked': blocked, 'history': hist, 'offenders': offenders, 'unblocked': unblocked, 'note': ''}
 
 
