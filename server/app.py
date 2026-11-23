@@ -20085,6 +20085,74 @@ def give_donor(con, b):
     return did, True
 
 
+def give_iz(con, did, b):
+    """🤝 מאיר: "ביששכר זבולון שיוכלו לעשות רק 12 חודשים בלבד — אברך ל-12 חודשים, כל חודש $1,000; אי אפשר לקחת
+    יששכר זבולון לחודש" — הכרטיס נשמר בבנק ווסט, $1,000 נגבים עכשיו, והוראת קבע ל-11 חודשים נוספים (סה"כ 12)."""
+    import banquest as _bq
+    nonce = re.sub(r'[^A-Za-z0-9_\-]', '', str(b.get('nonce') or ''))
+    if not nonce:
+        return {'ok': False, 'error': 'Please enter your card details first.'}
+    d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
+    em = str(b.get('email') or '').strip()
+    nm = ((b.get('first') or '') + ' ' + (b.get('last') or '')).strip()
+    cu = con.execute("SELECT * FROM bq_cust WHERE donor_id=? ORDER BY active DESC, id DESC", (did,)).fetchone()
+    cid = cu['id'] if cu else 0
+    if not cid:
+        code, res = _bq.create_customer(nm, first=str(b.get('first') or ''), last=str(b.get('last') or ''), email=em,
+                                        phone=str(b.get('phone') or ''), number=did)
+        if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
+            return {'ok': False, 'error': 'The payment system did not respond. Please try again or contact us.'}
+        cid = res['id']
+        con.execute("INSERT OR REPLACE INTO bq_cust(id,identifier,first,last,email,phone,number,active,donor_id,manual,synced) "
+                    "VALUES(?,?,?,?,?,?,?,1,?,1,?)", (cid, nm, res.get('first_name') or '', res.get('last_name') or '', em,
+                                                    str(b.get('phone') or ''), str(did), did, now_iso()))
+        con.commit()
+    code, pm = _bq.create_pm_or_existing(cid, 'nonce-' + nonce, b.get('exp_m'), b.get('exp_y'), last4=str(b.get('last4') or ''))
+    if code not in (200, 201) or not isinstance(pm, dict) or not pm.get('id'):
+        err = bq_hint(_bq.LAST.get('error') or '') or 'the card could not be saved'
+        return {'ok': False, 'error': 'The card was not accepted: %s. Please check the details and try again.' % err}
+    con.execute("INSERT OR REPLACE INTO bq_pm(id,customer_id,card_type,last4,exp_m,exp_y,is_default,name) VALUES(?,?,?,?,?,?,?,?)",
+                (pm['id'], cid, pm.get('card_type') or '', pm.get('last4') or '', pm.get('expiry_month') or 0, pm.get('expiry_year') or 0, 1, pm.get('name') or ''))
+    con.commit()
+    desc = 'Yissachar-Zevulun partnership — month 1 of 12'
+    code, res = _bq.charge_pm(pm['id'], 1000, description=desc, customer_id=cid, email=em, cit=True)
+    if code != 200 or not isinstance(res, dict):
+        err = bq_hint(_bq.LAST.get('error') or '') or 'the card was declined'
+        return {'ok': False, 'error': 'The charge did not go through: %s. Please check the card details and try again.' % err}
+    out = bq_record_charge(con, res, 1000, desc, 'יששכר־זבולון', did, cid, ('%s %s' % (pm.get('card_type') or '', pm.get('last4') or '')).strip(), nm)
+    if not out.get('ok'):
+        con.commit()
+        return {'ok': False, 'error': 'The charge did not go through: %s. Please check the card details and try again.' % (out.get('error') or 'declined')}
+    nxt = datetime.date.today()
+    nxt = (nxt.replace(day=1) + datetime.timedelta(days=32)).replace(day=min(nxt.day, 28))
+    title = 'יששכר־זבולון — אברך לשנה (12 חודשים) · מהדף האונליין'
+    sc, sr = _bq.create_schedule(cid, title, 1000, pm['id'], next_run_date=nxt.isoformat(), num_left=11, receipt_email=em)
+    if sc in (200, 201) and isinstance(sr, dict) and sr.get('id'):
+        con.execute("""INSERT OR REPLACE INTO bq_sched(id,customer_id,title,amount,freq,next_run,prev_run,num_left,active,status,pm_id,
+                         receipt_email,tx_count,created,donor_id,for_cat,for_note,synced) VALUES(?,?,?,?,?,?,'',?,1,?,?,?,0,?,?,?,?,?)""",
+                    (sr['id'], cid, title, 1000, sr.get('frequency') or 'monthly', sr.get('next_run_date') or nxt.isoformat(),
+                     int(sr.get('num_left') or 11), sr.get('status') or 'active', pm['id'], em, today_iso(), did, 'יששכר־זבולון', 'אברך לשנה — 12 חודשים', now_iso()))
+        sched_ok = True
+    else:
+        sched_ok = False
+    con.execute("INSERT INTO pledges(donor_id,category,amount,permo,monthly,status,note,date,since,cur) VALUES(?,?,?,?,1,?,?,?,?,'$')",
+                (did, 'יששכר־זבולון', '1000', '1000', 'נתן', 'מהדף האונליין — אברך לשנה, 12 חודשים מ-%s' % today_iso(), today_iso(), today_iso()))
+    con.execute("UPDATE donors SET tier='יששכר_זבולון' WHERE id=?", (did,))
+    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                (did, today_iso(), 'followup', '🤝 נרשם מהדף האונליין ליששכר־זבולון — אברך לשנה, $1,000 × 12. החודש הראשון נגבה; '
+                 + ('הוראת קבע ל-11 חודשים הוקמה בבנק ווסט. ' if sched_ok else '⚠️ הוראת הקבע לא הוקמה — להקים ידנית ל-11 חודשים. ') + 'לשבץ אברך ולשלוח שטר'))
+    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                (did, today_iso(), 'קישור', '🤝 יששכר־זבולון מהדף האונליין: $1,000 נגבו (אישור %s)%s' % (out.get('auth') or out.get('ref') or '',
+                 ' · הוראת קבע 11 חודשים מ-' + nxt.isoformat() if sched_ok else ' · הוראת הקבע לא הוקמה'), '', now_iso()))
+    con.commit()
+    cardlink_alert(con, did, '• 🤝 יששכר־זבולון מהדף האונליין: $1,000 × 12' + ('' if sched_ok else ' — ⚠️ הוראת הקבע לא הוקמה, להקים ידנית'))
+    return {'ok': True, 'amount': '$1,000', 'auth': out.get('auth') or out.get('ref') or '', 'night': None, 'night_error': '', 'sched': sched_ok,
+            'next': nxt.strftime('%B %-d, %Y')}
+
+
+GIVE_KINDS = {'night': (480, ''), 'iz': (1000, ''), 'breakfast': (180, 'ארוחת בוקר'), 'ner': (1200, 'נר למאור')}
+
+
 def give_charge(con, b, ip=''):
     """חיוב מדף התרומה הכללי: תורם (קיים או חדש) → חיוב מיד בכרטיס שהוקלד עכשיו → שמות לקוויטל → קבלה במייל."""
     now = time.time()
@@ -20097,18 +20165,19 @@ def give_charge(con, b, ip=''):
         return {'ok': False, 'error': 'Please enter your name.'}
     if not re.match(r'^\S+@\S+\.\S+$', str(b.get('email') or '').strip()):
         return {'ok': False, 'error': 'Please enter your email.'}
-    amt = 480 if kind == 'night' else (1000 if kind == 'iz' else round(_amt2(b.get('amount')), 2))
+    amt = GIVE_KINDS[kind][0] if kind in GIVE_KINDS else round(_amt2(b.get('amount')), 2)
     did, new = give_donor(con, b)
     con.commit()
-    purpose = {'night': '', 'iz': 'Yissachar-Zevulun partnership — first month'}.get(kind, 'Donation — online page')
-    r = cardlink_charge(con, did, dict(b, amount=amt, purpose=purpose))
+    purpose = {'night': '', 'breakfast': 'Breakfast for the Avreichim', 'ner': 'Ner LaMaor — one week'}.get(kind, 'Donation — online page')
+    if kind == 'iz':
+        r = give_iz(con, did, b)
+    else:
+        r = cardlink_charge(con, did, dict(b, amount=amt, purpose=purpose))
     if not r.get('ok'):
         return r
     dn = con.execute("SELECT id FROM donations WHERE donor_id=? ORDER BY id DESC LIMIT 1", (did,)).fetchone()
-    if dn and kind == 'iz':
-        con.execute("UPDATE donations SET category='יששכר־זבולון' WHERE id=?", (dn['id'],))
-        con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
-                    (did, today_iso(), 'followup', '🤝 נרשם מהדף האונליין ליששכר־זבולון $1,000 לחודש לשנה — החודש הראשון נגבה; להקים הוראת קבע ולשבץ אברך'))
+    if dn and kind in ('iz', 'breakfast', 'ner'):
+        con.execute("UPDATE donations SET category=? WHERE id=?", ('יששכר־זבולון' if kind == 'iz' else GIVE_KINDS[kind][1], dn['id']))
     # 📜 שמות לקוויטל (עד 4, עם שם האם)
     nm = []
     for x in (b.get('names') or [])[:4]:
