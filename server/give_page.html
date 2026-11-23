@@ -24,6 +24,10 @@ h3 .n{display:inline-grid;place-items:center;width:21px;height:21px;border-radiu
 .ch .ca{display:block;font-weight:bold;color:var(--wine);font-size:15.5px;margin-top:3px}
 .ch .mo{position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:var(--gold);color:#fff;font-size:9.5px;letter-spacing:1px;border-radius:4px;padding:1px 6px;font-weight:bold;white-space:nowrap}
 .ch.on{border-color:var(--wine);background:var(--wine);color:#fff}.ch.on .ca{color:#fff}
+.ch.any{grid-column:1/-1;border:2px solid var(--wine);padding:11px 8px}
+.ch.any .cn{font-size:17px;font-weight:bold;color:var(--wine)}.ch.any .ca{font-size:13px;font-weight:normal;color:var(--soft)}
+.ch.any.on .cn,.ch.any.on .ca{color:#fff}
+@media(max-width:480px){.ch[data-k="iz"]{grid-column:1/-1}}
 .pane{font-size:13.5px;color:var(--soft);line-height:1.45;margin-top:9px;background:var(--band);border-radius:8px;padding:9px 11px}
 .pane b{color:var(--wine)}
 .link{background:none;border:0;color:var(--wine);text-decoration:underline;font:inherit;font-size:14.5px;font-weight:bold;cursor:pointer;padding:6px 0 0;text-align:left}
@@ -70,12 +74,12 @@ input{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px
 
 <h3><span class="n">1</span>Choose your donation</h3>
 <div class="chips" id="chips">
+  <button type="button" class="ch any" data-k="donate"><span class="cn">Donate Any Amount</span><span class="ca">a donation of your choice to the Kollel</span></button>
   <button type="button" class="ch" data-k="night"><span class="cn">Sponsor a Night</span><span class="ca">$480</span></button>
   <button type="button" class="ch" data-k="breakfast"><span class="cn">Breakfast for the Avreichim</span><span class="ca">$360</span></button>
   <button type="button" class="ch" data-k="monthly180"><span class="mo">MONTHLY</span><span class="cn">3 Avreichim daven for you</span><span class="ca">$180 / month</span></button>
   <button type="button" class="ch" data-k="ner"><span class="cn">Ner LaMaor · one week</span><span class="ca">$1,200</span></button>
   <button type="button" class="ch" data-k="iz"><span class="mo">MONTHLY</span><span class="cn">Yissachar–Zevulun</span><span class="ca">$1,000 / month</span></button>
-  <button type="button" class="ch" data-k="donate"><span class="cn">Other amount</span><span class="ca">$ ___</span></button>
 </div>
 
 <div class="pane" data-p="night">The whole Kollel learns through the night of Chatzos l'zechus you or your loved ones — a birthday, yahrtzeit, refuah or any special occasion.<br>

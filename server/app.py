@@ -20228,6 +20228,26 @@ def give_charge(con, b, ip=''):
     return r
 
 
+GIVE_SHORT = 'https://donate.kollelchatzot.com'
+_GIVE_SHORT_OK = {'t': 0, 'ok': False}
+
+
+def give_short_base():
+    """🔗 מאיר: "donate.kollelchatzot.com מתאים" — ה-CRM שולח את הכתובת הקצרה רק כשהיא באמת עובדת (DNS ב-Namecheap +
+    Custom Domain ב-Render). עד אז — הכתובת הארוכה /kc. נבדק פעם ב-10 דקות (שעה אחרי שעבד)."""
+    import urllib.request
+    now = time.time()
+    if now - _GIVE_SHORT_OK['t'] > (3600 if _GIVE_SHORT_OK['ok'] else 600):
+        ok = False
+        try:
+            with urllib.request.urlopen(urllib.request.Request(GIVE_SHORT + '/', headers={'User-Agent': 'KC-check'}), timeout=6) as rs:
+                ok = rs.status == 200 and b'id="chips"' in rs.read(400000)
+        except Exception:
+            ok = False
+        _GIVE_SHORT_OK.update(t=now, ok=ok)
+    return GIVE_SHORT if _GIVE_SHORT_OK['ok'] else ''
+
+
 def give_rc_sig(rid):
     return hmac.new(_link_secret(), ('give.rc.%d' % int(rid)).encode('ascii'), hashlib.sha256).hexdigest()[:16]
 
@@ -24492,6 +24512,8 @@ class H(BaseHTTPRequestHandler):
                 pre = 0
             base = 'https://' + (self.headers.get('Host') or 'crm-mr9w.onrender.com')
             return self._send(200, give_page(base).replace('{{AMOUNT}}', str(pre)).encode('utf-8'), 'text/html')
+        if self.path.split('?')[0] == '/api/give/base':
+            return self._send(200, {'ok': True, 'base': give_short_base()})
         m = re.match(r'/api/give/rc/(\d+)\.([0-9a-f]{16})\.pdf$', self.path.split('?')[0])
         if m:
             rid = int(m.group(1))

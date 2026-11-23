@@ -21086,10 +21086,13 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.dngive');if(!b)return;
   e.preventDefault();e.stopPropagation();giveLinkOpen(b.dataset.did?DB.find(x=>x.id==b.dataset.did):null);});
 function giveLinkOpen(d){
+  // 🔗 donate.kollelchatzot.com — רק כשהשרת מאשר שהכתובת הקצרה כבר עובדת; אחרת /kc
+  if(window.GIVE_BASE===undefined){window.GIVE_BASE='';fetch('/api/give/base').then(r=>r.json()).then(j=>{window.GIVE_BASE=(j&&j.base)||'';}).catch(()=>{}).finally(()=>giveLinkOpen(d));return;}
+  const gb=window.GIVE_BASE?(window.GIVE_BASE+'/'):(location.origin+'/kc');
   const nm=d?(String(d.english||'').trim()||((d.first||'')+' '+(d.last||'')).trim()):'';
   const ph=d?(splitPhones(d.phone||'')[0]||'').trim():'', wa=ph?waHref(ph,d.region):'';
   const em=d?(String(d.email||'').split(/[,;\s]+/).find(x=>x.includes('@'))||''):'';
-  const url=a=>location.origin+'/KollelChatzos'+(+a?('?amount='+(+a)):'');
+  const url=a=>gb+(+a?('?amount='+(+a)):'');
   const msg=a=>(nm&&/^[\x00-\x7F]+$/.test(nm)?('Dear '+nm+',\n\n'):'')
     +'You can donate securely online to Kollel Chatzos here'+(+a?(' ($'+(+a).toLocaleString('en-US')+')'):'')+':\n'+url(a)
     +'\n\nYou may sponsor a night of learning ($480), breakfast for the Avreichim ($360), have 3 Avreichim learn and daven l\'zechus you every night ($180 monthly), and add names for davening at Chatzos. A receipt is emailed to you automatically.'
