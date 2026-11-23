@@ -8933,6 +8933,54 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  sims 700 error:', e)
+    # מאיר (23.11.2026): "איפה הווב שעשינו על הבניין? זה לא במערכת, בדף הבניין יש רק 3 תרומות" — דף "נוסחי ההקדשות"
+    # (99 הקדשות, מאיר אישר 85 ומחק 9) נכנס ללשונית "הבניין הקדוש": כל הקדשה לכרטיס התורם כשיש התאמה ברורה אחת
+    # בלבד; בלי התאמה ברורה — נשמרת עם השם מהדף ומוצגת ב"לא משויכים", למאיר לשייך בלחיצה (לא מנחשים).
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='building_ded_v1'").fetchone():
+            _bd = json.load(open(os.path.join(HERE, 'building_ded_seed.json'), encoding='utf-8'))
+
+            def _bmatch(nm):
+                fam = bool(re.search(r'משפחת|האחים', nm or ''))
+                t = [x for x in re.sub(r'[–\-]', ' ', re.sub(r'משפחת|האחים', ' ', nm or '')).split() if x]
+                if not t:
+                    return None
+                if len(t) >= 2 and not fam:
+                    r_ = con.execute("SELECT id FROM donors WHERE TRIM(last)=? AND TRIM(COALESCE(first,'')) LIKE ?",
+                                     (t[0], t[1] + '%')).fetchall()
+                    return r_[0]['id'] if len(r_) == 1 else None
+                r_ = con.execute("SELECT id FROM donors WHERE TRIM(last)=?", (t[0],)).fetchall()
+                return r_[0]['id'] if len(r_) == 1 else None
+
+            _lnk = _un = _skip = 0
+            for it in _bd['items']:
+                did = _bmatch(it['donor']) or (_bmatch(it['orig']) if it['orig'] != it['donor'] else None)
+                obj = (it['item'] or '').strip()
+                if did and con.execute("SELECT 1 FROM building WHERE donor_id=? AND TRIM(COALESCE(object,''))=?", (did, obj)).fetchone():
+                    _skip += 1
+                    continue
+                amt = ('%d' % it['amount']) if it.get('amount') else ''
+                paid = ('%d' % it['paid']) if it.get('paid') else ''
+                # תרומות שכבר רשומות במערכת על הדבר הזה נספרות לבד — אז לא רושמים "שולם" שוב
+                if did and paid and con.execute("SELECT 1 FROM donations WHERE donor_id=? AND category LIKE ?",
+                                                 (did, '%' + obj + '%')).fetchone():
+                    paid = ''
+                note = 'מדף נוסחי ההקדשות' + ('' if it.get('st') == 'ok' else ' · עוד לא אושר') \
+                       + ('' if did else ' · תורם בדף: ' + it['donor']) \
+                       + ((' · שולם לפי הרשימה: $%s' % '{:,}'.format(int(it['paid']))) if (it.get('paid') and not paid) else '') \
+                       + ((' · ' + it['note']) if it.get('note') else '')
+                con.execute("INSERT INTO building(donor_id,object,amount,paid,note,date,object_en,dedication,section) VALUES(?,?,?,?,?,?,?,?,?)",
+                            (did, obj, amt, paid, note, today_iso(), '', it['text'], it['cat']))
+                if did:
+                    _lnk += 1
+                else:
+                    _un += 1
+            kv_set(con, 'bldg_sections', json.dumps(_bd.get('sections') or [], ensure_ascii=False))
+            con.execute("INSERT INTO seed_flags(name) VALUES('building_ded_v1')")
+            con.commit()
+            print('  הקדשות הבניין: %d לכרטיסים, %d לא משויכים, %d כבר היו' % (_lnk, _un, _skip))
+    except Exception as e:
+        print('  building ded error:', e)
 
     # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
     # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
@@ -24176,6 +24224,22 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'izcerts.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/iz-5786':
             return self._send(200, open(os.path.join(STATIC, 'izarchive.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/building/unlinked':
+            # 🏛️ הקדשות מדף "נוסחי ההקדשות" שעוד לא שויכו לכרטיס תורם (אין התאמה ברורה אחת)
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute("SELECT id,object,amount,paid,note,dedication,section FROM building "
+                                                      "WHERE donor_id IS NULL ORDER BY id")]
+                try:
+                    secs = json.loads(kv_get(con, 'bldg_sections', '') or '[]')
+                except ValueError:
+                    secs = []
+            finally:
+                con.close()
+            for r in rows:
+                mm = re.search(r'תורם בדף: ([^·]+)', r.get('note') or '')
+                r['who'] = mm.group(1).strip() if mm else ''
+            return self._send(200, {'ok': True, 'rows': rows, 'sections': secs})
         m = re.match(r'/api/iz/doc/(full|print)$', self.path.split('?')[0])
         if m:
             # 📄 מאיר: "שלח לי את כל היששכר זבולון המעודכן כולל מה שלא להדפסה, ותכניס את זה למערכת, וגם את להדפסה
@@ -35630,6 +35694,27 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'id': tid_})
+        if self.path == '/api/building/link':
+            # 🏛️ שיוך הקדשה שלא שויכה — לכרטיס התורם שמאיר בחר
+            try:
+                bid_ = int(b.get('id') or 0); did_ = int(b.get('donor_id') or 0)
+            except (TypeError, ValueError):
+                bid_ = did_ = 0
+            if not bid_ or not did_:
+                return self._send(200, {'ok': False, 'error': 'חסר תורם'})
+            con = db()
+            try:
+                r_ = con.execute("SELECT note FROM building WHERE id=? AND donor_id IS NULL", (bid_,)).fetchone()
+                if not r_:
+                    return self._send(200, {'ok': False, 'error': 'כבר שויך'})
+                nt_ = re.sub(r'\s*·\s*תורם בדף: [^·]*', '', r_['note'] or '').strip()
+                con.execute("UPDATE building SET donor_id=?, note=? WHERE id=?", (did_, nt_, bid_))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) SELECT ?,?,'הערה','🏛️ שויכה הקדשה בבניין: ' || COALESCE(object,'') "
+                            "FROM building WHERE id=?", (did_, today_iso(), bid_))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/izcerts/save':
             # 📜 מה שמאיר שינה בתעודה של תורם (שם, אברכים, סכום, תאריך, להדפיס או לא) — נשמר במערכת
             try:

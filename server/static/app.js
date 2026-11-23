@@ -5702,7 +5702,7 @@ function bldAutoPaid(d,x){
 }
 function bldPaid(d,x){return amtNum(x.paid)+bldAutoPaid(d,x);}
 function buildTotals(d){let price=0,paid=0;(d.building||[]).forEach(x=>{price+=amtNum(x.amount);paid+=bldPaid(d,x);});return {price,paid,owed:price-paid};}
-const BLD_SECTIONS=['הבניין הקדוש — כללי','היכל בית המדרש','עזרת נשים','היכלות','חלונות','שולחנות','עמודים','מטרים','ארונות ספרים','מבוא ההיכל — הלובי','היכל הכנסת אורחים','מקווה'];
+const BLD_SECTIONS=['הבניין הקדוש','מבוא ההיכל – הלובי','בית המדרש','עזרת נשים הקטנה – לתפילות ימות החול','המקווה הקדוש','היכל הרשב"י והיכל בעל השדה','אידרא רבה – היכל השיעורים והתפילה','ארונות הספרים','חדר קפה','הבניין הקדוש — כללי','היכל בית המדרש','עזרת נשים','היכלות','חלונות','שולחנות','עמודים','מטרים','ארונות ספרים','מבוא ההיכל — הלובי','היכל הכנסת אורחים','מקווה'];
 function bldSecList(){const s=new Set(BLD_SECTIONS);(DB||[]).forEach(d=>(d.building||[]).forEach(x=>{if(x.section)s.add(x.section);}));return [...s];}
 function cardBuilding(d,body){
   const t=buildTotals(d),cur=curSym(d);
@@ -5775,6 +5775,30 @@ function renderBldgHQ(){
   </div>`;
   view.querySelectorAll('.bhqf .chip').forEach(b=>b.onclick=()=>{bhqF=b.dataset.f;renderBldgHQ();});
   view.querySelectorAll('.bhqrow').forEach(el=>el.onclick=()=>{const d=DB.find(x=>x.id==el.dataset.d);if(d)openDonor(d,'building');});
+  bhqUnlinked();
+}
+// הקדשות מדף "נוסחי ההקדשות" שאין להן עדיין כרטיס תורם — שיוך בבחירת התורם
+async function bhqUnlinked(){
+  let r=null;try{r=await api('GET','/api/building/unlinked');}catch(e){}
+  const rows=(r&&r.rows)||[];const box=view.querySelector('.bhq');if(!box||!rows.length)return;
+  const money=n=>'$'+Math.round(n).toLocaleString();
+  const opts=(DB||[]).map(d=>`<option value="${esc(((d.last||'')+' '+(d.first||'')).trim())} #${d.id}">`).join('');
+  const el=document.createElement('div');el.className='bhqsec bhqun';
+  el.innerHTML=`<h3>🔗 לא משויכים לכרטיס תורם <small>${rows.length} · השם בדף לא התאים בבירור לכרטיס אחד — בחר את התורם והוא ישויך</small></h3>
+    <datalist id="bhqdl">${opts}</datalist>
+    ${rows.map(x=>`<div class="bhqrow" style="cursor:default">
+      <div class="bhqobj"><b>${esc(x.object||'—')}</b><span>${esc(x.section||'')}</span></div>
+      <div class="bhqwho">${esc(x.who||'')}</div>
+      <div class="bhqamt">${amtNum(x.amount)?money(amtNum(x.amount)):''}</div>
+      <div class="bhqded">${esc(x.dedication||'')}</div>
+      <div style="grid-column:1/-1;display:flex;gap:6px"><input list="bhqdl" class="bhqpick" data-id="${x.id}" placeholder="🔍 בחר את התורם — הקלד שם" style="flex:1"><button class="btn sm bhqlink" data-id="${x.id}">שייך</button></div>
+    </div>`).join('')}`;
+  box.insertBefore(el,box.querySelector('.bhqsec')||null);
+  el.querySelectorAll('.bhqlink').forEach(b=>b.onclick=async()=>{
+    const inp=el.querySelector('.bhqpick[data-id="'+b.dataset.id+'"]');const m=String(inp.value||'').match(/#(\d+)\s*$/);
+    if(!m){toast('בחר תורם מהרשימה');inp.focus();return;}
+    b.disabled=true;const x=await api('POST','/api/building/link',{id:+b.dataset.id,donor_id:+m[1]});
+    if(x&&x.ok){toast('שויך ✓');await load();renderBldgHQ();}else{b.disabled=false;toast((x&&x.error)||'לא נשמר');}});
 }
 // סיכום לפי ייעוד — כמה נתרם לכל דבר, השנה ובסך הכל
 // "עבור מה" שמוצג בראש הכרטיס — הייעוד שנקבע לתורם, ואם לא נקבע אז לפי התרומות בפועל
