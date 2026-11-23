@@ -5907,6 +5907,22 @@ def ensure_schema():
     except Exception as e:
         print('  cm jobs barlev error:', e)
 
+    # 📋 משימות לשמעון ברלב מהמייל של 23.11.2026 — ממוספרות (פעם אחת; משימה שכבר קיימת לא נכנסת שוב)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='cm_jobs_barlev_v2'").fetchone():
+            _n = 0
+            for _t in reversed(CM_JOBS_BARLEV_V2):           # מוצג מהחדש לישן — כך יוצא 1, 2, 3...
+                if con.execute("SELECT 1 FROM cm_job WHERE title=? AND to_who='שמעון ברלב'", (_t,)).fetchone():
+                    continue
+                con.execute("INSERT INTO cm_job(title,note,to_who,by_who,due,status,created) VALUES(?,?,?,?,?,'open',?)",
+                            (_t, 'מהמייל של ראש הכולל · 23.11.2026', 'שמעון ברלב', 'ראש הכולל', '', now_iso()))
+                _n += 1
+            con.execute("INSERT INTO seed_flags(name) VALUES('cm_jobs_barlev_v2')")
+            con.commit()
+            print('  משימות לשמעון ברלב (23.11): נוספו', _n)
+    except Exception as e:
+        print('  cm jobs barlev v2 error:', e)
+
     # 📞 "רק פעם ביום" — גם בהגדרה שכבר נשמרה: בלי שיחה לפני כל אירוע
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='remind_once_v1'").fetchone():
@@ -39413,6 +39429,18 @@ def nd_hook(con, d):
 
 
 CM_TEAM = ['ראש הכולל', 'שמעון ברלב', 'אברהם רובינפלד', 'יוסף אורדנטליך']   # מאיר: "תוסיף עוד גבאי יוסף אורדנטליך"
+
+
+# מאיר (23.11.2026): "מה שכתבתי לך לכתוב לבר לב באימייל, תשים לו את זה במשימות שלו… לפי מספרים"
+CM_JOBS_BARLEV_V2 = [
+    '1. לעדכן את ראש הכולל: האם קיבלת את האשראי?',
+    '2. לעשות חשבון כמה העמותה חייבת לך, ולמסור לראש הכולל.',
+    '3. לסדר את ארון הספרים של הספרים הפרטיים.',
+    '4. לשים שלטים של קפה וסוכר בשני חדרי הקפה.',
+    '5. להתקין מכונת ייבוש ידיים בלובי הגדול.',
+    '6. ללמד את הפועל להשתמש במכשיר הניקיון של המקווה, ולנקות איתו את הלובי מדי שבוע.',
+    '7. תנובה (חשוב מאוד): לבקש מתנובה את כל חשבוניות המס מתחילת השנה עד היום – לא תעודות משלוח – ולהעביר לראש הכולל.',
+]
 
 
 # מאיר (דף "משימות לגבאים", PDF): "תוסיף את כל המשימות האלו בקהילה — משימות גבאים — עבור שמעון בר לב".
