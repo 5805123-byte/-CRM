@@ -3146,6 +3146,7 @@ function mkOpen(c){
           <button class="mkbtn ${c.phone&&!mkPhoneOk(c.phone)?'':'gh'}" id="mkphed" style="padding:6px 12px;font-size:.9rem">📞 ${c.phone&&!mkPhoneOk(c.phone)?'לתקן את הטלפון':'שינוי טלפון'}</button>
           ${c.phone?`<button class="mkbtn gh" id="mkkl" style="padding:6px 12px;font-size:.9rem" title="קישור אישי — לכבוד ר'… עדכון לגבי המקווה: פרטים וכרטיס אשראי בנדרים פלוס">💧 קישור אישי — וואטסאפ / מייל</button>`:''}
           ${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
+      <div id="mksync" data-id="${esc(c.id)}"></div>
       <div class="mktiles">
         ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`,'','group')}
         <div class="mktile" title="מחיר המנוי לפי הקבוצה — נקבע בהגדרות הקבוצה במקווה"><span>${mkIco('price')} מחיר המנוי <small style="font-weight:600;color:var(--muted)">(הקבוצה)</small></span><b>${c.price!=null?mkNis(c.price):(g&&g.price!=null?mkNis(g.price):'—')}</b></div>
@@ -3204,7 +3205,7 @@ function mkOpen(c){
     document.getElementById('mkctabs').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;MKCT=b.dataset.t;ctShow();};
     if(pick||state)MKCT='grp';
     ctShow();
-    mkHistLoad(c.id); mkPayLoad(c.id); mkDebtLoad(c.id); mkVmCard(c.id); mkDrainLoad(c.id);
+    mkHistLoad(c.id); mkPayLoad(c.id); mkDebtLoad(c.id); mkVmCard(c.id); mkDrainLoad(c.id); mkSyncLoad(c.id);
     document.getElementById('mkzikui').onclick=()=>mkZikui(c);
     document.getElementById('mkzk').onclick=()=>mkZikui(c);
     document.getElementById('mkblock').onclick=()=>mkBlock(c,draw);
@@ -3516,6 +3517,20 @@ async function mkRedial(b){
   if(r&&r.ok){toast('📞 יצא חיוג חוזר');const he=document.getElementById('mkhist');if(he&&he.dataset.id)setTimeout(()=>mkHistLoad(he.dataset.id),1500);if(document.getElementById('mklogr'))setTimeout(()=>mkLogOpen(),1500);}
   else uiAlert('החיוג החוזר לא יצא:\n'+((r&&r.error)||'שגיאה'));}
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.mkredial');if(!b)return;e.preventDefault();e.stopPropagation();mkRedial(b);},true);
+// 🔗 סנכרון חוצה-מערכות בכרטיס המקווה: הוראת קבע (נדרים פלוס, לפי הטלפון) + כולל (לפי השם)
+async function mkSyncLoad(cid){let el=document.getElementById('mksync');if(!el||el.dataset.id!==cid)return;
+  el.innerHTML='<div class="mksync"><div class="mksyncrow mksub">🔗 בודק הוראת קבע וכולל…</div></div>';
+  const r=await api('GET','/api/mikveh/sync/'+encodeURIComponent(cid)).catch(()=>null);
+  el=document.getElementById('mksync');if(!el||el.dataset.id!==cid)return;
+  if(!r||!r.ok){el.innerHTML='';return;}
+  const parts=[], kev=(r.keva||[]);
+  if(kev.length)parts.push(kev.map(k=>{const act=k.active&&!k.off;
+    return `<div class="mksyncrow"><span class="mktag ${act?'ok':'mu'}">💳 הו״ק ${act?'פעילה':'לא פעילה'}</span> ${k.amount?'<b>₪'+esc(k.amount)+'</b>':''}${k.groupe?' · <b>'+esc(k.groupe)+'</b>':''}${k.kind&&k.kind!=='bank'?' · '+esc(k.kind):''}${k.next_date?' · חיוב הבא '+esc(ndDate(k.next_date)):''}${k.last4?' · •'+esc(k.last4):''}${k.off?' <small style="color:#c0392b">('+esc(k.off)+')</small>':''}</div>`;}).join(''));
+  else parts.push('<div class="mksyncrow mksub">💳 אין הוראת קבע בנדרים פלוס (לפי הטלפון)</div>');
+  if((r.kollel||[]).length)parts.push(`<div class="mksyncrow"><span class="mktag ok">📚 לומד בכולל</span> <b>${r.kollel.map(esc).join(' · ')}</b></div>`);
+  else if(r.avrech)parts.push('<div class="mksyncrow"><span class="mktag mu">📚 רשום כאברך</span></div>');
+  el.innerHTML=`<div class="mksync">${parts.join('')}</div>`;
+}
 // 🧹 ערך צבור שרוקן — חיווי בתוך קוביית "ערך צבור (פעימות)" בכרטיס + כפתור החזרה
 async function mkDrainLoad(cid){let el=document.getElementById('mkbaldrain');if(!el||el.dataset.id!==cid)return;
   const r=await api('GET','/api/mikveh/drain/'+encodeURIComponent(cid)).catch(()=>null);

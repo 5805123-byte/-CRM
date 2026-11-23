@@ -28747,6 +28747,46 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'open': op, 'refunded': rf})
+        m = re.match(r'/api/mikveh/sync/([0-9a-fA-F-]{36})$', self.path.split('?')[0])
+        if m:
+            # 🔗 מאיר: "סנכרון מלא — לעקוב אחרי לקוח: הוראת קבע פעילה ובאיזה קטגוריה, ואם לומד בכולל ובאיזה".
+            # התאמה לפי הטלפון (הוראת קבע בנדרים פלוס) ולפי השם (אברך/כולל). קריאה בלבד, חוצה-מערכות.
+            cid = m.group(1)
+            import mikveh as _mk
+            try:
+                c = next((x for x in _mk.clients() if str(x.get('id')) == cid), None)
+            except Exception:
+                c = None
+            if not c:
+                return self._send(200, {'ok': False, 'error': 'הלקוח לא נמצא'})
+            phones = _phones_of(c.get('phone') or '')
+            name = re.sub(r'\s+', ' ', ((c.get('firstName') or '') + ' ' + (c.get('lastName') or '')).strip())
+            con = db()
+            try:
+                keva, seen = [], set()
+                idx = nd_member_index(con)
+                for ph in phones:
+                    mids = sorted(idx.get(ph) or set())
+                    like = '%;' + ph + ';%'
+                    sql = ("SELECT id,name,amount,groupe,active,next_date,last4,COALESCE(mosad,'') mosad,COALESCE(kind,'') kind,COALESCE(off,'') off "
+                           "FROM nd_keva WHERE (';'||COALESCE(phone,'')||';' LIKE ?"
+                           + (" OR member_id IN (%s)" % ','.join('?' * len(mids)) if mids else '') + ")")
+                    for r in con.execute(sql, [like] + mids):
+                        if r['id'] in seen:
+                            continue
+                        seen.add(r['id']); keva.append(dict(r))
+                try:
+                    koll = [r[0] for r in con.execute("SELECT DISTINCT kollel FROM stipends WHERE name=? AND COALESCE(kollel,'')<>'' ORDER BY kollel", (name,))]
+                except Exception:
+                    koll = []
+                try:
+                    is_av = bool(con.execute("SELECT 1 FROM avreichim WHERE name=?", (name,)).fetchone()) or bool(koll)
+                except Exception:
+                    is_av = bool(koll)
+            finally:
+                con.close()
+            keva.sort(key=lambda k: (0 if k.get('active') and not k.get('off') else 1))
+            return self._send(200, {'ok': True, 'name': name, 'phones': phones, 'keva': keva, 'kollel': koll, 'avrech': is_av})
         if self.path.split('?')[0] == '/api/mikveh/templates':
             con = db()
             try:
