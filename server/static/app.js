@@ -1976,13 +1976,13 @@ async function mkAuditWin(){
           <div class="mksub" style="font-weight:700;margin-top:8px">🕘 היסטוריה</div>
           <div class="mklist">${(MKAUD.admin.history||[]).slice(0,40).map(h=>`<div class="mksub" style="border-bottom:1px solid var(--line);padding:3px 0">${esc_(String(h.at||'').slice(0,16).replace('T',' '))}${h.name?' · '+esc_(h.name):''} — ${esc_(h.summary||'')}</div>`).join('')||'<div class="hintxt">אין היסטוריה.</div>'}</div></div>`:''}
       </div>
-      <div class="audpick" style="margin-top:8px">
-        <div class="mksub" style="font-weight:700;margin-bottom:2px">🔑 טוקן לחיבור חיצוני — לתת לקלוד כדי שיראה ויפעל מרחוק</div>
-        ${MKAUD.admin&&MKAUD.admin.token?`<div class="mksub" dir="ltr" style="word-break:break-all;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 8px" id="bk_tok_val">${esc_(MKAUD.admin.token)}</div>
+      <div class="audpick" style="margin-top:8px;border-color:#cdd6e6">
+        <div class="mksub" style="font-weight:700;margin-bottom:2px">🔑 טוקן API כללי — לקלוד, לכל פונקציה באתר</div>
+        <div class="mksub">הטוקן מזהה את קלוד כ<b>מנהל</b> בכל בקשה — כך הוא יכול לבצע כל פעולה באתר (לראות, לחסום, לפתוח, לעדכן). <b>שקול לסיסמת המנהל</b> — מסור רק למי שאתה סומך עליו, ואפשר לבטל בכל רגע.</div>
+        ${MKAUD.admin&&MKAUD.admin.token?`<div class="mksub" dir="ltr" style="word-break:break-all;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-top:4px" id="bk_tok_val">${esc_(MKAUD.admin.token)}</div>
           <div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bk_tok_copy">📋 העתק</button><button class="btn sm ghost" id="bk_tok_new">🔁 טוקן חדש</button><button class="btn sm ghost" id="bk_tok_rev">🗑 בטל טוקן</button></div>`
-          :`<div class="mksub">אין טוקן פעיל. ליצור טוקן יאפשר חיבור חיצוני (רק למי שמחזיק את הטוקן). מסור אותו רק למי שאתה סומך עליו.</div>
-          <div class="mktpl" style="margin-top:4px"><button class="btn sm" id="bk_tok_new">🔑 צור טוקן</button></div>`}
-        <div class="mksub" style="margin-top:4px" dir="ltr">${esc_((MKAUD.admin&&MKAUD.admin.ops_url)||'/api/mikveh/ops')}?token=…&amp;action=status</div>
+          :`<div class="mksub" style="margin-top:4px">אין טוקן פעיל.</div>
+          <div class="mktpl" style="margin-top:4px"><button class="btn sm" id="bk_tok_new">🔑 צור טוקן API</button></div>`}
       </div>`;
   }
   const fnone=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();

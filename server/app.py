@@ -23733,6 +23733,22 @@ class H(BaseHTTPRequestHandler):
         path = self.path.split('?')[0]
         if path in ('/api/login', '/api/login/google', '/api/logout', '/api/logout_all', '/api/me'):
             return self._auth_routes(path)
+        # 🔑 טוקן API כללי — מזהה את הבקשה כמנהל לכל פונקציה באתר (נוצר/מתבטל מהאתר, נשמר ב-api_token).
+        # רק כש-header כזה נשלח (אחרת אין פנייה למסד). הטוקן שקול לסיסמת המנהל — למי שאתה סומך עליו בלבד.
+        tk = (self.headers.get('X-Api-Token') or '').strip()
+        if not tk:
+            _az = (self.headers.get('Authorization') or '').strip()
+            if _az[:7].lower() == 'bearer ':
+                tk = _az[7:].strip()
+        if tk:
+            con = db()
+            try:
+                want = (kv_get(con, 'api_token', '') or '').strip()
+            finally:
+                con.close()
+            if want and hmac.compare_digest(str(tk), str(want)):
+                self.role = 'admin'
+                return True
         if not auth_on():
             self.role = 'admin'
             return True
@@ -27185,14 +27201,14 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {'ok': True, 'text': ' '.join('[%s]' % x[3:] if x.startswith('z-T') else x for x in segs),
                                     'ivr': '.'.join(x if x.startswith('z-') else 't-' + x for x in segs)})
         if self.path.split('?')[0] == '/api/mikveh/ops':
-            # 🔧 פעולת תחזוקה מרחוק, מוגנת בטוקן סודי (נוצר באתר — mk_ops_token — או MIKVEH_OPS_TOKEN). בלי הטוקן — חסום.
+            # 🔧 פעולת תחזוקה מרחוק, מוגנת בטוקן ה-API הכללי (api_token) או MIKVEH_OPS_TOKEN. בלי הטוקן — חסום.
             # action=status — מי חסום בקבוצות הבחורים; unblock_bachur — לבטל את כל החסימות; history — יומן החסימות/הפתיחות.
             import mikveh as _mk
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             tok = (qs.get('token') or [self.headers.get('X-Ops-Token') or ''])[0]
             con0 = db()
             try:
-                want = (kv_get(con0, 'mk_ops_token', '') or os.environ.get('MIKVEH_OPS_TOKEN') or '').strip()
+                want = (kv_get(con0, 'api_token', '') or os.environ.get('MIKVEH_OPS_TOKEN') or '').strip()
             finally:
                 con0.close()
             if not want or not tok or not hmac.compare_digest(str(tok), want):
@@ -27209,7 +27225,7 @@ class H(BaseHTTPRequestHandler):
             con = db()
             try:
                 st = mk_bachur_state(con, 'status')
-                token = (kv_get(con, 'mk_ops_token', '') or '').strip()
+                token = (kv_get(con, 'api_token', '') or '').strip()
             finally:
                 con.close()
             host = (self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or '').strip()
@@ -31788,18 +31804,18 @@ class H(BaseHTTPRequestHandler):
                                     'ran': res is not None, 'ran_blocked': (res or {}).get('blocked', 0),
                                     'ran_reset': (res or {}).get('reset', 0), 'ran_offenders': (res or {}).get('offenders', 0),
                                     'reset': reset})
-        if self.path == '/api/mikveh/ops_token':
-            # 🔑 טוקן לחיבור חיצוני (ל-Claude) — נוצר/מתבטל מהאתר, נשמר אצלנו (בלי Render). action=generate|revoke
+        if self.path in ('/api/mikveh/ops_token', '/api/api_token'):
+            # 🔑 טוקן API כללי (ל-Claude) — מזהה כמנהל לכל פונקציה באתר. נוצר/מתבטל מהאתר, נשמר ב-api_token (בלי Render).
             import secrets
             act = str(b.get('action') or 'generate')
             con = db()
             try:
                 if act == 'revoke':
-                    kv_set(con, 'mk_ops_token', '')
+                    kv_set(con, 'api_token', '')
                     tok = ''
                 else:
                     tok = secrets.token_urlsafe(24)
-                    kv_set(con, 'mk_ops_token', tok)
+                    kv_set(con, 'api_token', tok)
                 con.commit()
             finally:
                 con.close()
