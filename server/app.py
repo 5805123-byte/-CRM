@@ -18615,7 +18615,7 @@ def globe_png(width=108):
     return _LH_CACHE[k]
 
 
-CL_FOOTER = ('Kollel Chatzos \u00b7 38 Knesset Yechezkel St., Beitar Illit, Israel \u00b7 Tel 972-2-580-3545 \u00b7 From U.S. 646-403-3750<br>'
+CL_FOOTER = ('Kollel Chatzos \u00b7 38 Knesset Yechezkel St., Beitar Illit, Israel \u00b7 Tel 972-2-580-3545<br>'
              'U.S.A.: Kollel Chatzos c/o Friedman Family, 1540 40th Street, Brooklyn, NY 11218 \u00b7 Tel 718-972-7169<br>'
              'chatzot18@gmail.com \u00b7 www.kollelchatzot.com')
 
@@ -20047,7 +20047,7 @@ def give_page(base=''):
           '<meta property="og:title" content="Kollel Chatzos · Secure Online Donation Page">'
           '<meta property="og:description" content="Donate · A night of learning for your merit · Yissachar–Zevulun · Names for prayer">'
           '<meta property="og:site_name" content="Kollel Chatzos"><meta property="og:type" content="website">'
-          '<meta property="og:image" content="{b}/give_og.png?v=1"><meta property="og:image:secure_url" content="{b}/give_og.png?v=1">'
+          '<meta property="og:image" content="{b}/give_og.png?v=2"><meta property="og:image:secure_url" content="{b}/give_og.png?v=2">'
           '<meta property="og:image:type" content="image/png"><meta property="og:image:width" content="600"><meta property="og:image:height" content="600">'
           '<meta property="og:image:alt" content="Kollel Chatzos · Secure Online Donation"><meta name="twitter:card" content="summary">'
           '<link rel="icon" href="/icon-192.png">').format(b=base)
@@ -37572,7 +37572,7 @@ def bq_refund(tx_id, amount=None, reason='', notify=False):
                            (' ending in ' + card) if card else '', cdt) +
                         'It usually appears on your card statement within a few business days.\n\n'
                         'Thank you for your continued support of the Torah learning at Chatzos.\n\n'
-                        'Kollel Chatzos Eretz Yisroel\nchatzot18@gmail.com · 1-646-403-3750')
+                        'Kollel Chatzos Eretz Yisroel\nchatzot18@gmail.com')
                 try:
                     import mailer
                     if mailer.configured():
