@@ -1859,7 +1859,7 @@ async function mkUnpaidOpen(start){
       ${L.length?'<button class="btn sm" id="uncsv" style="margin-top:8px">⬇️ אקסל</button>':''}`:''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   const b=document.getElementById('unrun');if(b)b.onclick=()=>mkUnpaidOpen(true);
-  rs.querySelectorAll('[data-un]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.un);if(!c)return;MK_BACK={cid:c.id,go:()=>mkUnpaidOpen()};mkOpen(c);});
+  rs.querySelectorAll('[data-un]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.un);if(!c)return;const sc=rs.scrollTop;MK_BACK={cid:c.id,go:()=>{mkUnpaidOpen();rs.scrollTop=sc;}};mkOpen(c);});
   const cv=document.getElementById('uncsv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
     const csv=['שם,טלפון,מספר לקוח,קבוצה,כניסה אחרונה,מנוי עד,תשלום אחרון,סכום'].concat(L.map(x=>[x.name,x.phone,x.code||'',x.group,x.last_in.replace('T',' '),x.sub_end,x.last_pay,x.last_amt||''].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='נכנס ולא שילם.csv';document.body.appendChild(a);a.click();a.remove();};
@@ -1890,7 +1890,7 @@ async function mkRenewCheck(start){
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   rs.querySelectorAll('[data-mon]').forEach(b=>b.onclick=()=>{mkRenewMonths=+b.dataset.mon;mkRenewCheck();});
   const b=document.getElementById('rnrun');if(b)b.onclick=()=>mkRenewCheck(true);
-  rs.querySelectorAll('[data-rn]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.rn);if(!c)return;MK_BACK={cid:c.id,go:()=>mkRenewCheck()};mkOpen(c);});
+  rs.querySelectorAll('[data-rn]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.rn);if(!c)return;const sc=rs.scrollTop;MK_BACK={cid:c.id,go:()=>{mkRenewCheck();rs.scrollTop=sc;}};mkOpen(c);});
   const cv=document.getElementById('rncsv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
     const csv=['שם,טלפון,מספר לקוח,קבוצה,סוג מנוי,מחיר המנוי,מנוי מ,מנוי עד,חידוש אוטומטי,מחיר מיוחד,תשלום אחרון,סכום'].concat(L.map(x=>[x.name,x.phone,x.code||'',x.group,per(x.sub_start,x.sub_end),x.price!=null?x.price:'',x.sub_start,x.sub_end,x.auto?'כן':'לא',x.fix?'כן':'לא',x.last_pay,x.last_amt||''].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='מנוי בלי חיוב.csv';document.body.appendChild(a);a.click();a.remove();};
@@ -2022,7 +2022,7 @@ async function mkAuditWin(){
     <div class="mklist" id="aud_list">${curList.map(row).join('')||'<div class="hintxt">'+empty+'</div>'}</div>
     <div class="mktpl" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;flex-wrap:wrap"><button class="btn sm ghost" id="aud_self">🔄 קבוצות רגילות (שלוחת שינוי סוג מנוי)</button><button class="btn sm ghost" id="aud_renew">🧾 מנוי בלי חיוב »</button><button class="btn sm ghost" id="aud_csv">⬇️ אקסל</button></div>`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
-  const wireRows=()=>rs.querySelectorAll('[data-ao]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.ao);if(!c)return;MK_BACK={cid:c.id,go:()=>mkAuditWin()};mkOpen(c);});
+  const wireRows=()=>rs.querySelectorAll('[data-ao]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.ao);if(!c)return;const sc=rs.scrollTop;MK_BACK={cid:c.id,go:()=>{mkAuditWin();rs.scrollTop=sc;}};mkOpen(c);});
   const repaint=()=>{curList=sortF(applyF(baseOf()));const lst=document.getElementById('aud_list'),cnt=document.getElementById('aud_cnt');
     if(cnt)cnt.textContent=curList.length+' לקוחות ברשימה';
     if(lst){const fn=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();lst.innerHTML=curList.map(row).join('')||'<div class="hintxt">'+(fn?'אין לקוח שמתאים לסינון.':empty)+'</div>';wireRows();}};
