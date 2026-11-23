@@ -675,6 +675,12 @@ def ensure_schema():
     CREATE TABLE IF NOT EXISTS cm_ledger(id INTEGER PRIMARY KEY AUTOINCREMENT, month TEXT, kind TEXT, date TEXT,
         amount REAL, purpose TEXT, method TEXT, note TEXT, created TEXT, updated TEXT);
     CREATE INDEX IF NOT EXISTS ix_cm_ledger_month ON cm_ledger(month);
+    /* 📚 אוצר הספרים — רשימת ספרים (עם תורם, תשלום וחוב, הנצחה) + הכנסות/הוצאות משלו. נפרד לגמרי. */
+    CREATE TABLE IF NOT EXISTS book_item(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, cost REAL, donor TEXT,
+        paid REAL, method TEXT, dedication TEXT, note TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS book_ledger(id INTEGER PRIMARY KEY AUTOINCREMENT, month TEXT, kind TEXT, date TEXT,
+        amount REAL, purpose TEXT, method TEXT, note TEXT, created TEXT, updated TEXT);
+    CREATE INDEX IF NOT EXISTS ix_book_ledger_month ON book_ledger(month);
     /* משימות הצוות — ראש הכולל, שמעון ברלב, אברהם רובינפלד: "כל אחד יכול לרשום לשני משימות
        שעליו לבצע בעצמו או שהשני יעשה" */
     CREATE TABLE IF NOT EXISTS cm_job(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, note TEXT, to_who TEXT,
@@ -3596,6 +3602,180 @@ def ensure_schema():
                 print('      %-24s %d' % (k, v))
     except Exception as e:
         print('  אוטרייז ספטמבר error:', e)
+
+    # מאיר (19.11.2026): "אני צריך את הקבלה במערכת שלנו… תכניס את זה למערכת ואפיק קבלה" — מיכאל ג'קובסון
+    # (Michael Jacobsen) ביקש קבלה רשמית על 2025. התרומה היחידה שלו ב-2025: אוטרייז 10-Mar-2025, $360,
+    # Visa 7515, מס' עסקה 80930462159 (מהקבלה שהוא העביר במייל). נרשמת בכרטיס שלו באותו מסלול כמו
+    # שאר חיובי אוטרייז — בלי כפילות אם כבר רשומה. הכרטיס: לפי החיובים הקודמים שלו מאוטרייז, או לפי המייל.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='jacobsen_2025_v1'").fetchone():
+            _src = 'Authorize 2025'
+            _ids = {r['donor_id'] for r in con.execute(
+                "SELECT donor_id FROM recon WHERE donor_id IS NOT NULL AND LOWER(TRIM(first))='michael' "
+                "AND LOWER(TRIM(last))='jacobsen'")}
+            if len(_ids) != 1:
+                _ids = {r['id'] for r in con.execute(
+                    "SELECT id FROM donors WHERE LOWER(COALESCE(email,'')) LIKE '%mjacobsen@%'")}
+            did0 = next(iter(_ids)) if len(_ids) == 1 else None
+            con.execute("""INSERT OR IGNORE INTO recon(tid,first,last,amount,date,addr,city,state,zip,
+                               phone,email,recurring,donor_id,category,processed,source,status,note)
+                           VALUES('80930462159','Michael','Jacobsen','360.00','10-Mar-2025','619 Beach 8th St.',
+                                  'Far Rockaway','NY','11691','6467531435','mjacobsen@normanbobrow.com',0,?,'כללי',0,?,
+                                  'settled','Visa 7515')""", (did0, _src))
+            if did0:
+                ins, merged, had, unk, by = banquest_post(con, _src, ['80930462159'])
+                print('  ג\'קובסון 2025 (תורם %s): נרשמו %d, אומתו %d, היו כבר %d' % (did0, ins, merged, had))
+                con.execute("INSERT INTO seed_flags(name) VALUES('jacobsen_2025_v1')")
+            else:
+                print('  ג\'קובסון 2025: לא נמצא כרטיס יחיד — החיוב נשאר בתור לשיוך ידני')
+            con.commit()
+    except Exception as e:
+        print('  jacobsen 2025 error:', e)
+    # מאיר (21.11.2026): "שניאור זלמן מיטמן הפסיק את היששכר זבולון שלו מא' כסליו, אז תוציא אותו מהרשימה של
+    # יששכר זבולון" — כל השותפויות הפעילות שלו נסגרות מ-א' כסלו תשפ"ז (11.11.2026), וגם ההתחייבות החודשית
+    # ליששכר־זבולון. האברך עצמו נשאר בכולל (בלי זבולון). החיוב האוטומטי שלו — לא נוגעים (מאיר יחליט מהכרטיס).
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='mittman_sz_iz_end_v1'").fetchone():
+            _ds = con.execute("SELECT id FROM donors WHERE TRIM(last)='מיטמן' AND TRIM(first) LIKE 'שניאור%'").fetchall()
+            if len(_ds) == 1:
+                _did = _ds[0]['id']
+                _hd = 'א\' כסלו תשפ"ז'
+                _ps = con.execute("SELECT id,avreich FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0", (_did,)).fetchall()
+                for _p in _ps:
+                    con.execute("UPDATE partners SET active=0, ended_date='2026-11-11' WHERE id=?", (_p['id'],))
+                    iz_log(con, _p['avreich'] or '', _did, '❌ הפסיק את יששכר־זבולון עם האברך %s — מ%s' % (_p['avreich'] or '', _hd),
+                           now_iso(), _hd)
+                _np = con.execute("UPDATE pledges SET status='הסתיים' WHERE donor_id=? AND COALESCE(monthly,0)=1 "
+                                  "AND category LIKE '%יששכר%' AND COALESCE(status,'')<>'הסתיים'", (_did,)).rowcount
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (_did, today_iso(), 'הערה', '❌ הפסיק את יששכר־זבולון מ%s (%d אברכים, %d התחייבויות)' % (_hd, len(_ps), _np)))
+                # "וגם הוא מפסיק את התרומות החודשיות — מעכשיו אם הוא לא תורם אין לו חוב, לציין בהערות בכרטיס"
+                # — "הפסיק לתרום כל חודש" מ-11.11.2026 (ההתחייבות נסגרת, אין חוב, יורד מ"חסר" ו"לא עבר", והחיוב
+                # האוטומטי נעצר), ושורה בהערות של הכרטיס
+                _nt = 'הפסיק את היששכר־זבולון ואת התרומות החודשיות מא\' כסלו תשפ"ז (11.11.2026) — מאז אין לו חוב'
+                con.execute("UPDATE donors SET monthly_stop='2026-11-11', monthly_stop_charge=1, monthly_stop_note=?, "
+                            "notes=TRIM(COALESCE(notes,'') || CASE WHEN COALESCE(TRIM(notes),'')='' THEN '' ELSE char(10) END || ?) WHERE id=?",
+                            (_nt, _nt, _did))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (_did, today_iso(), 'הערה', '⛔ הפסיק לתרום כל חודש — מ-11/11/2026 · ' + _nt))
+                _mo = mstop_apply(con, _did)
+                print('  מיטמן שניאור זלמן: הפסיק לתרום כל חודש — חיוב אוטומטי שנעצר: %s %s' % (_mo.get('sched'), _mo.get('sched_err') or ''))
+                con.execute("INSERT INTO seed_flags(name) VALUES('mittman_sz_iz_end_v1')")
+                con.commit()
+                print('  מיטמן שניאור זלמן: יששכר־זבולון הסתיים מא\' כסלו — %d אברכים, %d התחייבויות' % (len(_ps), _np))
+            else:
+                print('  מיטמן שניאור זלמן: נמצאו %d כרטיסים — לא בוצע' % len(_ds))
+    except Exception as e:
+        print('  mittman iz end error:', e)
+    # מאיר (22.11.2026): "אצל טעפר זה $500… כבר אמרנו שזה $500, תתקן את זה במערכת דחוף, שנותן כל חודש $500.
+    # הוא אף פעם לא התחייב על 5,000, זה 500, תסמן את זה על הכל, וכנראה כתוב לו שם שהוא חייב הרבה כסף בגלל זה"
+    # — יצחק טעפפער: כל שורה של 5000 (השותפות עם פילמר מאיר וההתחייבויות החודשיות) → 500 לחודש.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='tepper_500_v1'").fetchone():
+            _td = con.execute("SELECT id FROM donors WHERE last LIKE '%טעפפער%' AND first LIKE '%יצחק%'").fetchall()
+            if len(_td) == 1:
+                _did = _td[0]['id']
+                _np = 0
+                for _p in con.execute("SELECT id,amount,share FROM partners WHERE donor_id=?", (_did,)).fetchall():
+                    if abs(_amt2(_p['amount']) - 5000) < 0.5:
+                        con.execute("UPDATE partners SET amount='500' WHERE id=?", (_p['id'],)); _np += 1
+                    if abs(_amt2(_p['share']) - 5000) < 0.5:
+                        con.execute("UPDATE partners SET share='500' WHERE id=?", (_p['id'],))
+                _nl = 0
+                for _l in con.execute("SELECT id,amount,permo FROM pledges WHERE donor_id=? AND COALESCE(monthly,0)=1", (_did,)).fetchall():
+                    if abs(_amt2(_l['amount']) - 5000) < 0.5 or abs(_amt2(_l['permo']) - 5000) < 0.5:
+                        con.execute("UPDATE pledges SET amount='500', permo='500' WHERE id=?", (_l['id'],)); _nl += 1
+                con.execute("UPDATE donors SET notes=TRIM(COALESCE(notes,'') || CASE WHEN COALESCE(TRIM(notes),'')='' THEN '' ELSE char(10) END || ?) WHERE id=?",
+                            ('נותן $500 לחודש ליששכר־זבולון (פילמר מאיר, יחד עם סלקוביץ) — אף פעם לא התחייב על 5,000', _did))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (_did, today_iso(), 'הערה', '✏️ תוקן: $500 לחודש ולא $5,000 (%d שותפויות, %d התחייבויות)' % (_np, _nl)))
+                con.execute("INSERT INTO seed_flags(name) VALUES('tepper_500_v1')")
+                con.commit()
+                print('  טעפפער יצחק: 5000 → 500 (%d שותפויות, %d התחייבויות)' % (_np, _nl))
+            else:
+                print('  טעפפער יצחק: נמצאו %d כרטיסים — לא תוקן' % len(_td))
+    except Exception as e:
+        print('  tepper 500 error:', e)
+    # מאיר (21.11.2026): "כולל הוראה אין להם יששכר זבולון… גם גלזר יצא מכולל חצות, יכולים למחוק אותו גם מכולל
+    # חצות" — גלזר מנחם דוד (כולל הוראה בלבד) יוצא מיששכר־זבולון: המקום אצל הזבולון שלו (שמעון עשור) נשאר פתוח
+    # עם הסכום, כמו "יצא מהכולל", כדי לשבץ לו אברך של כולל חצות.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='glazer_iz_out_v1'").fetchone():
+            _gz = con.execute("SELECT name FROM avreichim WHERE name LIKE '%גלזר%' AND name LIKE '%מנחם%'").fetchall()
+            if len(_gz) == 1:
+                _anm = _gz[0]['name']
+                _hd = greg_to_heb_full(today_iso()) or today_iso()
+                _held = con.execute("SELECT id,donor_id FROM partners WHERE TRIM(avreich)=? AND COALESCE(active,1)<>0", (_anm,)).fetchall()
+                for _x in _held:
+                    con.execute("UPDATE partners SET avreich='', start_date='', renew_date=NULL, prev_avreich=?, prev_ended=? WHERE id=?",
+                                (_anm, _hd, _x['id']))
+                    iz_log(con, _anm, _x['donor_id'], '🚪 האברך %s יצא מיששכר־זבולון (כולל הוראה בלבד) — המקום פתוח לאברך של כולל חצות' % _anm,
+                           now_iso(), _hd)
+                con.execute("UPDATE avreichim SET seder='הוראה' WHERE name=?", (_anm,))
+                con.execute("INSERT INTO seed_flags(name) VALUES('glazer_iz_out_v1')")
+                con.commit()
+                print('  גלזר מנחם דוד: יצא מיששכר־זבולון — %d מקומות נפתחו' % len(_held))
+    except Exception as e:
+        print('  glazer iz out error:', e)
+    # מאיר: "תכין לי טיוטה עם הקבלה שלו" — הקבלה האמריקאית מופקת כאן (מספר אמיתי, נשמרת בחלון הקבלות),
+    # ונכנסת כטיוטה בג'ימייל (IMAP APPEND לתיקיית הטיוטות) כתשובה למייל שלו. שום דבר לא נשלח — מאיר שולח בעצמו.
+    try:
+        if os.environ.get('GMAIL_USER') and os.environ.get('GMAIL_APP_PASSWORD') \
+           and con.execute("SELECT 1 FROM seed_flags WHERE name='jacobsen_2025_v1'").fetchone() \
+           and not con.execute("SELECT 1 FROM seed_flags WHERE name='jacobsen_2025_draft_v1'").fetchone():
+            _dn = con.execute("SELECT id FROM donations WHERE tid='80930462159'").fetchone()
+            if _dn:
+                import imaplib, email.utils as _eu
+                from email.mime.multipart import MIMEMultipart
+                from email.mime.text import MIMEText
+                from email.mime.application import MIMEApplication
+                _doc = receipt_issue(con, _dn['id'], 'us', send=False)
+                _pdf, _fn = receipt_pdf(con, _doc['id'])
+                _num = _doc.get('num')
+                _txt = ('Dear Michael,\n\n'
+                        'Thank you for reaching out. Attached is our official receipt (No. %s) for your contribution of '
+                        '$360.00 on March 10, 2025. It includes our Tax ID (EIN 20-0447034) and our tax-exempt status '
+                        'under Section 501(c)(3).\n'
+                        'No goods or services were provided in exchange for this contribution.\n\n'
+                        'With deep appreciation for your partnership in the Torah of Chatzot,\n\n'
+                        'Rabbi Yehoshua Meir Deutsch\nKollel Chatzot\nEIN 20-0447034' % _num)
+                _mid = '<DSVPR16MB175736A293E5A0B036D89B90E5D37B2@DSVPR16MB175736.namprd16.prod.outlook.com>'
+                _m = MIMEMultipart()
+                _m['From'] = os.environ['GMAIL_USER'].strip()
+                _m['To'] = 'mjacobsen@bobrowmanagement.com'
+                _m['Subject'] = 'RE: FW: Transaction Receipt from Kollel Chatzos for $360.00 (USD)'
+                _m['In-Reply-To'] = _mid
+                _m['References'] = '<67cf0384.670a0220.213d75.ec32SMTPIN_ADDED_MISSING@mx.google.com> ' + _mid
+                _m['Date'] = _eu.formatdate(localtime=False)
+                _m['Message-ID'] = _eu.make_msgid(domain='kollelchatzot.com')
+                _m.attach(MIMEText(_txt, 'plain', 'utf-8'))
+                _a = MIMEApplication(_pdf, 'pdf')
+                _a.add_header('Content-Disposition', 'attachment', filename='Receipt-%s-Michael-Jacobsen.pdf' % _num)
+                _m.attach(_a)
+                M = imaplib.IMAP4_SSL('imap.gmail.com', timeout=25)
+                try:
+                    M.login(os.environ['GMAIL_USER'].strip(), os.environ['GMAIL_APP_PASSWORD'])
+                    _box = '"[Gmail]/Drafts"'
+                    for _ln in (M.list()[1] or []):
+                        _s = _ln.decode('utf-8', 'replace') if isinstance(_ln, bytes) else str(_ln)
+                        if '\\Drafts' in _s:
+                            _box = _s.rsplit(' "/" ', 1)[-1].strip()
+                            break
+                    _typ, _r = M.append(_box, '(\\Draft)', imaplib.Time2Internaldate(time.time()), _m.as_bytes())
+                finally:
+                    try: M.logout()
+                    except Exception: pass
+                if _typ == 'OK':
+                    con.execute("INSERT INTO seed_flags(name) VALUES('jacobsen_2025_draft_v1')")
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                                (_doc.get('donor_id'), today_iso(), 'מייל',
+                                 '🧾 הופקה קבלה %s על 2025 ($360, 10.3.2025) — טיוטה בג\'ימייל, ממתינה לשליחה' % _num, '', now_iso()))
+                    con.commit()
+                    print('  ג\'קובסון: קבלה %s הופקה, טיוטה נכנסה ל-%s' % (_num, _box))
+                else:
+                    print('  ג\'קובסון: הטיוטה לא נכנסה —', _typ, _r)
+    except Exception as e:
+        print('  jacobsen draft error:', e)
 
     # מאיר (על הדף המודפס של אוטרייז ספטמבר): "רשמתי בהערות מה עבור סוכות תשפ"ז,
     # קראתי לזה יו"ט… תתאם את זה ישירות. יש אחד גרוס שהוא תורם חדש, צריך להקים לו
@@ -8326,6 +8506,30 @@ def ensure_schema():
             _ns = con.execute("DELETE FROM stipends WHERE kind='monthly' AND period>='2026-10' AND name LIKE '%פיליפס%' AND name LIKE '%יונתן%'").rowcount
             if _ns:
                 print('  פיליפס יונתן: הוסר מ-%d רשימות חודשיות מחשון' % _ns)
+        # מאיר (18.11.2026): "תוציא את שלום פראנק ופיליפס וגלזר מהרשימה של הכולל חצות… שניהם בכלל לא,
+        # אם יש להם יששכר זבולון אז תשאיר ריק את הזבולון… מהכולל חצות לגמרי מחשוון" — פראנק יוצא מהכולל
+        # (המקום אצל הזבולון שלו נפתח), ונמחק מהרשימות החודשיות מחשון תשפ"ז
+        _sf = con.execute("SELECT name FROM avreichim WHERE name LIKE '%פראנק%' AND name LIKE '%שלום%'").fetchall()
+        if len(_sf) == 1:
+            _out.append(_sf[0]['name'])
+            if not con.execute("SELECT 1 FROM seed_flags WHERE name='frank_out_v1'").fetchone():
+                _ns = con.execute("DELETE FROM stipends WHERE kind='monthly' AND period>='2026-10' AND name LIKE '%פראנק%' AND name LIKE '%שלום%'").rowcount
+                con.execute("INSERT INTO seed_flags(name) VALUES('frank_out_v1')")
+                con.commit()
+                print('  פראנק שלום: הוסר מ-%d רשימות חודשיות מחשון' % _ns)
+        # גלזר מנחם דוד — "רק לומד בכולל הוראה": עובר לרשימת כולל הוראה בלבד, ונמחק מרשימות כולל חצות
+        # מחשון. נשאר אברך (בכולל הוראה), ולכן השותפות שלו ביששכר־זבולון לא נוגעים בה כאן.
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='glazer_horaa_only_v1'").fetchone():
+            _gz = con.execute("SELECT id,name FROM avreichim WHERE name LIKE '%גלזר%' AND name LIKE '%מנחם%'").fetchall()
+            if len(_gz) == 1:
+                con.execute("UPDATE avreichim SET seder='הוראה' WHERE id=?", (_gz[0]['id'],))
+                _ns = con.execute("DELETE FROM stipends WHERE kollel='חצות' AND kind='monthly' AND period>='2026-10' "
+                                  "AND name LIKE '%גלזר%' AND name LIKE '%מנחם%'").rowcount
+                iz_log(con, _gz[0]['name'], None, 'עבר לכולל הוראה בלבד — יצא מרשימת כולל חצות מחשון תשפ"ז',
+                       now_iso(), greg_to_heb_full(today_iso()) or today_iso())
+                print('  גלזר מנחם דוד: כולל הוראה בלבד, הוסר מ-%d רשימות חצות' % _ns)
+                con.execute("INSERT INTO seed_flags(name) VALUES('glazer_horaa_only_v1')")
+                con.commit()
         _left = 0
         for anm in _out:
             r = con.execute("SELECT id,ended FROM avreichim WHERE name=?", (anm,)).fetchone()
@@ -8372,6 +8576,411 @@ def ensure_schema():
             print('  אברך: עליס שמואל דוד חזר לכולל מ' + st)
     except Exception as e:
         print('  alis avreich error:', e)
+
+    # מאיר (22.11.2026): רשימת יששכר־זבולון תשפ"ז — מהדף המודפס עם התיקונים בכתב יד (אושר: "סופי v4").
+    # "הרשימה הקודמת שיש לך, אל תוציא אותה… שיהיה כתוב תשפ"ה–תשפ"ו. ועל זה תכתוב יששכר זבולון תשפ"ז, ושזה יהיה
+    # בראשי עכשיו". לכן: (1) צילום של כל השותפויות הפעילות כמו שהן היום → iz_snapshot_5785_5786 (בלי פאק דוד —
+    # "תמחק אותו גם מהקודם"); (2) תאריך תשפ"ז לכל שורה שכתב לידה תאריך (התאמה יחידה בלבד, לפי האברך והזבולון);
+    # (3) המלי/פינטער → $1,000; (4) פאק דוד (רוזנפלד יצחק) וקאהן אורי (גולדמן) הפסיקו מא' כסלו תשפ"ז;
+    # (5) X = "לא להדפסה" → ברשימת התעודות "לא צריך"; (6) שמות שנמחקו לגמרי — יצאו מהכולל.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_5787_v1'").fetchone():
+            _hk = 'א\' כסלו תשפ"ז'
+            _seed = json.load(open(os.path.join(HERE, 'iz_5787_seed.json'), encoding='utf-8'))
+
+            def _dn(r):
+                return re.sub(r'\s+', ' ', ((r['last'] or '') + ' ' + (r['first'] or '')).strip())
+
+            def _act(av=None):
+                q_ = ("SELECT p.id, p.donor_id, TRIM(p.avreich) av, p.start_date, p.amount, p.share, d.last, d.first "
+                      "FROM partners p JOIN donors d ON d.id=p.donor_id WHERE COALESCE(p.active,1)<>0 AND COALESCE(TRIM(p.avreich),'')<>''")
+                return con.execute(q_ + (" AND TRIM(p.avreich)=?" if av else "") + " ORDER BY TRIM(p.avreich), d.last",
+                                   ((av,) if av else ())).fetchall()
+
+            def _cert(pid, **kw):
+                try:
+                    s_ = json.loads(kv_get(con, 'izcert:p%d' % pid, '') or '{}')
+                except ValueError:
+                    s_ = {}
+                if not isinstance(s_, dict):
+                    s_ = {}
+                for k_, v_ in kw.items():
+                    if v_ is None:
+                        s_.pop(k_, None)
+                    else:
+                        s_[k_] = v_
+                kv_set(con, 'izcert:p%d' % pid, json.dumps(s_, ensure_ascii=False)[:4000])
+
+            _pak = [r for r in _act() if 'פאק' in (r['last'] or '') and 'דוד' in (r['first'] or '') and r['av'].startswith('רוזנפלד יצחק')]
+            _kahn = [r for r in _act() if re.search(r'קאהן|קהן|כהן', r['last'] or '') and 'אורי' in (r['first'] or '') and r['av'].startswith('גולדמן')]
+            _skip = {r['id'] for r in _pak}
+            # (1) הרשימה הקודמת — נשמרת כמו שהיא
+            _snap = [{'pid': r['id'], 'did': r['donor_id'], 'av': r['av'], 'donor': _dn(r), 'start': r['start_date'] or '',
+                      'amt': str(r['share'] if r['share'] not in (None, '') else (r['amount'] or ''))}
+                     for r in _act() if r['id'] not in _skip and _is_avreich(r['av'])]
+            kv_set(con, 'iz_snapshot_5785_5786', json.dumps({'title': 'יששכר־זבולון תשפ"ה–תשפ"ו', 'at': today_iso(), 'rows': _snap},
+                                                            ensure_ascii=False))
+            # (2)+(3)+(5) התאריכים, הסכום ו"לא להדפסה"
+            _miss, _upd, _nc = [], 0, 0
+            _byav = {}
+            for e_ in _seed:
+                _byav.setdefault(e_['av'], []).append(e_)
+            for av_, es_ in _byav.items():
+                cands = _act(av_)
+                for e_ in es_:
+                    if not e_['new'] and not e_['nocert'] and not (av_ == 'המלי שמואל חיים'):
+                        continue
+                    hit = [r for r in cands if _dn(r) == re.sub(r'\s+', ' ', e_['donor'])]
+                    if not hit:
+                        w_ = e_['donor'].split()
+                        hit = [r for r in cands if w_ and (r['last'] or '').strip() == w_[0]
+                               and (len(w_) < 2 or (r['first'] or '').strip().startswith(w_[1]))]
+                    if not hit and len(cands) == 1 and len(es_) == 1:
+                        hit = cands
+                    if len(hit) != 1:
+                        _miss.append('%s ← %s (%d)' % (av_, e_['donor'], len(hit)))
+                        continue
+                    p_ = hit[0]
+                    kw_ = {}
+                    if e_['new'] and e_['new'] != (p_['start_date'] or '').strip():
+                        _pt = e_['new'].split()
+                        try:
+                            _g = heb_greg_year(' '.join(_pt[:-1]), _pt[-1]) if len(_pt) >= 3 else None
+                        except Exception:
+                            _g = None
+                        _rn = heb_anniv(e_['new'])
+                        con.execute("UPDATE partners SET start_date=?, start_greg=?, renew_date=? WHERE id=?",
+                                    (e_['new'], _g.isoformat() if _g else None, _rn.isoformat() if _rn else None, p_['id']))
+                        iz_log(con, av_, p_['donor_id'], '📅 יששכר־זבולון תשפ"ז: מתאריך %s (קודם: %s)' % (e_['new'], p_['start_date'] or '—'),
+                               now_iso(), e_['new'])
+                        kw_['date'] = None
+                        _upd += 1
+                    if av_ == 'המלי שמואל חיים' and abs(_amt2(p_['share'] or p_['amount']) - 1000) > 0.5:
+                        con.execute("UPDATE partners SET amount='1000', share=CASE WHEN COALESCE(share,'')='' THEN share ELSE '1000' END WHERE id=?",
+                                    (p_['id'],))
+                        iz_log(con, av_, p_['donor_id'], '✏️ הסכום תוקן ל-$1,000 לחודש', now_iso(), '')
+                        kw_['amt'] = None
+                    if e_['nocert']:
+                        kw_['st'] = 'no'
+                        _nc += 1
+                    if kw_:
+                        _cert(p_['id'], **kw_)
+            # (4) פאק דוד וקאהן אורי הפסיקו מא' כסלו תשפ"ז — השותפות נסגרת וההתחייבות החודשית ליששכר־זבולון מסתיימת
+            _ended = []
+            for r in _pak + _kahn:
+                con.execute("UPDATE partners SET active=0, ended_date='2026-11-11' WHERE id=?", (r['id'],))
+                iz_log(con, r['av'], r['donor_id'], '❌ %s הפסיק את יששכר־זבולון עם האברך %s — מ%s' % (_dn(r), r['av'], _hk),
+                       now_iso(), _hk)
+                _np = con.execute("UPDATE pledges SET status='הסתיים' WHERE donor_id=? AND COALESCE(monthly,0)=1 "
+                                  "AND category LIKE '%יששכר%' AND COALESCE(status,'')<>'הסתיים'", (r['donor_id'],)).rowcount
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (r['donor_id'], today_iso(), 'הערה', '❌ הפסיק את יששכר־זבולון עם %s מ%s (%d התחייבויות נסגרו)' % (r['av'], _hk, _np)))
+                _ended.append(_dn(r))
+            # (6) שמות שנמחקו לגמרי — לא בכולל (רק אם אין להם שותף פעיל)
+            _gone = []
+            for anm in ('חשין יט נחמן', 'מרגליות שמעון בריצ', 'פרידמן צמח דוד'):
+                a_ = con.execute("SELECT id,ended FROM avreichim WHERE TRIM(name)=?", (anm,)).fetchone()
+                if not a_ or (a_['ended'] or '').strip() or _act(anm):
+                    continue
+                con.execute("UPDATE avreichim SET ended=? WHERE id=?", (today_iso(), a_['id']))
+                iz_log(con, anm, None, '🚪 %s — לא בכולל (נמחק ברשימת תשפ"ז)' % anm, now_iso(), '')
+                _gone.append(anm)
+            # עליס — "ההערה 'תאריך לידה' נמחקה"
+            con.execute("UPDATE avreichim SET note=TRIM(REPLACE(COALESCE(note,''),'תאריך לידה: 21.11.1969','')) WHERE name='עליס שמואל דוד'")
+            kv_set(con, 'iz_5787_report', json.dumps({'updated': _upd, 'nocert': _nc, 'miss': _miss, 'ended': _ended,
+                                                      'gone': _gone, 'snapshot': len(_snap)}, ensure_ascii=False))
+            con.execute("INSERT INTO seed_flags(name) VALUES('iz_5787_v1')")
+            con.commit()
+            print('  יששכר־זבולון תשפ"ז: %d תאריכים, %d לא להדפסה, הסתיימו: %s, יצאו: %s, לא הותאמו: %s'
+                  % (_upd, _nc, ', '.join(_ended) or '—', ', '.join(_gone) or '—', '; '.join(_miss) or '—'))
+    except Exception as e:
+        print('  iz 5787 error:', e)
+    # מאיר (22.11.2026), תיקונים בכתב יד על הרשימה הסופית v4 — רק מה שכתב, השאר נשאר כמו שכתוב ברשימה:
+    # אבלסון → א' טבת תשפ"ז ולהדפסה; ברנס → בתעודה "ל. א." ו-₪4,000; גולדמן נתן ישראל ← שמעון עשור מא' כסלו
+    # (המקום שנשאר פתוח אחרי גלזר); היילפרין → כ"ד טבת תשפ"ז ולהדפסה; טברסקי שמואל ← טעפפער נתן יחזקאל מא' כסלו
+    # $1,000; כהן ציון — תעודה אחת לשלושת המיטמנים, $1,500; עליס ← יעקב מוקאי, ולכל האברכים של מוקאי א' טבת
+    # תשפ"ז; רובינפלד אברהם — לא בכולל; שפירא שמואל נחמן — בתעודה "וייזר דב".
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_5787_v2'").fetchone():
+            _log = []
+
+            def _c2(pid, **kw):
+                try:
+                    s_ = json.loads(kv_get(con, 'izcert:p%d' % pid, '') or '{}')
+                except ValueError:
+                    s_ = {}
+                if not isinstance(s_, dict):
+                    s_ = {}
+                for k_, v_ in kw.items():
+                    if v_ is None:
+                        s_.pop(k_, None)
+                    else:
+                        s_[k_] = v_
+                kv_set(con, 'izcert:p%d' % pid, json.dumps(s_, ensure_ascii=False)[:4000])
+
+            def _p2(av_like, d_last, d_first=''):
+                return con.execute("SELECT p.id, p.donor_id, TRIM(p.avreich) av, p.start_date FROM partners p JOIN donors d ON d.id=p.donor_id "
+                                   "WHERE COALESCE(p.active,1)<>0 AND TRIM(p.avreich) LIKE ? AND d.last LIKE ? AND COALESCE(d.first,'') LIKE ?",
+                                   (av_like + '%', '%' + d_last + '%', '%' + d_first + '%')).fetchall()
+
+            def _date2(p_, new):
+                _pt = new.split()
+                try:
+                    _g = heb_greg_year(' '.join(_pt[:-1]), _pt[-1])
+                except Exception:
+                    _g = None
+                _rn = heb_anniv(new)
+                con.execute("UPDATE partners SET start_date=?, start_greg=?, renew_date=? WHERE id=?",
+                            (new, _g.isoformat() if _g else None, _rn.isoformat() if _rn else None, p_['id']))
+                iz_log(con, p_['av'], p_['donor_id'], '📅 יששכר־זבולון תשפ"ז: מתאריך %s (קודם: %s)' % (new, p_['start_date'] or '—'), now_iso(), new)
+                _c2(p_['id'], date=None)
+
+            def _d2(last, first):
+                r_ = con.execute("SELECT id FROM donors WHERE last LIKE ? AND COALESCE(first,'') LIKE ?",
+                                 ('%' + last + '%', '%' + first + '%')).fetchall()
+                return r_[0]['id'] if len(r_) == 1 else None
+
+            def _av2(like):
+                r_ = con.execute("SELECT name FROM avreichim WHERE TRIM(name) LIKE ?", (like + '%',)).fetchall()
+                return r_[0]['name'].strip() if len(r_) == 1 else None
+
+            def _new2(avn, did, new, amt, why):
+                _g = None
+                try:
+                    _pt = new.split(); _g = heb_greg_year(' '.join(_pt[:-1]), _pt[-1])
+                except Exception:
+                    pass
+                _rn = heb_anniv(new)
+                con.execute("INSERT INTO partners(donor_id,avreich,start_date,start_greg,amount,active,renew_date) VALUES(?,?,?,?,?,1,?)",
+                            (did, avn, new, _g.isoformat() if _g else None, amt, _rn.isoformat() if _rn else None))
+                iz_log(con, avn, did, why, now_iso(), new)
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)", (did, today_iso(), 'הערה', why))
+
+            _hk, _ht = 'א\' כסלו תשפ"ז', 'א\' טבת תשפ"ז'
+            # אבלסון מאיר ← רוזנפלד יצחק: א' טבת תשפ"ז, $1,000, להדפסה
+            r_ = _p2('אבלסון מאיר', 'רוזנפלד', 'יצחק')
+            if len(r_) == 1:
+                _date2(r_[0], _ht); _c2(r_[0]['id'], st=None); _log.append('אבלסון ✓')
+            else:
+                _log.append('אבלסון ✗%d' % len(r_))
+            # ברנס נתנאל ← לרר אלחנן: בתעודה "ל. א.", ₪4,000 (התאריך ו"לא להדפסה" — כמו שכתוב)
+            r_ = _p2('ברנס נתנאל', 'לרר', 'אלחנן')
+            if len(r_) == 1:
+                con.execute("UPDATE partners SET cur='₪' WHERE id=?", (r_[0]['id'],))
+                _c2(r_[0]['id'], donor='ל. א.', amt='4000', cur='₪'); _log.append('ברנס ✓')
+            else:
+                _log.append('ברנס ✗%d' % len(r_))
+            # היילפרין מנחם זאב ← פרידמן יהושע: כ"ד טבת תשפ"ז, להדפסה
+            r_ = _p2('היילפרין מנחם זאב', 'פרידמן', 'יהושע')
+            if len(r_) == 1:
+                _date2(r_[0], 'כ"ד טבת תשפ"ז'); _c2(r_[0]['id'], st=None); _log.append('היילפרין ✓')
+            else:
+                _log.append('היילפרין ✗%d' % len(r_))
+            # גולדמן נתן ישראל ← שמעון עשור, מא' כסלו תשפ"ז, $1,000 — במקום שנשאר פתוח אצלו אחרי גלזר
+            _gav = _av2('גולדמן נתן ישראל')
+            _sa = _d2('עשור', 'שמעון')
+            if _gav and _sa:
+                _slot = con.execute("SELECT id FROM partners WHERE donor_id=? AND COALESCE(active,1)<>0 AND COALESCE(TRIM(avreich),'')='' "
+                                    "AND COALESCE(prev_avreich,'') LIKE '%גלזר%'", (_sa,)).fetchall()
+                _why = '↩️ %s נכנס כשותף של שמעון עשור מ%s — $1,000 לחודש (במקום גלזר)' % (_gav, _hk)
+                if len(_slot) == 1:
+                    _g = None
+                    try:
+                        _g = heb_greg_year('א\' כסלו', 'תשפ"ז')
+                    except Exception:
+                        pass
+                    _rn = heb_anniv(_hk)
+                    con.execute("UPDATE partners SET avreich=?, start_date=?, start_greg=?, renew_date=?, amount=CASE WHEN COALESCE(TRIM(amount),'')='' THEN '1000' ELSE amount END, "
+                                "prev_avreich='', prev_ended='' WHERE id=?",
+                                (_gav, _hk, _g.isoformat() if _g else None, _rn.isoformat() if _rn else None, _slot[0]['id']))
+                    iz_log(con, _gav, _sa, _why, now_iso(), _hk)
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)", (_sa, today_iso(), 'הערה', _why))
+                else:
+                    _new2(_gav, _sa, _hk, '1000', '🤝 %s נכנס כשותף של שמעון עשור מ%s — $1,000 לחודש' % (_gav, _hk))
+                _log.append('גולדמן←עשור ✓')
+            else:
+                _log.append('גולדמן←עשור ✗ (אברך:%s תורם:%s)' % (bool(_gav), bool(_sa)))
+            # טברסקי שמואל ← טעפפער נתן יחזקאל, מא' כסלו תשפ"ז, $1,000
+            _tav = _av2('טברסקי שמואל')
+            _tp = _d2('טעפפער', 'נתן')
+            if _tav and _tp:
+                _new2(_tav, _tp, _hk, '1000', '🤝 טעפפער נתן יחזקאל — שותף של %s מ%s, $1,000 לחודש' % (_tav, _hk)); _log.append('טברסקי ✓')
+            else:
+                _log.append('טברסקי ✗ (אברך:%s תורם:%s)' % (bool(_tav), bool(_tp)))
+            # יעקב מוקאי — עליס שמואל דוד מצטרף; לכל האברכים של מוקאי א' טבת תשפ"ז
+            _mk = _d2('מוקאי', 'יעקב')
+            _aav = _av2('עליס שמואל דוד')
+            if _mk and _aav:
+                for p_ in con.execute("SELECT p.id, p.donor_id, TRIM(p.avreich) av, p.start_date FROM partners p WHERE p.donor_id=? "
+                                      "AND COALESCE(p.active,1)<>0 AND COALESCE(TRIM(p.avreich),'')<>''", (_mk,)).fetchall():
+                    if (p_['start_date'] or '').strip() != _ht:
+                        _date2(p_, _ht)
+                _new2(_aav, _mk, _ht, '', '🤝 יעקב מוקאי — שותף של %s מ%s' % (_aav, _ht)); _log.append('עליס←מוקאי ✓')
+            else:
+                _log.append('עליס←מוקאי ✗ (אברך:%s תורם:%s)' % (bool(_aav), bool(_mk)))
+            # כהן ציון — תעודה אחת לשלושת המיטמנים, $1,500
+            for p_ in _p2('כהן ציון', 'מיטמן'):
+                _c2(p_['id'], amt='1500', note='תעודה אחת ביחד: מיטמן גבריאל, אפרים ומאיר — $1,500')
+            # שפירא שמואל נחמן — בתעודה "וייזר דב"
+            for p_ in _p2('שפירא שמואל נחמן', ''):
+                if re.search(r'ו+[יו]?זער|וייזר', con.execute("SELECT last FROM donors WHERE id=?", (p_['donor_id'],)).fetchone()['last'] or ''):
+                    _c2(p_['id'], donor='וייזר דב')
+            # רובינפלד אברהם — לא בכולל
+            _rb = _av2('רובינפלד אברהם')
+            if _rb and not con.execute("SELECT 1 FROM partners WHERE TRIM(avreich)=? AND COALESCE(active,1)<>0", (_rb,)).fetchone():
+                con.execute("UPDATE avreichim SET ended=? WHERE name=? AND COALESCE(TRIM(ended),'')=''", (today_iso(), _rb))
+                iz_log(con, _rb, None, '🚪 %s — לא בכולל (יצא מרשימת יששכר־זבולון)' % _rb, now_iso(), '')
+                _log.append('רובינפלד אברהם יצא')
+            try:
+                _rep = json.loads(kv_get(con, 'iz_5787_report', '') or '{}')
+            except ValueError:
+                _rep = {}
+            _rep['fix2'] = _log
+            _rep['miss'] = (_rep.get('miss') or []) + [x for x in _log if '✗' in x]
+            kv_set(con, 'iz_5787_report', json.dumps(_rep, ensure_ascii=False))
+            con.execute("INSERT INTO seed_flags(name) VALUES('iz_5787_v2')")
+            con.commit()
+            print('  יששכר־זבולון תשפ"ז — תיקונים 2: ' + ' · '.join(_log))
+    except Exception as e:
+        print('  iz 5787 v2 error:', e)
+    # מאיר (22.11.2026): "עליס 700 כמו אצל אחרים, פאק דוד וקאהן אורי הפסיקו לגמרי ולא משלמים יותר — תעדכן במערכת
+    # שלנו גם" — עליס ← מוקאי $700; פאק דוד וקאהן אורי: "הפסיק לתרום כל חודש" מא' כסלו תשפ"ז (11.11.2026) — אין חוב
+    # מאז, ההתחייבויות נסגרות והחיוב האוטומטי נעצר (כמו אצל מיטמן שניאור זלמן), ושורה בהערות בכרטיס.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_5787_v3'").fetchone():
+            _log = []
+            _n = con.execute("UPDATE partners SET amount='700' WHERE TRIM(avreich)='עליס שמואל דוד' AND COALESCE(TRIM(amount),'')='' "
+                             "AND COALESCE(active,1)<>0 AND donor_id IN (SELECT id FROM donors WHERE last LIKE '%מוקאי%')").rowcount
+            _log.append('עליס $700: %d' % _n)
+            _stop = {}
+            for r in con.execute("SELECT DISTINCT d.id, d.last, d.first, TRIM(p.avreich) av FROM partners p JOIN donors d ON d.id=p.donor_id "
+                                 "WHERE p.ended_date='2026-11-11'").fetchall():
+                if ('פאק' in (r['last'] or '') and 'דוד' in (r['first'] or '') and (r['av'] or '').startswith('רוזנפלד יצחק')) or \
+                   (re.search(r'קאהן|קהן|כהן', r['last'] or '') and 'אורי' in (r['first'] or '') and (r['av'] or '').startswith('גולדמן')):
+                    _stop[r['id']] = ((r['last'] or '') + ' ' + (r['first'] or '')).strip()
+            for _did, _nm in _stop.items():
+                _nt = 'הפסיק לגמרי את יששכר־זבולון ואת התרומות החודשיות מא\' כסלו תשפ"ז (11.11.2026) — מאז אין לו חוב'
+                con.execute("UPDATE donors SET monthly_stop='2026-11-11', monthly_stop_charge=1, monthly_stop_note=?, "
+                            "notes=TRIM(COALESCE(notes,'') || CASE WHEN COALESCE(TRIM(notes),'')='' THEN '' ELSE char(10) END || ?) WHERE id=?",
+                            (_nt, _nt, _did))
+                con.execute("UPDATE pledges SET status='הסתיים' WHERE donor_id=? AND COALESCE(monthly,0)=1 AND COALESCE(status,'')<>'הסתיים'", (_did,))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (_did, today_iso(), 'הערה', '⛔ הפסיק לתרום כל חודש — מ-11/11/2026 · ' + _nt))
+                _mo = mstop_apply(con, _did)
+                _log.append('%s: הפסיק (חיוב אוטומטי: %s %s)' % (_nm, _mo.get('sched'), _mo.get('sched_err') or ''))
+            if len(_stop) < 2:
+                _log.append('⚠️ נמצאו רק %d מתוך 2 (פאק דוד / קאהן אורי)' % len(_stop))
+            try:
+                _rep = json.loads(kv_get(con, 'iz_5787_report', '') or '{}')
+            except ValueError:
+                _rep = {}
+            _rep['fix3'] = _log
+            kv_set(con, 'iz_5787_report', json.dumps(_rep, ensure_ascii=False))
+            con.execute("INSERT INTO seed_flags(name) VALUES('iz_5787_v3')")
+            con.commit()
+            print('  יששכר־זבולון תשפ"ז — תיקונים 3: ' + ' · '.join(_log))
+    except Exception as e:
+        print('  iz 5787 v3 error:', e)
+    # מאיר (22.11.2026): "גדולד נותן רק 1000 שקל, זה 350 דולר" — השותפות של גדולד מרדכי פרץ עם רובינפיין חיים נחמן
+    # היא ₪1,000 לחודש (לא $1,000)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='gdold_ils_v1'").fetchone():
+            _gp = con.execute("SELECT p.id, p.donor_id, TRIM(p.avreich) av FROM partners p JOIN donors d ON d.id=p.donor_id "
+                              "WHERE COALESCE(p.active,1)<>0 AND TRIM(p.avreich) LIKE 'רובינפיין%' AND d.last LIKE '%גדולד%'").fetchall()
+            if len(_gp) == 1:
+                con.execute("UPDATE partners SET amount='1000', cur='₪' WHERE id=?", (_gp[0]['id'],))
+                iz_log(con, _gp[0]['av'], _gp[0]['donor_id'], '✏️ הסכום תוקן: ₪1,000 לחודש (לא $1,000)', now_iso(), '')
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (_gp[0]['donor_id'], today_iso(), 'הערה', '✏️ יששכר־זבולון עם %s: ₪1,000 לחודש (לא $1,000)' % _gp[0]['av']))
+            con.execute("INSERT INTO seed_flags(name) VALUES('gdold_ils_v1')")
+            con.commit()
+            print('  גדולד: ₪1,000 לחודש — %d שותפויות תוקנו' % len(_gp))
+    except Exception as e:
+        print('  gdold ils error:', e)
+    # מאיר (22.11.2026): "יעקב מוקאי יש לו 3 אברכים, שכחת את שמעון ברלב" — ברלב כן בתעודה (בטל ה"לא להדפסה")
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='berlev_cert_v1'").fetchone():
+            for _p in con.execute("SELECT p.id FROM partners p JOIN donors d ON d.id=p.donor_id WHERE COALESCE(p.active,1)<>0 "
+                                  "AND TRIM(p.avreich) LIKE 'ברלב%' AND d.last LIKE '%מוקאי%'").fetchall():
+                try:
+                    _s = json.loads(kv_get(con, 'izcert:p%d' % _p['id'], '') or '{}')
+                except ValueError:
+                    _s = {}
+                if isinstance(_s, dict) and _s.get('st') == 'no':
+                    _s.pop('st', None)
+                    kv_set(con, 'izcert:p%d' % _p['id'], json.dumps(_s, ensure_ascii=False))
+            con.execute("INSERT INTO seed_flags(name) VALUES('berlev_cert_v1')")
+            con.commit()
+    except Exception as e:
+        print('  berlev cert error:', e)
+    # מאיר (22.11.2026): "אצל סימס תעלה את זה ל-700 דולר וגם במערכת שלנו תציין שזה 700" — שבע רחל סימס, עם עקשטיין גמליאל
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='sims_700_v1'").fetchone():
+            _sp = con.execute("SELECT p.id, p.donor_id, TRIM(p.avreich) av, p.amount FROM partners p JOIN donors d ON d.id=p.donor_id "
+                              "WHERE COALESCE(p.active,1)<>0 AND d.last LIKE '%סימס%' AND COALESCE(TRIM(p.avreich),'')<>''").fetchall()
+            if len(_sp) == 1:
+                con.execute("UPDATE partners SET amount='700', share=CASE WHEN COALESCE(share,'')='' THEN share ELSE '700' END WHERE id=?",
+                            (_sp[0]['id'],))
+                _n = con.execute("UPDATE pledges SET amount='700', permo='700' WHERE donor_id=? AND COALESCE(monthly,0)=1 "
+                                 "AND category LIKE '%יששכר%' AND COALESCE(status,'')<>'הסתיים'", (_sp[0]['donor_id'],)).rowcount
+                iz_log(con, _sp[0]['av'], _sp[0]['donor_id'], '✏️ הסכום עלה ל-$700 לחודש (קודם: $%s)' % (_sp[0]['amount'] or '—'), now_iso(), '')
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                            (_sp[0]['donor_id'], today_iso(), 'הערה', '✏️ יששכר־זבולון עם %s: $700 לחודש (%d התחייבויות עודכנו)' % (_sp[0]['av'], _n)))
+                print('  סימס: $700 לחודש')
+            else:
+                print('  סימס: נמצאו %d שותפויות — לא עודכן' % len(_sp))
+            con.execute("INSERT INTO seed_flags(name) VALUES('sims_700_v1')")
+            con.commit()
+    except Exception as e:
+        print('  sims 700 error:', e)
+    # מאיר (23.11.2026): "איפה הווב שעשינו על הבניין? זה לא במערכת, בדף הבניין יש רק 3 תרומות" — דף "נוסחי ההקדשות"
+    # (99 הקדשות, מאיר אישר 85 ומחק 9) נכנס ללשונית "הבניין הקדוש": כל הקדשה לכרטיס התורם כשיש התאמה ברורה אחת
+    # בלבד; בלי התאמה ברורה — נשמרת עם השם מהדף ומוצגת ב"לא משויכים", למאיר לשייך בלחיצה (לא מנחשים).
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='building_ded_v1'").fetchone():
+            _bd = json.load(open(os.path.join(HERE, 'building_ded_seed.json'), encoding='utf-8'))
+
+            def _bmatch(nm):
+                fam = bool(re.search(r'משפחת|האחים', nm or ''))
+                t = [x for x in re.sub(r'[–\-]', ' ', re.sub(r'משפחת|האחים', ' ', nm or '')).split() if x]
+                if not t:
+                    return None
+                if len(t) >= 2 and not fam:
+                    r_ = con.execute("SELECT id FROM donors WHERE TRIM(last)=? AND TRIM(COALESCE(first,'')) LIKE ?",
+                                     (t[0], t[1] + '%')).fetchall()
+                    return r_[0]['id'] if len(r_) == 1 else None
+                r_ = con.execute("SELECT id FROM donors WHERE TRIM(last)=?", (t[0],)).fetchall()
+                return r_[0]['id'] if len(r_) == 1 else None
+
+            _lnk = _un = _skip = 0
+            for it in _bd['items']:
+                did = _bmatch(it['donor']) or (_bmatch(it['orig']) if it['orig'] != it['donor'] else None)
+                obj = (it['item'] or '').strip()
+                if did and con.execute("SELECT 1 FROM building WHERE donor_id=? AND TRIM(COALESCE(object,''))=?", (did, obj)).fetchone():
+                    _skip += 1
+                    continue
+                amt = ('%d' % it['amount']) if it.get('amount') else ''
+                paid = ('%d' % it['paid']) if it.get('paid') else ''
+                # תרומות שכבר רשומות במערכת על הדבר הזה נספרות לבד — אז לא רושמים "שולם" שוב
+                if did and paid and con.execute("SELECT 1 FROM donations WHERE donor_id=? AND category LIKE ?",
+                                                 (did, '%' + obj + '%')).fetchone():
+                    paid = ''
+                note = 'מדף נוסחי ההקדשות' + ('' if it.get('st') == 'ok' else ' · עוד לא אושר') \
+                       + ('' if did else ' · תורם בדף: ' + it['donor']) \
+                       + ((' · שולם לפי הרשימה: $%s' % '{:,}'.format(int(it['paid']))) if (it.get('paid') and not paid) else '') \
+                       + ((' · ' + it['note']) if it.get('note') else '')
+                con.execute("INSERT INTO building(donor_id,object,amount,paid,note,date,object_en,dedication,section) VALUES(?,?,?,?,?,?,?,?,?)",
+                            (did, obj, amt, paid, note, today_iso(), '', it['text'], it['cat']))
+                if did:
+                    _lnk += 1
+                else:
+                    _un += 1
+            kv_set(con, 'bldg_sections', json.dumps(_bd.get('sections') or [], ensure_ascii=False))
+            con.execute("INSERT INTO seed_flags(name) VALUES('building_ded_v1')")
+            con.commit()
+            print('  הקדשות הבניין: %d לכרטיסים, %d לא משויכים, %d כבר היו' % (_lnk, _un, _skip))
+    except Exception as e:
+        print('  building ded error:', e)
 
     # מאיר מיטמן — $585 לחודש על הרכב של כולל חצות, לצד $1,000 האברך שלו.
     # יחד $1,585, בדיוק הסכום הקבוע שרשום בכרטיס.
@@ -10207,6 +10816,52 @@ def ensure_schema():
             con.execute("INSERT INTO seed_flags(name) VALUES('stipends_tishrei_5787_v1')")
             con.commit()
             print('  מלגות תשרי תשפ"ז: נטענו %d שורות (חצות + הוראה)' % n)
+        # מאיר (19.11.2026): "תכניס את זה למערכת באברכים מלגות חשוון תשפ"ז כולל חצות וכולל הוראה, אם יש
+        # אברכים חדשים ברשימה פה אז תוסיף אותם לרשימה במערכת של האברכים" — מהקובץ "מלגות חשון תשפ"ז – סופי":
+        # כולל חצות 94 אברכים ₪165,991, כולל הוראה 33 ₪32,837. מי שלומד בשניהם — בשניהם, ובפירוט הסכום בכולל השני.
+        # 5 אברכים חדשים בכולל הוראה (לא היו ברשימות הקודמות) נכנסים לרשימת האברכים — רק אם אין שם זהה/דומה.
+        _hf = os.path.join(HERE, 'stipends_cheshvan_5787_seed.json')
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stipends_cheshvan_5787_v1'").fetchone() and os.path.exists(_hf):
+            n = 0
+            for r in json.load(open(_hf, encoding='utf-8')):
+                con.execute("INSERT INTO stipends(kollel,kind,period,name,amount,extra,note,details,att,src,created) VALUES(?,?,?,?,?,0,'',?,?,?,?) "
+                            "ON CONFLICT(kollel,kind,period,name) DO UPDATE SET amount=excluded.amount, details=excluded.details, att=excluded.att",
+                            (r['kollel'], r['kind'], r['period'], r['name'], float(r['amount'] or 0), r.get('details') or '', r.get('att') or '', 'קובץ', today_iso()))
+                n += 1
+            _st = greg_to_heb_full('2026-10-12') or 'א\' חשון תשפ"ז'
+            _new = []
+            for nm in ('בינדר אהרן', 'וינגוט שלמה זלמן', 'חזן שמואל', 'טרייטל שמעון צבי', 'רואף נתנאל יצחק'):
+                _l = nm.split(' ', 1)
+                if con.execute("SELECT 1 FROM avreichim WHERE TRIM(name)=? OR TRIM(name) LIKE ? OR ? LIKE TRIM(name) || ' %'",
+                               (nm, nm + ' %', nm)).fetchone():
+                    continue
+                con.execute("INSERT INTO avreichim(name,last,first,note,started,seder,created) VALUES(?,?,?,'',?,'הוראה',?)",
+                            (nm, _l[0], _l[1] if len(_l) > 1 else '', _st, today_iso()))
+                iz_log(con, nm, None, '➕ אברך חדש בכולל הוראה — מחשון תשפ"ז (מרשימת המלגות)', now_iso(), _st)
+                _new.append(nm)
+            con.execute("INSERT INTO seed_flags(name) VALUES('stipends_cheshvan_5787_v1')")
+            con.commit()
+            print('  מלגות חשון תשפ"ז: נטענו %d שורות; אברכים חדשים: %s' % (n, ', '.join(_new) or 'אין'))
+        # מאיר (19.11.2026): "אני רוצה שבמערכת תהיה גם לשונית של העברות ומלגות שכל ההעברות מתחילת תשפ"ז יהיו
+        # שם באופן מסודר לפי תאריכים" — טבלת העברות (מס"ב): כל שורה = העברה אחת. נטען מקבצי ההעברות שבדרייב
+        # (תיקיית "מלגות והעברות תשפ"ז"), ומשם והלאה — נוספות מהלשונית.
+        try:
+            con.execute("""CREATE TABLE IF NOT EXISTS transfers(id INTEGER PRIMARY KEY AUTOINCREMENT, skey TEXT UNIQUE,
+                date TEXT, payee TEXT, idnum TEXT, bank TEXT, branch TEXT, account TEXT, purpose TEXT, category TEXT,
+                amount REAL DEFAULT 0, src TEXT, note TEXT, created TEXT, updated TEXT)""")
+            _tf = os.path.join(HERE, 'transfers_5787_seed.json')
+            if not con.execute("SELECT 1 FROM seed_flags WHERE name='transfers_5787_v1'").fetchone() and os.path.exists(_tf):
+                n = 0
+                for r in json.load(open(_tf, encoding='utf-8')):
+                    n += con.execute("INSERT OR IGNORE INTO transfers(skey,date,payee,idnum,bank,branch,account,purpose,category,amount,src,note,created) "
+                                     "VALUES(?,?,?,?,?,?,?,?,?,?,?,'',?)",
+                                     (r['key'], r['date'], r['payee'], r['idnum'], r['bank'], r['branch'], r['account'], r['purpose'],
+                                      r['category'], float(r['amount']), r['src'], now_iso())).rowcount
+                con.execute("INSERT INTO seed_flags(name) VALUES('transfers_5787_v1')")
+                con.commit()
+                print('  העברות תשפ"ז: נטענו %d העברות מקבצי הדרייב' % n)
+        except Exception as e:
+            print('  transfers seed error:', e)
         # מאיר: "חלוקה נוספת לסוכות תשפ"ז לאברכי כולל חצות — שיהיה עוד רשימה של
         # 'מזומנים' ערב סוכות תשפ"ז" — 75 אברכים שקיבלו, ₪48,920 (מהקובץ "חלוקת ערב סוכות").
         _mf = os.path.join(HERE, 'stipends_sukkos_cash_seed.json')
@@ -15799,7 +16454,7 @@ AUTH_COMM = ('/api/data', '/api/members', '/api/cm/', '/api/yemot/', '/api/ym/',
 # טלפונים ומיילים (ראה _data_parnes), ובלי מחיקת כרטיסים
 AUTH_PARNES = ('/api/data', '/api/parnes', '/api/kvittel', '/kv-page', '/api/hebmonth', '/api/prayer', '/api/donor',
                '/cert.png', '/cert.jpg', '/api/task', '/api/intake', '/api/feedback')
-AUTH_GABBAI = tuple(dict.fromkeys(AUTH_COMM + AUTH_PARNES))     # קהילה + פרנס יום וקוויטל, בסיסמה אחת
+AUTH_GABBAI = tuple(dict.fromkeys(AUTH_COMM + AUTH_PARNES + ('/api/books',)))     # קהילה + פרנס יום וקוויטל + אוצר הספרים, בסיסמה אחת
 AUTH_ROLE_PATHS = {'comm': AUTH_COMM, 'parnes': AUTH_PARNES, 'gabbai': AUTH_GABBAI}
 # מאיר: "הבאתי לגבאי סיסמה של גבאים ונכנס לו להכל, גם לתורמים". התחיליות למעלה תופסות גם כתובות
 # שלא נועדו להן ('/api/donor' תפס גם את '/api/donors.csv' — כל התורמים עם טלפון ומייל). אלה חסומות
@@ -16576,6 +17231,10 @@ def push_scan():
     יום לפני (9:00), 3 שעות לפני, שעה לפני, ובזמן עצמו; משימה בלי שעה — ב-8:00 בבוקר של אותו יום."""
     con = db()
     try:
+        # מאיר (19.11.2026): "שהיומן לא ישלח לי יותר תזכורות בטאבלט... שלא יקפוץ למסך ולא כלום" —
+        # כבוי עד שמחזירים: app_kv push_tasks_on=1
+        if kv_get(con, 'push_tasks_on', '') != '1':
+            return
         # מאיר: "Registration failed - push service error" — כשהטלפון לא נרשם לדחיפה, אותן תזכורות יוצאות
         # בוואטסאפ (ALERT_WHATSAPP) / SMS (ALERT_SMS) אם הופעל בכפתור
         alt = kv_get(con, 'push_alt', '') == '1'
@@ -20432,6 +21091,126 @@ def mk_msg_remove(cur, txt):
     return re.sub(r'\s{2,}', ' ', out).strip(' ·')
 
 
+# 🧍 מאיר: "בחורים" — קבוצות שמאיר מגדיר. בחור בלי מנוי בתוקף נחסם, עם מנוי נפתח. חסימה אוטומטית ברקע,
+# ברירת מחדל כבויה. הסימון שחוסם אוטומטית נבדל מחסימה ידנית לפי הנימוק, כדי שלא נשחרר חסימות ידניות.
+MK_BACHUR_DEFAULT_REASON = 'אין מנוי בתוקף — בחורים (אוטומטי)'
+
+
+def mk_bachur_group_ids(con):
+    try:
+        return set(str(x) for x in (json.loads(kv_get(con, 'mk_bachur_groups', '') or '[]') or []))
+    except Exception:
+        return set()
+
+
+def mk_bachur_block_cfg(con):
+    try:
+        c = json.loads(kv_get(con, 'mk_bachur_block', '') or '{}') or {}
+    except Exception:
+        c = {}
+    reason = re.sub(r'\s+', ' ', str(c.get('reason') or '')).strip()[:200] or MK_BACHUR_DEFAULT_REASON
+    try:
+        secs = int(c.get('secs') or 5)
+    except Exception:
+        secs = 5
+    secs = max(3, min(120, secs))     # לא פחות מ-3 שניות (עומס על המקווה), לא יותר מ-2 דקות
+    return {'on': bool(c.get('on')), 'last': c.get('last') or '', 'blocked': int(c.get('blocked') or 0),
+            'opened': int(c.get('opened') or 0), 'error': c.get('error') or '', 'reason': reason, 'secs': secs}
+
+
+def mk_bachur_block_save(con, cfg):
+    kv_set(con, 'mk_bachur_block', json.dumps({'on': bool(cfg.get('on')), 'last': cfg.get('last') or '',
+            'blocked': int(cfg.get('blocked') or 0), 'opened': int(cfg.get('opened') or 0), 'error': cfg.get('error') or '',
+            'reason': cfg.get('reason') or MK_BACHUR_DEFAULT_REASON, 'secs': int(cfg.get('secs') or 5)}, ensure_ascii=False))
+
+
+def _mk_sub_valid(c):
+    """מנוי בתוקף — subscriptionEndDate היום או בעתיד"""
+    e = str(c.get('subscriptionEndDate') or '')[:10]
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', e):
+        return False
+    try:
+        return datetime.date.fromisoformat(e) >= il_now().date()
+    except Exception:
+        return False
+
+
+def mk_bachur_enforce(con):
+    """חוסם בחורים (בקבוצות שנבחרו) בלי מנוי בתוקף, ופותח את מי שחסמנו אוטומטית וכעת יש לו מנוי.
+    רק קריאה/כתיבה למקווה דרך set_blocked. לא נוגע בחסימות ידניות (נימוק אחר)."""
+    import mikveh as _mk
+    bg = mk_bachur_group_ids(con)
+    the_reason = mk_bachur_block_cfg(con)['reason']   # הנוסח שמאיר כתב (מזהה את החסימות שלנו)
+    blocked = opened = 0
+    if not bg:
+        return {'blocked': 0, 'opened': 0, 'checked': 0, 'empty': True}
+    rows = [c for c in _mk.clients() if _mk.visible(c) and str(c.get('groupId') or '') in bg]
+    try:
+        held = set(json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or [])
+    except Exception:
+        held = set()
+    for c in rows:
+        cid = c.get('id')
+        if not cid:
+            continue
+        valid = _mk_sub_valid(c)
+        is_blk = bool(c.get('isBlocked'))
+        reason = str(c.get('blockReason') or '')
+        ours = str(cid) in held or reason == the_reason
+        try:
+            if not valid and not is_blk:
+                _mk.set_blocked(cid, True, the_reason)
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'block', '⛔ נחסם אוטומטית — בחור בלי מנוי בתוקף'))
+                held.add(str(cid)); blocked += 1
+            elif valid and is_blk and ours:
+                _mk.set_blocked(cid, False, '')
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'block', '✅ נפתח אוטומטית — יש מנוי בתוקף'))
+                held.discard(str(cid)); opened += 1
+            elif not valid and is_blk and ours:
+                held.add(str(cid))      # עדיין חסום על ידינו — לשמור במעקב לפתיחה מהירה
+        except Exception as e:
+            print('  mk bachur enforce error:', cid, e)
+    kv_set(con, 'mk_bachur_blocked', json.dumps(sorted(held)))
+    con.commit()
+    return {'blocked': blocked, 'opened': opened, 'checked': len(rows), 'empty': False}
+
+
+def mk_bachur_fast_open(con):
+    """פתיחה כמעט-מיידית: בודק רק את הבחורים שאנחנו חסמנו (רשימה קצרה), טרי מהמקווה —
+    מי שכבר יש לו מנוי בתוקף נפתח מיד, בלי לחכות לסבב המלא."""
+    import mikveh as _mk
+    the_reason = mk_bachur_block_cfg(con)['reason']
+    try:
+        held = [str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or [])]
+    except Exception:
+        held = []
+    if not held:
+        return 0
+    opened = 0
+    keep = []
+    for cid in held:
+        try:
+            c = _mk.client(cid, max_age=0)        # טרי — בלי מטמון
+            if not c or not c.get('isBlocked') or str(c.get('blockReason') or '') != the_reason:
+                continue                            # כבר לא חסום על ידינו — מסירים מהמעקב
+            if _mk_sub_valid(c):
+                _mk.set_blocked(cid, False, '')
+                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                            (cid, now_iso(), 'block', '✅ נפתח מיד — נטען מנוי בתוקף'))
+                opened += 1
+            else:
+                keep.append(cid)
+        except Exception as e:
+            print('  mk bachur fast-open error:', cid, e)
+            keep.append(cid)
+    if opened:
+        kv_set(con, 'mk_bachur_blocked', json.dumps(sorted(set(keep))))
+        con.commit()
+    return opened
+
+
 def con_open_blocks(cid, except_id):
     """עוד חובות הפרש פתוחים שבגללם הוא חסום (חוץ מזה) — אם יש, לא משחררים עדיין"""
     con = db()
@@ -20625,6 +21404,19 @@ def _mk_diff_loop():
                 MK_DIFF_STATE['closed'] += mk_diff_check() or 0
                 last_full = time.time()
                 MK_DIFF_STATE['last_full'] = now_iso()
+                # 🧍 חסימת בחורים בלי מנוי — סבב מלא כל 5 דקות, רק אם המתג פעיל (ברירת מחדל כבוי)
+                try:
+                    con = db()
+                    try:
+                        cfg = mk_bachur_block_cfg(con)
+                        if cfg['on']:
+                            r = mk_bachur_enforce(con)
+                            cfg['last'] = now_iso(); cfg['blocked'] = r['blocked']; cfg['opened'] = r['opened']; cfg['error'] = ''
+                            mk_bachur_block_save(con, cfg); con.commit()
+                    finally:
+                        con.close()
+                except Exception as e:
+                    print('  mk bachur auto-block error:', e)
             else:
                 con = db()
                 try:
@@ -20638,6 +21430,29 @@ def _mk_diff_loop():
             print('  mk diff loop error:', e)
             MK_DIFF_STATE.update(last_error=str(e)[:200], error_at=now_iso())
         time.sleep(MK_DIFF_FAST)
+
+
+def _mk_bachur_loop():
+    """🧍 פתיחה מהירה: רק את הבחורים שאנחנו חסמנו (רשימה קצרה), כל cfg.secs שניות — ורק כשהמתג פעיל.
+    לא עושה כלום כשהמתג כבוי או כשאין אף בחור חסום (לולאה זולה)."""
+    time.sleep(45)
+    while True:
+        secs = 5
+        try:
+            con = db()
+            try:
+                cfg = mk_bachur_block_cfg(con)
+                secs = cfg['secs']
+                if cfg['on']:
+                    op = mk_bachur_fast_open(con)
+                    if op:
+                        cfg['last'] = now_iso(); cfg['opened'] = op; cfg['error'] = ''
+                        mk_bachur_block_save(con, cfg); con.commit()
+            finally:
+                con.close()
+        except Exception as e:
+            print('  mk bachur fast loop error:', e)
+        time.sleep(max(3, min(120, secs)))
 
 
 def _mk_req_loop():
@@ -21638,77 +22453,138 @@ def cal_day_pdf(con, day):
     except Exception:
         pn = []
     e = lambda x: _h.escape(str(x or ''))
+    # מאיר (19.11.2026): "יוצא ממש קטן בהדפסה — גופן יותר גדול ומרווח, הכל בדף אחד, אפשר טורים באותו דף,
+    # והריבוע של ה-וי בצד ימין, הכל ישר" — פריסה ידנית: ריבוע מצויר בקצה הימני של כל שורה, טקסט מיושר לימין,
+    # טור אחד כשנכנס בגופן גדול, אחרת שני טורים (קודם הימני ואז השמאלי) — והגופן הכי גדול שעוד נכנס בעמוד אחד.
+    items = []      # (kind, time, text, sub)  kind: 'h' כותרת / 't' משימה
 
-    def line(t):
+    def add_task(t):
         who = ((t.get('dl') or '') + ' ' + (t.get('df') or '')).strip()
         txt = (t.get('note') or KIND_HE.get(t.get('kind') or '', '') or 'משימה').strip()
         txt = re.sub(r'^[^\w"\'(]+', '', txt)
-        sub = ' · '.join(x for x in [who, ('מקום: ' + t['place']) if (t.get('place') or '').strip() else '',
+        sub = ' · '.join(x for x in [who if who and who not in txt else '',
+                                     ('📍 ' + t['place']) if (t.get('place') or '').strip() else '',
                                      ('הועבר מ-' + datetime.date.fromisoformat(t['orig_date']).strftime('%d/%m')) if t.get('orig_date') and t['orig_date'] < day else ''] if x)
-        tm = (t.get('at_time') or '').strip()
-        return ('<tr><td class="bx"><div class="sq"></div></td><td class="tx">%s<b>%s</b>%s</td></tr>'
-                % (('<b class="tm">%s</b>&nbsp;&nbsp;' % e(tm)) if tm else '', e(txt), ('<div class="sb">%s</div>' % e(sub)) if sub else ''))
+        items.append(('t', (t.get('at_time') or '').strip(), txt, sub))
     timed = [t for t in rows if (t.get('at_time') or '').strip()]
     untimed = [t for t in rows if not (t.get('at_time') or '').strip()]
-    parts = []
     if timed:
-        parts.append('<h2>לפי שעה</h2><table>%s</table>' % ''.join(line(t) for t in timed))
+        items.append(('h', '', 'לפי שעה', ''))
+        for t in timed: add_task(t)
     if untimed:
-        parts.append('<h2>במשך היום</h2><table>%s</table>' % ''.join(line(t) for t in untimed))
+        items.append(('h', '', 'במשך היום', ''))
+        for t in untimed: add_task(t)
     if pn:
-        parts.append('<h2>לימוד לזכות / פרנס</h2><table>%s</table>' % ''.join(
-            '<tr><td class="bx"><div class="sq"></div></td><td class="tx"><b>%s</b>%s</td></tr>'
-            % (e(((p.get('last') or '') + ' ' + (p.get('first') or '')).strip() or 'פרנס'),
-               ('<div class="sb">%s</div>' % e(' · '.join(x for x in [p.get('date_text') or '', p.get('dedication') or ''] if x))) if (p.get('date_text') or p.get('dedication')) else '')
-            for p in pn))
-    if not parts:
-        parts.append('<p class="none">אין משימות פתוחות ביום הזה.</p>')
+        items.append(('h', '', 'לימוד לזכות / פרנס', ''))
+        for p in pn:
+            items.append(('t', '', ((p.get('last') or '') + ' ' + (p.get('first') or '')).strip() or 'פרנס',
+                          ' · '.join(x for x in [p.get('date_text') or '', p.get('dedication') or ''] if x)))
     n = len(rows) + len(pn)
     DOW = ['שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון']
-    html_ = ('<div class="hd"><div class="k">כולל חצות · משימות היום</div><h1>%s</h1><div class="g">יום %s · %s · %s</div></div>%s'
-             '<div class="ft">הודפס %s</div>') % (
-        e(heb or d.strftime('%d/%m/%Y')), DOW[d.weekday()], d.strftime('%d/%m/%Y'),
-        'משימה אחת' if n == 1 else '%d משימות' % n, ''.join(parts), il_now().strftime('%d/%m/%Y %H:%M'))
-    # מאיר: "תמיד שזה יהיה הדפסה רק על דף אחד — שזה יצטמצם אם יש הרבה ויהיה גדול אם יש קצת" —
-    # מחפשים את גודל האותיות הגדול ביותר (פי 0.35 עד פי 1.9) שעוד נכנס בעמוד אחד
-    def css_(k):
-        f = lambda pt: '%.1fpt' % (pt * k)
-        px = lambda v: '%.1fpx' % (v * k)
-        return ('@font-face{font-family:fr;src:url(frankruhl-regular.ttf)}@font-face{font-family:fr;font-weight:bold;src:url(frankruhl-bold.ttf)}'
-                '*{font-family:fr}body{direction:rtl;text-align:right;color:#2a2416;font-size:%s}' % f(14) +
-                '.hd{text-align:center;border-bottom:2px solid #9c7a2e;padding-bottom:%s;margin-bottom:%s}' % (px(8), px(6)) +
-                '.k{color:#9c7a2e;font-size:%s;font-weight:bold}h1{font-size:%s;margin:2px 0;color:#3b357a}.g{font-size:%s;color:#6b6249}' % (f(12), f(26), f(13)) +
-                'h2{font-size:%s;color:#7a5a12;margin:%s 0 %s;border-bottom:1px solid #e0d4b0}' % (f(15), px(14), px(4)) +
-                'table{width:100%%;border-collapse:collapse}td{padding:%s 4px;border-bottom:1px solid #eee5cc;vertical-align:top}' % px(7) +
-                '.bx{width:%s}.sq{width:%s;height:%s;border:1.6px solid #3b357a;margin-top:%s}' % (px(26), px(15), px(15), px(3)) +
-                '.tm{font-weight:bold;color:#3b357a;font-size:%s}.tx b{font-size:%s}.sb{font-size:%s;color:#6b6249}' % (f(14), f(14), f(12)) +
-                '.none{text-align:center;color:#6b6249;margin-top:30px}.ft{margin-top:%s;font-size:%s;color:#9a9080;text-align:center}' % (px(18), f(10)))
+    INK, BLUE, GOLD, SOFT, LINE = (0.16, 0.14, 0.09), (0.23, 0.21, 0.48), (0.61, 0.48, 0.18), (0.42, 0.38, 0.29), (0.88, 0.83, 0.70)
+    FONTS = ('@font-face{font-family:fr;src:url(frankruhl-regular.ttf)}'
+             '@font-face{font-family:fr;font-weight:bold;src:url(frankruhl-bold.ttf)}')
     arch = _pm.Archive(STATIC)
-    mb = _pm.paper_rect('a4')
-    where = mb + (36, 36, -36, -36)
+    W, H = _pm.paper_rect('a4').width, _pm.paper_rect('a4').height
+    M = 30
+    # ב-MuPDF עם direction:rtl — "left" הוא בעצם יישור לימין (נבדק)
+    def css(fs):
+        return (FONTS + '*{font-family:fr;margin:0;padding:0}div{text-align:left}body{direction:rtl;color:#2a2416;font-size:%.1fpt;line-height:1.3}'
+                '.tm{color:#3b357a;font-weight:bold}.sb{font-size:%.1fpt;color:#6b6249}.h{color:#7a5a12;font-weight:bold;font-size:%.1fpt}'
+                % (fs, fs * 0.8, fs * 1.05))
 
-    def fits(k):
-        st = _pm.Story(html=html_, user_css=css_(k), archive=arch)
-        more, _ = st.place(where)
-        return not more
-    lo, hi = 0.35, 1.9
-    if fits(hi):
-        k = hi
-    else:
-        for _ in range(9):
+    def html_of(it):
+        k, tm, txt, sub = it
+        if k == 'h':
+            return '<div class="h">%s</div>' % e(txt)
+        return '<div><b>%s%s</b>%s</div>' % (('<span class="tm">%s</span>&nbsp;&nbsp;' % e(tm)) if tm else '', e(txt),
+                                             ('<div class="sb">%s</div>' % e(sub)) if sub else '')
+    MC = {}
+
+    def measure(it, fs, cw):
+        box = cw - (0 if it[0] == 'h' else fs * 1.6)
+        key = (it, fs, round(box))
+        if key not in MC:
+            st = _pm.Story(html=html_of(it), user_css=css(fs), archive=arch)
+            _more, filled = st.place(_pm.Rect(0, 0, box, H * 4))
+            MC[key] = _pm.Rect(filled).height + fs * (0.6 if it[0] == 't' else 0.4)
+        return MC[key]
+
+    TOP = M + 92          # מתחת לכותרת
+    BOT = H - M - 14
+    avail = BOT - TOP
+
+    def layout(cols, fs):
+        gap = 18
+        cw = (W - 2 * M - gap * (cols - 1)) / cols
+        hs = [measure(it, fs, cw) for it in items]
+        placed, c, y = [], 0, 0
+        for it, h in zip(items, hs):
+            if y + h > avail and y > 0:
+                c += 1; y = 0
+                if c >= cols:
+                    return None
+            x1 = W - M - c * (cw + gap)          # טור ראשון = הימני
+            placed.append((it, x1 - cw, x1, TOP + y, h))
+            y += h
+        return placed, cw
+
+    best = None
+    for cols, lo_fs in ((1, 14.0), (2, 8.0), (3, 6.0)):     # בגופן קטן מ-14 — עדיף שני טורים
+        if layout(cols, 20.0):
+            best = (cols, 20.0, layout(cols, 20.0)); break
+        if not layout(cols, lo_fs):
+            continue
+        lo, hi = lo_fs, 20.0
+        for _ in range(6):
             mid = (lo + hi) / 2
-            if fits(mid): lo = mid
+            if layout(cols, mid): lo = mid
             else: hi = mid
-        k = lo
-    story = _pm.Story(html=html_, user_css=css_(k), archive=arch)
-    buf = io.BytesIO()
-    wr = _pm.DocumentWriter(buf)
-    dev = wr.begin_page(mb)
-    story.place(where)
-    story.draw(dev)
-    wr.end_page()
-    wr.close()
-    return buf.getvalue()
+        best = (cols, lo, layout(cols, lo)); break
+    if not best:                                  # לא נכנס בשום מצב — שלושה טורים בגופן הכי קטן, מה שנכנס
+        fs = 6.0
+        gap = 18; cw = (W - 2 * M - gap * 2) / 3
+        placed, c, y = [], 0, 0
+        for it in items:
+            h = measure(it, fs, cw)
+            if y + h > avail and y > 0:
+                c += 1; y = 0
+            if c >= 3:
+                break
+            x1 = W - M - c * (cw + gap)
+            placed.append((it, x1 - cw, x1, TOP + y, h)); y += h
+        best = (3, fs, (placed, cw))
+    cols, fs, (placed, cw) = best
+    doc = _pm.open()
+    pg = doc.new_page(width=W, height=H)
+    # כותרת
+    pg.insert_htmlbox(_pm.Rect(M, M, W - M, M + 88),
+                      '<div style="text-align:center"><div class="k">כולל חצות · משימות היום</div><div class="t">%s</div><div class="g">יום %s · %s · %s</div></div>'
+                      % (e(heb or d.strftime('%d/%m/%Y')), DOW[d.weekday()], d.strftime('%d/%m/%Y'), 'משימה אחת' if n == 1 else '%d משימות' % n),
+                      css=FONTS + '*{font-family:fr}body{direction:rtl}.k{color:#9c7a2e;font-weight:bold;font-size:12pt}'
+                                  '.t{color:#3b357a;font-weight:bold;font-size:26pt}.g{color:#6b6249;font-size:13pt}', archive=arch)
+    pg.draw_line(_pm.Point(M, M + 86), _pm.Point(W - M, M + 86), color=GOLD, width=1.6)
+    for ci in range(1, cols):                    # קו בין הטורים
+        xm = W - M - ci * (cw + 18) + 9
+        pg.draw_line(_pm.Point(xm, TOP), _pm.Point(xm, BOT - 4), color=LINE, width=0.8)
+    if not placed:
+        pg.insert_htmlbox(_pm.Rect(M, TOP + 40, W - M, TOP + 120), '<div style="text-align:center">אין משימות פתוחות ביום הזה.</div>',
+                          css=FONTS + '*{font-family:fr}body{direction:rtl;font-size:16pt;color:#6b6249}', archive=arch)
+    for it, x0, x1, y, h in placed:
+        if it[0] == 'h':
+            pg.insert_htmlbox(_pm.Rect(x0, y + fs * 0.2, x1, y + h), html_of(it), css=css(fs), archive=arch)
+            pg.draw_line(_pm.Point(x0, y + h - 2), _pm.Point(x1, y + h - 2), color=GOLD, width=0.8)
+            continue
+        s = fs * 1.05                            # הריבוע — בקצה הימני, בגובה השורה הראשונה
+        sq = _pm.Rect(x1 - s, y + fs * 0.35, x1, y + fs * 0.35 + s)
+        pg.draw_rect(sq, color=BLUE, width=1.4)
+        pg.insert_htmlbox(_pm.Rect(x0, y + fs * 0.25, x1 - fs * 1.6, y + h), html_of(it), css=css(fs), archive=arch)
+        pg.draw_line(_pm.Point(x0, y + h - 1), _pm.Point(x1, y + h - 1), color=LINE, width=0.6)
+    pg.insert_htmlbox(_pm.Rect(M, H - M - 10, W - M, H - M + 6), '<div style="text-align:center">הודפס %s</div>' % il_now().strftime('%d/%m/%Y %H:%M'),
+                      css=FONTS + '*{font-family:fr}body{direction:rtl;font-size:9pt;color:#9a9080}', archive=arch)
+    out = doc.tobytes()
+    doc.close()
+    return out
 
 
 def tasks_roll_scan():
@@ -23346,6 +24222,101 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'izslips.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/iz-certs':
             return self._send(200, open(os.path.join(STATIC, 'izcerts.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/iz-5786':
+            return self._send(200, open(os.path.join(STATIC, 'izarchive.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/building/unlinked':
+            # 🏛️ הקדשות מדף "נוסחי ההקדשות" שעוד לא שויכו לכרטיס תורם (אין התאמה ברורה אחת)
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute("SELECT id,object,amount,paid,note,dedication,section FROM building "
+                                                      "WHERE donor_id IS NULL ORDER BY id")]
+                try:
+                    secs = json.loads(kv_get(con, 'bldg_sections', '') or '[]')
+                except ValueError:
+                    secs = []
+            finally:
+                con.close()
+            for r in rows:
+                mm = re.search(r'תורם בדף: ([^·]+)', r.get('note') or '')
+                r['who'] = mm.group(1).strip() if mm else ''
+            return self._send(200, {'ok': True, 'rows': rows, 'sections': secs})
+        m = re.match(r'/api/iz/doc/(full|print)$', self.path.split('?')[0])
+        if m:
+            # 📄 מאיר: "שלח לי את כל היששכר זבולון המעודכן כולל מה שלא להדפסה, ותכניס את זה למערכת, וגם את להדפסה
+            # תכניס למערכת בשם 'להדפסה שטרות כסליו תשפ"ז'" — שני הקבצים שמורים בשרת (לא בתיקייה הציבורית), רק למחוברים
+            fn = {'full': ('iz_5787_full.pdf', 'יששכר זבולון תשפז - רשימה מלאה.pdf'),
+                  'print': ('iz_5787_print_kislev.pdf', 'להדפסה שטרות כסליו תשפז.pdf')}[m.group(1)]
+            fp = os.path.join(HERE, 'iz_docs', fn[0])
+            if not os.path.isfile(fp):
+                return self._send(404, {'ok': False, 'error': 'הקובץ לא נמצא'})
+            data = open(fp, 'rb').read()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/pdf')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Content-Disposition', "inline; filename*=UTF-8''" + urllib.parse.quote(fn[1]))
+            self.end_headers(); self.wfile.write(data)
+            return
+        if self.path.split('?')[0] == '/api/iz/archive':
+            # 📂 הרשימה הקודמת — "יששכר־זבולון תשפ"ה–תשפ"ו", כמו שהייתה לפני רשימת תשפ"ז (לקריאה ולהדפסה)
+            con = db()
+            try:
+                try:
+                    snap = json.loads(kv_get(con, 'iz_snapshot_5785_5786', '') or '{}')
+                except ValueError:
+                    snap = {}
+                try:
+                    rep = json.loads(kv_get(con, 'iz_5787_report', '') or '{}')
+                except ValueError:
+                    rep = {}
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'title': snap.get('title') or 'יששכר־זבולון תשפ"ה–תשפ"ו',
+                                    'at': snap.get('at') or '', 'rows': snap.get('rows') or [], 'report': rep})
+        if self.path.split('?')[0] == '/api/recurring':
+            # 🔁 הוראות הקבע — מאיר: "איפה אני מוצא במערכת בחיובים את כל ההוראות קבע החודשיות?"
+            # אוטורייז (חי, מנויי ARB) + בנק ווסט (מהסנכרון). ?donor=ID — רק של התורם הזה (לכרטיס).
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                did_ = int((qs.get('donor') or ['0'])[0] or 0)
+            except ValueError:
+                did_ = 0
+            con = db()
+            try:
+                an, err = anet_subs(con, force=bool((qs.get('force') or [''])[0]))
+                bq = [dict(r) for r in con.execute(
+                    "SELECT s.id, s.amount, s.freq, s.next_run, s.status, COALESCE(s.donor_id, c.donor_id) donor_id, "
+                    "TRIM(COALESCE(c.first,'') || ' ' || COALESCE(c.last,'')) bq_name, s.title "
+                    "FROM bq_sched s LEFT JOIN bq_cust c ON c.id=s.customer_id WHERE COALESCE(s.active,0)=1")]
+                names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() for r in con.execute("SELECT id,last,first FROM donors")}
+                for r in bq:
+                    r['donor_name'] = names.get(r['donor_id'], '')
+            except Exception as e:
+                an, bq, err = [], [], str(e)[:200]
+            finally:
+                con.close()
+            if did_:
+                an = [x for x in an if x['donor_id'] == did_]
+                bq = [x for x in bq if x['donor_id'] == did_]
+            return self._send(200, {'ok': True, 'anet': an, 'bq': bq, 'anet_err': err})
+        if self.path.split('?')[0] == '/api/transfers':
+            # 🏦 לשונית העברות ומלגות — כל ההעברות מתחילת תשפ"ז, לפי תאריך, עם תאריך עברי וחודש עברי
+            con = db()
+            try:
+                rows = [dict(r) for r in con.execute("SELECT * FROM transfers ORDER BY date DESC, src, id")]
+            except Exception:
+                rows = []
+            finally:
+                con.close()
+            hd = {}
+            for r in rows:
+                d = (r.get('date') or '')[:10]
+                if d not in hd:
+                    try:
+                        hd[d] = (greg_to_heb_full(d) or '', greg_to_heb_monthyear(d) or '')
+                    except Exception:
+                        hd[d] = ('', '')
+                r['hdate'], r['hmonth'] = hd[d]
+            return self._send(200, {'ok': True, 'rows': rows})
         if self.path.split('?')[0] == '/api/izcerts':
             con = db()
             try:
@@ -23904,6 +24875,11 @@ class H(BaseHTTPRequestHandler):
                 g.setdefault('log', []).append({'date': r['date'] or '', 'hdate': r['hdate'] or '',
                                                 'text': r['text'] or '',
                                                 'donor': names.get(r['donor_id'], '')})
+            # מאיר (21.11.2026): "כל האברכים של כולל הוראה לא אמורים להיות ברשימה של יששכר זבולון בכלל…
+            # יששכר זבולון זה רק לכולל חצות" — אברך שרשום רק בכולל הוראה (סדר 'הוראה') לא נכנס לרשימה הזו.
+            # (מי שיש לו בכל זאת שותפות פעילה — נשאר מוצג, כדי שהשותפות לא תיעלם בשקט; מאיר יחליט עליה)
+            for k in [k for k, g in out.items() if (g.get('seder') or '').strip() == 'הוראה' and not g['holders']]:
+                del out[k]
             rows = sorted(out.values(), key=lambda x: (_srt(x['last']), _srt(x['first'])))
             pend = []
             try:
@@ -27054,8 +28030,17 @@ class H(BaseHTTPRequestHandler):
             accts = [{'mosad': a['mosad'], 'name': a['name'], 'mk': a['mosad'] == mk_mosad()} for a in _nd.accounts()]
             lk = [{'id': x, 'name': ((byid.get(x) or {}).get('firstName', '') + ' ' + ((byid.get(x) or {}).get('lastName') or '')).strip(),
                    'code': (byid.get(x) or {}).get('clientCode')} for x in locked]
+            con3 = db()
+            try:
+                try:
+                    bachur = json.loads(kv_get(con3, 'mk_bachur_groups', '') or '[]') or []
+                except Exception:
+                    bachur = []
+                bblock = mk_bachur_block_cfg(con3)
+            finally:
+                con3.close()
             return self._send(200, {'ok': True, 'cfg': cfg, 'groups': groups, 'link': link, 'log': log, 'reqs': reqs, 'locked': lk, 'accounts': accts,
-                                    'keva_cats': keva_cats,
+                                    'keva_cats': keva_cats, 'bachur_groups': bachur, 'bachur_block': bblock,
                                     'new_reqs': sum(1 for r in reqs if r['status'] == 'new'),
                                     'month': {'n': month['n'], 'fees': month['f']}})
         if self.path.split('?')[0] == '/api/mikveh/selfgroup_lock':
@@ -27728,6 +28713,27 @@ class H(BaseHTTPRequestHandler):
             exp = round(sum(r['amount'] or 0 for r in rows if r['kind'] == 'out'), 2)
             return self._send(200, {'ok': True, 'month': mon, 'rows': rows, 'inc': inc, 'exp': exp,
                                     'net': round(inc - exp, 2), 'months': months})
+        if self.path.split('?')[0] == '/api/books':
+            # 📚 אוצר הספרים — רשימת הספרים + הכנסות/הוצאות לחודש שנבחר
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            mon = (qs.get('month') or [''])[0][:7]
+            if not re.fullmatch(r'\d{4}-\d{2}', mon):
+                mon = today_iso()[:7]
+            con = db()
+            try:
+                books = [dict(r) for r in con.execute("SELECT * FROM book_item ORDER BY id DESC")]
+                rows = [dict(r) for r in con.execute("SELECT * FROM book_ledger WHERE month=? ORDER BY date, id", (mon,))]
+                months = [dict(r) for r in con.execute(
+                    "SELECT month, SUM(CASE WHEN kind='in' THEN amount ELSE 0 END) inc, "
+                    "SUM(CASE WHEN kind='out' THEN amount ELSE 0 END) exp, COUNT(*) n FROM book_ledger GROUP BY month ORDER BY month DESC")]
+            finally:
+                con.close()
+            inc = round(sum(r['amount'] or 0 for r in rows if r['kind'] == 'in'), 2)
+            exp = round(sum(r['amount'] or 0 for r in rows if r['kind'] == 'out'), 2)
+            tot_cost = round(sum(r['cost'] or 0 for r in books), 2)
+            tot_paid = round(sum(r['paid'] or 0 for r in books), 2)
+            return self._send(200, {'ok': True, 'books': books, 'tot_cost': tot_cost, 'tot_paid': tot_paid, 'tot_owed': round(tot_cost - tot_paid, 2),
+                                    'month': mon, 'rows': rows, 'inc': inc, 'exp': exp, 'net': round(inc - exp, 2), 'months': months})
         if self.path.split('?')[0] == '/api/cm/jobs':
             con = db()
             try:
@@ -30532,6 +31538,90 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/bachur_groups':
+            # 🧍 מאיר: "מי שבקבוצת בחורים, אין לו מנוי, ונכנס בפעימות" — הקבוצות שמאיר מגדיר כ"בחורים". נשמר אצלנו.
+            ids = [str(x) for x in (b.get('ids') or []) if re.fullmatch(r'[0-9a-fA-F-]{36}', str(x))][:200]
+            con = db()
+            try:
+                kv_set(con, 'mk_bachur_groups', json.dumps(ids))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'n': len(ids)})
+        if self.path == '/api/mikveh/bachur_note':
+            # ✍️ מאיר: "הערה שהם יראו בלקוח לכל הבחורים — שלא ימחוק את ההערה שלהם" — מתווסף להודעת המסך (message),
+            # בלי למחוק מה שכתוב. אם הטקסט כבר שם — מדלגים. על הלקוחות שנשלחו ברשימה (הבחורים שמוצגים).
+            import mikveh as _mk
+            text = re.sub(r'\s+', ' ', str(b.get('text') or '')).strip()[:200]
+            ids = [str(x) for x in (b.get('ids') or []) if re.fullmatch(r'[0-9a-fA-F-]{36}', str(x))][:400]
+            if not text:
+                return self._send(200, {'ok': False, 'error': 'חסר טקסט להערה'})
+            if not ids:
+                return self._send(200, {'ok': False, 'error': 'אין בחורים ברשימה'})
+            con = db()
+            done = skip = fail = 0
+            try:
+                for cid in ids:
+                    try:
+                        full = _mk.client(cid)
+                        cur = str(full.get('message') or '').strip()
+                        if text in cur:
+                            skip += 1
+                            continue
+                        _mk.update_client(cid, {'message': mk_msg_add(cur, text)})
+                        con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                    (cid, now_iso(), 'note', '📺 נוספה הודעת מסך: ' + text))
+                        done += 1
+                    except Exception as e:
+                        print('  mk bachur note error:', cid, e)
+                        fail += 1
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'done': done, 'skipped': skip, 'failed': fail})
+        if self.path == '/api/mikveh/bachur_block':
+            # ⛔ חסימה אוטומטית של בחורים בלי מנוי (מתג — כבוי כברירת מחדל). run=הפעלה ידנית עכשיו.
+            # reason=נוסח החסימה שמאיר כותב · secs=כל כמה שניות לבדוק פתיחה
+            import mikveh as _mk
+            con = db()
+            try:
+                cfg = mk_bachur_block_cfg(con)
+                old_reason = cfg['reason']
+                if 'reason' in b:
+                    cfg['reason'] = re.sub(r'\s+', ' ', str(b.get('reason') or '')).strip()[:200] or MK_BACHUR_DEFAULT_REASON
+                if 'secs' in b:
+                    try:
+                        cfg['secs'] = max(3, min(120, int(b.get('secs'))))
+                    except Exception:
+                        pass
+                if 'on' in b:
+                    cfg['on'] = bool(b.get('on'))
+                # שינוי נוסח: לעדכן את מי שכבר חסום על ידינו, כדי שנמשיך לזהות אותו
+                retag = 0
+                if cfg['reason'] != old_reason:
+                    try:
+                        held = [str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or [])]
+                    except Exception:
+                        held = []
+                    for cid in held:
+                        try:
+                            cc = _mk.client(cid, max_age=0)
+                            if cc and cc.get('isBlocked') and str(cc.get('blockReason') or '') == old_reason:
+                                _mk.set_blocked(cid, True, cfg['reason']); retag += 1
+                        except Exception:
+                            pass
+                res = None
+                if b.get('run') or ('on' in b and cfg['on']):
+                    res = mk_bachur_enforce(con)
+                    cfg['last'] = now_iso(); cfg['blocked'] = res['blocked']; cfg['opened'] = res['opened']; cfg['error'] = ''
+                mk_bachur_block_save(con, cfg)
+                con.commit()
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': str(e)[:300]})
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'on': cfg['on'], 'last': cfg['last'], 'reason': cfg['reason'], 'secs': cfg['secs'],
+                                    'blocked': cfg['blocked'], 'opened': cfg['opened'], 'ran': res is not None})
         if self.path == '/api/mikveh/group_sync':
             # 🗂️ "לערוך הכל ביחד": ההגדרות והשעות של מנוי אחד → לכל המנויים שנבחרו (כל אחד נשאר עם השם והמחיר שלו)
             import mikveh as _mk
@@ -33301,6 +34391,66 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'id': lid})
+        if self.path == '/api/books/item' or re.match(r'/api/books/item/\d+$', self.path):
+            # 📚 ספר ברשימה — הוספה / תיקון / מחיקה
+            bid = int(self.path.rsplit('/', 1)[1]) if not self.path.endswith('/item') else 0
+            con = db()
+            try:
+                if bid and b.get('action') == 'delete':
+                    con.execute("DELETE FROM book_item WHERE id=?", (bid,))
+                    con.commit()
+                    return self._send(200, {'ok': True})
+                name = str(b.get('name') or '').strip()[:200]
+                if not name:
+                    return self._send(200, {'ok': False, 'error': 'חסר שם ספר'})
+                vals = (name, round(_amt2(b.get('cost')), 2), str(b.get('donor') or '').strip()[:120],
+                        round(_amt2(b.get('paid')), 2), str(b.get('method') or '').strip()[:40],
+                        str(b.get('dedication') or '').strip()[:300], str(b.get('note') or '').strip()[:500])
+                if bid:
+                    con.execute("UPDATE book_item SET name=?,cost=?,donor=?,paid=?,method=?,dedication=?,note=?,updated=? WHERE id=?",
+                                vals + (now_iso(), bid))
+                else:
+                    con.execute("INSERT INTO book_item(name,cost,donor,paid,method,dedication,note,created,updated) VALUES(?,?,?,?,?,?,?,?,?)",
+                                vals + (now_iso(), now_iso()))
+                    bid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'id': bid})
+        if self.path == '/api/books/ledger' or re.match(r'/api/books/ledger/\d+$', self.path):
+            # 📚 הכנסה / הוצאה של אוצר הספרים — אותו מבנה כמו קופת בית הכנסת
+            lid = int(self.path.rsplit('/', 1)[1]) if not self.path.endswith('/ledger') else 0
+            con = db()
+            try:
+                if lid and b.get('action') == 'delete':
+                    con.execute("DELETE FROM book_ledger WHERE id=?", (lid,))
+                    con.commit()
+                    return self._send(200, {'ok': True})
+                amt = round(_amt2(b.get('amount')), 2)
+                kind = 'out' if b.get('kind') == 'out' else 'in'
+                purpose = str(b.get('purpose') or '').strip()[:200]
+                if amt <= 0:
+                    return self._send(200, {'ok': False, 'error': 'חסר סכום'})
+                if not purpose:
+                    return self._send(200, {'ok': False, 'error': 'חסר עבור מה'})
+                date = str(b.get('date') or '')[:10]
+                if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date):
+                    date = today_iso()
+                mon = str(b.get('month') or '')[:7]
+                if not re.fullmatch(r'\d{4}-\d{2}', mon):
+                    mon = date[:7]
+                vals = (mon, kind, date, amt, purpose, str(b.get('method') or '').strip()[:40], str(b.get('note') or '').strip()[:500])
+                if lid:
+                    con.execute("UPDATE book_ledger SET month=?,kind=?,date=?,amount=?,purpose=?,method=?,note=?,updated=? WHERE id=?",
+                                vals + (now_iso(), lid))
+                else:
+                    con.execute("INSERT INTO book_ledger(month,kind,date,amount,purpose,method,note,created,updated) VALUES(?,?,?,?,?,?,?,?,?)",
+                                vals + (now_iso(), now_iso()))
+                    lid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'id': lid})
         if self.path == '/api/cm/jobs' or re.match(r'/api/cm/jobs/\d+$', self.path):
             jid = int(self.path.rsplit('/', 1)[1]) if self.path != '/api/cm/jobs' else 0
             act = b.get('action') or ('edit' if jid else 'add')
@@ -34484,6 +35634,87 @@ class H(BaseHTTPRequestHandler):
                          _st['created'], _st['created_heb'], (b.get('cur') or '').strip()))
             con.commit(); pid = cur.lastrowid; con.close()
             return self._send(200, {'ok': True, 'id': pid})
+        if self.path == '/api/recurring/anet_stop':
+            # ⛔ ביטול הוראת קבע באוטורייז מהכרטיס / מהרשימה — ואם ביקשו, גם "הפסיק לתרום כל חודש" בכרטיס
+            sid = re.sub(r'\D', '', str(b.get('sid') or ''))
+            try:
+                did_ = int(b.get('donor_id') or 0) or None
+            except (TypeError, ValueError):
+                did_ = None
+            if not sid:
+                return self._send(200, {'ok': False, 'error': 'חסר מספר מנוי'})
+            con = db()
+            try:
+                why = re.sub(r'\s+', ' ', str(b.get('reason') or '')).strip()[:200]
+                ok_, err_ = anet_stop_sub(con, sid, did_, why)
+                if ok_ and did_ and b.get('mark_stop'):
+                    dt = str(b.get('date') or '').strip()[:10]
+                    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', dt):
+                        dt = today_iso()
+                    con.execute("UPDATE donors SET monthly_stop=?, monthly_stop_charge=1, monthly_stop_note=? WHERE id=?", (dt, why, did_))
+                    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                                (did_, today_iso(), 'הערה', '⛔ הפסיק לתרום כל חודש — מ-%s%s' % ('/'.join(reversed(dt.split('-'))), (' · ' + why) if why else '')))
+                    mstop_apply(con, did_)
+                con.commit()
+            finally:
+                con.close()
+            bump_data()
+            return self._send(200, {'ok': ok_, 'error': err_})
+        if self.path in ('/api/transfers/save', '/api/transfers/delete'):
+            # 🏦 הוספה / עריכה / מחיקה של העברה בלשונית "העברות ומלגות"
+            try:
+                tid_ = int(b.get('id') or 0)
+            except (TypeError, ValueError):
+                tid_ = 0
+            con = db()
+            try:
+                if self.path.endswith('/delete'):
+                    if tid_:
+                        con.execute("DELETE FROM transfers WHERE id=?", (tid_,))
+                        con.commit()
+                    return self._send(200, {'ok': bool(tid_)})
+                f = {k: str(b.get(k) or '').strip()[:300] for k in ('date', 'payee', 'idnum', 'bank', 'branch', 'account', 'purpose', 'category', 'src', 'note')}
+                try:
+                    amt = float(str(b.get('amount') or '0').replace(',', '').replace('₪', '').strip() or 0)
+                except ValueError:
+                    return self._send(200, {'ok': False, 'error': 'סכום לא תקין'})
+                if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', f['date']) or not f['payee']:
+                    return self._send(200, {'ok': False, 'error': 'חסר תאריך או שם מוטב'})
+                if tid_:
+                    con.execute("UPDATE transfers SET date=?,payee=?,idnum=?,bank=?,branch=?,account=?,purpose=?,category=?,amount=?,note=?,updated=? WHERE id=?",
+                                (f['date'], f['payee'], f['idnum'], f['bank'], f['branch'], f['account'], f['purpose'], f['category'] or 'לבדוק',
+                                 amt, f['note'], now_iso(), tid_))
+                else:
+                    con.execute("INSERT INTO transfers(skey,date,payee,idnum,bank,branch,account,purpose,category,amount,src,note,created) "
+                                "VALUES(NULL,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                (f['date'], f['payee'], f['idnum'], f['bank'], f['branch'], f['account'], f['purpose'], f['category'] or 'לבדוק',
+                                 amt, f['src'] or 'הוזן ידנית', f['note'], now_iso()))
+                    tid_ = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'id': tid_})
+        if self.path == '/api/building/link':
+            # 🏛️ שיוך הקדשה שלא שויכה — לכרטיס התורם שמאיר בחר
+            try:
+                bid_ = int(b.get('id') or 0); did_ = int(b.get('donor_id') or 0)
+            except (TypeError, ValueError):
+                bid_ = did_ = 0
+            if not bid_ or not did_:
+                return self._send(200, {'ok': False, 'error': 'חסר תורם'})
+            con = db()
+            try:
+                r_ = con.execute("SELECT note FROM building WHERE id=? AND donor_id IS NULL", (bid_,)).fetchone()
+                if not r_:
+                    return self._send(200, {'ok': False, 'error': 'כבר שויך'})
+                nt_ = re.sub(r'\s*·\s*תורם בדף: [^·]*', '', r_['note'] or '').strip()
+                con.execute("UPDATE building SET donor_id=?, note=? WHERE id=?", (did_, nt_, bid_))
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) SELECT ?,?,'הערה','🏛️ שויכה הקדשה בבניין: ' || COALESCE(object,'') "
+                            "FROM building WHERE id=?", (did_, today_iso(), bid_))
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True})
         if self.path == '/api/izcerts/save':
             # 📜 מה שמאיר שינה בתעודה של תורם (שם, אברכים, סכום, תאריך, להדפיס או לא) — נשמר במערכת
             try:
@@ -35942,6 +37173,68 @@ def bq_run(full=False):
         BQSTAT['running'] = False
 
 
+_ANET_SUBS = {'at': 0, 'rows': None, 'err': ''}
+
+
+def anet_subs(con, force=False):
+    """🔁 כל הוראות הקבע הפעילות באוטורייז (מנויי ARB), עם שיוך לכרטיס תורם — רק שיוך ודאי: שם המנוי
+    זהה לשם בחיובים קודמים מאוטרייז שכבר שויכו לתורם אחד בלבד, או לשם הלועזי בכרטיס. נשמר בזיכרון ל-10 דקות."""
+    import authorize_sync as _an
+    if not _an.configured():
+        return [], 'החיבור לאוטרייז לא הוגדר'
+    if not force and _ANET_SUBS['rows'] is not None and time.time() - _ANET_SUBS['at'] < 600:
+        rows = _ANET_SUBS['rows']
+    else:
+        try:
+            rows = _an.arb_subscriptions('subscriptionActive')
+            _ANET_SUBS.update(at=time.time(), rows=rows, err='')
+        except Exception as e:
+            _ANET_SUBS['err'] = str(e)[:200]
+            return [], _ANET_SUBS['err']
+    def _ne(s): return re.sub(r'[^a-z0-9]', '', (s or '').lower())
+    byname = {}
+    for r in con.execute("SELECT first,last,donor_id FROM recon WHERE donor_id IS NOT NULL AND (source LIKE 'Authorize%' OR tid LIKE 'anet-%')"):
+        byname.setdefault(_ne((r['first'] or '') + (r['last'] or '')), set()).add(r['donor_id'])
+    for d in con.execute("SELECT id,english FROM donors WHERE COALESCE(TRIM(english),'')<>''"):
+        k = _ne(d['english'])
+        if k and k not in byname:
+            byname.setdefault(k, set()).add(d['id'])
+        # "Weingarden Shmuel" ו-"Shmuel Weingarden" — אותו שם
+        p = (d['english'] or '').split()
+        if len(p) == 2:
+            byname.setdefault(_ne(p[1] + p[0]), set()).add(d['id'])
+    names = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() for r in con.execute("SELECT id,last,first FROM donors")}
+    out = []
+    for s in rows:
+        k = _ne((s.get('firstName') or '') + (s.get('lastName') or ''))
+        ids = byname.get(k) or set()
+        did = next(iter(ids)) if len(ids) == 1 else None
+        out.append({'sid': str(s.get('id') or ''), 'first': s.get('firstName') or '', 'last': s.get('lastName') or '',
+                    'title': s.get('name') or '', 'amount': float(s.get('amount') or 0), 'status': s.get('status') or '',
+                    'created': str(s.get('createTimeStampUTC') or '')[:10], 'past': s.get('pastOccurrences'),
+                    'total': s.get('totalOccurrences'), 'card': str(s.get('accountNumber') or '').replace('XXXX', '••••'),
+                    'donor_id': did, 'donor_name': names.get(did, '') if did else '', 'multi': len(ids) > 1})
+    out.sort(key=lambda x: ((x['last'] or '').lower(), (x['first'] or '').lower()))
+    return out, ''
+
+
+def anet_stop_sub(con, sid, did=None, why=''):
+    """מבטל מנוי ARB באוטורייז ורושם בכרטיס התורם. מחזיר (ok, error)."""
+    import authorize_sync as _an
+    sub = next((x for x in (_ANET_SUBS['rows'] or []) if str(x.get('id')) == str(sid)), None)
+    try:
+        _an.arb_cancel(sid)
+    except Exception as e:
+        return False, str(e)[:200]
+    if _ANET_SUBS['rows'] is not None:
+        _ANET_SUBS['rows'] = [x for x in _ANET_SUBS['rows'] if str(x.get('id')) != str(sid)]
+    if did:
+        amt = float((sub or {}).get('amount') or 0)
+        con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)",
+                    (did, today_iso(), 'מערכת', '⛔ הוראת הקבע באוטורייז בוטלה — $%g (מנוי %s)%s' % (amt, sid, (' · ' + why) if why else '')))
+    return True, ''
+
+
 def mstop_apply(con, did=None):
     """⛔ תורם שהפסיק לתרום כל חודש — כשהגיע התאריך שהפסיק: ההתחייבות החודשית מסתיימת, חיובים שנדחו מאז
     אינם חוב, והחיוב האוטומטי בבנק ווסט נעצר (אם ביקשו). נקרא בסימון, וכל שעה בשביל תאריכים עתידיים."""
@@ -35983,6 +37276,17 @@ def mstop_apply(con, did=None):
                         bad = True; out['sched_err'].append('$%g: %s' % (sc['amount'] or 0, str(res)[:80]))
                 except Exception as e:
                     bad = True; out['sched_err'].append('$%g: %s' % (sc['amount'] or 0, str(e)[:80]))
+            # מאיר: "שזה יהיה מסונכרן שהוא הפסיק" — גם הוראות הקבע שלו באוטורייז מתבטלות
+            try:
+                for s in anet_subs(con)[0]:
+                    if s['donor_id'] == d['id']:
+                        ok_, err_ = anet_stop_sub(con, s['sid'], d['id'], 'הפסיק לתרום כל חודש')
+                        if ok_:
+                            out['sched'].append('$%g אוטורייז' % s['amount'])
+                        else:
+                            bad = True; out['sched_err'].append('אוטורייז $%g: %s' % (s['amount'], err_[:80]))
+            except Exception as e:
+                print('  mstop anet error:', e)
             if not bad:
                 con.execute("UPDATE donors SET monthly_stop_charge=2 WHERE id=?", (d['id'],))
                 if not did and out['sched']:
@@ -40361,6 +41665,7 @@ def serve():
     threading.Thread(target=_ym_sched_loop, daemon=True).start()
     threading.Thread(target=_mk_req_loop, daemon=True).start()
     threading.Thread(target=_mk_diff_loop, daemon=True).start()
+    threading.Thread(target=_mk_bachur_loop, daemon=True).start()
     threading.Thread(target=_nd_err_loop, daemon=True).start()
     threading.Thread(target=_push_loop, daemon=True).start()
     threading.Thread(target=_weekly_report_loop, daemon=True).start()

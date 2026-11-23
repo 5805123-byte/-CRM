@@ -570,6 +570,19 @@ details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;ma
   .mkchip{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:99px;padding:6px 12px;font:inherit;font-size:.83rem;font-weight:600;cursor:pointer;white-space:nowrap}
   .mkchip.on{background:var(--accent);border-color:var(--accent);color:var(--card)}.mkchip i{font-style:normal;opacity:.7;font-weight:700}
   .mkdot{width:10px;height:10px;border-radius:50%;flex:0 0 auto;background:var(--muted);box-shadow:0 0 0 2px rgba(255,255,255,.6)}
+  /* 🔎 בדיקת המקווה — מעקב וחריגים */
+  .mkmut{color:var(--muted,#888);font-size:.82rem;font-weight:400}
+  .audfilters{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px;align-items:center}
+  .audsel,.audq{border:1px solid var(--line);border-radius:9px;padding:7px 10px;font:inherit;background:var(--card);color:var(--ink);min-width:0}
+  .audsel{max-width:48%}.audq{flex:1;min-width:150px}
+  .audq:focus,.audsel:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft,#eef2fb)}
+  .audpick{border:1px solid var(--line);border-radius:12px;padding:10px;margin:2px 0 10px;background:var(--soft,#faf7f0)}
+  .bgwrap{display:flex;flex-wrap:wrap;gap:6px}
+  .bgchk{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:5px 11px;cursor:pointer;background:var(--card);font-size:.85rem}
+  .bgchk.on{background:var(--accent-soft,#eef2fb);border-color:var(--accent)}
+  .bgchk input{width:15px;height:15px;flex:none;accent-color:var(--accent)}
+  .audtags{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+  .audnote{color:#7a5b16;background:#fff8e8;border:1px solid #f0e2bf;border-radius:8px;padding:5px 9px;margin-top:5px;font-size:.84rem;line-height:1.5}
   .mktile.mkedit{cursor:pointer;transition:border-color .12s,box-shadow .12s}.mktile.mkedit:hover{border-color:var(--accent);box-shadow:0 2px 8px rgba(0,0,0,.08)}.mktile small{font-weight:600;color:var(--muted);font-size:.72rem}
   .pimpbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:8px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
   .pimpbar.warn{border-color:#d99a00;background:#fff7e0}
@@ -1418,6 +1431,21 @@ details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;ma
     background:var(--card);color:var(--ink);font-family:inherit;font-size:.9rem;font-weight:700}
   .hedate .hd_d{flex:0 0 22%}
   /* היסטוריית האברכים בתוך חלון יששכר־זבולון */
+  .izyears{display:flex;gap:8px;margin:2px 0 10px}
+  .izy{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 8px;border-radius:12px;cursor:pointer;
+    border:2px solid var(--line);background:var(--card,#fff);color:inherit;font:inherit}
+  .izy b{font-size:1.02rem}.izy small{font-size:.75rem;opacity:.75}
+  .izy.on{border-color:#7a1f1f;background:#7a1f1f;color:#fff}
+  .izotbl{width:100%;border-collapse:collapse;font-size:.9rem}
+  .izotbl th{background:#7a1f1f;color:#fff;text-align:right;padding:6px 8px;font-size:.8rem}
+  .izotbl td{padding:5px 8px;border-bottom:1px solid var(--line)}
+  .izotbl tr.izof td{border-top:2px solid #e3d3a3}.izotbl td.n{color:var(--muted);font-size:.75rem;width:28px}
+  .izotbl td.izodn{cursor:pointer;text-decoration:underline dotted}
+  .izyc{margin:8px 0;padding:8px 10px;border:1px solid #e3d3a3;border-radius:10px;background:rgba(156,122,46,.07)}
+  .izyc.old{background:transparent;border-style:dashed}.izyc:empty{display:none}
+  .izyc-t{font-weight:800;color:#7a1f1f;margin-bottom:4px}
+  .izyc-s{font-size:.78rem;font-weight:800;color:var(--muted);margin:6px 0 2px}
+  .izyc summary{cursor:pointer;font-weight:800;color:var(--muted);font-size:.85rem}
   .izhist{margin-top:8px;border-top:1px dashed var(--line);padding-top:6px}
   .izhist>summary{cursor:pointer;font-size:.8rem;font-weight:800;color:var(--muted)}
   .izhline{font-size:.78rem;line-height:1.6;color:var(--ink);padding:3px 0;
@@ -2343,6 +2371,21 @@ details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;ma
   .lgtot{border-top:2px solid var(--line);padding-top:6px;text-align:left;font-size:15px}
   .lgsum{display:flex;flex-wrap:wrap;gap:8px 18px;justify-content:center;margin:12px 0;padding:10px;border-radius:12px;background:var(--soft,#faf7f0);font-size:16px}
   .lgsum .neg b{color:#b8452f}
+  /* 📚 אוצר הספרים */
+  .bkcols{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:12px;align-items:start;margin-top:10px}
+  @media(max-width:980px){.bkcols{grid-template-columns:1fr}}
+  .bkcol{border:1px solid var(--line);border-radius:12px;padding:10px;display:grid;gap:8px;align-content:start;min-width:0}
+  .bkcol.books{border-top:4px solid #b9770e}
+  .bkcol h3{margin:0;font-size:16px}.bkcol h3 small{font-weight:400;color:var(--muted,#888);font-size:12px}
+  .bklist{display:grid;gap:6px}
+  .bkrow{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fff;display:grid;gap:4px}
+  .bknm{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .bksub{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:var(--muted,#777)}
+  .bksub b{color:var(--ink,#222)}.bksub .no{color:#b8452f}.bksub .lgm{background:#efe9dc;color:#5a4a1f;border-radius:6px;padding:0 5px}
+  .bknote{font-size:12.5px;color:var(--muted,#888)}
+  .bkedit{display:grid;gap:6px;border:1px solid var(--accent);border-radius:10px;padding:10px;background:var(--soft,#faf7f0)}
+  .bkedit input,.bkedit select{width:100%;min-width:0;box-sizing:border-box}
+  .mktag.mu{background:#fff4e5;color:#b9770e}.mktag.ok{background:#e6f4ea;color:#1e7a44}.mktag.bad{background:#fde8e4;color:#b8452f}
   .lgmonths{display:grid;gap:6px;margin-top:8px}
   .lgmon{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;border:1px solid var(--line);border-radius:10px;padding:8px 11px;background:#fff;cursor:pointer;text-align:right;font:inherit}
   .jobme,.jobfl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}
@@ -2661,6 +2704,7 @@ details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;ma
       <button class="tab" data-tab="rcpt">🧾 קבלות</button>
       <button class="tab" data-tab="avreich">🤝 יששכר־זבולון</button>
       <button class="tab" data-tab="stip">🎓 אברכים</button>
+      <button class="tab" data-tab="trf">🏦 העברות ומלגות</button>
       <button class="tab danger" data-tab="debts">💰 חובות</button>
       <button class="tab danger" data-tab="missed">🔴 לא עבר</button>
       <button class="tab" data-tab="mails">📧 מיילים ושיחות</button>
@@ -2668,6 +2712,7 @@ details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;ma
       <button class="tab" data-tab="camp">קמפיינים</button>
       <button class="tab" data-tab="mikveh">🛁 מקווה</button>
       <button class="tab" data-tab="bldghq">🏛️ הבניין הקדוש</button>
+      <button class="tab" data-tab="books">📚 אוצר הספרים</button>
       <button class="tab hidden" data-tab="old">🧹 תורמים ישנים</button>
       <button class="tab hidden danger" data-tab="review">📋 לבדיקה</button>
       <button class="tab hidden danger" data-tab="dups">🧾 תשלומים כפולים</button>

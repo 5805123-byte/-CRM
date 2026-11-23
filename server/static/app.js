@@ -801,6 +801,7 @@ const remSeen=()=>{try{return JSON.parse(localStorage.getItem('kc_remseen')||'{}
 function remMarkSeen(items){const s=remSeen();items.forEach(x=>{s[x.id+':'+x.stage.key]=1;});try{localStorage.setItem('kc_remseen',JSON.stringify(s));}catch(e){}}
 function remUnseen(items){const s=remSeen();return items.filter(x=>!s[x.id+':'+x.stage.key]);}
 function remNotify(items){
+  return; // מאיר (19.11.2026): בלי התראות קופצות מהיומן בטאבלט
   if(!('Notification' in window)||Notification.permission!=='granted')return;
   items.slice(0,4).forEach(x=>{try{new Notification('⏰ '+x.stage.label+' — '+(x.donor||'משימה'),{body:(x.note||'')+(x.at_time?(' · '+x.at_time):'')+(x.place?(' · '+x.place):''),tag:'kc-rem-'+x.id+'-'+x.stage.key});}catch(e){}});
 }
@@ -919,8 +920,8 @@ function checkReminders(){
   // שלב תזכורת חדש (יומיים לפני / מחר / 3 שעות / שעה) קופץ פעם אחת, גם כהתראת דפדפן
   // "נראה" נרשם רק כשסוגרים את החלון — אחרת רענון אוטומטי של הדף בולע את התזכורת
   const fresh=remUnseen(up);
-  if(fresh.length){remNotify(fresh);openRemPopup();return;}
-  if(due.length&&!sessionStorage.getItem('remseen')){openRemPopup();sessionStorage.setItem('remseen','1');}
+  if(fresh.length){remMarkSeen(fresh);return;}   // מאיר: בלי חלון קופץ — רק הפס האדום למעלה
+  // מאיר (19.11.2026): לא לפתוח חלון תזכורות לבד — רק בלחיצה על הפס
 }
 setInterval(()=>{try{if((DB&&DB.length)||ROLE==='comm'||ROLE==='gabbai')checkReminders();}catch(e){}},60*1000);
 // מסך שנשאר פתוח — אחרי 48 שעות מבקש כניסה מחדש גם בלי פעולה וגם בלי רשת
@@ -1391,7 +1392,7 @@ let ROLE='admin', AUTH_ON=false, _loginShown=false;
 const _PP=location.pathname.replace(/\/+$/,'').toLowerCase();   // גם /gabbai/ עם לוכסן בסוף
 const PORTAL=_PP==='/kehila'?'comm':(_PP==='/parnes'?'parnes':(_PP==='/gabbai'?'gabbai':'admin'));
 const PORTAL_PATH={comm:'/kehila',parnes:'/parnes',gabbai:'/gabbai',admin:'/'};
-const ROLE_TABS={comm:['comm'],parnes:['parnes','kvittel'],gabbai:['comm','parnes','kvittel']};
+const ROLE_TABS={comm:['comm'],parnes:['parnes','kvittel'],gabbai:['comm','parnes','kvittel','books']};
 const ROLE_TITLE={comm:'כולל חצות — קהילה',parnes:'כולל חצות — פרנס יום וקוויטל',gabbai:'כולל חצות — גבאים'};
 const ROLE_ONLY={comm:'הקהילה',parnes:'פרנס יום והקוויטל',gabbai:'הקהילה, פרנס יום והקוויטל'};
 function showLogin(msg){
@@ -1737,7 +1738,7 @@ async function load(){
       const r=await api('POST','/api/logout_all',{});authExpSet(0);if(r&&r.ok){toast('כל המכשירים נותקו');}setTimeout(()=>location.reload(),600);};};document.querySelector('.brand').appendChild(b);}
   if(cardBusy())return;      // טופס כרטיס פתוח — הנתונים התעדכנו, המסך נשאר כמו שהוא
   // שחזור הלשונית שבה הייתי לפני הרענון
-  try{let st=localStorage.getItem('kc_tab');try{const qt=new URLSearchParams(location.search).get('tab');if(qt)st=qt;}catch(e){}const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','cal','comm','rcpt','gifts','mikveh','bldghq'];if(PORTAL==='parnes'&&valid.includes('parnes'))st='parnes';if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
+  try{let st=localStorage.getItem('kc_tab');try{const qt=new URLSearchParams(location.search).get('tab');if(qt)st=qt;}catch(e){}const valid=ROLE_TABS[ROLE]||['donors','tasks','kvittel','parnes','charges','avreich','missed','camp','mails','stip','trf','cal','comm','rcpt','gifts','mikveh','bldghq'];if(PORTAL==='parnes'&&valid.includes('parnes'))st='parnes';if(ROLE_TABS[ROLE]&&!valid.includes(st))st=valid[0];if(st&&valid.includes(st)){tab=st;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===st));if(st==='parnes'){const py=JSON.parse(localStorage.getItem('kc_py')||'{}');if(py.kind)pyKind=py.kind;if(py.month)pyMonth=py.month;if(py.day)pyDay=py.day;}}}catch(e){}
   render();
   checkReminders();
   // פתיחת כרטיס: לפי פרמטר בכתובת (קישור), אחרת התורם שהיה פתוח לפני הרענון
@@ -1780,6 +1781,7 @@ function render(){
     return renderDonors();
   }
   if(tab==='bldghq') return renderBldgHQ();
+  if(tab==='books') return renderBooks();
   if(tab==='tasks') return renderTasksTab();
   if(tab==='cal'){if(calPrevTab!=='cal'){calMode='day';calDay='';}calPrevTab='cal';return renderCalTab();}
   calPrevTab=tab;
@@ -1791,6 +1793,7 @@ function render(){
   if(tab==='gifts') return renderGifts();
   if(tab==='avreich') return renderAvreich();
   if(tab==='stip') return renderStip();
+  if(tab==='trf') return renderTrf();
   if(tab==='debts') return renderDebts();
   if(tab==='missed') return renderMissed();
   if(tab==='mails') return renderMails();
@@ -1875,6 +1878,172 @@ async function mkRenewCheck(start){
     const csv=['שם,טלפון,מספר לקוח,קבוצה,סוג מנוי,מחיר המנוי,מנוי מ,מנוי עד,חידוש אוטומטי,מחיר מיוחד,תשלום אחרון,סכום'].concat(L.map(x=>[x.name,x.phone,x.code||'',x.group,per(x.sub_start,x.sub_end),x.price!=null?x.price:'',x.sub_start,x.sub_end,x.auto?'כן':'לא',x.fix?'כן':'לא',x.last_pay,x.last_amt||''].map(q).join(','))).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='מנוי בלי חיוב.csv';document.body.appendChild(a);a.click();a.remove();};
   if(r.running||start)setTimeout(()=>{if(document.getElementById('remov').classList.contains('show')&&rs.querySelector('h2')&&rs.querySelector('h2').textContent==='מנוי בלי חיוב')mkRenewCheck();},2500);}
+// 🔎 מאיר: "אני צריך סדר במקווה ולעקוב אחרי כולם" — חלון בדיקה מרוכז. "קבוצה רגילה" = מה שמסומן בשלוחת
+// שינוי סוג מנוי (cfg.groups — הקטגוריות שסומנו מושמעות בטלפון), ולא סימון נפרד. חריג = קבוצה לא רגילה או
+// מחיר מיוחד. בכל שורה רואים הכל: הקבוצה, המחיר המיוחד, וההערות (ללקוח / כללית). אנחנו לא מנחשים — רק הסימון.
+let MKAUD={tab:'all',reg:null,grp:'',val:'all',q:''};
+function mkAuditOpen(){MKAUD.reg=null;MKAUD.tab='all';MKAUD.grp='';MKAUD.val='all';MKAUD.q='';mkAuditWin();}
+async function mkAuditWin(){
+  const rs=document.getElementById('remsheet'), remov=document.getElementById('remov');
+  remov.classList.add('show');
+  const close=()=>{const x=document.getElementById('rx');if(x)x.onclick=()=>remov.classList.remove('show');};
+  if(MK===null||!MK.ok){rs.innerHTML='<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">🔎</div><div><h2>בדיקת המקווה</h2><div class="mksub">צריך קודם לטעון את לקוחות המקווה (פתח את לשונית המקווה).</div></div></div>';close();return;}
+  if(MKAUD.reg===null){
+    rs.innerHTML='<button class="x" id="rx">✕</button><div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">🔎</div><div><h2>בדיקת המקווה</h2><div class="mksub"><span class="mkspin"></span> טוען את הקבוצות הרגילות…</div></div></div>';close();
+    const sg=await api('GET','/api/mikveh/selfgroup').catch(()=>null);
+    if(!document.getElementById('remov').classList.contains('show'))return;
+    // הקבוצות הרגילות = מה שמושמע בשלוחת שינוי סוג מנוי (cfg.groups). אם אין הגדרה — אין רגילות, הכל חריג.
+    MKAUD.reg=new Set((sg&&sg.ok&&sg.cfg&&Array.isArray(sg.cfg.groups))?sg.cfg.groups.map(String):[]);
+    MKAUD.hasCfg=!!(sg&&sg.ok&&sg.cfg&&(sg.cfg.groups||[]).length);
+    MKAUD.bg=new Set((sg&&sg.ok&&Array.isArray(sg.bachur_groups))?sg.bachur_groups.map(String):[]);  // קבוצות הבחורים שמאיר בחר
+    MKAUD.bgDirty=false;
+    MKAUD.bblock=(sg&&sg.ok&&sg.bachur_block)?sg.bachur_block:{on:false,last:'',blocked:0,opened:0,reason:'',secs:5};  // חסימה אוטומטית
+  }
+  const regSet=MKAUD.reg, esc_=esc;
+  const gName=id=>{const g=MK.groups.find(z=>z.id===id);return g?g.name:'—';};
+  const gPrice=id=>{const g=MK.groups.find(z=>z.id===id);return g?g.price:null;};
+  const clients=(MK.clients||[]);
+  const isIrr=c=>!regSet.has(String(c.group));
+  const hasNote=c=>(c.remark&&c.remark.trim())||(c.message&&c.message.trim());
+  const irr=clients.filter(isIrr);
+  const special=clients.filter(c=>c.fix);
+  const noted=clients.filter(hasNote);
+  const anyFlag=c=>isIrr(c)||c.fix;                 // "חריג" = קבוצה לא רגילה או מחיר מיוחד
+  const flagged=clients.filter(anyFlag);
+  const T=MKAUD.tab;
+  // 🔎 סינונים נוספים (על גבי הלשונית): קבוצה, תוקף, וחיפוש חופשי
+  const isExp=c=>!c.sub_end||mkPast(c.sub_end);
+  // 🧍 בחורים בפעימות: בקבוצת בחורים שמאיר בחר, אין מנוי בתוקף, ונכנס בפועל בחודש האחרון (≈32 יום)
+  const recentEntry=c=>{if(!c.last_in)return false;const d=new Date(c.last_in);return !isNaN(d)&&(Date.now()-d.getTime())<=32*864e5;};
+  const bachurMatch=c=>MKAUD.bg&&MKAUD.bg.has(String(c.group))&&isExp(c)&&recentEntry(c);
+  const bachur=clients.filter(bachurMatch);
+  const baseOf=()=>T==='group'?irr:T==='special'?special:T==='noted'?noted:T==='bachur'?clients.filter(bachurMatch):T==='everyone'?clients:flagged;
+  const qn=s=>String(s||'').toLowerCase().replace(/[^0-9a-zא-ת ]/g,'');
+  const applyF=L=>{let r=L;
+    if(MKAUD.grp)r=r.filter(c=>String(c.group)===MKAUD.grp);
+    if(MKAUD.val==='valid')r=r.filter(c=>!isExp(c)); else if(MKAUD.val==='exp')r=r.filter(isExp);
+    const q=qn(MKAUD.q); if(q)r=r.filter(c=>qn(mkName(c)+' '+(c.phone||'')+' '+(c.code||'')).includes(q));
+    return r;};
+  const sortF=L=>L.slice().sort((a,b)=>(isIrr(b)-isIrr(a))||((b.fix?1:0)-(a.fix?1:0))||mkName(a).localeCompare(mkName(b),'he'));
+  let curList=sortF(applyF(baseOf()));
+  // רשימת הקבוצות לסינון (לפי כמות לקוחות) — כולל קבוצות רגילות כמו "מנהלים"
+  const gcnt={}; clients.forEach(c=>{gcnt[c.group]=(gcnt[c.group]||0)+1;});
+  const gopts=Object.keys(gcnt).sort((a,b)=>gcnt[b]-gcnt[a]||gName(a).localeCompare(gName(b),'he'))
+    .map(id=>`<option value="${esc_(id)}"${MKAUD.grp===id?' selected':''}>${!regSet.has(String(id))?'🔴 ':''}${esc_(gName(id))} (${gcnt[id]})</option>`).join('');
+  const chip=(t,ico,lbl,n,col)=>`<button class="mkchip${T===t?' on':''}" data-aud="${t}">${ico} ${lbl}<b style="background:${T===t?'rgba(255,255,255,.3)':col||'#c0392b'};color:#fff;border-radius:10px;padding:0 7px;margin-inline-start:3px">${n}</b></button>`;
+  const noteBox=c=>{const o=[];if(c.remark&&c.remark.trim())o.push(`<b>📝 הערה ללקוח:</b> ${esc_(c.remark.trim())}`);if(c.message&&c.message.trim())o.push(`<b>💬 הערה כללית:</b> ${esc_(c.message.trim())}`);
+    return o.length?`<div class="audnote">${o.join('<br>')}</div>`:'';};
+  const row=c=>{const gp=gPrice(c.group), tags=[];
+    if(isIrr(c))tags.push('<span class="mktag bad">🔴 קבוצה חריגה</span>');
+    if(c.fix)tags.push(`<span class="mktag fix">💎 מחיר מיוחד ${esc_(mkNis(c.fix))}</span>`);
+    if(c.blocked)tags.push('<span class="mktag bad">🚫 חסום</span>');
+    const bx=T==='bachur'?`<div class="mksub" style="color:#1d6fb8">⏱️ כניסה אחרונה: <b>${esc_(mkDate(c.last_in))}</b>${c.balance!=null?` · יתרת פעימות ${esc_(mkNis(c.balance))}`:''}</div>`:'';
+    return `<div class="mkrow" data-ao="${esc_(c.id)}" style="grid-template-columns:1fr auto;cursor:pointer">
+      <div class="mknm"><b>${esc_(mkName(c))}</b>
+        <div class="mksub"><span dir="ltr">${esc_(c.phone||'אין טלפון')}</span> · #${esc_(c.code||'')} · <b>${esc_(gName(c.group))}</b>${c.fix&&gp!=null?` <span class="mkmut">(מחיר הקבוצה ${esc_(mkNis(gp))})</span>`:''}</div>
+        ${bx}${tags.length?`<div class="audtags">${tags.join(' ')}</div>`:''}${noteBox(c)}</div>
+      <span class="mktag ${mkPast(c.sub_end)?'bad':'ok'}" style="align-self:center">${c.sub_end?'מנוי עד '+esc_(mkDate(c.sub_end)):'אין מנוי'}</span></div>`;};
+  let hint=!MKAUD.hasCfg?'<div class="mksub" style="margin:2px 2px 8px;color:#b9770e">⚠️ עדיין לא סומנו קבוצות רגילות בשלוחת שינוי סוג מנוי — לכן כל הקבוצות מופיעות כחריגות. פתח את השלוחה וסמן אילו קטגוריות מושמעות בטלפון.</div>'
+      :'<div class="mksub" style="margin:2px 2px 8px;color:#555">קבוצה חריגה = קבוצה שלא מסומנת כרגילה בשלוחת שינוי סוג מנוי. לחיצה על לקוח פותחת את הכרטיס המלא.</div>';
+  // 🧍 לשונית בחורים: בורר קבוצות הבחורים + הסבר על הבדיקה
+  if(T==='bachur'){
+    const sorted=MK.groups.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name),'he'));
+    hint=`<div class="mksub" style="margin:2px 2px 6px;color:#555">בחורים שבקבוצת בחורים, <b>אין להם מנוי בתוקף</b>, ו<b>נכנסו בפועל בחודש האחרון</b> (כלומר נכנסים בפעימות בלי מנוי). בחר אילו קבוצות הן "בחורים":</div>
+      <div class="audpick"><div class="mksub" style="font-weight:700;margin-bottom:4px">🧍 קבוצות הבחורים — <span id="bg_cnt">${MKAUD.bg.size}</span> נבחרו</div>
+        <div class="bgwrap">${sorted.map(g=>`<label class="bgchk${MKAUD.bg.has(String(g.id))?' on':''}"><input type="checkbox" data-bg="${esc_(g.id)}"${MKAUD.bg.has(String(g.id))?' checked':''}><span>${esc_(g.name)}</span></label>`).join('')}</div>
+        <div class="mktpl" style="margin-top:8px"><button class="btn sm" id="bg_save">💾 שמור קבוצות בחורים</button><span id="bg_st" class="mksub"${MKAUD.bgDirty?' style="color:#b9770e"':''}>${MKAUD.bgDirty?'יש שינוי שלא נשמר':''}</span></div></div>
+      <div class="audpick" style="margin-top:8px">
+        <div class="mksub" style="font-weight:700;margin-bottom:2px">📺 הודעת מסך לכל הבחורים ברשימה</div>
+        <div class="mksub">מתווספת למה שכבר כתוב אצל כל אחד — <b>בלי למחוק</b>. (למשל: "אין מנוי בתוקף — יש להסדיר מנוי בכולל").</div>
+        <textarea id="bn_txt" rows="2" class="audq" style="width:100%;box-sizing:border-box;margin-top:6px" placeholder="טקסט ההודעה שתופיע במסך המקווה"></textarea>
+        <div class="mktpl" style="margin-top:6px"><button class="btn sm" id="bn_go">📺 הוסף לכל הבחורים ברשימה</button><span id="bn_st" class="mksub"></span></div></div>
+      <div class="audpick" style="margin-top:8px;border-color:#e0b4b4;background:#fff6f4">
+        <div class="mksub" style="font-weight:700;margin-bottom:2px">⛔ חסימה אוטומטית — בחור בלי מנוי נחסם, עם מנוי נפתח</div>
+        <div class="mksub">כש<b>פעיל</b>: חוסם בחורים בלי מנוי בתוקף (סבב מלא כל ~5 דק'), ו<b>פותח כמעט מיד</b> את מי שטוען מנוי (בדיקת החסומים בלבד, כל ${MKAUD.bblock.secs||5} שניות). "מנוי בתוקף" = תאריך סיום המנוי ≥ היום לפי שעון ישראל. חסימות ידניות לא נגעים בהן.</div>
+        <label class="mksub" style="display:block;margin-top:6px">נוסח החסימה (הטקסט שיופיע כסיבת החסימה):
+          <input id="bb_reason" class="audq" style="width:100%;box-sizing:border-box;margin-top:3px" value="${esc_(MKAUD.bblock.reason||'')}" placeholder="למשל: אין מנוי בתוקף — יש להסדיר מנוי"></label>
+        <label class="mksub" style="display:inline-block;margin-top:6px">בדיקת פתיחה כל <input id="bb_secs" type="number" min="3" max="120" value="${MKAUD.bblock.secs||5}" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:4px;font:inherit"> שניות <small class="mkmut">(מינימום 3)</small></label>
+        <div class="mktpl" style="margin-top:6px">
+          <button class="btn sm" id="bb_savecfg">💾 שמור נוסח / תדירות</button>
+          <button class="btn sm${MKAUD.bblock.on?'':' ghost'}" id="bb_toggle">${MKAUD.bblock.on?'🟢 פעיל — לכבות':'⚪ כבוי — להפעיל'}</button>
+          <button class="btn sm ghost" id="bb_run">▶️ הרץ עכשיו ידנית</button>
+          <span id="bb_st" class="mksub">${MKAUD.bblock.last?('נבדק '+esc_(mkDate(MKAUD.bblock.last))+' · נחסמו '+(MKAUD.bblock.blocked||0)+' · נפתחו '+(MKAUD.bblock.opened||0)):'עדיין לא רץ'}</span>
+        </div></div>`;
+  }
+  const fnone=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();
+  const empty=fnone?'אין לקוח שמתאים לסינון.':T==='group'?'✓ כל הלקוחות בקבוצות רגילות.':T==='special'?'אין לקוחות עם מחיר מיוחד.':T==='noted'?'אין הערות.':T==='everyone'?'אין לקוחות.':T==='bachur'?(MKAUD.bg.size?'✓ אין בחורים בלי מנוי שנכנסו החודש.':'בחר קבוצות בחורים למעלה כדי לראות את הבדיקה.'):'✓ אין חריגים — כולם בקבוצה רגילה ובלי מחיר מיוחד.';
+  rs.innerHTML=`<button class="x" id="rx">✕</button>
+    <div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">🔎</div><div><h2>בדיקת המקווה — מעקב וחריגים</h2>
+      <div class="mksub">${flagged.length} חריגים · ${irr.length} בקבוצה חריגה · ${special.length} מחיר מיוחד · ${noted.length} עם הערה · ${clients.length} לקוחות</div></div></div>
+    <div class="mktpl" style="margin:8px 0;flex-wrap:wrap">${chip('all','📋','הכל',flagged.length,'#2f6fb0')}${chip('group','🔴','קבוצה חריגה',irr.length,'#c0392b')}${chip('special','💎','מחיר מיוחד',special.length,'#8a6d1a')}${chip('noted','📝','הערות',noted.length,'#2f6fb0')}${chip('bachur','🧍','בחורים בפעימות',bachur.length,'#8a6d1a')}${chip('everyone','👥','כל הלקוחות',clients.length,'#555')}</div>
+    <div class="audfilters">
+      <select id="aud_grp" class="audsel"><option value="">כל הקבוצות</option>${gopts}</select>
+      <select id="aud_val" class="audsel"><option value="all"${MKAUD.val==='all'?' selected':''}>כל התוקף</option><option value="valid"${MKAUD.val==='valid'?' selected':''}>בתוקף</option><option value="exp"${MKAUD.val==='exp'?' selected':''}>פג תוקף / אין</option></select>
+      <input id="aud_q" class="audq" placeholder="🔍 שם / טלפון / מספר לקוח" value="${esc_(MKAUD.q)}">
+      ${fnone?'<button class="btn sm ghost" id="aud_clr">✕ נקה סינון</button>':''}
+    </div>
+    ${hint}
+    <div class="mksub" id="aud_cnt" style="margin:2px 2px 6px;font-weight:700">${curList.length} לקוחות ברשימה</div>
+    <div class="mklist" id="aud_list">${curList.map(row).join('')||'<div class="hintxt">'+empty+'</div>'}</div>
+    <div class="mktpl" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;flex-wrap:wrap"><button class="btn sm ghost" id="aud_self">🔄 קבוצות רגילות (שלוחת שינוי סוג מנוי)</button><button class="btn sm ghost" id="aud_renew">🧾 מנוי בלי חיוב »</button><button class="btn sm ghost" id="aud_csv">⬇️ אקסל</button></div>`;
+  document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+  const wireRows=()=>rs.querySelectorAll('[data-ao]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.ao);if(!c)return;MK_BACK={cid:c.id,go:()=>mkAuditWin()};mkOpen(c);});
+  const repaint=()=>{curList=sortF(applyF(baseOf()));const lst=document.getElementById('aud_list'),cnt=document.getElementById('aud_cnt');
+    if(cnt)cnt.textContent=curList.length+' לקוחות ברשימה';
+    if(lst){const fn=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();lst.innerHTML=curList.map(row).join('')||'<div class="hintxt">'+(fn?'אין לקוח שמתאים לסינון.':empty)+'</div>';wireRows();}};
+  wireRows();
+  rs.querySelectorAll('[data-aud]').forEach(b=>b.onclick=()=>{MKAUD.tab=b.dataset.aud;mkAuditWin();});
+  {const g=document.getElementById('aud_grp');if(g)g.onchange=()=>{MKAUD.grp=g.value;repaint();};}
+  {const v=document.getElementById('aud_val');if(v)v.onchange=()=>{MKAUD.val=v.value;repaint();};}
+  {const qi=document.getElementById('aud_q');if(qi)qi.oninput=()=>{MKAUD.q=qi.value;repaint();};}
+  {const c=document.getElementById('aud_clr');if(c)c.onclick=()=>{MKAUD.grp='';MKAUD.val='all';MKAUD.q='';mkAuditWin();};}
+  // 🧍 בורר קבוצות הבחורים — סימון מעדכן את הרשימה מיד; שמירה שומרת בשרת
+  rs.querySelectorAll('[data-bg]').forEach(cb=>cb.onchange=()=>{if(cb.checked)MKAUD.bg.add(cb.dataset.bg);else MKAUD.bg.delete(cb.dataset.bg);
+    const lab=cb.closest('.bgchk');if(lab)lab.classList.toggle('on',cb.checked);
+    const cnt=document.getElementById('bg_cnt');if(cnt)cnt.textContent=MKAUD.bg.size;
+    MKAUD.bgDirty=true;const st=document.getElementById('bg_st');if(st){st.style.color='#b9770e';st.textContent='יש שינוי שלא נשמר';}
+    repaint();});
+  {const s=document.getElementById('bg_save');if(s)s.onclick=async()=>{s.disabled=true;const st=document.getElementById('bg_st');if(st){st.style.color='#555';st.textContent='⏳ שומר…';}
+    const y=await api('POST','/api/mikveh/bachur_groups',{ids:[...MKAUD.bg]});s.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ לא נשמר';}return;}
+    MKAUD.bgDirty=false;if(st){st.style.color='#1e7a3c';st.textContent='✓ נשמר';}toast('נשמר ✓');};}
+  // 📺 הודעת מסך לכל הבחורים ברשימה (append)
+  {const g=document.getElementById('bn_go');if(g)g.onclick=async()=>{const txt=(document.getElementById('bn_txt').value||'').trim();const st=document.getElementById('bn_st');
+    if(!txt){if(st){st.style.color='#c0392b';st.textContent='חסר טקסט';}return;}
+    const ids=curList.map(c=>c.id);
+    if(!ids.length){if(st){st.style.color='#c0392b';st.textContent='אין בחורים ברשימה';}return;}
+    if(!await uiConfirm('להוסיף את ההודעה למסך של '+ids.length+' בחורים?\n"'+txt+'"\n(מתווסף למה שכבר כתוב, בלי למחוק)','📺 כן, להוסיף','ביטול'))return;
+    g.disabled=true;if(st){st.style.color='#555';st.textContent='⏳ מוסיף…';}
+    const y=await api('POST','/api/mikveh/bachur_note',{ids,text:txt});g.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'לא נוסף');}return;}
+    if(st){st.style.color='#1e7a3c';st.textContent='✓ נוסף ל-'+y.done+(y.skipped?' · דילג על '+y.skipped+' (כבר קיים)':'')+(y.failed?' · '+y.failed+' נכשלו':'');}
+    toast('ההודעה נוספה ✓');document.getElementById('bn_txt').value='';};}
+  // ⛔ חסימה אוטומטית — שמירת נוסח/תדירות + מתג + הרצה ידנית
+  const bbCfg=()=>({reason:(document.getElementById('bb_reason')||{}).value||'',secs:+((document.getElementById('bb_secs')||{}).value)||5});
+  {const s=document.getElementById('bb_savecfg');if(s)s.onclick=async()=>{const st=document.getElementById('bb_st');s.disabled=true;if(st){st.style.color='#555';st.textContent='⏳ שומר…';}
+    const c=bbCfg();const y=await api('POST','/api/mikveh/bachur_block',{reason:c.reason,secs:c.secs});s.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'לא נשמר');}return;}
+    MKAUD.bblock.reason=y.reason;MKAUD.bblock.secs=y.secs;if(st){st.style.color='#1e7a3c';st.textContent='✓ נשמר';}toast('נשמר ✓');};}
+  {const t=document.getElementById('bb_toggle');if(t)t.onclick=async()=>{const turnOn=!MKAUD.bblock.on;const st=document.getElementById('bb_st');const c=bbCfg();
+    if(turnOn&&!await uiConfirm('להפעיל חסימה אוטומטית?\nמעכשיו בחורים בלי מנוי בתוקף ייחסמו אוטומטית (ומי שמסדיר מנוי ייפתח תוך שניות). זה ירוץ מיד.','🟢 כן, להפעיל','ביטול'))return;
+    t.disabled=true;if(st){st.style.color='#555';st.textContent='⏳…';}
+    const y=await api('POST','/api/mikveh/bachur_block',{on:turnOn,reason:c.reason,secs:c.secs});t.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
+    MKAUD.bblock.on=y.on;MKAUD.bblock.last=y.last;MKAUD.bblock.blocked=y.blocked;MKAUD.bblock.opened=y.opened;MKAUD.bblock.reason=y.reason;MKAUD.bblock.secs=y.secs;
+    toast(y.on?'חסימה אוטומטית הופעלה':'חסימה אוטומטית כובתה');mkAuditWin();};}
+  {const r=document.getElementById('bb_run');if(r)r.onclick=async()=>{const st=document.getElementById('bb_st');
+    if(!await uiConfirm('להריץ עכשיו? ייחסמו בחורים בלי מנוי בתוקף וייפתחו מי שיש להם מנוי (מתוך הקבוצות שסימנת).','▶️ כן, להריץ','ביטול'))return;
+    r.disabled=true;if(st){st.style.color='#555';st.textContent='⏳ רץ…';}
+    const y=await api('POST','/api/mikveh/bachur_block',{run:true});r.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
+    MKAUD.bblock.last=y.last;MKAUD.bblock.blocked=y.blocked;MKAUD.bblock.opened=y.opened;
+    if(st){st.style.color='#1e7a3c';st.textContent='✓ נחסמו '+y.blocked+' · נפתחו '+y.opened;}
+    toast('הורץ ✓');};}
+  {const b=document.getElementById('aud_self');if(b)b.onclick=()=>mkSelfGroupOpen();}
+  {const b=document.getElementById('aud_renew');if(b)b.onclick=()=>mkRenewCheck();}
+  const cv=document.getElementById('aud_csv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const csv=['שם,טלפון,מספר לקוח,קבוצה,קבוצה חריגה,מחיר מיוחד,תוקף,הערה ללקוח,הערה כללית,מנוי עד'].concat(curList.map(c=>[mkName(c),c.phone||'',c.code||'',gName(c.group),isIrr(c)?'כן':'לא',c.fix||'',isExp(c)?'פג':'בתוקף',c.remark||'',c.message||'',mkDate(c.sub_end)].map(q).join(','))).join('\n');
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,%EF%BB%BF'+encodeURIComponent(csv);a.download='בדיקת המקווה.csv';document.body.appendChild(a);a.click();a.remove();};}
 // 🔎 מאיר: "יש לקוחות שמכניסים טלפונים אחרים ממה שמעודכן במקווה — שיהיה חכם ויבדוק אם יש שם דומה ויציע,
 // שיראו שהוא לא קיים וזה רק הצעה, או שיבדוק לפי מייל וכו'". exact = אותו טלפון בדיוק; sug = הצעות בלבד, עם הסיבה
 const mkN9=p=>{const d=String(p||'').replace(/\D/g,'').replace(/^972/,'0');return d.length>=9&&d.length<=10?d.slice(-9):'';};
@@ -2512,7 +2681,8 @@ function renderMikveh(){
           <button class="mkibtn" id="mkdebtsb" title="כל החובות הפתוחים במקווה — מי חייב, כמה ועל מה">🧾 חובות פתוחים</button>
       <button class="mkibtn" id="mkgrpw" title="סוגי המנוי במקווה — והעתקה של מנוי עם כל השעות וההגדרות">📋 סוגי מנוי</button>
       <button class="mkibtn" id="mkexpchk" title="מי שהמנוי או הרישיון שלו הסתיים, ולמה (חידוש אוטומטי כבוי / אין אמצעי תשלום / חיוב נכשל)">🔍 בדיקת פג תוקף</button>
-      <button class="mkibtn" id="mkrenewchk" title="מי שיש לו מנוי בתוקף ולא נמצא לו שום חיוב בחודשים האחרונים — לבדיקה אם חודש בלי שנגבה תשלום">🧾 מנוי בלי חיוב</button></div></div>
+      <button class="mkibtn" id="mkrenewchk" title="מי שיש לו מנוי בתוקף ולא נמצא לו שום חיוב בחודשים האחרונים — לבדיקה אם חודש בלי שנגבה תשלום">🧾 מנוי בלי חיוב</button>
+      <button class="mkibtn" id="mkaudit" title="מעקב וחריגים — מי בקבוצה שלא סומנה רגילה, מי עם מחיר מיוחד, ומי שיש עליו הערה">🔎 בדיקת המקווה</button></div></div>
         <div class="mkhg"><span>💬 פניות והודעות</span><div><button class="mkibtn" id="mkreqb" title="טופסי פניות שהגיעו במייל מנדרים פלוס (סוג הפניה: מקווה)">📨 פניות מנדרים${MKREQ&&MKREQ.new?` <b style="background:#e74c3c;color:#fff;border-radius:10px;padding:0 7px">${MKREQ.new}</b>`:''}</button>
           <button class="mkibtn" id="mklogb" title="כל ההודעות, השיחות והמיילים שיצאו מהמקווה — עם התוצאות">📜 הודעות שנשלחו</button>
           <button class="mkibtn hidden" id="mksched">⏰ מתוזמנות</button></div></div></div></details></div>`;
@@ -2537,6 +2707,7 @@ function renderMikveh(){
   const _mz=document.getElementById('mkzklist'); if(_mz)_mz.onclick=()=>mkCreditOpen('zk');
   document.getElementById('mkexpchk').onclick=()=>mkExpCheck();
   document.getElementById('mkrenewchk').onclick=()=>mkRenewCheck();
+  {const ab=document.getElementById('mkaudit');if(ab)ab.onclick=()=>mkAuditOpen();}
   document.getElementById('mkgrpw').onclick=()=>mkGroupsWin();
   document.getElementById('mkselfg').onclick=()=>mkSelfGroupOpen();
   document.getElementById('mkvmb').onclick=()=>mkVmOpen();
@@ -5531,7 +5702,7 @@ function bldAutoPaid(d,x){
 }
 function bldPaid(d,x){return amtNum(x.paid)+bldAutoPaid(d,x);}
 function buildTotals(d){let price=0,paid=0;(d.building||[]).forEach(x=>{price+=amtNum(x.amount);paid+=bldPaid(d,x);});return {price,paid,owed:price-paid};}
-const BLD_SECTIONS=['הבניין הקדוש — כללי','היכל בית המדרש','עזרת נשים','היכלות','חלונות','שולחנות','עמודים','מטרים','ארונות ספרים','מבוא ההיכל — הלובי','היכל הכנסת אורחים','מקווה'];
+const BLD_SECTIONS=['הבניין הקדוש','מבוא ההיכל – הלובי','בית המדרש','עזרת נשים הקטנה – לתפילות ימות החול','המקווה הקדוש','היכל הרשב"י והיכל בעל השדה','אידרא רבה – היכל השיעורים והתפילה','ארונות הספרים','חדר קפה','הבניין הקדוש — כללי','היכל בית המדרש','עזרת נשים','היכלות','חלונות','שולחנות','עמודים','מטרים','ארונות ספרים','מבוא ההיכל — הלובי','היכל הכנסת אורחים','מקווה'];
 function bldSecList(){const s=new Set(BLD_SECTIONS);(DB||[]).forEach(d=>(d.building||[]).forEach(x=>{if(x.section)s.add(x.section);}));return [...s];}
 function cardBuilding(d,body){
   const t=buildTotals(d),cur=curSym(d);
@@ -5604,6 +5775,30 @@ function renderBldgHQ(){
   </div>`;
   view.querySelectorAll('.bhqf .chip').forEach(b=>b.onclick=()=>{bhqF=b.dataset.f;renderBldgHQ();});
   view.querySelectorAll('.bhqrow').forEach(el=>el.onclick=()=>{const d=DB.find(x=>x.id==el.dataset.d);if(d)openDonor(d,'building');});
+  bhqUnlinked();
+}
+// הקדשות מדף "נוסחי ההקדשות" שאין להן עדיין כרטיס תורם — שיוך בבחירת התורם
+async function bhqUnlinked(){
+  let r=null;try{r=await api('GET','/api/building/unlinked');}catch(e){}
+  const rows=(r&&r.rows)||[];const box=view.querySelector('.bhq');if(!box||!rows.length)return;
+  const money=n=>'$'+Math.round(n).toLocaleString();
+  const opts=(DB||[]).map(d=>`<option value="${esc(((d.last||'')+' '+(d.first||'')).trim())} #${d.id}">`).join('');
+  const el=document.createElement('div');el.className='bhqsec bhqun';
+  el.innerHTML=`<h3>🔗 לא משויכים לכרטיס תורם <small>${rows.length} · השם בדף לא התאים בבירור לכרטיס אחד — בחר את התורם והוא ישויך</small></h3>
+    <datalist id="bhqdl">${opts}</datalist>
+    ${rows.map(x=>`<div class="bhqrow" style="cursor:default">
+      <div class="bhqobj"><b>${esc(x.object||'—')}</b><span>${esc(x.section||'')}</span></div>
+      <div class="bhqwho">${esc(x.who||'')}</div>
+      <div class="bhqamt">${amtNum(x.amount)?money(amtNum(x.amount)):''}</div>
+      <div class="bhqded">${esc(x.dedication||'')}</div>
+      <div style="grid-column:1/-1;display:flex;gap:6px"><input list="bhqdl" class="bhqpick" data-id="${x.id}" placeholder="🔍 בחר את התורם — הקלד שם" style="flex:1"><button class="btn sm bhqlink" data-id="${x.id}">שייך</button></div>
+    </div>`).join('')}`;
+  box.insertBefore(el,box.querySelector('.bhqsec')||null);
+  el.querySelectorAll('.bhqlink').forEach(b=>b.onclick=async()=>{
+    const inp=el.querySelector('.bhqpick[data-id="'+b.dataset.id+'"]');const m=String(inp.value||'').match(/#(\d+)\s*$/);
+    if(!m){toast('בחר תורם מהרשימה');inp.focus();return;}
+    b.disabled=true;const x=await api('POST','/api/building/link',{id:+b.dataset.id,donor_id:+m[1]});
+    if(x&&x.ok){toast('שויך ✓');await load();renderBldgHQ();}else{b.disabled=false;toast((x&&x.error)||'לא נשמר');}});
 }
 // סיכום לפי ייעוד — כמה נתרם לכל דבר, השנה ובסך הכל
 // "עבור מה" שמוצג בראש הכרטיס — הייעוד שנקבע לתורם, ואם לא נקבע אז לפי התרומות בפועל
@@ -7348,7 +7543,9 @@ function cardDetails(d,body){
   const pdebtcur=pdebts.length?pCur(pdebts[0],d):curd;
   body.innerHTML=`${contactBtns(d)?`<div class="cardcbar">${contactBtns(d)}</div>`:''}
     <button class="btn dnqc" data-did="${d.id}" type="button">💳 תרומה באשראי — חיוב מהיר + קבלה במייל</button>
+    <button class="btn dnman" type="button" style="background:#3b2f7a;color:#fff">✍️ רישום תרומה שנכנסה — סכום, תאריך ועבור מה</button>
     <button class="btn ghost dncl" data-did="${d.id}" type="button">🔗 קישור לתורם לעדכון כרטיס — וואטסאפ / מייל</button>
+    <div id="dnrec"></div>
     ${(curd==='₪'||d.region==='il')?`<button class="btn ghost dnkl" data-did="${d.id}" type="button">🇮🇱 קישור אישי בעברית (נדרים פלוס) — פרטים, כרטיס ותרומה</button>`:''}
     ${pdebts.length?`<div class="debtbanner">🌙 פרנס שטרם נגבה: <b>${pdebtsum?(pdebtcur+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
     ${debtHTML(d)}
@@ -7370,7 +7567,7 @@ function cardDetails(d,body){
     ${catTotalsHTML(d)}
     ${give}
     ${(d.parnes||[]).length?`<details class="dsec"><summary>🗓️ ימים משובצים (פרנס / קפה / בוקר)${(d.parnes||[]).some(p=>p.status==='suggested')?' <small class="suggn">· יש הצעה לשנה הבאה</small>':''}</summary><div id="parnes"></div></details>`:''}
-    ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון — האברכים שהוא מחזיק</summary><div id="partners"></div>
+    ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון תשפ"ז — האברכים שהוא מחזיק</summary><div id="partners"></div>
       <button type="button" class="opnlink" id="pa_opn" style="margin-top:6px">➕ הוסף עוד אברך</button>
       <div class="opnbox hidden" id="pa_opnbox">
         <div class="addrow"><select id="pa_name">${avOpts('')}</select></div>
@@ -7452,6 +7649,14 @@ function cardDetails(d,body){
     d.files=(d.files||[]).filter(x=>x.id!=b2.dataset.fid);
     toast('נמחק'); cardDetails(d,body);});
   wireSplit(d, body, ()=>{const x=DB.find(y=>y.id===d.id)||d; cardDetails(x, body);});
+  renderDonorRec(d, body);
+  // מאיר: "אני נכנס לכרטיס תורם, אני רוצה לכתוב תרומה שלו באופן ידני שהוא תרם בתאריך כך וכך עבור כך וכך — איפה?
+  // זה מידי מבולגן" — כפתור אחד למעלה שפותח ישר את טופס "תרומה שנכנסה" (כמה, מתי, איך, עבור מה)
+  const dman=body.querySelector('.dnman');if(dman)dman.onclick=()=>{const cmb=body.querySelector('.cmbody'),cmt=body.querySelector('.cmtoggle');
+    if(cmb){cmb.hidden=false;if(cmt)cmt.textContent='▾ סגור';}
+    const ng=body.querySelector('.ng[data-ng="paid"]');if(ng){ng.click();return;}
+    const dn=document.getElementById('dnbox');if(dn){dn.open=true;dn.scrollIntoView({block:'start'});const a2=document.getElementById('dn_amt');if(a2)a2.focus();}
+    else toast('לא נמצא טופס רישום תרומה בכרטיס הזה');};
   const gt=document.getElementById('gototot'); if(gt)gt.onclick=()=>{cardTab='details';renderCard(d);};
   // ⛔ מאיר: "איך מגדירים במערכת באופן פשוט וקל שהוא הפסיק — ולהפסיק את החיוב שלו וההתחייבות"
   const ms=document.getElementById('mstop'); if(ms)ms.onclick=async()=>{const on=ms.dataset.on==='1',nm=((d.last||'')+' '+(d.first||'')).trim();
@@ -9802,7 +10007,7 @@ function renderCharges(){
   rows=rows.filter(x=>matchQ((x.d.last||'')+' '+(x.d.first||'')+' '+(x.t.category||'')));
   const paid=all.filter(x=>x.t.status==='settled'||x.t.status==='approved').reduce((s,x)=>s+amtNum(x.t.amount),0);
   const pend=all.filter(x=>x.t.status==='pending').reduce((s,x)=>s+amtNum(x.t.amount),0);
-  view.innerHTML=`<div id="bqbox" class="bqbox"></div>
+  view.innerHTML=`<div id="recbox"></div><div id="bqbox" class="bqbox"></div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn" id="chwizbtn" style="background:#6b1d1d;color:#fff">📝 חיובים בלי תורם — לענות אחד־אחד</button></div>
     <div class="rbtitle">💳 טיפול והתאמת תרומות — לפי שיטת תשלום (ינואר–אוגוסט 2026)</div>
     <div class="addrow" style="margin:0 2px 8px"><button class="btn sm ghost" id="ch_mailsync" style="width:100%">📥 משוך מיילים (נכנסים + ששלחנו) ותייק אצל התורמים</button></div>
@@ -9815,6 +10020,7 @@ function renderCharges(){
     (rows.length?`<div class="cnt">${rows.length} חיובים</div><div class="list">`:'<div class="list hidden">')+
     (rows.map(({t,d})=>{const st=TXST[t.status]||TXST.pending;const rc=curSym(d);return `<div class="rowc" data-id="${d.id}"><div><div class="nm">${esc(d.last)} <small>${esc(d.first)}</small></div><div class="purp">${rc}${esc(t.amount)} ${t.category?('· '+esc(t.category)):''}${txInst(t,rc)}${txUntil(t)}</div></div><div class="meta"><span class="txbadge ${st.c}">${st.t}</span><span class="ph">${esc(t.date||'')}${t.method?(' · '+esc(t.method)):''}</span></div></div>`;}).join('')||'<div class="empty">אין חיובים</div>')+`</div>`;
   view.querySelectorAll('.rowc').forEach(r=>r.onclick=()=>openDonor(DB.find(x=>x.id==r.dataset.id)));
+  renderRecBox();
   renderBQ();
   renderLedger();
   const can=document.getElementById('ch_anet');
@@ -9975,7 +10181,7 @@ function renderPartners(d){
   const shtarHTML=`<div class="izshtar iztop"><div class="izshtar-t">📄 שטר שותפות יששכר־זבולון:</div><div class="avfiles">${izfiles.map(fileChip).join('')||'<span class="hintxt">אין שטר עדיין — אפשר להעלות כאן</span>'}<label class="filebtn">📎 העלה שטר הסכם<input type="file" accept="application/pdf,image/*" class="pshtar" hidden></label></div></div>`;
   // מאיר: "כשתורם מחזיק 2 אברכים או יותר — שכל האברכים שלומדים בשבילו יהיו
   // על אותו דף, גם במקופל וגם בדף שלם, וגם כל אברך דף בפני עצמו"
-  el.innerHTML=shtarHTML+(act.length>1?`<div class="addrow" style="margin-bottom:8px">
+  el.innerHTML=shtarHTML+izYearsCardHTML(d)+(act.length>1?`<div class="addrow" style="margin-bottom:8px">
       <button class="btn sm ghost izall" data-mode="full">🕯️ דף אחד לתורם — כל ${act.length} האברכים</button>
       <button class="btn sm ghost izsep">🕯️ כל אברך בדף נפרד</button></div>`:'')
     +act.map(p=>`<div class="pledge" style="flex-direction:column;align-items:stretch;gap:4px">
@@ -10067,6 +10273,7 @@ function renderPartners(d){
   });
   // מאיר: "אני מנסה להכניס תאריך התחלה… זה נותן לי לכתוב לבד במקום לבחור מהלוח
   // העברי" — התאריך העברי נבחר מיום/חודש/שנה, והלועזי מתעדכן ממנו (וגם להפך).
+  fillIzYearsCard(d);
   el.querySelectorAll('.izall').forEach(b=>b.onclick=()=>window.open('/iz-slips?donor='+d.id+'&grp=donor&mode='+b.dataset.mode,'_blank'));
   el.querySelectorAll('.izsep').forEach(b=>b.onclick=()=>window.open('/iz-slips?donor='+d.id+'&grp=av&mode=full','_blank'));
   el.querySelectorAll('.pstart').forEach(box=>box.querySelectorAll('select').forEach(sl=>sl.onchange=async()=>{
@@ -12139,7 +12346,8 @@ async function renderAvByAv(){
   const st=AVSTAT||{total:AVLIST.length,free:AVLIST.filter(a=>!a.holders.length).length};
   const q2=String(q||'').trim();
   const rows=avFiltered();
-  view.innerHTML=`<div class="avbar">
+  view.innerHTML=izYearHeadHTML()+`<div class="avbar">
+      <button class="btn sm" id="avizfull" title="כל רשימת יששכר־זבולון תשפ&quot;ז, כולל מה שלא להדפסה">📄 רשימה מלאה תשפ"ז</button><button class="btn sm" id="avizprt" style="background:#7a1f1f;color:#fff" title="הטבלה שנשלחה לגרפיקאי — רק מי שמקבל תעודה">🖨️ להדפסה שטרות כסליו תשפ"ז</button>
       <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcertlist" title="רשימה לפי שמות האברכים — לעריכה ולהדפסה, למי להכין תעודה חדשה">📜 רשימה לתעודות</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button>
       <button class="btn sm" id="avymbtn2" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל ·
@@ -12161,7 +12369,52 @@ async function renderAvByAv(){
   document.getElementById('avprint').onclick=()=>{avView='avprint';render();};
   document.getElementById('avslips').onclick=()=>window.open('/iz-slips','_blank');
   document.getElementById('avcertlist').onclick=()=>window.open('/iz-certs','_blank');
+  wireIzYears();
+  document.getElementById('avizfull').onclick=()=>window.open('/api/iz/doc/full','_blank');
+  document.getElementById('avizprt').onclick=()=>window.open('/api/iz/doc/print','_blank');
   wireByAv();
+}
+// 📅 מאיר: "תכניס למערכת ברשימת האברכים בלשונית יששכר זבולון על תשפ"ז, שהקודם יישאר ויהיה כתוב עליו בכותרת
+// תשפ"ה–תשפ"ו… שרואים מיד באופן יפה, וגם אצל התורמים… וגם אצל כל תורם בכרטיס שלו ממתי מתחיל החדש, והיסטוריה של
+// השנים הקודמות — הכל מסונכרן". הרשימה החדשה = השותפויות עצמן (אותו מקור לאברכים, לתורמים ולכרטיס); הקודמת =
+// הצילום שנשמר לפני העדכון (/api/iz/archive).
+let IZARCH=null, izOld=false, izOldBy='av';
+async function loadIzArch(){if(IZARCH)return IZARCH;try{const r=await api('GET','/api/iz/archive');if(r&&r.ok)IZARCH=r;}catch(e){}return IZARCH||{rows:[]};}
+function izYearHeadHTML(){
+  return `<div class="izyears"><button type="button" class="izy${izOld?'':' on'}" data-old="0"><b>🤝 יששכר־זבולון תשפ"ז</b><small>הרשימה הנוכחית</small></button>
+    <button type="button" class="izy${izOld?' on':''}" data-old="1"><b>📂 תשפ"ה–תשפ"ו</b><small>הרשימה הקודמת</small></button></div>`;}
+function wireIzYears(){view.querySelectorAll('.izy').forEach(b=>b.onclick=()=>{const o=b.dataset.old==='1';if(o===izOld)return;izOld=o;render();});}
+async function renderIzOld(){
+  view.innerHTML=izYearHeadHTML()+'<div class="cnt">טוען את הרשימה הקודמת…</div>';wireIzYears();
+  const r=await loadIzArch(), rows=(r.rows||[]).slice(), q2=String(q||'').trim();
+  const L=rows.filter(x=>!q2||(x.av+' '+x.donor).includes(q2));
+  const key=izOldBy==='av'?'av':'donor', oth=izOldBy==='av'?'donor':'av';
+  L.sort((a,b)=>(a[key]||'').localeCompare(b[key]||'','he')||(a[oth]||'').localeCompare(b[oth]||'','he'));
+  let prev='',i=0;
+  const body=L.map(x=>{const first=x[key]!==prev;prev=x[key];if(first)i++;
+    return `<tr class="${first?'izof':''}"><td class="n">${first?i:''}</td><td><b>${first?esc(x[key]):''}</b></td><td${izOldBy==='donor'?'':` class="izodn" data-did="${x.did}"`}>${esc(x[oth])}</td><td>${esc(x.start||'')}</td><td>${esc(x.amt||'')}</td></tr>`;}).join('');
+  view.innerHTML=izYearHeadHTML()+`<div class="avbar"><button class="btn sm${izOldBy==='av'?'':' ghost'}" data-by="av">👨‍🎓 לפי אברכים</button><button class="btn sm${izOldBy==='donor'?'':' ghost'}" data-by="donor">👥 לפי תורמים</button><button class="btn sm ghost" id="izoprint">🖨️ הדפסה</button></div>
+    <div class="avstat">📂 <b>${esc(r.title||'יששכר־זבולון תשפ"ה–תשפ"ו')}</b> · ${new Set(rows.map(x=>x.av)).size} אברכים · ${rows.length} שותפויות · כמו שהייתה לפני תשפ"ז — לקריאה בלבד${q2?` · מוצגים ${L.length}`:''}</div>
+    <div class="avwrap"><table class="izotbl"><thead><tr><th>#</th><th>${izOldBy==='av'?'האברך':'התורם (הזבולון)'}</th><th>${izOldBy==='av'?'הזבולון':'האברך'}</th><th>מתאריך</th><th>סכום</th></tr></thead><tbody>${body||'<tr><td colspan="5" class="empty">אין תוצאות</td></tr>'}</tbody></table></div>`;
+  wireIzYears();
+  view.querySelectorAll('[data-by]').forEach(b=>b.onclick=()=>{izOldBy=b.dataset.by;renderIzOld();});
+  document.getElementById('izoprint').onclick=()=>window.open('/iz-5786','_blank');
+  view.querySelectorAll('.izodn').forEach(t=>t.onclick=()=>{const d=DB.find(y=>y.id==t.dataset.did);if(d)openDonor(d);});
+}
+// בכרטיס התורם: ממתי מתחיל היששכר־זבולון החדש (תשפ"ז), ומה היה בשנים הקודמות
+function izYearsCardHTML(d){
+  const act=(d.partners||[]).filter(p=>p.active!=0&&String(p.avreich||'').trim());
+  const now=act.length?`<div class="izyc"><div class="izyc-t">📅 יששכר־זבולון תשפ"ז — ממתי מתחיל</div>${act.map(p=>`<div class="izrow"><span>👨‍🎓 ${esc(p.avreich)}</span><b>${esc(p.start_date||'—')}</b></div>`).join('')}</div>`:'';
+  return now+`<div class="izyc old" id="izyc_old_${d.id}"></div>`;
+}
+async function fillIzYearsCard(d){
+  const r=await loadIzArch();const el=document.getElementById('izyc_old_'+d.id);if(!el)return;
+  const mine=(r.rows||[]).filter(x=>x.did==d.id);
+  const past=(d.partners||[]).filter(p=>p.active==0&&String(p.avreich||'').trim());
+  if(!mine.length&&!past.length){el.remove();return;}
+  el.innerHTML=`<details><summary>📂 שנים קודמות (${mine.length+past.length})</summary>
+    ${mine.length?`<div class="izyc-s">תשפ"ה–תשפ"ו</div>`+mine.map(x=>`<div class="izrow"><span>👨‍🎓 ${esc(x.av)}</span><b>${esc(x.start||'—')}${x.amt?(' · '+esc(x.amt)):''}</b></div>`).join(''):''}
+    ${past.length?`<div class="izyc-s">הסתיימו</div>`+past.map(p=>`<div class="izrow"><span>👨‍🎓 ${esc(p.avreich)}</span><b>${esc(p.start_date||'?')} — עד ${esc(p.ended_date?(hebOfIso(p.ended_date)||gregLabel(p.ended_date)):'?')}</b></div>`).join(''):''}</details>`;
 }
 // יומן כללי — כל שינוי שנעשה ביששכר־זבולון, אצל כל האברכים והתורמים
 async function renderIzHistory(){
@@ -12509,11 +12762,12 @@ function renderAvTable(){
 }
 function renderAvreich(){
   chips.innerHTML='';
+  if(izOld) return renderIzOld();
   if(avView==='table') return renderAvTable();
   if(avView==='byav') return renderAvByAv();
   if(avView==='avprint') return renderAvPrint();
   const totalAv=DB.reduce((s,d)=>s+(d.partners||[]).filter(p=>p.active!=0).length,0);
-  view.innerHTML=`<div class="avbar">
+  view.innerHTML=izYearHeadHTML()+`<div class="avbar">
       ${avSortSel('avsort')}
       <button class="btn sm" id="avbyavbtn">👨‍🎓 לפי אברכים</button><button class="btn sm" id="avtablebtn">🖨️ טבלה</button><button class="btn sm" id="avrptbtn" style="background:#6b1d1d;color:#fff">📊 דו"ח תשלומים</button>
       <button class="btn sm" id="avymbtn" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
@@ -12544,6 +12798,7 @@ function renderAvreich(){
   document.getElementById('avtablebtn').onclick=()=>{avView='table';render();};
   document.getElementById('avbyavbtn').onclick=()=>{avView='byav';render();};
   document.getElementById('avymbtn').onclick=avYmOpen;
+  wireIzYears();
   sortSel.onchange=()=>{avSort=sortSel.value;paintList();};
   paintList();
 }
@@ -15010,19 +15265,21 @@ async function avCard(name){
   const sec=t=>`<div class="mksec" style="margin-top:16px">${t}</div>`;
   const hold=(r.holders||[]).filter(h=>h.active!==0), old=(r.holders||[]).filter(h=>h.active===0);
   const st=r.stip||[], stT=st.reduce((a,x)=>a+(+x.amount||0)+(+x.extra||0),0);
+  // מאיר: "כולל הוראה אין להם יששכר זבולון וזה לא קשור בכלל" — אברך של כולל הוראה בלבד: בלי פרק יששכר־זבולון
+  const horaa=!hold.length&&((I.seder||'')==='הוראה'||(st.length>0&&st.every(x=>x.kollel==='הוראה')));
   const nd=r.nd||[], ndT=nd.reduce((a,x)=>a+(+x.amount||0),0);
   rs.innerHTML=`<button class="x" id="rx">✕</button>
     <h2>📇 ${esc(I.name||name)}</h2>
-    <div class="hintxt">${[I.seder?'סדר: '+esc(I.seder):'',I.started?'נכנס: '+esc(I.started):'',I.ended?'🚪 יצא מהכולל: '+esc(I.ended):''].filter(Boolean).join(' · ')||(I.found?'':'⚠️ לא נמצא ברשימת האברכים של יששכר־זבולון — מוצג לפי השם')}</div>
+    <div class="hintxt">${[I.seder?'סדר: '+esc(I.seder):'',I.started?'נכנס: '+esc(I.started):'',I.ended?'🚪 יצא מהכולל: '+esc(I.ended):''].filter(Boolean).join(' · ')||(I.found||horaa?'':'⚠️ לא נמצא ברשימת האברכים של יששכר־זבולון — מוצג לפי השם')}</div>
     ${I.note?`<div class="hintxt">📝 ${esc(I.note)}</div>`:''}
     ${sec('📞 פרטי קשר')}
     ${(r.phones||[]).map(p=>`<div class="remitem"><div class="ri"><b dir="ltr">${esc(p)}</b></div><div style="display:flex;gap:6px"><a class="btn sm" href="tel:${esc(p)}">📞 חיוג</a><a class="btn sm ghost" href="${wa(p)}" target="_blank" rel="noopener">💬 וואטסאפ</a></div></div>`).join('')
       ||(I.phone?`<div class="hintxt">טלפון: ${esc(I.phone)}</div>`:'<div class="hintxt">אין טלפון ברשימה</div>')}
     ${I.email?`<div class="remitem"><div class="ri"><b dir="ltr">${esc(I.email)}</b></div><a class="btn sm ghost" href="mailto:${esc(I.email)}">✉️ מייל</a></div>`:''}
     ${I.addr?`<div class="hintxt">🏠 ${esc(I.addr)}</div>`:''}
-    ${sec('🤝 יששכר־זבולון')}
-    ${hold.map(h=>`<div class="remitem"><div class="ri"><a href="#" class="avcd" data-did="${h.did}"><b>${esc(((h.last||'')+' '+(h.first||'')).trim()||'—')} ↗</b></a><br><small>${h.amount?'$'+esc(h.amount):''}${h.start_date?' · מ'+esc(h.start_date):''}</small></div></div>`).join('')||'<div class="hintxt">אין לו כרגע זבולון</div>'}
-    ${old.length?`<div class="hintxt">היו בעבר: ${old.map(h=>esc(((h.last||'')+' '+(h.first||'')).trim())+(h.ended_date?' (עד '+esc(h.ended_date)+')':'')).join(', ')}</div>`:''}
+    ${horaa?'':sec('🤝 יששכר־זבולון')}
+    ${horaa?'':hold.map(h=>`<div class="remitem"><div class="ri"><a href="#" class="avcd" data-did="${h.did}"><b>${esc(((h.last||'')+' '+(h.first||'')).trim()||'—')} ↗</b></a><br><small>${h.amount?'$'+esc(h.amount):''}${h.start_date?' · מ'+esc(h.start_date):''}</small></div></div>`).join('')||'<div class="hintxt">אין לו כרגע זבולון</div>'}
+    ${(!horaa&&old.length)?`<div class="hintxt">היו בעבר: ${old.map(h=>esc(((h.last||'')+' '+(h.first||'')).trim())+(h.ended_date?' (עד '+esc(h.ended_date)+')':'')).join(', ')}</div>`:''}
     ${sec(`🎓 מלגות <small>${st.length} · סה״כ ${stMoney(stT)}</small>`)}
     ${st.length?`<div class="mklist">${st.slice(0,24).map(x=>`<div class="mkrow" style="grid-template-columns:1fr auto;cursor:default"><div class="mknm"><b>${esc(stipLabel(x.kind,x.period))}</b><div class="mksub">${esc(x.kollel||'')}${x.note?' · '+esc(x.note):''}${+x.got?' · ✓ קיבל':''}</div></div><b>${stMoney((+x.amount||0)+(+x.extra||0))}</b></div>`).join('')}</div>${st.length>24?`<div class="hintxt">ועוד ${st.length-24}</div>`:''}`:'<div class="hintxt">אין מלגות רשומות</div>'}
     ${sec(`💳 תרומות בנדרים פלוס <small>${nd.length} · סה״כ ₪${Math.round(ndT).toLocaleString('he-IL')}</small>`)}
@@ -17083,6 +17340,84 @@ function lgPrint(){const L=LG||{rows:[]},w=window.open('','_blank');if(!w)return
     <style>body{font-family:Arial,sans-serif;margin:24px}table{width:100%;border-collapse:collapse;margin-bottom:18px}th,td{border:1px solid #bbb;padding:5px 7px;text-align:right;font-size:13px}th{background:#f1ede4}.t td{font-weight:bold;background:#faf8f3}</style></head>
     <body><h1>בית הכנסת — הכנסות והוצאות · ${esc(lgMonthName(lgMonth))}</h1>${tb('in')}${tb('out')}<h2>יתרה לחודש: ${cdMoney(L.net)}</h2><script>print()<\/script></body></html>`);
   w.document.close();}
+// ---- 📚 אוצר הספרים: רשימת ספרים + הכנסות + הוצאות (שלושה טורים, כמו קופת בית הכנסת) ----
+let BK=null, bkMonth='', bkEdit=0, bkBookEdit=-2;   // bkBookEdit: -2 אין עריכה, -1 הוספה חדשה, מספר=עריכת ספר
+const BK_METHODS=['נדרים','אשראי','מזומן','קופה'];
+function bkStatus(b){const cost=+b.cost||0, paid=+b.paid||0;
+  if(paid<=0)return {t:'לא נתרם',c:'no'};
+  if(cost>0&&paid>=cost)return {t:'נתרם הכל',c:'yes'};
+  return {t:'נתרם חלקית',c:'mid'};}
+async function bkLoad(){if(!bkMonth)bkMonth=todayStr().slice(0,7);BK=await api('GET','/api/books?month='+bkMonth)||{books:[],rows:[],months:[]};}
+function bkLedgerSide(kind){const L=BK, rows=(L.rows||[]).filter(r=>r.kind===kind), inc=kind==='in';
+  const tot=rows.reduce((t,r)=>t+(+r.amount||0),0), mopt=v=>BK_METHODS.map(x=>`<option ${x===v?'selected':''}>${x}</option>`).join('');
+  const row=r=>bkEdit===r.id?`<div class="lgrow ed"><div class="lgf"><input type="date" id="bke_date" value="${esc(r.date||'')}"><input id="bke_amt" inputmode="decimal" value="${esc(r.amount)}" placeholder="סכום"></div>
+      <input id="bke_for" value="${esc(r.purpose||'')}" placeholder="עבור מה"><div class="lgf"><select id="bke_meth"><option value="">אמצעי</option>${mopt(r.method||'')}</select><input id="bke_note" value="${esc(r.note||'')}" placeholder="הערות"></div>
+      <div class="bqacts"><button class="btn sm" data-bkl="save" data-id="${r.id}" data-k="${kind}">💾 שמור</button><button class="btn sm ghost" data-bkl="cancel">ביטול</button><button class="btn sm ghost" data-bkl="del" data-id="${r.id}">🗑 מחק</button></div></div>`
+    :`<div class="lgrow"><span class="lgd">${esc(ndDate(r.date))}</span><span class="lgw"><span><b>${esc(r.purpose||'')}</b>${r.method?` <small class="lgm">${esc(r.method)}</small>`:''}</span>${r.note?`<small>${esc(r.note)}</small>`:''}</span>
+      <b class="lga">${cdMoney(r.amount)}</b><button class="cmpen" data-bkl="edit" data-id="${r.id}" title="תיקון / מחיקה">✎</button></div>`;
+  return `<div class="lgcol ${inc?'in':'out'}"><h3>${inc?'⬇️ הכנסות':'⬆️ הוצאות'}</h3>
+    <div class="lgadd"><div class="lgf"><input id="bk_${kind}_amt" inputmode="decimal" placeholder="סכום ₪"><input type="date" id="bk_${kind}_date" value="${esc(bkMonth===todayStr().slice(0,7)?todayStr():bkMonth+'-01')}"></div>
+      <input id="bk_${kind}_for" placeholder="${inc?'עבור מה — למשל: תרומה לספר, מזומן…':'עבור מה — למשל: כריכה, הדפסה…'}">
+      <div class="lgf"><select id="bk_${kind}_meth"><option value="">אמצעי</option>${mopt('')}</select><input id="bk_${kind}_note" placeholder="הערות (לא חובה)"></div>
+      <button class="btn sm" data-bkl="add" data-k="${kind}">➕ הוסף ${inc?'הכנסה':'הוצאה'}</button></div>
+    <div class="lglist">${rows.map(row).join('')||'<div class="hintxt">עוד אין '+(inc?'הכנסות':'הוצאות')+' בחודש הזה.</div>'}</div>
+    <div class="lgtot">סה״כ ${inc?'הכנסות':'הוצאות'} ב${esc(lgMonthName(bkMonth))}: <b>${cdMoney(tot)}</b></div></div>`;}
+function bkForm(b){const mopt=v=>BK_METHODS.map(x=>`<option ${x===v?'selected':''}>${x}</option>`).join('');b=b||{};
+  return `<div class="bkedit"><input id="bkf_name" value="${esc(b.name||'')}" placeholder="שם הספר">
+    <div class="lgf"><input id="bkf_cost" inputmode="decimal" value="${b.cost!=null?esc(b.cost):''}" placeholder="עלות ₪"><input id="bkf_paid" inputmode="decimal" value="${b.paid!=null?esc(b.paid):''}" placeholder="שולם ₪"></div>
+    <input id="bkf_donor" value="${esc(b.donor||'')}" placeholder="שם התורם">
+    <div class="lgf"><select id="bkf_meth"><option value="">איך שולם</option>${mopt(b.method||'')}</select><input id="bkf_ded" value="${esc(b.dedication||'')}" placeholder="שם להנצחה"></div>
+    <input id="bkf_note" value="${esc(b.note||'')}" placeholder="הערה">
+    <div class="bqacts"><button class="btn sm" data-bk="save" data-id="${b.id||0}">💾 שמור</button><button class="btn sm ghost" data-bk="cancel">ביטול</button>${b.id?`<button class="btn sm ghost" data-bk="del" data-id="${b.id}">🗑 מחק</button>`:''}</div></div>`;}
+function bkBookRow(b){const s=bkStatus(b), owed=Math.max(0,(+b.cost||0)-(+b.paid||0));
+  return `<div class="bkrow"><div class="bknm"><b>${esc(b.name||'—')}</b><span class="mktag ${s.c==='no'?'bad':s.c==='yes'?'ok':'mu'}">${s.t}</span><button class="cmpen" data-bk="edit" data-id="${b.id}" title="תיקון / מחיקה" style="margin-inline-start:auto">✎</button></div>
+    <div class="bksub"><span>עלות <b>${cdMoney(b.cost)}</b></span>${b.donor?`<span>👤 ${esc(b.donor)}</span>`:''}<span>שולם ${cdMoney(b.paid)}${owed>0?` · <b class="no">חוב ${cdMoney(owed)}</b>`:(+b.cost>0?' ✓':'')}</span>${b.method?`<span class="lgm">${esc(b.method)}</span>`:''}${b.dedication?`<span>🕯️ ${esc(b.dedication)}</span>`:''}</div>
+    ${b.note?`<div class="bknote">📝 ${esc(b.note)}</div>`:''}</div>`;}
+async function renderBooks(){
+  chips.innerHTML='';
+  if(!BK){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען…</div>';await bkLoad();if(tab!=='books')return;}
+  const L=BK, books=L.books||[];
+  view.innerHTML=`<div class="bkw">
+    <div class="rbtitle">📚 אוצר הספרים</div>
+    <div class="hintxt">רשימת הספרים עם התורם, התשלום והחוב, וכן הכנסות והוצאות משלו. נפרד לגמרי משאר המערכת.</div>
+    <div class="bkcols">
+      <div class="bkcol books"><h3>📖 רשימת הספרים <small>${books.length} · עלות ${cdMoney(L.tot_cost)} · שולם ${cdMoney(L.tot_paid)}${L.tot_owed>0?' · חוב '+cdMoney(L.tot_owed):''}</small></h3>
+        ${bkBookEdit===-1?bkForm({}):'<button class="btn sm" id="bk_add_book">➕ הוסף ספר</button>'}
+        <div class="bklist">${books.map(b=>bkBookEdit===b.id?bkForm(b):bkBookRow(b)).join('')||'<div class="hintxt">עוד אין ספרים. לחץ "➕ הוסף ספר".</div>'}</div></div>
+      <div class="bkcol"><div class="lgnav"><button class="btn sm ghost" id="bk_prev">→ ${esc(lgMonthName(lgShift(bkMonth,-1)))}</button><b>${esc(lgMonthName(bkMonth))}</b><button class="btn sm ghost" id="bk_next">${esc(lgMonthName(lgShift(bkMonth,1)))} ←</button></div>
+        ${bkLedgerSide('in')}</div>
+      <div class="bkcol">${bkLedgerSide('out')}
+        <div class="lgsum" style="margin-top:8px"><span>⬇️ ${cdMoney(L.inc)}</span><span>⬆️ ${cdMoney(L.exp)}</span><span class="${(+L.net||0)<0?'neg':''}">יתרה: <b>${cdMoney(L.net)}</b></span></div></div>
+    </div></div>`;
+  const g=id=>document.getElementById(id);
+  const go=m=>{bkMonth=m;bkEdit=0;BK=null;renderBooks();};
+  g('bk_prev').onclick=()=>go(lgShift(bkMonth,-1)); g('bk_next').onclick=()=>go(lgShift(bkMonth,1));
+  const _ab=g('bk_add_book'); if(_ab)_ab.onclick=()=>{bkBookEdit=-1;renderBooks();};
+  // יומן הכנסות/הוצאות
+  view.querySelectorAll('[data-bkl]').forEach(b=>b.onclick=async()=>{const a=b.dataset.bkl,k=b.dataset.k,id=+b.dataset.id;
+    if(a==='edit'){bkEdit=id;renderBooks();return;}
+    if(a==='cancel'){bkEdit=0;renderBooks();return;}
+    if(a==='del'){if(!await uiConfirm('למחוק את השורה?','🗑 כן, למחוק','ביטול'))return;await api('POST','/api/books/ledger/'+id,{action:'delete'});bkEdit=0;BK=null;renderBooks();return;}
+    const P=a==='add'?'bk_'+k+'_':'bke_';
+    const body={kind:k,amount:amtNum(g(P+'amt').value),purpose:g(P+'for').value.trim(),method:g(P+'meth').value,note:g(P+'note').value.trim(),date:g(P+'date').value};
+    if(!body.amount){toast('חסר סכום');g(P+'amt').focus();return;}
+    if(!body.purpose){toast('חסר עבור מה');g(P+'for').focus();return;}
+    if(a==='add'&&body.date&&body.date.slice(0,7)!==bkMonth)body.month=bkMonth;
+    b.disabled=true;const r=await api('POST','/api/books/ledger'+(a==='save'?'/'+id:''),body);
+    if(!r||!r.ok){b.disabled=false;await uiAlert((r&&r.error)||'לא נשמר');return;}
+    toast('נשמר ✓');bkEdit=0;BK=null;await renderBooks();const f=g('bk_'+k+'_amt');if(a==='add'&&f)f.focus();});
+  // ספרים
+  view.querySelectorAll('[data-bk]').forEach(b=>b.onclick=async()=>{const a=b.dataset.bk,id=+b.dataset.id;
+    if(a==='edit'){bkBookEdit=id;renderBooks();return;}
+    if(a==='cancel'){bkBookEdit=-2;renderBooks();return;}
+    if(a==='del'){if(!await uiConfirm('למחוק את הספר?','🗑 כן, למחוק','ביטול'))return;await api('POST','/api/books/item/'+id,{action:'delete'});bkBookEdit=-2;BK=null;renderBooks();return;}
+    const body={name:g('bkf_name').value.trim(),cost:amtNum(g('bkf_cost').value),paid:amtNum(g('bkf_paid').value),
+      donor:g('bkf_donor').value.trim(),method:g('bkf_meth').value,dedication:g('bkf_ded').value.trim(),note:g('bkf_note').value.trim()};
+    if(!body.name){toast('חסר שם ספר');g('bkf_name').focus();return;}
+    b.disabled=true;const r=await api('POST','/api/books/item'+(id?'/'+id:''),body);
+    if(!r||!r.ok){b.disabled=false;await uiAlert((r&&r.error)||'לא נשמר');return;}
+    toast('נשמר ✓');bkBookEdit=-2;BK=null;await renderBooks();});
+}
 // ---- ✅ משימות הצוות: ראש הכולל, שמעון ברלב, אברהם רובינפלד, יוסף אורדנטליך ----
 // מאיר: "ברגע שאני על הדף של שמעון ברלב — לא צריך לבחור למי, זה אוטומטי בשבילו" (jobView)
 // מאיר: "אל תכתוב מי אתה — שאם אני רוצה לשים משימה עבור אברהם רובינפלד או שמעון ברלב שאוכל, או אם הם
@@ -20054,6 +20389,11 @@ async function rcSendFlow(rc){
   // מאיר: "ואכתוב לו כמה מילים תודה" — חלון אישור עם מקום למילים אישיות, לפני הנוסח הקבוע של הקבלה
   const w=document.createElement('div');w.className='confirmov';
   w.innerHTML=`<div class="confirmbox qcbox"><div class="cm"><b>📧 אישור סופי לפני שליחה — קבלה ${esc(rc.num)}</b><br><small>אל: <span dir="ltr">${esc(em)}</span>${rc.name?(' · '+esc(rc.name)):''}</small></div>
+    <div class="rcsfprev" style="margin:8px 0;text-align:center">
+      <a href="/api/receipts/${rc.id}.png?t=${Date.now()}" target="_blank" title="לחץ לראות בגדול"><img src="/api/receipts/${rc.id}.png?t=${Date.now()}" alt="הקבלה" style="max-width:100%;max-height:260px;border:1px solid #e3d9c2;border-radius:8px;background:#fff" onerror="this.closest('a').outerHTML='<div class=hintxt>אין תצוגה של הקבלה</div>'"></a>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:6px">
+        <a class="btn sm ghost" style="width:auto" href="/api/receipts/${rc.id}.png?t=${Date.now()}" target="_blank">👁 לראות את הקבלה</a>
+        <a class="btn sm ghost" style="width:auto" href="/api/receipts/${rc.id}.pdf?t=${Date.now()}" download>⬇️ להוריד PDF</a></div></div>
     <label class="fld"><span>✍️ כמה מילים אישיות (לא חובה) — יופיעו בתחילת המייל, לפני הנוסח הקבוע</span><textarea id="rc_extra" rows="5" placeholder="למשל: תודה רבה על התרומה בערב יום כיפור…"></textarea></label>
     <div class="cbtns"><button class="btn bqgo cyes">✅ אישור ושליחה</button><button class="btn ghost cno">ביטול</button></div></div>`;
   document.body.appendChild(w);addMics(w,['#rc_extra']);
@@ -20881,3 +21221,141 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   x.eq=String(v); toast('💱 נרשם — נספר עכשיו מול ההתחייבות ✓'); openDonor(d);});
 netInit();
 load();
+
+/* 🏦 העברות ומלגות — מאיר (19.11.2026): "לשונית של העברות ומלגות שכל ההעברות מתחילת תשפ"ז יהיו שם
+   באופן מסודר לפי תאריכים". כל העברה בשורה, מקובצות לפי יום ההעברה (עם תאריך עברי), סינון לפי חודש עברי
+   וסוג, חיפוש, סה"כ, והוספה/עריכה/מחיקה ידנית. */
+let TRF=null,trfQ='',trfCat='',trfMon='',trfEdit=0;
+const TRF_CATS=['מלגה','ספק','משכורת','זיכוי לרב דויטש','לבדוק'];
+function trfMoney(n){return '₪'+(Math.round((+n||0)*100)/100).toLocaleString('he-IL',{maximumFractionDigits:2});}
+function trfForm(r){r=r||{};const v=k=>esc(r[k]==null?'':r[k]);
+  return `<div class="trfform" data-tf="${r.id||0}">
+    <label>תאריך<input type="date" data-k="date" value="${v('date')||new Date().toISOString().slice(0,10)}"></label>
+    <label>שם מוטב<input data-k="payee" value="${v('payee')}"></label>
+    <label>סכום ₪<input data-k="amount" inputmode="decimal" value="${v('amount')}"></label>
+    <label>סוג<select data-k="category">${TRF_CATS.map(c=>`<option ${(r.category||'מלגה')===c?'selected':''}>${c}</option>`).join('')}</select></label>
+    <label class="wide">מטרה<input data-k="purpose" value="${v('purpose')}"></label>
+    <label>ת"ז / ח.פ.<input data-k="idnum" value="${v('idnum')}"></label>
+    <label>בנק<input data-k="bank" value="${v('bank')}" style="width:60px"></label>
+    <label>סניף<input data-k="branch" value="${v('branch')}" style="width:60px"></label>
+    <label>חשבון<input data-k="account" value="${v('account')}"></label>
+    <label class="wide">הערה<input data-k="note" value="${v('note')}"></label>
+    <div class="trfbtns"><button class="btn sm" data-trf="save">💾 שמירה</button><button class="btn sm ghost" data-trf="cancel">ביטול</button>${r.id?'<button class="btn sm ghost danger" data-trf="del">🗑 מחיקה</button>':''}</div></div>`;}
+async function renderTrf(){
+  chips.innerHTML='';
+  if(!TRF){view.innerHTML='<div class="hintxt" style="padding:20px;text-align:center">טוען…</div>';const r=await api('GET','/api/transfers');TRF=(r&&r.rows)||[];if(tab!=='trf')return;}
+  const mons=[...new Set(TRF.map(r=>r.hmonth).filter(Boolean))];
+  const L=TRF.filter(r=>(!trfMon||r.hmonth===trfMon)&&(!trfCat||r.category===trfCat)&&(!trfQ||[r.payee,r.purpose,r.idnum,r.note,r.src].join(' ').includes(trfQ)));
+  const sum=a=>a.reduce((s,r)=>s+(+r.amount||0),0);
+  const byCat={};L.forEach(r=>byCat[r.category||'לבדוק']=(byCat[r.category||'לבדוק']||0)+(+r.amount||0));
+  const days=[];const idx={};L.forEach(r=>{const k=r.date;if(!(k in idx)){idx[k]=days.length;days.push({date:k,hdate:r.hdate,rows:[]});}days[idx[k]].rows.push(r);});
+  const catCls=c=>({'מלגה':'c1','ספק':'c2','משכורת':'c3','זיכוי לרב דויטש':'c4','לבדוק':'c5'}[c]||'c5');
+  const row=r=>trfEdit===r.id?`<tr><td colspan="6">${trfForm(r)}</td></tr>`:
+    `<tr><td class="py"><b>${esc(r.payee)}</b>${r.idnum?`<small>${esc(r.idnum)}</small>`:''}</td>
+      <td><span class="trfcat ${catCls(r.category)}">${esc(r.category||'לבדוק')}</span> ${esc(r.purpose||'')}${r.note?`<div class="hintxt">📝 ${esc(r.note)}</div>`:''}</td>
+      <td class="bk">${r.bank?esc(r.bank)+'-'+esc(r.branch)+'-'+esc(r.account):''}</td>
+      <td class="am">${trfMoney(r.amount)}</td>
+      <td class="src">${esc(r.src||'')}</td>
+      <td><button class="btn sm ghost" data-trfe="${r.id}" title="עריכה">✏️</button></td></tr>`;
+  view.innerHTML=`<style>
+    .trfw{padding:10px 12px 40px}.trfw .rbtitle{margin-bottom:4px}
+    .trftop{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+    .trftop input,.trftop select{padding:7px 9px;border:1px solid #ddd3bd;border-radius:8px;font:inherit}
+    .trfsum{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 10px}.trfsum span{background:#fff;border:1px solid #e6dcc6;border-radius:10px;padding:6px 10px;font-size:13.5px}
+    .trfday{background:#fff;border:1px solid #e6dcc6;border-radius:12px;margin:10px 0;overflow:hidden}
+    .trfdh{display:flex;justify-content:space-between;gap:8px;background:#f6f0e2;padding:8px 12px;font-weight:700}
+    .trfdh small{font-weight:400;color:#6b6249}
+    .trfday table{width:100%;border-collapse:collapse;font-size:14px}.trfday td{border-top:1px solid #f0e8d6;padding:6px 8px;vertical-align:top}
+    .trfday td{border-left:0!important;border-right:0!important;box-shadow:none!important}.trfday td.py{width:24%}
+    .trfday td.py small{display:block;color:#8a8274;font-size:11.5px}.trfday td.am{white-space:nowrap;font-weight:700;text-align:left}
+    .trfday td.bk,.trfday td.src{color:#8a8274;font-size:12px;white-space:nowrap}
+    .trfcat{display:inline-block;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:700}
+    .trfcat.c1{background:#e6f3ea;color:#2e7d4f}.trfcat.c2{background:#e8eef8;color:#2f5597}.trfcat.c3{background:#f3e8f8;color:#7a3f97}.trfcat.c4{background:#fdf1d8;color:#9a6a00}.trfcat.c5{background:#fdeaea;color:#b3261e}
+    .trfform{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;background:#fffdf6;border:1px dashed #d8c89c;border-radius:10px;padding:10px;margin:8px 0}
+    .trfform label{display:flex;flex-direction:column;font-size:12px;color:#6b6249;gap:2px}.trfform label.wide{flex:1 1 220px}
+    .trfform input,.trfform select{padding:6px 8px;border:1px solid #ddd3bd;border-radius:7px;font:inherit;font-size:14px}
+    .trfbtns{display:flex;gap:6px}
+    @media(max-width:700px){.trfday td.src,.trfday td.bk{display:none}}
+  </style>
+  <div class="trfw">
+    <div class="rbtitle">🏦 העברות ומלגות — תשפ"ז</div>
+    <div class="hintxt">כל ההעברות (מס"ב) מתחילת תשפ"ז, לפי תאריך. נטען מקבצי ההעברות בדרייב; העברה חדשה — "➕ העברה חדשה".</div>
+    <div class="trftop">
+      <input id="trf_q" type="search" placeholder="חיפוש שם / מטרה / ת״ז…" value="${esc(trfQ)}">
+      <select id="trf_m"><option value="">כל החודשים</option>${mons.map(m=>`<option ${m===trfMon?'selected':''}>${esc(m)}</option>`).join('')}</select>
+      <select id="trf_c"><option value="">כל הסוגים</option>${TRF_CATS.map(c=>`<option ${c===trfCat?'selected':''}>${c}</option>`).join('')}</select>
+      <button class="btn sm" id="trf_add">➕ העברה חדשה</button>
+    </div>
+    ${trfEdit===-1?trfForm({}):''}
+    <div class="trfsum"><span>${L.length} העברות · סה"כ <b>${trfMoney(sum(L))}</b></span>${Object.entries(byCat).map(([c,v])=>`<span><span class="trfcat ${catCls(c)}">${esc(c)}</span> ${trfMoney(v)}</span>`).join('')}</div>
+    ${days.map(d=>`<div class="trfday"><div class="trfdh"><span>${esc(d.date.split('-').reverse().join('/'))} <small>${esc(d.hdate||'')}</small></span><span>${d.rows.length} · ${trfMoney(sum(d.rows))}</span></div>
+      <table>${d.rows.map(row).join('')}</table></div>`).join('')||'<div class="hintxt" style="padding:20px;text-align:center">אין העברות</div>'}
+  </div>`;
+  const g=id=>document.getElementById(id);
+  g('trf_q').oninput=e=>{trfQ=e.target.value.trim();renderTrf().then(()=>{const q=g('trf_q');if(q){q.focus();q.setSelectionRange(q.value.length,q.value.length);}});};
+  g('trf_m').onchange=e=>{trfMon=e.target.value;renderTrf();};
+  g('trf_c').onchange=e=>{trfCat=e.target.value;renderTrf();};
+  g('trf_add').onclick=()=>{trfEdit=-1;renderTrf();};
+  view.querySelectorAll('[data-trfe]').forEach(b=>b.onclick=()=>{trfEdit=+b.dataset.trfe;renderTrf();});
+  view.querySelectorAll('[data-trf]').forEach(b=>b.onclick=async()=>{const f=b.closest('.trfform'),id=+f.dataset.tf,a=b.dataset.trf;
+    if(a==='cancel'){trfEdit=0;return renderTrf();}
+    if(a==='del'){if(!await uiConfirm('למחוק את ההעברה?','🗑 כן, למחוק','ביטול'))return;await api('POST','/api/transfers/delete',{id});trfEdit=0;TRF=null;toast('נמחק');return renderTrf();}
+    const body={id};f.querySelectorAll('[data-k]').forEach(x=>body[x.dataset.k]=x.value);
+    const r=await api('POST','/api/transfers/save',body);
+    if(!r||!r.ok){toast((r&&r.error)||'לא נשמר');return;}
+    trfEdit=0;TRF=null;toast('✓ נשמר');renderTrf();});
+}
+
+/* 🔁 הוראות קבע — מאיר: "איך אני נכנס במהירות לכרטיס תורם… איפה שכתוב חיוב מהיר שיהיה שם את האפשרות של
+   הפסקה, ושזה יהיה מסונכרן שהוא הפסיק" ו"איפה אני מוצא בחיובים את כל ההוראות קבע החודשיות? לא נפתח לי לפי
+   חיפוש שם". אוטורייז (חי) + בנק ווסט — רשימה אחת בחיובים, ובכרטיס התורם מתחת ל"חיוב מהיר". */
+let RECALL=null,recQ='';
+const recMoney=n=>'$'+(Math.round((+n||0)*100)/100).toLocaleString('en-US');
+function recItems(r){const a=(r.anet||[]).map(x=>({src:'anet',id:x.sid,amount:x.amount,did:x.donor_id,name:x.donor_name||((x.last||'')+' '+(x.first||'')).trim(),
+    sub:((x.first||'')+' '+(x.last||'')).trim(),card:x.card,extra:(x.past!=null?('שולמו '+x.past+' תשלומים'):'')+(x.status&&x.status!=='active'?' · '+x.status:''),multi:x.multi}));
+  const b=(r.bq||[]).map(x=>({src:'bq',id:x.id,amount:x.amount,did:x.donor_id,name:x.donor_name||x.bq_name||x.title||'?',sub:x.bq_name||'',card:'',extra:(x.next_run?'הבא '+fmtGreg(String(x.next_run).slice(0,10)):'')}));
+  return a.concat(b).sort((x,y)=>String(x.name).localeCompare(String(y.name),'he'));}
+function recRowHTML(x,inCard){return `<div class="recrow"><div class="recw">${inCard?'':`<b class="${x.did?'reclink':''}" data-recdid="${x.did||''}">${esc(x.name)}</b>${x.did?'':' <small class="recnot">'+(x.multi?'כמה כרטיסים באותו שם — לא שויך':'לא שויך לכרטיס')+'</small>'}`}
+    <small>${x.src==='anet'?'💳 אוטורייז':'🏦 בנק ווסט'}${x.card?' · '+esc(x.card):''}${x.sub&&x.sub!==x.name&&!inCard?' · '+esc(x.sub):''}${x.extra?' · '+esc(x.extra):''}</small></div>
+    <b class="reca">${recMoney(x.amount)}</b>
+    ${inCard?'':'<span class="recopen">פתח כרטיס ‹</span>'}${!inCard?'':`<button class="btn sm ghost danger recstop" data-src="${x.src}" data-id="${esc(x.id)}" data-amt="${x.amount}" data-did="${x.did||''}" data-nm="${esc(x.name)}">⛔ להפסיק</button>`}</div>`;}
+const REC_CSS=`<style>.recbox{background:#fff;border:1px solid #e6dcc6;border-radius:12px;padding:8px 10px;margin:8px 0}
+  .recbox summary{cursor:pointer;font-weight:700}.recrow{display:flex;align-items:center;gap:8px;border-top:1px solid #f0e8d6;padding:7px 2px}
+  .recrow .recw{flex:1;min-width:0}.recrow .recw small{display:block;color:#8a8274;font-size:12px}.reca{white-space:nowrap}
+  .reclink{cursor:pointer;color:#3b2f7a;text-decoration:underline}.recopen{font-size:12px;color:#8a8274;white-space:nowrap}.recrow:has(.reclink){cursor:pointer}.recnot{color:#b3261e}.recrow .recstop{width:auto;white-space:nowrap}
+  .recsrch{width:100%;padding:8px 10px;border:1px solid #ddd3bd;border-radius:8px;font:inherit;margin:6px 0}</style>`;
+async function recStop(b,after){const src=b.dataset.src,id=b.dataset.id,amt=+b.dataset.amt,did=+b.dataset.did||0,nm=b.dataset.nm||'';
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox"><div class="cm">⛔ להפסיק את הוראת הקבע של ${esc(nm)}?<br><b>${recMoney(amt)} כל חודש · ${src==='anet'?'אוטורייז':'בנק ווסט'}</b><br><small>${src==='anet'?'המנוי יבוטל באוטורייז — לא יהיו עוד חיובים.':'הוראת הקבע תושהה בבנק ווסט.'}</small></div>
+    ${did?`<label class="gvall"><input type="checkbox" id="rs_mark" checked> לסמן בכרטיס שהפסיק לתרום כל חודש (ההתחייבות מסתיימת, יורד מ"חסר" ו"לא עבר")</label>
+    <label class="fld" style="margin:8px 0"><span>📅 מאיזה תאריך הפסיק?</span><input type="date" id="rs_date" value="${todayStr()}"></label>`:'<div class="hintxt">לא משויך לכרטיס — יבוטל רק אצל חברת האשראי.</div>'}
+    <label class="fld" style="margin:8px 0"><span>📝 סיבה / הערה (לא חובה)</span><input id="rs_why" placeholder="למשל: ביקש להפסיק"></label>
+    <div class="cbtns"><button class="btn ghost cno">ביטול</button><button class="btn cyes">⛔ כן, להפסיק</button></div></div>`;
+  document.body.appendChild(o);
+  const ok=await new Promise(res=>{o.querySelector('.cno').onclick=()=>res(false);o.querySelector('.cyes').onclick=()=>res(true);});
+  const mark=did&&o.querySelector('#rs_mark')&&o.querySelector('#rs_mark').checked,date=(o.querySelector('#rs_date')||{}).value||todayStr(),why=o.querySelector('#rs_why').value.trim();o.remove();if(!ok)return;
+  b.disabled=true;b.textContent='מפסיק…';let r;
+  if(src==='anet')r=await api('POST','/api/recurring/anet_stop',{sid:id,donor_id:did||'',mark_stop:mark?1:0,date,reason:why}).catch(()=>null);
+  else{r=await api('POST','/api/bq/sched/'+id,{active:false}).catch(()=>null);
+    if(r&&r.ok&&mark)await api('POST','/api/donor/'+did+'/stop_monthly',{on:1,stop_charge:0,date,reason:why}).catch(()=>null);}
+  if(!r||!r.ok){b.disabled=false;b.textContent='⛔ להפסיק';await uiAlert('לא הופסק:\n'+((r&&r.error)||'שגיאה'));return;}
+  toast('⛔ הוראת הקבע הופסקה'+(mark?' · סומן בכרטיס שהפסיק':''));RECALL=null;await load();if(after)after();}
+async function renderRecBox(){const box=document.getElementById('recbox');if(!box)return;
+  if(!RECALL){box.innerHTML='<div class="hintxt">טוען הוראות קבע…</div>';RECALL=await api('GET','/api/recurring').catch(()=>null)||{anet:[],bq:[]};}
+  const all=recItems(RECALL),qq=(recQ||'').trim(),L=qq?all.filter(x=>(x.name+' '+x.sub+' '+x.card+' '+x.amount).includes(qq)):all;
+  const tot=all.reduce((s,x)=>s+(+x.amount||0),0);
+  box.innerHTML=REC_CSS+`<details class="recbox" open><summary>🔁 כל הוראות הקבע החודשיות — ${all.length} · ${recMoney(tot)} לחודש</summary>
+    <div class="hintxt">לחץ על שם כדי להיכנס לכרטיס — שם אפשר להפסיק.${RECALL.anet_err?' · הוראות הקבע של אוטורייז לא מוצגות כאן (אין חיבור ישיר לאוטורייז).':''}</div>
+    <input class="recsrch" id="rec_q" placeholder="חיפוש לפי שם / 4 ספרות / סכום…" value="${esc(recQ)}">
+    <div id="rec_list">${L.map(x=>recRowHTML(x,false)).join('')||'<div class="hintxt">לא נמצא</div>'}</div></details>`;
+  const qi=document.getElementById('rec_q');qi.oninput=()=>{recQ=qi.value;const qq2=recQ.trim();document.getElementById('rec_list').innerHTML=(qq2?all.filter(x=>(x.name+' '+x.sub+' '+x.card+' '+x.amount).includes(qq2)):all).map(x=>recRowHTML(x,false)).join('')||'<div class="hintxt">לא נמצא</div>';recWire(box);};
+  recWire(box);}
+function recWire(box){box.querySelectorAll('.reclink').forEach(e=>{const rw=e.closest('.recrow');(rw||e).onclick=()=>{const d=DB.find(y=>y.id==e.dataset.recdid);if(d)openDonor(d);};});
+  box.querySelectorAll('.recstop').forEach(b=>b.onclick=()=>recStop(b,()=>{if(tab==='charges')renderRecBox();}));}
+async function renderDonorRec(d,body){const el=document.getElementById('dnrec');if(!el)return;
+  const r=await api('GET','/api/recurring?donor='+d.id).catch(()=>null);const el2=document.getElementById('dnrec');if(!el2)return;
+  const L=r?recItems(r):[];
+  el2.innerHTML=REC_CSS+(L.length?`<div class="recbox"><b>🔁 הוראות קבע פעילות</b>${L.map(x=>recRowHTML(x,true)).join('')}</div>`:'')
+    +(d.monthly_stop?'':`<button class="btn ghost" id="dnmstop" type="button" style="color:#b3261e;border-color:#e8b4b0">⛔ הפסיק לתרום כל חודש${L.length?' — לעצור הכל':''}</button>`);
+  el2.querySelectorAll('.recstop').forEach(b=>b.onclick=()=>recStop(b,()=>{const nd=DB.find(x=>x.id==d.id);if(nd){Object.assign(d,nd);cardDetails(d,body);}}));
+  const ms=document.getElementById('dnmstop');if(ms)ms.onclick=()=>{const m=document.getElementById('mstop');if(m)m.click();};}

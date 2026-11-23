@@ -113,7 +113,11 @@ def receipt_data(con, don_id, RECEIPT_START, today_iso):
     if d:
         name = (d['english'] or '').strip() or ((d['last'] or '') + ' ' + (d['first'] or '')).strip() or 'Friend'
         tail = ' '.join(x for x in (str(d['city'] or '').strip(), str(d['country'] or '').strip(), str(d['zip'] or '').strip()) if x)
-        addr = ', '.join(x for x in (str(d['addr'] or '').strip(), tail) if x)
+        a0 = str(d['addr'] or '').strip()
+        _n = lambda s: re.sub(r'[^a-z0-9א-ת]', '', (s or '').lower())
+        if a0 and str(d['city'] or '').strip() and _n(d['city']) in _n(a0):
+            tail = ''        # הכתובת כבר כוללת עיר ומיקוד — בלי לחזור עליהם ("..., Far Rockaway NY 11691" פעמיים)
+        addr = ', '.join(x for x in (a0, tail) if x)
         email = (d['email'] or '').strip()
     key = 'd%d' % don_id                   # אותו מפתח כמו הדף /receipt — אותו מספר
     r = con.execute("SELECT num FROM receipts WHERE rkey=?", (key,)).fetchone()

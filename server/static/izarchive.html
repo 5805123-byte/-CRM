@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="he" dir="rtl" translate="no" class="notranslate">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="google" content="notranslate">
+<title>יששכר־זבולון תשפ"ה–תשפ"ו</title>
+<style>
+:root{--bg:#f3eee2;--paper:#fffdf8;--ink:#2b2416;--soft:#6b6249;--wine:#7a1f1f;--gold:#9c7a2e;--line:#e3d9c2}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Arial,Helvetica,sans-serif;font-size:15px}
+.top{position:sticky;top:0;z-index:5;background:var(--paper);border-bottom:1px solid var(--line);padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.top h1{font-size:20px;color:var(--wine);margin:0 0 0 auto}
+.top input{padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;min-width:190px}
+.btn{font:inherit;font-weight:700;border-radius:9px;padding:8px 14px;cursor:pointer;border:1px solid var(--gold);background:var(--wine);color:#fff}
+.sum{padding:8px 14px;color:var(--soft);font-size:13.5px}.sum b{color:var(--ink)}
+.tw{padding:0 14px 30px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);min-width:560px}
+th{background:var(--wine);color:#fff;font-size:13px;text-align:right;padding:7px 8px}
+td{border-bottom:1px solid #eee3cc;padding:6px 8px}
+tr.avfirst td{border-top:2px solid #e3d3a3}
+td.n{color:var(--soft);font-size:12px;width:34px}td.av{font-weight:700;white-space:nowrap}
+.empty{padding:30px;text-align:center;color:var(--soft)}
+.ponly{display:none}
+@media print{
+  @page{size:A4 portrait;margin:12mm}
+  body{background:#fff;font-size:12px}
+  .top,.sum{display:none!important}.ponly{display:block;font-size:17px;font-weight:700;margin:0 0 6px}
+  .tw{padding:0}table{min-width:0;border:1px solid #999}
+  th{background:#eee!important;color:#000;border:1px solid #999}td{border:1px solid #bbb;padding:4px 6px}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1 id="h1">📂 יששכר־זבולון תשפ"ה–תשפ"ו</h1>
+  <input id="q" type="search" placeholder="חיפוש אברך / זבולון…">
+  <button class="btn" id="print">🖨️ הדפסה</button>
+</div>
+<div class="sum" id="sum">טוען…</div>
+<div class="tw">
+  <div class="ponly" id="ph">יששכר־זבולון תשפ"ה–תשפ"ו — כולל חצות</div>
+  <table><thead><tr><th>#</th><th>האברך</th><th>הזבולון (התורם)</th><th>מתאריך</th><th>סכום לחודש</th></tr></thead>
+  <tbody id="tb"><tr><td colspan="5" class="empty">טוען…</td></tr></tbody></table>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let ROWS=[],Q='';
+function paint(){const L=ROWS.filter(r=>!Q||(r.av+' '+r.donor).includes(Q));let prev='',i=0;
+  $('#tb').innerHTML=L.map(r=>{const first=r.av!==prev;prev=r.av;if(first)i++;
+    return `<tr class="${first?'avfirst':''}"><td class="n">${first?i:''}</td><td class="av">${first?esc(r.av):''}</td><td>${esc(r.donor)}</td><td>${esc(r.start)}</td><td>${esc(r.amt)}</td></tr>`;}).join('')
+    ||'<tr><td colspan="5" class="empty">אין תוצאות</td></tr>';}
+$('#q').addEventListener('input',e=>{Q=e.target.value.trim();paint();});
+$('#print').onclick=()=>{const k=Q;Q='';paint();setTimeout(()=>{window.print();Q=k;paint();},150);};
+(async()=>{let r=null;try{r=await (await fetch('/api/iz/archive')).json();}catch(e){}
+  if(!r||!r.ok){$('#tb').innerHTML='<tr><td colspan="5" class="empty">לא נטען. צריך להיות מחובר למערכת — פתחו את הדף מלשונית אברכים.</td></tr>';$('#sum').textContent='';return;}
+  ROWS=r.rows||[];document.title=r.title;$('#h1').textContent='📂 '+r.title;$('#ph').textContent=r.title+' — כולל חצות';
+  const na=new Set(ROWS.map(x=>x.av)).size;
+  $('#sum').innerHTML=ROWS.length?`הרשימה כמו שהייתה לפני רשימת תשפ"ז${r.at?' (נשמרה '+esc(r.at.split('-').reverse().join('/'))+')':''} · <b>${na}</b> אברכים · <b>${ROWS.length}</b> שותפויות · לקריאה בלבד`:'הרשימה הקודמת עוד לא נשמרה — היא תישמר בעדכון הבא של המערכת.';
+  const rp=r.report||{};if(rp.updated!==undefined)$('#sum').innerHTML+=`<br>רשימת תשפ"ז: עודכנו <b>${rp.updated}</b> תאריכים · לא להדפסה: <b>${rp.nocert}</b>${(rp.ended||[]).length?' · הפסיקו: '+esc(rp.ended.join(', ')):''}`+((rp.miss||[]).length?`<br><b style="color:#b3261e">⚠️ לא עודכנו (לא נמצאה התאמה אחת ברורה) — לתקן ידנית:</b> ${esc(rp.miss.join(' · '))}`:' · ✓ כל השורות הותאמו');
+  paint();})();
+</script>
+</body>
+</html>
