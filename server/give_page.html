@@ -90,7 +90,8 @@ input{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px
     <div class="cal"><div class="calhd"><button type="button" class="calnav" id="cal_prev">&lsaquo;</button><div id="cal_title"></div><button type="button" class="calnav" id="cal_next">&rsaquo;</button></div>
     <div class="calgrid" id="cal_grid"></div><div class="callg"><span class="lg f"></span> available <span class="lg t"></span> taken <span class="lg b"></span> Shabbos / Yom Tov</div></div>
     <div class="small" id="n_status"></div>
-    <label>The night is l'zechus / l'ilui nishmas</label><input id="n_names" placeholder="e.g. Avraham ben Sarah">
+    <label>The night is l'zechus / l'ilui nishmas</label><input id="n_names" placeholder="e.g. Avraham ben Sarah"><div id="n_more"></div>
+    <button type="button" class="link" id="n_add">&#65291; Add another name</button>
     <label>Occasion (optional)</label><input id="n_occ" placeholder="e.g. birthday, yahrtzeit"></div></div>
 <div class="pane" data-p="breakfast" hidden>Sponsor breakfast for all the Avreichim of Kollel Chatzos after a night of learning, l'zechus you and your family.</div>
 <div class="pane" data-p="monthly180" hidden><b>$180 monthly for 1 year.</b> Every night at Chatzos, 3 Avreichim are learning and davening for you and your family by name. $180 today, then automatically every month — 12 donations in total.</div>
@@ -146,6 +147,9 @@ function addName(){var n=document.querySelectorAll('#kv .nm').length;if(n>=4)ret
   g('kv_add').hidden=n+1>=4;d.querySelector('.kvn').focus();}
 g('kv_open').onclick=function(){g('kv_box').hidden=false;this.hidden=true;addName();};
 g('kv_add').onclick=addName;
+// more names for the night (up to 6)
+g('n_add').onclick=function(){var n=document.querySelectorAll('#n_more input').length;if(n>=5)return;var i=document.createElement('input');i.className='nmore';i.style.marginTop='6px';i.placeholder='Another name';g('n_more').appendChild(i);i.focus();this.hidden=n+1>=5;};
+function nightNames(){var a=[v('n_names')];each('#n_more input',function(x){a.push(x.value.trim());});return a.filter(Boolean).join(', ');}
 g('ad_open').onclick=function(){g('ad_box').hidden=false;this.hidden=true;g('addr').focus();};
 // night calendar — opens only when clicked
 function gshort(gg){if(!gg)return '';var p=gg.split('-');return MON[+p[1]-1]+' '+(+p[2]);}
@@ -172,7 +176,7 @@ async function getCard(){if(!HT)throw new Error('The secure card form is not loa
 g('go').onclick=async function(){var err=g('err'),btn=this;err.textContent='';
   var a=amount();if(!a||a<1){err.textContent=K==='donate'?'Please enter the amount.':'Please choose a donation.';if(K==='donate')g('a_amt').focus();return;}
   if(K==='night'&&!CAL.sel){err.textContent='Please choose a night in the calendar.';if(g('n_box').hidden)g('n_open').click();g('n_box').scrollIntoView({behavior:'smooth',block:'center'});return;}
-  if(K==='night'&&!v('n_names')){err.textContent='Please enter the names for the night.';g('n_names').focus();return;}
+  if(K==='night'&&!nightNames()){err.textContent='Please enter the names for the night.';g('n_names').focus();return;}
   if(!v('first')||!v('last')){err.textContent='Please enter your name.';g('first').focus();return;}
   if(!/^\S+@\S+\.\S+$/.test(v('email'))){err.textContent='Please enter your email — your receipt is sent there.';g('email').focus();return;}
   if(!v('phone')){err.textContent='Please enter your phone number.';g('phone').focus();return;}
@@ -182,7 +186,7 @@ g('go').onclick=async function(){var err=g('err'),btn=this;err.textContent='';
   btn.textContent='Processing your donation...';
   var kv=[];each('.nm',function(r){var n=r.querySelector('.kvn').value.trim(),m=r.querySelector('.kvm').value.trim();if(n)kv.push({name:n,mother:m});});
   var body=Object.assign({kind:K,amount:a,first:v('first'),last:v('last'),email:v('email'),phone:v('phone'),addr:v('addr'),names:kv},tk);
-  if(K==='night')body.night={m:CAL.m,y:CAL.y,d:CAL.sel,names:v('n_names'),occasion:v('n_occ')};
+  if(K==='night')body.night={m:CAL.m,y:CAL.y,d:CAL.sel,names:nightNames(),occasion:v('n_occ')};
   var r=null;try{r=await (await fetch(API+'/charge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}catch(e){}
   btn.disabled=false;paint();
   if(!r||!r.ok){err.innerHTML='<b>Not charged.</b> '+((r&&r.error)||'Something went wrong. Please try again or contact us.');if(K==='night'&&r&&/taken/i.test(r.error||''))calLoad(CAL.m,CAL.y);return;}
