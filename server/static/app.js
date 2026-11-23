@@ -1996,6 +1996,7 @@ async function mkAuditWin(){
           <div style="margin-top:8px;border-top:1px solid var(--line);padding-top:6px"><input id="bk_notify_txt" class="audq" style="width:100%;box-sizing:border-box" placeholder="הודעת מסך לשליחה (למשל: נכנסת בלי מנוי — יש להסדיר מנוי בכולל)"><div class="mktpl" style="margin-top:4px"><button class="btn sm" id="bk_notify">📺 שלח הודעה לכל אלה</button><span id="bk_notify_st" class="mksub"></span></div></div>
           <div class="mksub" style="font-weight:700;margin-top:10px">⛔ חסומים כרגע (${(MKAUD.admin.blocked||[]).length})</div>
           <div class="mklist">${(MKAUD.admin.blocked||[]).map(x=>`<div class="mkrow" data-ao="${esc_(x.id)}" style="grid-template-columns:1fr auto;cursor:pointer"><div class="mknm"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}${x.reason?' · '+esc_(x.reason):''}</div></div><span class="mktag bad" style="align-self:center">חסום</span></div>`).join('')||'<div class="hintxt">✓ אין אף אחד חסום.</div>'}</div>
+          ${(MKAUD.admin.blocked||[]).length?`<div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bk_drain">🧹 רוקן ערך צבור לכל החסומים</button><span id="bk_drain_st" class="mksub"></span></div>`:''}
           <div class="mksub" style="font-weight:700;margin-top:8px">🕘 היסטוריה</div>
           <div class="mklist">${(MKAUD.admin.history||[]).slice(0,40).map(h=>`<div class="mksub" style="border-bottom:1px solid var(--line);padding:3px 0">${esc_(String(h.at||'').slice(0,16).replace('T',' '))}${h.name?' · '+esc_(h.name):''} — ${esc_(h.summary||'')}</div>`).join('')||'<div class="hintxt">אין היסטוריה.</div>'}</div></div>`:''}
         <div class="mksub" style="margin-top:4px;color:#888">🔑 טוקן API לקלוד נמצא ב-🩺 בדיקת מערכת (הכפתור למעלה).</div>
@@ -2080,6 +2081,13 @@ async function mkAuditWin(){
     const y=await api('GET','/api/mikveh/bachur_admin').catch(()=>null);
     if(!y||!y.ok){l.disabled=false;if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
     MKAUD.admin=y;mkAuditWin();};}
+  // 🧹 ריקון ערך צבור לכל החסומים
+  {const dr=document.getElementById('bk_drain');if(dr)dr.onclick=async()=>{const st=document.getElementById('bk_drain_st');const n=((MKAUD.admin&&MKAUD.admin.blocked)||[]).length;
+    if(!await uiConfirm('לרוקן את הערך צבור (פעימות + זיכוי) של '+n+' החסומים?\nזה מאפס להם את היתרה במקווה — פעולה כספית, לא הפיכה בקלות.','🧹 כן, לרוקן','ביטול'))return;
+    dr.disabled=true;if(st){st.style.color='#555';st.textContent='⏳ מרוקן…';}
+    const y=await api('POST','/api/mikveh/bachur_drain',{});dr.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
+    if(st){st.style.color='#1e7a3c';st.textContent='✓ רוקנו '+y.count+' · סה״כ ₪'+(y.total_ils||0)+(y.failed?' · '+y.failed+' נכשלו':'');}toast('רוקן ✓');};}
   // ⛔ חסום את כל מי שנכנס בפעימות בלי מנוי, עכשיו
   {const bn=document.getElementById('bk_block_now');if(bn)bn.onclick=async()=>{const off=(MKAUD.admin&&MKAUD.admin.offenders)||[];const un=off.filter(x=>!x.blocked);
     if(!un.length){toast('כולם כבר חסומים');return;}

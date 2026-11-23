@@ -31874,6 +31874,42 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/bachur_drain':
+            # 🧹 מאיר: "לרוקן ערך צבור למי שחסמתי" — מאפס את היתרה (פעימות) והיתרה הזמנית (זיכוי) לכל החסומים
+            # בקבוצות הבחורים, כמו כפתור האיפוס במסך המקווה (שתי קריאות Client/AdminPurchase עם סכום שלילי).
+            import mikveh as _mk
+            con = db()
+            drained, total, fail = [], 0, 0
+            try:
+                members = _mk_bachur_members(con, fresh=True)
+                blk = [cid for cid, c in members.items() if c.get('isBlocked')]
+                if 'ids' in b:      # אפשר גם רשימה מפורשת
+                    want = set(str(x) for x in (b.get('ids') or []))
+                    blk = [cid for cid in blk if cid in want] or [cid for cid in (want & set(members))]
+                for cid in blk:
+                    try:
+                        full = _mk.client(cid, max_age=0)
+                        bal = int(full.get('balance') or 0)
+                        tmp = int(full.get('tempBalance') or 0)
+                        if bal:
+                            _mk.add_credit(cid, -bal, temp=False)
+                        if tmp:
+                            _mk.add_credit(cid, -tmp, temp=True)
+                        if bal or tmp:
+                            nm = ((full.get('firstName') or '') + ' ' + (full.get('lastName') or '')).strip()
+                            con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                        (cid, now_iso(), 'drain', '🧹 רוקן ערך צבור: ₪%g (פעימות ₪%g + זיכוי ₪%g)'
+                                         % ((bal + tmp) / 100.0, bal / 100.0, tmp / 100.0)))
+                            drained.append({'id': cid, 'name': nm, 'balance': bal / 100.0, 'temp': tmp / 100.0})
+                            total += bal + tmp
+                    except Exception as e:
+                        print('  mk bachur drain error:', cid, e)
+                        fail += 1
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'count': len(drained), 'total_ils': round(total / 100.0, 2),
+                                    'failed': fail, 'drained': drained})
         if self.path == '/api/mikveh/bachur_groups':
             # 🧍 מאיר: "מי שבקבוצת בחורים, אין לו מנוי, ונכנס בפעימות" — הקבוצות שמאיר מגדיר כ"בחורים". נשמר אצלנו.
             ids = [str(x) for x in (b.get('ids') or []) if re.fullmatch(r'[0-9a-fA-F-]{36}', str(x))][:200]
