@@ -21350,6 +21350,25 @@ def _mk_bachur_group_since(con):
     return since
 
 
+def mk_drain_backfill(con):
+    """מגבה למאגר mk_drain ריקונים שתועדו ב-mk_log (kind='drain') אך עוד לא נרשמו במאגר (למשל ריקונים שנעשו
+    לפני שהמאגר קם). מזהה לפי (cid, at) כדי לא לכפול."""
+    con.execute("CREATE TABLE IF NOT EXISTS mk_drain(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, "
+                "name TEXT, bal REAL, temp REAL, at TEXT, refunded INTEGER DEFAULT 0, refunded_at TEXT)")
+    have = set((str(r['cid']), str(r['at'])) for r in con.execute("SELECT cid,at FROM mk_drain"))
+    for r in con.execute("SELECT cid,at,summary FROM mk_log WHERE kind='drain'"):
+        key = (str(r['cid']), str(r['at']))
+        if key in have:
+            continue
+        m = re.search(r'פעימות ₪([\d.]+) \+ זיכוי ₪([\d.]+)', r['summary'] or '')
+        if not m:
+            continue
+        con.execute("INSERT INTO mk_drain(cid,name,bal,temp,at) VALUES(?,?,?,?,?)",
+                    (r['cid'], '', float(m.group(1)), float(m.group(2)), r['at']))
+        have.add(key)
+    con.commit()
+
+
 def _mk_bachur_scan(con, members, days):
     """מי נכנס בפעימות בלי מנוי: הכניסה האחרונה (lastEntrance, בשעון ישראל) מאוחרת מתום המנוי,
     ו<b>גם מאוחרת מהמעבר שלו לקבוצת הבחורים</b> — כדי שכניסות ישנות מקבוצה אחרת (למשל ערך צבור) לא יחסמו
@@ -27384,6 +27403,31 @@ class H(BaseHTTPRequestHandler):
             host = (self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or '').strip()
             return self._send(200, dict(st, ok=True, token=token,
                                         ops_url=('https://%s/api/mikveh/ops' % host) if host else '/api/mikveh/ops'))
+        if self.path.split('?')[0] == '/api/mikveh/bachur_drained':
+            # 🧹 מאגר הריקונים — כמה רוקן לכל אחד, כדי שנוכל להחזיר. מגבה מה-mk_log גם ריקונים ישנים.
+            con = db()
+            try:
+                con.execute("CREATE TABLE IF NOT EXISTS mk_drain(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, "
+                            "name TEXT, bal REAL, temp REAL, at TEXT, refunded INTEGER DEFAULT 0, refunded_at TEXT)")
+                mk_drain_backfill(con)
+                # השלמת שמות חסרים (לריקונים שגובו מהיומן) מרשימת הלקוחות שבמטמון
+                if con.execute("SELECT 1 FROM mk_drain WHERE COALESCE(name,'')='' LIMIT 1").fetchone():
+                    try:
+                        import mikveh as _mk
+                        nm = {str(c.get('id')): ((c.get('firstName') or '') + ' ' + (c.get('lastName') or '')).strip() for c in _mk.clients()}
+                        for cid, name in nm.items():
+                            if name:
+                                con.execute("UPDATE mk_drain SET name=? WHERE cid=? AND COALESCE(name,'')=''", (name, cid))
+                        con.commit()
+                    except Exception as e:
+                        print('  mk drain names error:', e)
+                rows = [dict(r) for r in con.execute(
+                    "SELECT cid,name,bal,temp,at,refunded,refunded_at FROM mk_drain WHERE COALESCE(refunded,0)=0 "
+                    "ORDER BY (bal+temp) DESC, at DESC")]
+                tot = round(sum((r['bal'] or 0) + (r['temp'] or 0) for r in rows), 2)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows, 'total': tot, 'count': len(rows)})
         if self.path.split('?')[0] == '/api/mikveh/status':
             # מאיר: "צריך לחבר את מערכת המקווה" — בדיקה חיה: כניסה + פרטי המועדון
             import mikveh as _mk
@@ -31874,6 +31918,37 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/bachur_refund':
+            # ↩️ החזרת ערך צבור שרוקן — מחזיר את היתרה (פעימות) והזיכוי שנרשמו במאגר mk_drain. ids=מסוים, אחרת הכל.
+            import mikveh as _mk
+            con = db()
+            done, total, fail = [], 0, 0
+            try:
+                mk_drain_backfill(con)
+                want = set(str(x) for x in (b.get('ids') or []))
+                q = "SELECT id,cid,name,bal,temp FROM mk_drain WHERE COALESCE(refunded,0)=0"
+                rows = [dict(r) for r in con.execute(q)]
+                if want:
+                    rows = [r for r in rows if str(r['cid']) in want]
+                for r in rows:
+                    try:
+                        bal = int(round((r['bal'] or 0) * 100)); tmp = int(round((r['temp'] or 0) * 100))
+                        if bal:
+                            _mk.add_credit(r['cid'], bal, temp=False)
+                        if tmp:
+                            _mk.add_credit(r['cid'], tmp, temp=True)
+                        con.execute("UPDATE mk_drain SET refunded=1, refunded_at=? WHERE id=?", (now_iso(), r['id']))
+                        con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                    (r['cid'], now_iso(), 'drain', '↩️ הוחזר ערך צבור: ₪%g (פעימות ₪%g + זיכוי ₪%g)'
+                                     % ((r['bal'] or 0) + (r['temp'] or 0), r['bal'] or 0, r['temp'] or 0)))
+                        done.append(r['cid']); total += bal + tmp
+                    except Exception as e:
+                        print('  mk bachur refund error:', r['cid'], e)
+                        fail += 1
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'count': len(done), 'total_ils': round(total / 100.0, 2), 'failed': fail})
         if self.path == '/api/mikveh/bachur_drain':
             # 🧹 מאיר: "לרוקן ערך צבור למי שחסמתי" — מאפס את היתרה (פעימות) והיתרה הזמנית (זיכוי) לכל החסומים
             # בקבוצות הבחורים, כמו כפתור האיפוס במסך המקווה (שתי קריאות Client/AdminPurchase עם סכום שלילי).
@@ -31897,9 +31972,14 @@ class H(BaseHTTPRequestHandler):
                             _mk.add_credit(cid, -tmp, temp=True)
                         if bal or tmp:
                             nm = ((full.get('firstName') or '') + ' ' + (full.get('lastName') or '')).strip()
+                            at = now_iso()
                             con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                                        (cid, now_iso(), 'drain', '🧹 רוקן ערך צבור: ₪%g (פעימות ₪%g + זיכוי ₪%g)'
+                                        (cid, at, 'drain', '🧹 רוקן ערך צבור: ₪%g (פעימות ₪%g + זיכוי ₪%g)'
                                          % ((bal + tmp) / 100.0, bal / 100.0, tmp / 100.0)))
+                            con.execute("CREATE TABLE IF NOT EXISTS mk_drain(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, "
+                                        "name TEXT, bal REAL, temp REAL, at TEXT, refunded INTEGER DEFAULT 0, refunded_at TEXT)")
+                            con.execute("INSERT INTO mk_drain(cid,name,bal,temp,at) VALUES(?,?,?,?,?)",
+                                        (cid, nm, bal / 100.0, tmp / 100.0, at))
                             drained.append({'id': cid, 'name': nm, 'balance': bal / 100.0, 'temp': tmp / 100.0})
                             total += bal + tmp
                     except Exception as e:

@@ -1997,6 +1997,9 @@ async function mkAuditWin(){
           <div class="mksub" style="font-weight:700;margin-top:10px">⛔ חסומים כרגע (${(MKAUD.admin.blocked||[]).length})</div>
           <div class="mklist">${(MKAUD.admin.blocked||[]).map(x=>`<div class="mkrow" data-ao="${esc_(x.id)}" style="grid-template-columns:1fr auto;cursor:pointer"><div class="mknm"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}${x.reason?' · '+esc_(x.reason):''}</div></div><span class="mktag bad" style="align-self:center">חסום</span></div>`).join('')||'<div class="hintxt">✓ אין אף אחד חסום.</div>'}</div>
           ${(MKAUD.admin.blocked||[]).length?`<div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bk_drain">🧹 רוקן ערך צבור לכל החסומים</button><span id="bk_drain_st" class="mksub"></span></div>`:''}
+          ${MKAUD.drained&&MKAUD.drained.rows&&MKAUD.drained.rows.length?`<div class="mksub" style="font-weight:700;margin-top:10px">🧹 ערך צבור שרוקן — לשמירה ולהחזרה (${MKAUD.drained.rows.length} · סה״כ ₪${MKAUD.drained.total||0})</div>
+          <div class="mklist">${MKAUD.drained.rows.map(x=>`<div class="mkrow" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc_(x.name||x.cid)}</b><div class="mksub">פעימות ₪${x.bal||0}${x.temp?' · זיכוי ₪'+x.temp:''} · ${esc_(String(x.at||'').slice(0,16))}</div></div><button class="btn sm ghost" data-refund="${esc_(x.cid)}">↩️ החזר</button></div>`).join('')}</div>
+          <div class="mktpl" style="margin-top:4px"><button class="btn sm ghost" id="bk_refund_all">↩️ החזר לכולם</button></div>`:''}
           <div class="mksub" style="font-weight:700;margin-top:8px">🕘 היסטוריה</div>
           <div class="mklist">${(MKAUD.admin.history||[]).slice(0,40).map(h=>`<div class="mksub" style="border-bottom:1px solid var(--line);padding:3px 0">${esc_(String(h.at||'').slice(0,16).replace('T',' '))}${h.name?' · '+esc_(h.name):''} — ${esc_(h.summary||'')}</div>`).join('')||'<div class="hintxt">אין היסטוריה.</div>'}</div></div>`:''}
         <div class="mksub" style="margin-top:4px;color:#888">🔑 טוקן API לקלוד נמצא ב-🩺 בדיקת מערכת (הכפתור למעלה).</div>
@@ -2080,7 +2083,17 @@ async function mkAuditWin(){
   {const l=document.getElementById('bk_adm_load');if(l)l.onclick=async()=>{const st=document.getElementById('bk_adm_st');l.disabled=true;if(st)st.textContent='⏳ טוען מהמקווה…';
     const y=await api('GET','/api/mikveh/bachur_admin').catch(()=>null);
     if(!y||!y.ok){l.disabled=false;if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
+    MKAUD.drained=await api('GET','/api/mikveh/bachur_drained').catch(()=>null);
     MKAUD.admin=y;mkAuditWin();};}
+  // ↩️ מאגר הריקונים — החזרה
+  {const ra=document.getElementById('bk_refund_all');if(ra)ra.onclick=async()=>{const n=(MKAUD.drained&&MKAUD.drained.rows||[]).length;
+    if(!await uiConfirm('להחזיר את הערך צבור ל-'+n+' הלקוחות במאגר? (סה״כ ₪'+((MKAUD.drained||{}).total||0)+')','↩️ כן, להחזיר','ביטול'))return;
+    const y=await api('POST','/api/mikveh/bachur_refund',{});
+    if(!y||!y.ok){toast('שגיאה');return;}toast('הוחזר ל-'+y.count+' · ₪'+(y.total_ils||0));MKAUD.drained=await api('GET','/api/mikveh/bachur_drained').catch(()=>null);mkAuditWin();};}
+  rs.querySelectorAll('[data-refund]').forEach(b=>b.onclick=async()=>{const cid=b.dataset.refund;
+    if(!await uiConfirm('להחזיר לו את הערך צבור שרוקן?','↩️ כן','ביטול'))return;
+    const y=await api('POST','/api/mikveh/bachur_refund',{ids:[cid]});
+    if(!y||!y.ok){toast('שגיאה');return;}toast('הוחזר ✓');MKAUD.drained=await api('GET','/api/mikveh/bachur_drained').catch(()=>null);mkAuditWin();});
   // 🧹 ריקון ערך צבור לכל החסומים
   {const dr=document.getElementById('bk_drain');if(dr)dr.onclick=async()=>{const st=document.getElementById('bk_drain_st');const n=((MKAUD.admin&&MKAUD.admin.blocked)||[]).length;
     if(!await uiConfirm('לרוקן את הערך צבור (פעימות + זיכוי) של '+n+' החסומים?\nזה מאפס להם את היתרה במקווה — פעולה כספית, לא הפיכה בקלות.','🧹 כן, לרוקן','ביטול'))return;
