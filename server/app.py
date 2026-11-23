@@ -20158,7 +20158,8 @@ def give_iz(con, did, b, amt=1000, cat='יששכר־זבולון', en='Yissachar
 
 
 GIVE_KINDS = {'night': (480, ''), 'iz': (1000, 'יששכר־זבולון'), 'breakfast': (360, 'ארוחת בוקר'), 'ner': (1200, 'נר למאור'),
-              'monthly180': (180, 'תרומה חודשית — 3 אברכים מתפללים')}
+              'monthly180': (180, 'תרומה חודשית — 3 אברכים מתפללים'),
+              'monthly101': (101, 'תרומה חודשית — קוויטל כל השנה')}
 
 
 def give_charge(con, b, ip=''):
@@ -20184,12 +20185,17 @@ def give_charge(con, b, ip=''):
         r = give_iz(con, did, b, amt=180, cat=GIVE_KINDS[kind][1], en='Monthly donation — 3 Avreichim daven for you every night',
                     he_title='$180 לחודש לשנה — 3 אברכים מתפללים כל לילה (12 חודשים)', tier='קוויטל_101',
                     task='לוודא שהשמות נכנסו לקוויטל של 3 האברכים')
+    elif kind == 'monthly101':
+        # 📜 מאיר: "101 לחודש לשנה להיות רשום בקוויטל של הכולל כל השנה"
+        r = give_iz(con, did, b, amt=101, cat=GIVE_KINDS[kind][1], en='Monthly donation — names in the Kollel Kvittel all year',
+                    he_title='$101 לחודש לשנה — רשום בקוויטל של הכולל כל השנה (12 חודשים)', tier='קוויטל_שבועי',
+                    task='לוודא שהשמות נכנסו לקוויטל של הכולל לכל השנה')
     else:
         r = cardlink_charge(con, did, dict(b, amount=amt, purpose=purpose))
     if not r.get('ok'):
         return r
     dn = con.execute("SELECT id FROM donations WHERE donor_id=? ORDER BY id DESC LIMIT 1", (did,)).fetchone()
-    if dn and kind in ('iz', 'breakfast', 'ner', 'monthly180'):
+    if dn and kind in ('iz', 'breakfast', 'ner', 'monthly180', 'monthly101'):
         con.execute("UPDATE donations SET category=? WHERE id=?", (GIVE_KINDS[kind][1], dn['id']))
     # 📜 שמות לקוויטל (עד 4, עם שם האם)
     nm = []

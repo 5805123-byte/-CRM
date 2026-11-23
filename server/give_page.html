@@ -28,7 +28,7 @@ h3 .n{display:inline-grid;place-items:center;width:21px;height:21px;border-radiu
 .ch.any{grid-column:1/-1;border:2px solid var(--wine);padding:11px 8px}
 .ch.any .cn{font-size:17px;font-weight:bold;color:var(--wine)}.ch.any .ca{font-size:13px;font-weight:normal;color:var(--soft)}
 .ch.any.on .cn,.ch.any.on .ca{color:#fff}
-@media(max-width:480px){.ch[data-k="iz"]{grid-column:1/-1}}
+
 .pane{font-size:13.5px;color:var(--soft);line-height:1.45;margin-top:9px;background:var(--band);border-radius:8px;padding:9px 11px}
 .pane b{color:var(--wine)}
 .link{background:none;border:0;color:var(--wine);text-decoration:underline;font:inherit;font-size:14.5px;font-weight:bold;cursor:pointer;padding:6px 0 0;text-align:left}
@@ -79,6 +79,7 @@ input{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px
   <button type="button" class="ch" data-k="night"><span class="cn">Sponsor One Night for your Zechus</span><span class="ca">$480</span></button>
   <button type="button" class="ch" data-k="breakfast"><span class="cn">Sponsor Breakfast for the Avreichim of Kollel Chatzos</span><span class="ca">$360</span></button>
   <button type="button" class="ch" data-k="monthly180"><span class="mo">MONTHLY · 1 YEAR</span><span class="cn">3 Avreichim davening for you every night</span><span class="ca">$180 / month</span><span class="cy">for 1 year</span></button>
+  <button type="button" class="ch" data-k="monthly101"><span class="mo">MONTHLY · 1 YEAR</span><span class="cn">Your names in the Kollel's Kvittel all year</span><span class="ca">$101 / month</span><span class="cy">for 1 year</span></button>
   <button type="button" class="ch" data-k="ner"><span class="cn">Ner LaMaor · one week</span><span class="ca">$1,200</span></button>
   <button type="button" class="ch" data-k="iz"><span class="mo">MONTHLY · 1 YEAR</span><span class="cn">Yissachar–Zevulun</span><span class="ca">$1,000 / month</span><span class="cy">for 1 year</span></button>
 </div>
@@ -93,6 +94,7 @@ input{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px
     <label>Occasion (optional)</label><input id="n_occ" placeholder="e.g. birthday, yahrtzeit"></div></div>
 <div class="pane" data-p="breakfast" hidden>Sponsor breakfast for all the Avreichim of Kollel Chatzos after a night of learning, l'zechus you and your family.</div>
 <div class="pane" data-p="monthly180" hidden><b>$180 monthly for 1 year.</b> Every night at Chatzos, 3 Avreichim are learning and davening for you and your family by name. $180 today, then automatically every month — 12 donations in total.</div>
+<div class="pane" data-p="monthly101" hidden><b>$101 monthly for 1 year.</b> Your names are listed in the Kvittel of Kollel Chatzos all year, and the Avreichim learn and daven for you at the great Eis Ratzon of Chatzos. $101 today, then automatically every month — 12 donations in total.</div>
 <div class="pane" data-p="ner" hidden>A full week of Torah learning at Chatzos l'zechus or l'ilui nishmas your loved ones. One-time donation.</div>
 <div class="pane" data-p="iz" hidden><b>$1,000 monthly for 1 year.</b> One Avreich learns every night for a full year as your true partner. $1,000 today, then automatically every month — 12 donations in total.</div>
 <div class="pane" data-p="donate" hidden>A donation to the nightly Torah learning of the Avreichim at Chatzos.
@@ -128,11 +130,12 @@ if(KEY){var sc=document.createElement('script');sc.src={{JS}};sc.onload=mount;do
 var g=function(id){return document.getElementById(id);},v=function(id){return g(id).value.trim();},each=function(q,f){Array.prototype.forEach.call(document.querySelectorAll(q),f);};
 var K='night',AMT=PRE||0,CAL={m:'',y:'',sel:null,data:null,loaded:false},MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function usd(a){return '$'+Number(a).toLocaleString('en-US',{maximumFractionDigits:2});}
-var FIX={night:480,iz:1000,breakfast:360,ner:1200,monthly180:180},MONTHLY={iz:1,monthly180:1};
+var FIX={night:480,iz:1000,breakfast:360,ner:1200,monthly180:180,monthly101:101},MONTHLY={iz:1,monthly180:1,monthly101:1};
 function amount(){return FIX[K]||AMT;}
 function paint(){var a=amount();
   g('go').textContent=MONTHLY[K]?'Donate '+usd(a)+' today · 12 monthly donations':(a?('Donate '+usd(a)+' now'):'Donate now');}
-function pick(k){K=k;each('.ch',function(x){x.classList.toggle('on',x.dataset.k===k);});each('.pane',function(x){x.hidden=x.dataset.p!==k;});paint();}
+function pick(k){K=k;each('.ch',function(x){x.classList.toggle('on',x.dataset.k===k);});each('.pane',function(x){x.hidden=x.dataset.p!==k;});paint();
+  if((k==='monthly180'||k==='monthly101')&&!g('kv_open').hidden)g('kv_open').click();}
 each('.ch',function(b){b.onclick=function(){pick(b.dataset.k);if(K==='donate')g('a_amt').focus();};});
 // other amount
 g('a_amt').oninput=function(){AMT=parseFloat(String(this.value).replace(/[^\d.]/g,''))||0;paint();};
@@ -189,6 +192,7 @@ g('go').onclick=async function(){var err=g('err'),btn=this;err.textContent='';
     +(r.night?' The night of <b>'+r.night.en+' · '+r.night.date_text+' '+r.night.year+'</b> is dedicated l\'zechus you.':'')
     +(MONTHLY[K]?(r.sched?' The next 11 monthly donations of '+r.amount+' will be charged automatically, starting '+r.next+'.':' Our office will contact you to complete the monthly arrangement.'):'')
     +(K==='monthly180'?' From tonight, 3 Avreichim will learn and daven l\'zechus you every night at Chatzos.':'')
+    +(K==='monthly101'?' Your names are now listed in the Kvittel of Kollel Chatzos for the whole year.':'')
     +(r.receipt?' Your receipt was sent to <b>'+r.receipt+'</b>.':' Your receipt will be emailed to you shortly.')
     +(r.receipt_url?'<br><a class="site" style="margin-top:10px" href="'+r.receipt_url+'" target="_blank" rel="noopener">&#129534; Download your receipt (PDF)</a>':'')
     +'<br><br>In the zechus of upholding Torah at the great Eis Ratzon of Chatzos, may you and your family be blessed with Shemirah, Shefa and Bracha.';
