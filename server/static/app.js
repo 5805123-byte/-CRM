@@ -21092,8 +21092,8 @@ function giveLinkOpen(d){
   const url=a=>location.origin+'/KollelChatzos'+(+a?('?amount='+(+a)):'');
   const msg=a=>(nm&&/^[\x00-\x7F]+$/.test(nm)?('Dear '+nm+',\n\n'):'')
     +'You can donate securely online to Kollel Chatzos here'+(+a?(' ($'+(+a).toLocaleString('en-US')+')'):'')+':\n'+url(a)
-    +'\n\nYou may sponsor a night of learning ($480), breakfast for the Avreichim ($360), have 3 Avreichim daven for you every night ($180 monthly), and add names for prayer at Chatzos. A receipt is emailed to you automatically.'
-    +'\n\nIn the merit of supporting Torah at the great Eis Ratzon of Chatzos, may you be blessed with Shemirah, Shefa and Bracha.\n\nKollel Chatzos';
+    +'\n\nYou may sponsor a night of learning ($480), breakfast for the Avreichim ($360), have 3 Avreichim learn and daven l\'zechus you every night ($180 monthly), and add names for davening at Chatzos. A receipt is emailed to you automatically.'
+    +'\n\nIn the zechus of upholding Torah at the great Eis Ratzon of Chatzos, may you be blessed with Shemirah, Shefa and Bracha.\n\nKollel Chatzos';
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox qcbox" style="text-align:right"><div class="cm"><b>🌐 דף תרומה אונליין${nm?' — ל'+esc(nm):''}</b></div>
     <div class="hintxt">דף מאובטח באנגלית לכל תורם: לילה לימוד ($480), ארוחת בוקר ($360), 3 אברכים מתפללים ($180 לחודש לשנה), נר למאור ($1,200), יששכר־זבולון ($1,000 לחודש), או סכום אחר — ושמות לקוויטל. תרומה באשראי שמחויבת מיד. הקבלה נשלחת לו במייל ואפשר להוריד אותה מיד מהדף. בוואטסאפ הקישור מופיע קטן עם הלוגו.</div>

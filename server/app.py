@@ -16519,7 +16519,7 @@ AUTH_PUBLIC = ('/api/yemot/ivr/', '/api/yemot/mkgroup/', '/api/yemot/mkrec/', '/
                '/u/', '/api/u/',   # קישור אישי לתורם לעדכון כרטיס (חתום, 30 יום) — בלי כניסה
                '/d/',   # אותו קישור באנגלית בקוד קצר (כמו /k/ בעברית)
                '/k/', '/api/k/',   # 🔗 הקישור האישי בעברית — קהילה / תורמים בארץ (חתום, 30 יום) — בלי כניסה
-               '/give', '/api/give/', '/KollelChatzos', '/kollelchatzos',   # 🌐 דף התרומה הכללי באנגלית — לכל תורם, ישן או חדש
+               '/give', '/api/give/', '/KollelChatzos', '/kollelchatzos', '/kc',   # 🌐 דף התרומה הכללי באנגלית — לכל תורם, ישן או חדש
                '/o.png')   # פיקסל מעקב הפתיחות — נטען אצל מי שקיבל את המייל, בלי כניסה (חתום בטוקן)   # תחיליות; הכניסה עצמה מטופלת לפני
 # כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
 #     GOOGLE_CLIENT_ID     מזהה הלקוח (…apps.googleusercontent.com) — ציבורי, בלי סוד
@@ -20037,7 +20037,7 @@ def give_page(base=''):
     ולא ארוך". הכרטיס בטופס המאובטח של בנק ווסט (Banquest) — המספר לא עובר אצלנו."""
     import banquest as _bq
     key, js = _bq.token_key(), _bq.token_js()
-    card = ('<div id="card" class="cardbox"></div><div class="small">&#128274; Your card is entered in the encrypted form of our payment '
+    card = ('<div id="card" class="cardbox"></div><div class="small">&#128274; Your card is entered in the encrypted form of our card '
             'processor and is sent directly to them — it never passes through or is stored on our systems.</div>'
             if key else '<div class="warn">The secure card form is temporarily unavailable. Please contact us.</div>')
     t = open(os.path.join(HERE, 'give_page.html'), encoding='utf-8').read()
@@ -20045,7 +20045,7 @@ def give_page(base=''):
     # (בוואטסאפ מוצגת כתמונה קטנה ליד הכותרת), הדף עצמו נפתח רק בלחיצה
     og = ('<meta name="description" content="Secure online donation page · Kollel Chatzos · Torah learning every night at Chatzos.">'
           '<meta property="og:title" content="Kollel Chatzos — Secure Online Donation">'
-          '<meta property="og:description" content="Sponsor a night of learning · Breakfast for the Avreichim · 3 Avreichim daven for you every night · Names for prayer">'
+          '<meta property="og:description" content="Sponsor a night of learning · Breakfast for the Avreichim · 3 Avreichim learn and daven l\'zechus you every night">'
           '<meta property="og:site_name" content="Kollel Chatzos"><meta property="og:type" content="website">'
           '<meta property="og:image" content="{b}/give_og.png?v=2"><meta property="og:image:secure_url" content="{b}/give_og.png?v=2">'
           '<meta property="og:image:type" content="image/png"><meta property="og:image:width" content="600"><meta property="og:image:height" content="600">'
@@ -24478,7 +24478,11 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, build_ics().encode('utf-8'), 'text/calendar')
         if self.path.split('?')[0] == '/donate':
             return self._send(200, open(os.path.join(STATIC, 'donate.html'), 'rb').read(), 'text/html')
-        if self.path.split('?')[0].lower() in ('/give', '/give/', '/kollelchatzos', '/kollelchatzos/'):
+        _gh = (self.headers.get('Host') or '').split(':')[0].lower()
+        if self.path.split('?')[0].lower() in ('/give', '/give/', '/kollelchatzos', '/kollelchatzos/', '/kc', '/kc/') or (
+                _gh.split('.')[0] in ('give', 'donate') and self.path.split('?')[0] in ('/', '')):
+            # מאיר: "הלינק אני רוצה אותו קצר… כולל חצות… בלי כל ה-CRM" — כתובת משנה של האתר (donate.kollelchatzot.com)
+            # שמופנית לכאן מציגה את הדף ישר מהשורש
             # מאיר: "שהקישור יהיה כתוב שם כולל חצות" — /KollelChatzos הוא אותו דף
             # 🌐 דף התרומה הכללי — ?amount=180 ממלא סכום מראש
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
