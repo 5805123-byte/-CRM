@@ -20085,9 +20085,11 @@ def give_donor(con, b):
     return did, True
 
 
-def give_iz(con, did, b):
+def give_iz(con, did, b, amt=1000, cat='יששכר־זבולון', en='Yissachar-Zevulun partnership', he_title='יששכר־זבולון — אברך לשנה (12 חודשים)',
+            tier='יששכר_זבולון', task='לשבץ אברך ולשלוח שטר'):
     """🤝 מאיר: "ביששכר זבולון שיוכלו לעשות רק 12 חודשים בלבד — אברך ל-12 חודשים, כל חודש $1,000; אי אפשר לקחת
-    יששכר זבולון לחודש" — הכרטיס נשמר בבנק ווסט, $1,000 נגבים עכשיו, והוראת קבע ל-11 חודשים נוספים (סה"כ 12)."""
+    יששכר זבולון לחודש" — הכרטיס נשמר בבנק ווסט, $1,000 נגבים עכשיו, והוראת קבע ל-11 חודשים נוספים (סה"כ 12).
+    אותו דבר ל-$180 לחודש לשנה ("3 אברכים יתפללו עליך כל לילה") — עם הסכום, הייעוד והדרגה שלו."""
     import banquest as _bq
     nonce = re.sub(r'[^A-Za-z0-9_\-]', '', str(b.get('nonce') or ''))
     if not nonce:
@@ -20114,43 +20116,49 @@ def give_iz(con, did, b):
     con.execute("INSERT OR REPLACE INTO bq_pm(id,customer_id,card_type,last4,exp_m,exp_y,is_default,name) VALUES(?,?,?,?,?,?,?,?)",
                 (pm['id'], cid, pm.get('card_type') or '', pm.get('last4') or '', pm.get('expiry_month') or 0, pm.get('expiry_year') or 0, 1, pm.get('name') or ''))
     con.commit()
-    desc = 'Yissachar-Zevulun partnership — month 1 of 12'
-    code, res = _bq.charge_pm(pm['id'], 1000, description=desc, customer_id=cid, email=em, cit=True)
+    amt = int(amt)
+    usd = '$' + format(amt, ',')
+    desc = en + ' — month 1 of 12'
+    code, res = _bq.charge_pm(pm['id'], amt, description=desc, customer_id=cid, email=em, cit=True)
     if code != 200 or not isinstance(res, dict):
         err = bq_hint(_bq.LAST.get('error') or '') or 'the card was declined'
         return {'ok': False, 'error': 'The charge did not go through: %s. Please check the card details and try again.' % err}
-    out = bq_record_charge(con, res, 1000, desc, 'יששכר־זבולון', did, cid, ('%s %s' % (pm.get('card_type') or '', pm.get('last4') or '')).strip(), nm)
+    out = bq_record_charge(con, res, amt, desc, cat, did, cid, ('%s %s' % (pm.get('card_type') or '', pm.get('last4') or '')).strip(), nm)
     if not out.get('ok'):
         con.commit()
         return {'ok': False, 'error': 'The charge did not go through: %s. Please check the card details and try again.' % (out.get('error') or 'declined')}
     nxt = datetime.date.today()
     nxt = (nxt.replace(day=1) + datetime.timedelta(days=32)).replace(day=min(nxt.day, 28))
-    title = 'יששכר־זבולון — אברך לשנה (12 חודשים) · מהדף האונליין'
-    sc, sr = _bq.create_schedule(cid, title, 1000, pm['id'], next_run_date=nxt.isoformat(), num_left=11, receipt_email=em)
+    title = he_title + ' · מהדף האונליין'
+    sc, sr = _bq.create_schedule(cid, title, amt, pm['id'], next_run_date=nxt.isoformat(), num_left=11, receipt_email=em)
     if sc in (200, 201) and isinstance(sr, dict) and sr.get('id'):
         con.execute("""INSERT OR REPLACE INTO bq_sched(id,customer_id,title,amount,freq,next_run,prev_run,num_left,active,status,pm_id,
                          receipt_email,tx_count,created,donor_id,for_cat,for_note,synced) VALUES(?,?,?,?,?,?,'',?,1,?,?,?,0,?,?,?,?,?)""",
-                    (sr['id'], cid, title, 1000, sr.get('frequency') or 'monthly', sr.get('next_run_date') or nxt.isoformat(),
-                     int(sr.get('num_left') or 11), sr.get('status') or 'active', pm['id'], em, today_iso(), did, 'יששכר־זבולון', 'אברך לשנה — 12 חודשים', now_iso()))
+                    (sr['id'], cid, title, amt, sr.get('frequency') or 'monthly', sr.get('next_run_date') or nxt.isoformat(),
+                     int(sr.get('num_left') or 11), sr.get('status') or 'active', pm['id'], em, today_iso(), did, cat, he_title, now_iso()))
         sched_ok = True
     else:
         sched_ok = False
     con.execute("INSERT INTO pledges(donor_id,category,amount,permo,monthly,status,note,date,since,cur) VALUES(?,?,?,?,1,?,?,?,?,'$')",
-                (did, 'יששכר־זבולון', '1000', '1000', 'נתן', 'מהדף האונליין — אברך לשנה, 12 חודשים מ-%s' % today_iso(), today_iso(), today_iso()))
-    con.execute("UPDATE donors SET tier='יששכר_זבולון' WHERE id=?", (did,))
+                (did, cat, str(amt), str(amt), 'נתן', 'מהדף האונליין — %s, 12 חודשים מ-%s' % (he_title, today_iso()), today_iso(), today_iso()))
+    if tier == 'יששכר_זבולון':
+        con.execute("UPDATE donors SET tier=? WHERE id=?", (tier, did))
+    elif tier:   # לא מורידים דרגה של תורם קיים — רק למי שאין דרגה
+        con.execute("UPDATE donors SET tier=? WHERE id=? AND COALESCE(tier,'')=''", (tier, did))
     con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
-                (did, today_iso(), 'followup', '🤝 נרשם מהדף האונליין ליששכר־זבולון — אברך לשנה, $1,000 × 12. החודש הראשון נגבה; '
-                 + ('הוראת קבע ל-11 חודשים הוקמה בבנק ווסט. ' if sched_ok else '⚠️ הוראת הקבע לא הוקמה — להקים ידנית ל-11 חודשים. ') + 'לשבץ אברך ולשלוח שטר'))
+                (did, today_iso(), 'followup', '🤝 נרשם מהדף האונליין: %s, %s × 12. החודש הראשון נגבה; ' % (he_title, usd)
+                 + ('הוראת קבע ל-11 חודשים הוקמה בבנק ווסט. ' if sched_ok else '⚠️ הוראת הקבע לא הוקמה — להקים ידנית ל-11 חודשים. ') + task))
     con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
-                (did, today_iso(), 'קישור', '🤝 יששכר־זבולון מהדף האונליין: $1,000 נגבו (אישור %s)%s' % (out.get('auth') or out.get('ref') or '',
+                (did, today_iso(), 'קישור', '🤝 %s מהדף האונליין: %s נגבו (אישור %s)%s' % (cat, usd, out.get('auth') or out.get('ref') or '',
                  ' · הוראת קבע 11 חודשים מ-' + nxt.isoformat() if sched_ok else ' · הוראת הקבע לא הוקמה'), '', now_iso()))
     con.commit()
-    cardlink_alert(con, did, '• 🤝 יששכר־זבולון מהדף האונליין: $1,000 × 12' + ('' if sched_ok else ' — ⚠️ הוראת הקבע לא הוקמה, להקים ידנית'))
-    return {'ok': True, 'amount': '$1,000', 'auth': out.get('auth') or out.get('ref') or '', 'night': None, 'night_error': '', 'sched': sched_ok,
+    cardlink_alert(con, did, '• 🤝 %s מהדף האונליין: %s × 12' % (cat, usd) + ('' if sched_ok else ' — ⚠️ הוראת הקבע לא הוקמה, להקים ידנית'))
+    return {'ok': True, 'amount': usd, 'auth': out.get('auth') or out.get('ref') or '', 'night': None, 'night_error': '', 'sched': sched_ok,
             'next': nxt.strftime('%B %-d, %Y')}
 
 
-GIVE_KINDS = {'night': (480, ''), 'iz': (1000, ''), 'breakfast': (180, 'ארוחת בוקר'), 'ner': (1200, 'נר למאור')}
+GIVE_KINDS = {'night': (480, ''), 'iz': (1000, 'יששכר־זבולון'), 'breakfast': (180, 'ארוחת בוקר'), 'ner': (1200, 'נר למאור'),
+              'monthly180': (180, 'תרומה חודשית — 3 אברכים מתפללים')}
 
 
 def give_charge(con, b, ip=''):
@@ -20171,13 +20179,18 @@ def give_charge(con, b, ip=''):
     purpose = {'night': '', 'breakfast': 'Breakfast for the Avreichim', 'ner': 'Ner LaMaor — one week'}.get(kind, 'Donation — online page')
     if kind == 'iz':
         r = give_iz(con, did, b)
+    elif kind == 'monthly180':
+        # 🙏 מאיר: "$180 לחודש. 3 אברכים יתפללו עליך כל לילה… יחייב אותו כל חודש… מודגש מונטלי. לשנה."
+        r = give_iz(con, did, b, amt=180, cat=GIVE_KINDS[kind][1], en='Monthly donation — 3 Avreichim daven for you every night',
+                    he_title='$180 לחודש לשנה — 3 אברכים מתפללים כל לילה (12 חודשים)', tier='קוויטל_101',
+                    task='לוודא שהשמות נכנסו לקוויטל של 3 האברכים')
     else:
         r = cardlink_charge(con, did, dict(b, amount=amt, purpose=purpose))
     if not r.get('ok'):
         return r
     dn = con.execute("SELECT id FROM donations WHERE donor_id=? ORDER BY id DESC LIMIT 1", (did,)).fetchone()
-    if dn and kind in ('iz', 'breakfast', 'ner'):
-        con.execute("UPDATE donations SET category=? WHERE id=?", ('יששכר־זבולון' if kind == 'iz' else GIVE_KINDS[kind][1], dn['id']))
+    if dn and kind in ('iz', 'breakfast', 'ner', 'monthly180'):
+        con.execute("UPDATE donations SET category=? WHERE id=?", (GIVE_KINDS[kind][1], dn['id']))
     # 📜 שמות לקוויטל (עד 4, עם שם האם)
     nm = []
     for x in (b.get('names') or [])[:4]:

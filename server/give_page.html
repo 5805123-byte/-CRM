@@ -23,6 +23,7 @@ h3 .he{font-family:Arial,sans-serif;font-weight:normal;font-size:13px;color:var(
 .opt .t{display:flex;justify-content:space-between;gap:10px;font-weight:bold;font-size:16px}
 .opt .t b{color:var(--wine);white-space:nowrap}
 .opt .d{font-size:13.5px;color:var(--soft);margin-top:3px;line-height:1.45}
+.opt .mo{display:inline-block;background:var(--wine);color:#fff;font-size:11.5px;letter-spacing:1.5px;border-radius:5px;padding:3px 9px;margin-bottom:6px;font-weight:bold}
 .opt.sm{padding:10px 14px}.opt.sm .t{font-size:15.5px}
 .amts{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
 .amts button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:9px 0;font:inherit;font-size:15px;cursor:pointer;color:var(--ink)}
@@ -85,7 +86,10 @@ input,textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding
 <div class="opt sm" data-k="ner"><div class="t">Ner LaMaor — one week<b>$1,200</b></div>
   <div class="d">Light up a full week of Torah learning at Chatzos, l'zechus or l'ilui nishmas your loved ones.</div></div>
 <div class="opt" data-k="iz"><div class="t">Yissachar–Zevulun partnership<b>$1,000 / month – 12 months</b></div>
-  <div class="d">Sponsor one Avreich for a full year — his nightly learning at Chatzos is shared with you as a true partner. $1,000 is donated today and then automatically every month, 12 payments in total.</div></div>
+  <div class="d">Sponsor one Avreich for a full year — his nightly learning at Chatzos is shared with you as a true partner. $1,000 is donated today and then automatically every month, 12 donations in total.</div></div>
+<div class="opt" data-k="monthly180"><span class="mo">MONTHLY · 12 MONTHS</span>
+  <div class="t">3 Avreichim daven for you every night<b>$180 / month</b></div>
+  <div class="d">Every night at Chatzos, 3 Avreichim daven for you and your family by name. <b style="color:var(--wine)">Monthly for one year:</b> $180 is donated today and then automatically every month, 12 donations in total.</div></div>
 
 <h3><span class="n">2</span>Names for prayer at Chatzos<span class="he">שמות לתפילה — קוויטל</span></h3>
 <div class="small" style="margin-top:0">Up to 4 names with the mother's name — in English or Hebrew. We daven for them every night at Chatzos.</div>
@@ -96,7 +100,7 @@ input,textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding
 <div class="two"><div><label>Email — your receipt is sent here</label><input id="email" type="email" autocomplete="email"></div><div><label>Phone</label><input id="phone" type="tel" autocomplete="tel"></div></div>
 <label>Mailing address (optional)</label><input id="addr" autocomplete="street-address" placeholder="Street, City, State, ZIP">
 
-<h3><span class="n">4</span>Secure payment<span class="he">תשלום מאובטח</span></h3>
+<h3><span class="n">4</span>Secure card donation<span class="he">תרומה מאובטחת בכרטיס</span></h3>
 {{CARD}}
 <button type="button" class="go" id="go">Donate now</button>
 <div class="err" id="err"></div><div class="ok" id="done" hidden></div>
@@ -118,10 +122,10 @@ if(KEY){var sc=document.createElement('script');sc.src={{JS}};sc.onload=mount;do
 var g=function(id){return document.getElementById(id);},v=function(id){return g(id).value.trim();};
 var K='donate',AMT=PRE||0,CAL={m:'',y:'',sel:null,data:null,loaded:false},MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function usd(a){return '$'+Number(a).toLocaleString('en-US',{maximumFractionDigits:2});}
-var FIX={night:480,iz:1000,breakfast:180,ner:1200};
+var FIX={night:480,iz:1000,breakfast:180,ner:1200,monthly180:180},MONTHLY={iz:1,monthly180:1};
 function amount(){return FIX[K]||AMT;}
 function paint(){var a=amount();g('a_show').textContent=K==='donate'&&AMT?usd(AMT):'';
-  g('go').textContent=K==='iz'?'Donate $1,000 today · 12 monthly payments':(a?('Donate '+usd(a)+' now'):'Donate now');}
+  g('go').textContent=MONTHLY[K]?'Donate '+usd(a)+' today · 12 monthly donations':(a?('Donate '+usd(a)+' now'):'Donate now');}
 // options
 Array.prototype.forEach.call(document.querySelectorAll('.opt'),function(o){o.addEventListener('click',function(e){if(e.target.closest('input,textarea,.cal,.calnav,.cd'))return;
   K=o.dataset.k;Array.prototype.forEach.call(document.querySelectorAll('.opt'),function(x){x.classList.toggle('on',x===o);});paint();});});
@@ -179,7 +183,8 @@ g('go').onclick=async function(){var err=g('err'),btn=this;err.textContent='';
   var d=g('done');d.hidden=false;btn.hidden=true;
   d.innerHTML='<b>Thank you!</b> Your donation of <b>'+r.amount+'</b> was received'+(r.auth?' (confirmation '+r.auth+')':'')+'.'
     +(r.night?' The night of <b>'+r.night.en+' · '+r.night.date_text+' '+r.night.year+'</b> is dedicated for you.':'')
-    +(K==='iz'?(r.sched?' The next 11 monthly donations of $1,000 will be charged automatically, starting '+r.next+'.':' Our office will contact you to complete the monthly arrangement.'):'')
+    +(MONTHLY[K]?(r.sched?' The next 11 monthly donations of '+r.amount+' will be charged automatically, starting '+r.next+'.':' Our office will contact you to complete the monthly arrangement.'):'')
+    +(K==='monthly180'?' From tonight, 3 Avreichim will daven for you every night at Chatzos.':'')
     +(r.receipt?' Your receipt was sent to <b>'+r.receipt+'</b>.':' Your receipt will be emailed to you shortly.')
     +(r.receipt_url?'<br><a class="site" style="margin-top:12px" href="'+r.receipt_url+'" target="_blank" rel="noopener">&#129534; Download your receipt (PDF)</a>':'')
     +'<br><br>In the merit of supporting Torah at the great Eis Ratzon of Chatzos, may you and your family be blessed with Shemirah, Shefa and Bracha.';
