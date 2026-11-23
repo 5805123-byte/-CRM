@@ -1976,7 +1976,7 @@ async function mkAuditWin(){
         <div class="mktpl" style="margin-top:6px"><button class="btn sm" id="bn_go">📺 הוסף לכל הבחורים ברשימה</button><span id="bn_st" class="mksub"></span></div></div>
       <div class="audpick" style="margin-top:8px;border-color:#e0b4b4;background:#fff6f4">
         <div class="mksub" style="font-weight:700;margin-bottom:2px">⛔ חסימה אוטומטית — בחור שנכנס בפעימות בלי מנוי</div>
-        <div class="mksub">כש<b>פעיל</b>: כל ~5 דקות המערכת בודקת את הכניסות בחודש האחרון, וחוסמת בחור (רק בקבוצות שסימנת) ש<b>נכנס בפועל בלי שמנוי כיסה את הכניסה</b> (כלומר נכנס בפעימות בלי מנוי באותו זמן). החסימה <b>חד-כיוונית</b> — המערכת לא פותחת לבד; פותחים ידנית מהכרטיס אחרי שמסדירים מנוי. חסימות ידניות לא נגעים בהן.</div>
+        <div class="mksub">כש<b>פעיל</b>: <b>כל דקה</b> המערכת בודקת (וסבב מלא של חודש כל 5 דק'), וחוסמת בחור (רק בקבוצות שסימנת) ש<b>נכנס בפעימות בלי לשלם על מנוי חודשי</b>. החסימה <b>חד-כיוונית</b> — המערכת לא פותחת לבד; פותחים ידנית מהכרטיס אחרי שמסדירים מנוי. חסימות ידניות לא נגעים בהן.</div>
         <label class="mksub" style="display:block;margin-top:6px">נוסח החסימה (הטקסט שיופיע כסיבת החסימה):
           <input id="bb_reason" class="audq" style="width:100%;box-sizing:border-box;margin-top:3px" value="${esc_(MKAUD.bblock.reason||'')}" placeholder="למשל: אין מנוי בתוקף — יש להסדיר מנוי"></label>
         <div class="mktpl" style="margin-top:6px">
@@ -1984,7 +1984,7 @@ async function mkAuditWin(){
           <button class="btn sm${MKAUD.bblock.on?'':' ghost'}" id="bb_toggle">${MKAUD.bblock.on?'🟢 פעיל — לכבות':'⚪ כבוי — להפעיל'}</button>
           <button class="btn sm ghost" id="bb_run">▶️ הרץ עכשיו</button>
           <button class="btn sm ghost" id="bb_reset" title="לפתוח את כל מי שחסום בקבוצות הבחורים">🔓 בטל את כל החסימות</button>
-          <span id="bb_st" class="mksub">${MKAUD.bblock.last?('נבדק '+esc_(mkDate(MKAUD.bblock.last))+' · נחסמו '+(MKAUD.bblock.blocked||0)+(MKAUD.bblock.opened?' · בוטלו '+MKAUD.bblock.opened:'')):'עדיין לא רץ'}</span>
+          <span id="bb_st" class="mksub">${MKAUD.bblock.last?('נבדק '+esc_(mkDate(MKAUD.bblock.last))+' '+esc_(String(MKAUD.bblock.last).slice(11,16))+' · נחסמו '+(MKAUD.bblock.blocked||0)+(MKAUD.bblock.opened?' · בוטלו '+MKAUD.bblock.opened:'')):'עדיין לא רץ'}</span>
         </div></div>
       <div class="audpick" style="margin-top:8px">
         <div class="mksub" style="font-weight:700;margin-bottom:2px">🔎 מי נכנס בפעימות בלי מנוי · מי חסום · היסטוריה</div>
