@@ -11182,13 +11182,15 @@ def get_all():
         d['declined'] = []
         d['declined_open'] = 0; d.setdefault('unseen', 0)
     try:
-        ok, okmon = {}, set()
+        ok, okmon, last_ok = {}, set(), {}
         for r in c.execute("SELECT donor_id,amount,date FROM recon "
                            "WHERE donor_id IS NOT NULL AND COALESCE(status,'settled') IN ('settled','')"):
             iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
             if iso:
                 ok.setdefault((r['donor_id'], _amt2(r['amount'])), []).append(_days(iso))
                 okmon.add((r['donor_id'], _amt2(r['amount']), iso[:7]))
+                if _amt2(r['amount']) > 0.5 and _days(iso):
+                    last_ok[r['donor_id']] = max(last_ok.get(r['donor_id'], 0), _days(iso))
         for r in c.execute("SELECT donor_id,amount,date FROM donations "
                            "WHERE donor_id IS NOT NULL AND CAST(amount AS REAL)>0"):
             iso = (r['date'] or '')[:10]
@@ -11196,6 +11198,8 @@ def get_all():
                 okmon.add((r['donor_id'], _amt2(r['amount']), iso[:7]))
                 if len(iso) == 10:
                     ok.setdefault((r['donor_id'], _amt2(r['amount'])), []).append(_days(iso))
+                    if _amt2(r['amount']) > 0.5 and _days(iso):
+                        last_ok[r['donor_id']] = max(last_ok.get(r['donor_id'], 0), _days(iso))
         for r in c.execute("SELECT tid,first,last,amount,date,source,status,donor_id,"
                            "COALESCE(no_debt,0) no_debt, COALESCE(is_debt,0) is_debt FROM recon "
                            "WHERE donor_id IS NOT NULL "
@@ -11208,6 +11212,10 @@ def get_all():
             amt = _amt2(r['amount'])
             hit = [x for x in ok.get((r['donor_id'], amt), []) if dd and -3 <= x - dd <= 14]
             if not hit and iso and (r['donor_id'], amt, iso[:7]) in okmon:
+                hit = [1]
+            # מאיר: "החלון הזה לא עבר… לא מעודכן… גאלד יעקב לא עבר, וכן עבר לו בסוף… צריך להיות עדכני מיד" —
+            # אם אחרי הדחייה נכנסה ממנו תרומה מוצלחת (כל סכום, כל דרך) — הכרטיס כבר עובר, זה לא "לא עבר"
+            if not hit and dd and last_ok.get(r['donor_id'], 0) >= dd:
                 hit = [1]
             row = dict(r)
             row['date_iso'] = iso
@@ -17086,6 +17094,9 @@ def missing_report(con, days_grace=5):
         a = _amt2(r['amount'])
         dd = _days(iso)
         hit = any(abs(x - a) < 0.005 and (-3 <= _days(i) - dd <= 14 or i[:7] == iso[:7]) for i, x in ok.get(r['donor_id'], []))
+        # כמו במסך "לא עבר": תרומה מוצלחת אחרי הדחייה (כל סכום) — הכרטיס עובר, לא מדווחים
+        if not hit and dd:
+            hit = any(x > 0.5 and len(i) == 10 and _days(i) >= dd for i, x in ok.get(r['donor_id'], []))
         if hit:
             continue
         k = (r['donor_id'], a, iso[:7])
