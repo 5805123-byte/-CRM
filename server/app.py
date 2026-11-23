@@ -16519,7 +16519,7 @@ AUTH_PUBLIC = ('/api/yemot/ivr/', '/api/yemot/mkgroup/', '/api/yemot/mkrec/', '/
                '/u/', '/api/u/',   # קישור אישי לתורם לעדכון כרטיס (חתום, 30 יום) — בלי כניסה
                '/d/',   # אותו קישור באנגלית בקוד קצר (כמו /k/ בעברית)
                '/k/', '/api/k/',   # 🔗 הקישור האישי בעברית — קהילה / תורמים בארץ (חתום, 30 יום) — בלי כניסה
-               '/give', '/api/give/',   # 🌐 דף התרומה הכללי באנגלית — לכל תורם, ישן או חדש
+               '/give', '/api/give/', '/KollelChatzos', '/kollelchatzos',   # 🌐 דף התרומה הכללי באנגלית — לכל תורם, ישן או חדש
                '/o.png')   # פיקסל מעקב הפתיחות — נטען אצל מי שקיבל את המייל, בלי כניסה (חתום בטוקן)   # תחיליות; הכניסה עצמה מטופלת לפני
 # כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
 #     GOOGLE_CLIENT_ID     מזהה הלקוח (…apps.googleusercontent.com) — ציבורי, בלי סוד
@@ -20044,8 +20044,8 @@ def give_page(base=''):
     # מאיר: "שזה יהיה יפה וקטן, לא גדול… עם הלוגו של כולל חצות, וכתוב דף מאובטח לתרומות אונליין" — תמונה מרובעת
     # (בוואטסאפ מוצגת כתמונה קטנה ליד הכותרת), הדף עצמו נפתח רק בלחיצה
     og = ('<meta name="description" content="Secure online donation page · Kollel Chatzos · Torah learning every night at Chatzos.">'
-          '<meta property="og:title" content="Kollel Chatzos · Secure Online Donation Page">'
-          '<meta property="og:description" content="Donate · A night of learning for your merit · Yissachar–Zevulun · Names for prayer">'
+          '<meta property="og:title" content="Kollel Chatzos — Secure Online Donation">'
+          '<meta property="og:description" content="Sponsor a night of learning · Breakfast for the Avreichim · 3 Avreichim daven for you every night · Names for prayer">'
           '<meta property="og:site_name" content="Kollel Chatzos"><meta property="og:type" content="website">'
           '<meta property="og:image" content="{b}/give_og.png?v=2"><meta property="og:image:secure_url" content="{b}/give_og.png?v=2">'
           '<meta property="og:image:type" content="image/png"><meta property="og:image:width" content="600"><meta property="og:image:height" content="600">'
@@ -20157,7 +20157,7 @@ def give_iz(con, did, b, amt=1000, cat='יששכר־זבולון', en='Yissachar
             'next': nxt.strftime('%B %-d, %Y')}
 
 
-GIVE_KINDS = {'night': (480, ''), 'iz': (1000, 'יששכר־זבולון'), 'breakfast': (180, 'ארוחת בוקר'), 'ner': (1200, 'נר למאור'),
+GIVE_KINDS = {'night': (480, ''), 'iz': (1000, 'יששכר־זבולון'), 'breakfast': (360, 'ארוחת בוקר'), 'ner': (1200, 'נר למאור'),
               'monthly180': (180, 'תרומה חודשית — 3 אברכים מתפללים')}
 
 
@@ -24478,7 +24478,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, build_ics().encode('utf-8'), 'text/calendar')
         if self.path.split('?')[0] == '/donate':
             return self._send(200, open(os.path.join(STATIC, 'donate.html'), 'rb').read(), 'text/html')
-        if self.path.split('?')[0] in ('/give', '/give/'):
+        if self.path.split('?')[0].lower() in ('/give', '/give/', '/kollelchatzos', '/kollelchatzos/'):
+            # מאיר: "שהקישור יהיה כתוב שם כולל חצות" — /KollelChatzos הוא אותו דף
             # 🌐 דף התרומה הכללי — ?amount=180 ממלא סכום מראש
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             try:

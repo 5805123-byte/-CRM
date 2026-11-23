@@ -21089,14 +21089,14 @@ function giveLinkOpen(d){
   const nm=d?(String(d.english||'').trim()||((d.first||'')+' '+(d.last||'')).trim()):'';
   const ph=d?(splitPhones(d.phone||'')[0]||'').trim():'', wa=ph?waHref(ph,d.region):'';
   const em=d?(String(d.email||'').split(/[,;\s]+/).find(x=>x.includes('@'))||''):'';
-  const url=a=>location.origin+'/give'+(+a?('?amount='+(+a)):'');
+  const url=a=>location.origin+'/KollelChatzos'+(+a?('?amount='+(+a)):'');
   const msg=a=>(nm&&/^[\x00-\x7F]+$/.test(nm)?('Dear '+nm+',\n\n'):'')
     +'You can donate securely online to Kollel Chatzos here'+(+a?(' ($'+(+a).toLocaleString('en-US')+')'):'')+':\n'+url(a)
-    +'\n\nYou may also dedicate a night of learning, join our Yissachar-Zevulun partnership, and add names for prayer at Chatzos. A receipt is emailed to you automatically.'
+    +'\n\nYou may sponsor a night of learning ($480), breakfast for the Avreichim ($360), have 3 Avreichim daven for you every night ($180 monthly), and add names for prayer at Chatzos. A receipt is emailed to you automatically.'
     +'\n\nIn the merit of supporting Torah at the great Eis Ratzon of Chatzos, may you be blessed with Shemirah, Shefa and Bracha.\n\nKollel Chatzos';
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox qcbox" style="text-align:right"><div class="cm"><b>🌐 דף תרומה אונליין${nm?' — ל'+esc(nm):''}</b></div>
-    <div class="hintxt">דף מאובטח באנגלית לכל תורם: סכום לבחירה, לילה לימוד ($480), יששכר־זבולון ($1,000 לחודש), שמות לקוויטל, ותשלום באשראי שמחויב מיד. הקבלה נשלחת לו במייל ואפשר להוריד אותה מיד מהדף. בוואטסאפ הקישור מופיע קטן עם הלוגו.</div>
+    <div class="hintxt">דף מאובטח באנגלית לכל תורם: לילה לימוד ($480), ארוחת בוקר ($360), 3 אברכים מתפללים ($180 לחודש לשנה), נר למאור ($1,200), יששכר־זבולון ($1,000 לחודש), או סכום אחר — ושמות לקוויטל. תרומה באשראי שמחויבת מיד. הקבלה נשלחת לו במייל ואפשר להוריד אותה מיד מהדף. בוואטסאפ הקישור מופיע קטן עם הלוגו.</div>
     <label class="fld"><span>סכום מסומן מראש (לא חובה)</span><input id="gv_amt" inputmode="decimal" placeholder="למשל 180"></label>
     <input id="gv_url" dir="ltr" readonly style="font-size:12px">
     <label class="fld"><span>ההודעה (אפשר לערוך)</span><textarea id="gv_msg" dir="ltr" rows="8" style="font-family:Arial;font-size:13px"></textarea></label>

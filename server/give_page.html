@@ -24,10 +24,8 @@ h3 .he{font-family:Arial,sans-serif;font-weight:normal;font-size:13px;color:var(
 .opt .t b{color:var(--wine);white-space:nowrap}
 .opt .d{font-size:13.5px;color:var(--soft);margin-top:3px;line-height:1.45}
 .opt .mo{display:inline-block;background:var(--wine);color:#fff;font-size:11.5px;letter-spacing:1.5px;border-radius:5px;padding:3px 9px;margin-bottom:6px;font-weight:bold}
+.nbtn{display:block;width:100%;margin-top:10px;background:var(--wine);color:#fff;border:0;border-radius:10px;padding:11px 12px;font:inherit;font-size:16px;font-weight:bold;cursor:pointer}
 .opt.sm{padding:10px 14px}.opt.sm .t{font-size:15.5px}
-.amts{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
-.amts button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:9px 0;font:inherit;font-size:15px;cursor:pointer;color:var(--ink)}
-.amts button.on{background:var(--wine);color:#fff;border-color:var(--wine)}
 label{display:block;font-size:13px;color:var(--soft);margin:10px 0 3px}
 input,textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7;color:var(--ink)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -64,32 +62,32 @@ input,textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding
   <a href="https://wa.me/972527628272" target="_blank" rel="noopener">&#128172; WhatsApp</a>
   <a href="tel:+972527628272">&#128222; +972-52-762-8272</a></div>
 <div class="hd"><img src="{{LOGO}}" alt="Kollel Chatzos">
-  <h1>Secure Online Donation</h1><div class="sub">Kollel Chatzos · Eretz Yisroel</div>
+  <h1>Kollel Chatzos</h1><div class="sub">Secure Online Donation · Eretz Yisroel</div>
   <div class="lock" style="font-size:14.5px;color:var(--ink);line-height:1.5;margin-top:8px">Over <b style="color:var(--wine)">100 Avreichim</b> learn every night at the great Eis Ratzon of Chatzos HaLailah,<br>when the Gates of Heaven are open</div></div>
 <div class="in">
 
 <h3><span class="n">1</span>Choose your donation<span class="he">בחירת התרומה</span></h3>
-<div class="opt on" data-k="donate"><div class="t">Any donation — the amount you choose<b id="a_show"></b></div>
-  <div class="amts" id="amts"><button type="button" data-a="18">$18</button><button type="button" data-a="36">$36</button><button type="button" data-a="72">$72</button><button type="button" data-a="180">$180</button><button type="button" data-a="360">$360</button><button type="button" data-a="500">$500</button><button type="button" data-a="1000">$1,000</button><button type="button" data-a="">Other</button></div>
-  <div id="a_other" hidden><label>Amount ($)</label><input id="a_amt" inputmode="decimal" placeholder="0"></div></div>
-<div class="opt" data-k="night"><div class="t">One night of learning for your merit<b>$480</b></div>
+<div class="opt on" data-k="night"><div class="t">Sponsor a Night — One Night of Learning<b>$480</b></div>
   <div class="d">The entire Kollel learns through the night of Chatzos l'zechus you or your loved ones — for a birthday, yahrtzeit, refuah or any special occasion.</div>
-  <button type="button" class="link" id="n_open">Click here to choose a night &rsaquo;</button>
+  <button type="button" class="nbtn" id="n_open">&#128197; Click here to choose a special night for you &rsaquo;</button>
   <div id="n_box" hidden>
     <div class="cal"><div class="calhd"><button type="button" class="calnav" id="cal_prev">&lsaquo;</button><div id="cal_title"></div><button type="button" class="calnav" id="cal_next">&rsaquo;</button></div>
     <div class="calgrid" id="cal_grid"></div><div class="callg"><span class="lg f"></span> available <span class="lg t"></span> taken <span class="lg b"></span> Shabbos / Yom Tov</div></div>
     <div class="small" id="n_status"></div>
     <label>Dedicated l'zechus / l'ilui nishmas</label><input id="n_names" placeholder="e.g. Avraham ben Sarah">
     <label>Occasion (optional)</label><input id="n_occ" placeholder="e.g. birthday, yahrtzeit"></div></div>
-<div class="opt sm" data-k="breakfast"><div class="t">Breakfast for the Avreichim<b>$180</b></div>
-  <div class="d">Sponsor the morning meal of the Avreichim after a night of learning.</div></div>
+<div class="opt sm" data-k="breakfast"><div class="t">Breakfast for the Avreichim of Kollel Chatzos<b>$360</b></div>
+  <div class="d">Sponsor the morning meal of all the Avreichim after a night of learning at Chatzos.</div></div>
+<div class="opt" data-k="monthly180"><span class="mo">MONTHLY · 12 MONTHS</span>
+  <div class="t">3 Avreichim daven for you every night<b>$180 / month</b></div>
+  <div class="d">Every night at Chatzos, 3 Avreichim daven for you and your family by name. <b style="color:var(--wine)">Monthly for one year:</b> $180 is donated today and then automatically every month, 12 donations in total.</div></div>
 <div class="opt sm" data-k="ner"><div class="t">Ner LaMaor — one week<b>$1,200</b></div>
   <div class="d">Light up a full week of Torah learning at Chatzos, l'zechus or l'ilui nishmas your loved ones.</div></div>
 <div class="opt" data-k="iz"><div class="t">Yissachar–Zevulun partnership<b>$1,000 / month – 12 months</b></div>
   <div class="d">Sponsor one Avreich for a full year — his nightly learning at Chatzos is shared with you as a true partner. $1,000 is donated today and then automatically every month, 12 donations in total.</div></div>
-<div class="opt" data-k="monthly180"><span class="mo">MONTHLY · 12 MONTHS</span>
-  <div class="t">3 Avreichim daven for you every night<b>$180 / month</b></div>
-  <div class="d">Every night at Chatzos, 3 Avreichim daven for you and your family by name. <b style="color:var(--wine)">Monthly for one year:</b> $180 is donated today and then automatically every month, 12 donations in total.</div></div>
+<div class="opt sm" data-k="donate"><div class="t">General donation to the Kollel — other amount<b id="a_show"></b></div>
+  <div class="d">Support the nightly Torah learning of the Avreichim at Chatzos with an amount of your choice.</div>
+  <div id="a_other"><label>Amount ($)</label><input id="a_amt" inputmode="decimal" placeholder="Enter the amount"></div></div>
 
 <h3><span class="n">2</span>Names for prayer at Chatzos<span class="he">שמות לתפילה — קוויטל</span></h3>
 <div class="small" style="margin-top:0">Up to 4 names with the mother's name — in English or Hebrew. We daven for them every night at Chatzos.</div>
@@ -120,23 +118,19 @@ function mount(){if(!KEY||!window.HostedTokenization)return;try{HT=new HostedTok
   catch(e){document.getElementById('card').innerHTML='<div class="warn">The card form could not be loaded. Please contact us.</div>';}}
 if(KEY){var sc=document.createElement('script');sc.src={{JS}};sc.onload=mount;document.head.appendChild(sc);}
 var g=function(id){return document.getElementById(id);},v=function(id){return g(id).value.trim();};
-var K='donate',AMT=PRE||0,CAL={m:'',y:'',sel:null,data:null,loaded:false},MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+var K=PRE?'donate':'night',AMT=PRE||0,CAL={m:'',y:'',sel:null,data:null,loaded:false},MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function usd(a){return '$'+Number(a).toLocaleString('en-US',{maximumFractionDigits:2});}
-var FIX={night:480,iz:1000,breakfast:180,ner:1200,monthly180:180},MONTHLY={iz:1,monthly180:1};
+var FIX={night:480,iz:1000,breakfast:360,ner:1200,monthly180:180},MONTHLY={iz:1,monthly180:1};
 function amount(){return FIX[K]||AMT;}
 function paint(){var a=amount();g('a_show').textContent=K==='donate'&&AMT?usd(AMT):'';
   g('go').textContent=MONTHLY[K]?'Donate '+usd(a)+' today · 12 monthly donations':(a?('Donate '+usd(a)+' now'):'Donate now');}
 // options
-Array.prototype.forEach.call(document.querySelectorAll('.opt'),function(o){o.addEventListener('click',function(e){if(e.target.closest('input,textarea,.cal,.calnav,.cd'))return;
+Array.prototype.forEach.call(document.querySelectorAll('.opt'),function(o){o.addEventListener('click',function(e){if(e.target.closest('textarea,.cal,.calnav,.cd')||(e.target.closest('input')&&o.dataset.k!=='donate'))return;
   K=o.dataset.k;Array.prototype.forEach.call(document.querySelectorAll('.opt'),function(x){x.classList.toggle('on',x===o);});paint();});});
-// amounts
-var AB=document.querySelectorAll('#amts button');
-function pickAmt(a){AMT=+a||0;var other=true;Array.prototype.forEach.call(AB,function(b){var on=b.dataset.a!==''&&+b.dataset.a===AMT;b.classList.toggle('on',on);if(on)other=false;});
-  if(other&&AMT){AB[AB.length-1].classList.add('on');g('a_other').hidden=false;g('a_amt').value=AMT;}paint();}
-Array.prototype.forEach.call(AB,function(b){b.onclick=function(){K='donate';if(b.dataset.a===''){Array.prototype.forEach.call(AB,function(x){x.classList.toggle('on',x===b);});g('a_other').hidden=false;AMT=parseFloat(v('a_amt'))||0;g('a_amt').focus();paint();return;}
-  g('a_other').hidden=true;pickAmt(b.dataset.a);};});
+// other amount
 g('a_amt').oninput=function(){AMT=parseFloat(String(this.value).replace(/[^\d.]/g,''))||0;paint();};
-if(PRE)pickAmt(PRE);
+g('a_amt').onfocus=function(){K='donate';Array.prototype.forEach.call(document.querySelectorAll('.opt'),function(x){x.classList.toggle('on',x.dataset.k==='donate');});paint();};
+if(PRE){g('a_amt').value=PRE;Array.prototype.forEach.call(document.querySelectorAll('.opt'),function(x){x.classList.toggle('on',x.dataset.k==='donate');});}
 // kvittel rows
 g('kv').innerHTML=[1,2,3,4].map(function(i){return '<div class="nm"><span>'+i+'</span><input class="kvn" placeholder="Name · שם"><input class="kvm" placeholder="Mother\'s name · שם האם"></div>';}).join('');
 // night calendar
@@ -163,8 +157,8 @@ async function getCard(){if(!HT)throw new Error('The secure card form is not loa
   catch(e){var fe=(e&&e.fieldErrors)||[];if(fe.length&&fe.some(function(x){return /card\s*number.*required/i.test(String(x));}))return null;
     throw new Error('Please check the card number, expiry date and CVV.');}}
 g('go').onclick=async function(){var err=g('err'),btn=this;err.textContent='';
-  var a=amount();if(!a||a<1){err.textContent='Please choose or enter the amount.';return;}
-  if(K==='night'&&!CAL.sel){err.textContent='Please choose a night in the calendar.';g('n_box').hidden=false;return;}
+  var a=amount();if(!a||a<1){err.textContent=K==='donate'?'Please enter the amount.':'Please choose a donation.';if(K==='donate')g('a_amt').focus();return;}
+  if(K==='night'&&!CAL.sel){err.textContent='Please choose a night in the calendar.';if(g('n_box').hidden)g('n_open').click();g('n_box').scrollIntoView({behavior:'smooth',block:'center'});return;}
   if(K==='night'&&!v('n_names')){err.textContent='Please enter the names for the night.';g('n_names').focus();return;}
   if(!v('first')||!v('last')){err.textContent='Please enter your name.';g('first').focus();return;}
   if(!/^\S+@\S+\.\S+$/.test(v('email'))){err.textContent='Please enter your email — your receipt is sent there.';g('email').focus();return;}
