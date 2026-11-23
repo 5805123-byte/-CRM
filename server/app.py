@@ -27583,7 +27583,14 @@ class H(BaseHTTPRequestHandler):
                                 'groupe': k['groupe'] or '', 'error': (k['error'] or '')[:120], 'last4': k['last4'] or '',
                                 'kind': (k['kind'] if 'kind' in k.keys() else '') or 'card', 'mail': k['mail'] or '',
                                 'at': (last_err['iso'] or '')[:10] if last_err else '',
-                                'donor': {'id': dn['id'], 'name': ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip()} if dn else None})
+                                'donor': {'id': dn['id'], 'name': ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip()} if dn else None,
+                                'is_keva': True})
+                # מאיר: "כל מי שלא עבר לו בנדרים פלוס והוא תורם של הכולל, לא מהקהילה" — גם כל סירוב מיומן הסירובים
+                # (חודשיים אחרונים, חד־פעמי או הו"ק), שלא בא אחריו חיוב מוצלח מאותו טלפון / אותה הוראה
+                try:
+                    out += nd_donor_err_rows(con, ctx_, links, {str(x['id']).split(':')[-1].lstrip('M') for x in out})
+                except Exception as ex:
+                    print('  nd donor errs:', ex)
                 out.sort(key=lambda x: x['at'], reverse=True)
             finally:
                 con.close()
@@ -38802,6 +38809,64 @@ def keva_dead(k):
         except ValueError:
             pass
     return False
+
+
+def nd_donor_err_rows(con, ctx, links, skip_kevas, days=60):
+    """סירובים בנדרים פלוס (קופת הכולל) של תורמים — לא חברי קהילה ולא אברכים — שלא כוסו אחר כך בחיוב מוצלח."""
+    since = (il_now() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
+    # טלפון → תורם
+    dph = {}
+    for d_ in con.execute("SELECT id, last, first, phone FROM donors WHERE COALESCE(TRIM(phone),'')<>''").fetchall():
+        for p in _phones_of(d_['phone']):
+            dph.setdefault(p, set()).add(d_['id'])
+    # חיובים מוצלחים אחרונים — לפי טלפון ולפי הוראה
+    ok_ph, ok_kv = {}, {}
+    for t in con.execute("SELECT iso, phone, keva FROM nd_tx WHERE COALESCE(iso,'')>=? AND CAST(amount AS REAL)>0", (since,)).fetchall():
+        iso = str(t['iso'] or '')[:19]
+        for p in _phones_of(t['phone']):
+            ok_ph[p] = max(ok_ph.get(p, ''), iso)
+        kv = str(t['keva'] or '').strip().lstrip('M')
+        if kv and not kv.startswith('-'):
+            ok_kv[kv] = max(ok_kv.get(kv, ''), iso)
+    grp = {}
+    for e in con.execute("SELECT * FROM nd_err WHERE COALESCE(mosad,'')='' AND COALESCE(iso,'')>=? AND COALESCE(done,0)=0 "
+                         "ORDER BY iso DESC", (since,)).fetchall():
+        if e['member_id'] or ND_COMM_RX.search(e['groupe'] or ''):
+            continue
+        kv = str(e['keva'] or '').strip().lstrip('M')
+        if kv in skip_kevas:
+            continue
+        phs = set(_phones_of(e['phone']))
+        if phs & (ctx['mem_ph'] | ctx['av_ph']) or re.sub(r'\s+', ' ', (e['name'] or '')).strip() in ctx['av_nm']:
+            continue
+        if kv and (ctx['cls'].get(kv) == 'comm' or ctx['cls'].get('M' + kv) == 'comm'):
+            continue
+        iso = str(e['iso'] or '')[:19]
+        if (kv and ok_kv.get(kv, '') > iso) or any(ok_ph.get(p, '') > iso for p in phs):
+            continue                                  # עבר אחר כך — לא "לא עבר"
+        key = kv or (sorted(phs)[0] if phs else re.sub(r'\s+', ' ', (e['name'] or '')).strip())
+        if not key:
+            continue
+        g = grp.get(key)
+        if g:
+            g['tries'] += 1
+            continue
+        did_ = links.get(kv) if kv else None
+        if not did_:
+            ds = set().union(*[dph.get(p, set()) for p in phs]) if phs else set()
+            did_ = next(iter(ds)) if len(ds) == 1 else None
+        dn = con.execute("SELECT id, last, first FROM donors WHERE id=?", (did_,)).fetchone() if did_ else None
+        grp[key] = {'id': ('M' + kv) if kv else 'err:' + str(e['id']), 'name': e['name'] or '', 'phone': (e['phone'] or '').split(';')[0],
+                    'amount': _ivr_amt(e['amount']), 'groupe': e['groupe'] or '', 'error': (e['error'] or '')[:120],
+                    'last4': e['last4'] or '', 'kind': 'card', 'mail': '', 'at': iso[:10], 'tries': 1,
+                    'is_keva': bool(kv) and bool(con.execute("SELECT 1 FROM nd_keva WHERE id IN (?,?) AND active=1", (kv, 'M' + kv)).fetchone()),
+                    'donor': {'id': dn['id'], 'name': ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip()} if dn else None}
+    rows = list(grp.values())
+    for r in rows:
+        if r['is_keva']:
+            k = con.execute("SELECT id FROM nd_keva WHERE id IN (?,?) AND active=1", (r['id'][1:], r['id'])).fetchone()
+            r['id'] = k['id'] if k else r['id']
+    return rows
 
 
 def nd_keva_comm_ctx(con):

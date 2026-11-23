@@ -12339,13 +12339,13 @@ async function ndRetCharge(k){
   const o=document.createElement('div');o.className='confirmov';
   o.innerHTML=`<div class="confirmbox" style="text-align:right;max-width:460px;width:96vw"><div class="cm">💳 לחייב את ${esc(k.donor?k.donor.name:k.name)}</div>
     <label class="fld"><span>כמה לחייב (₪)</span><input id="nr_amt" class="cinp" inputmode="decimal" value="${esc(k.amount||'')}"></label>
-    <button class="btn" id="nr_same" style="width:100%;margin:4px 0">⚡ שוב מהכרטיס שבהוראה ****${esc(k.last4||'')} <small>(🔴 ${esc(String(k.error).slice(0,40))})</small></button>
+    ${k.is_keva===false?'':`<button class="btn" id="nr_same" style="width:100%;margin:4px 0">⚡ שוב מהכרטיס שבהוראה ****${esc(k.last4||'')} <small>(🔴 ${esc(String(k.error).slice(0,40))})</small></button>`}
     <button class="btn" id="nr_other" style="width:100%;margin:4px 0">💳 מכרטיס אחר / ביט — טופס מאובטח של נדרים פלוס</button>
     ${k.donor?`<button class="btn ghost" id="nr_link" style="width:100%;margin:4px 0">🔗 לשלוח לו קישור אישי לעדכון כרטיס</button>`:''}
     <div class="cbtns"><button class="btn ghost cno">ביטול</button></div></div>`;
   document.body.appendChild(o);const A=o.querySelector('#nr_amt');
   o.querySelector('.cno').onclick=()=>o.remove();o.onclick=e=>{if(e.target===o)o.remove();};
-  o.querySelector('#nr_same').onclick=async function(){const a=amtNum(A.value);if(!(a>0)){toast('סכום לא תקין');return;}
+  if(o.querySelector('#nr_same'))o.querySelector('#nr_same').onclick=async function(){const a=amtNum(A.value);if(!(a>0)){toast('סכום לא תקין');return;}
     if(!await uiConfirm('לחייב עכשיו ₪'+a+' מהכרטיס ****'+(k.last4||'')+'?','⚡ כן, לחייב','ביטול'))return;
     this.disabled=true;this.textContent='⏳ מחייב…';
     const r=await api('POST','/api/nd/keva/'+encodeURIComponent(k.id)+'/charge',{amount:a,groupe:k.groupe||'תרומה',donor_id:k.donor?k.donor.id:0}).catch(()=>null);
@@ -12374,10 +12374,10 @@ function renderMissed(){
   if(NDRET===null){NDRET=[];api('GET','/api/nd/donor_returns').then(r=>{NDRET=(r&&r.ok&&r.rows)||[];if(tab==='missed'&&NDRET.length)render();});}
   const ndr=(NDRET||[]).filter(k=>matchQ(k.name+' '+(k.donor?k.donor.name:'')+' '+k.phone));
   view.innerHTML=`
-    ${ndr.length?`<div class="misshead">🔴 הוראות קבע בנדרים פלוס שחזרו — תורמים (${ndr.length})</div>
+    ${ndr.length?`<div class="misshead">🔴 לא עבר בנדרים פלוס — תורמי הכולל (${ndr.length})</div>
     <div class="list">${ndr.map((k,ix)=>`<div class="rowc"><div class="rowmain" ${k.donor?`data-id="${k.donor.id}"`:''}>
       <div class="nm">${esc(k.donor?k.donor.name:k.name)}${k.donor?'':' <small class="cdres bad">עוד לא בכרטיס תורם</small>'}</div>
-      <div class="miss">${k.at?esc(k.at.split('-').reverse().join('/'))+' · ':''}<b style="color:var(--no)">₪${esc(k.amount)}</b> לחודש${k.groupe?' · '+esc(k.groupe):''} · ${esc(k.error)}${k.last4?' · ****'+esc(k.last4):''}</div></div>
+      <div class="miss">${k.at?esc(k.at.split('-').reverse().join('/'))+' · ':''}<b style="color:var(--no)">₪${esc(k.amount)}</b>${k.is_keva?' לחודש · הו"ק':' · חד פעמי'}${k.tries>1?' · '+k.tries+' ניסיונות':''}${k.groupe?' · '+esc(k.groupe):''} · ${esc(k.error)}${k.last4?' · ****'+esc(k.last4):''}</div></div>
       <div class="meta"><button class="btn sm bqgo ndrchg" data-ix="${ix}">💳 חייב עכשיו</button></div></div>`).join('')}</div>`:''}
     <div class="misshead"${ndr.length?' style="margin-top:16px"':''}>🔴 חיובי אשראי שחזרו ולא נגבו מאז (${dec.length})</div>
     <div class="submuted">רק חיובים שנדחו בפועל. התחייבות שעוד לא הגיע זמנה, או חודש
