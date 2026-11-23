@@ -31887,6 +31887,7 @@ class H(BaseHTTPRequestHandler):
                     cfg['on'] = bool(b.get('on'))
                 # שינוי נוסח: לעדכן את מי שכבר חסום על ידינו, כדי שנמשיך לזהות אותו לפי הנוסח
                 if cfg['reason'] != old_reason:
+                    # עדכון הנוסח לכל מי שאנחנו חסמנו (לפי הרשימה שלנו) — בלי קשר לנוסח הישן שהיה אצלם
                     try:
                         held = [str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or [])]
                     except Exception:
@@ -31894,7 +31895,7 @@ class H(BaseHTTPRequestHandler):
                     for cid in held:
                         try:
                             cc = _mk.client(cid, max_age=0)
-                            if cc and cc.get('isBlocked') and str(cc.get('blockReason') or '') == old_reason:
+                            if cc and cc.get('isBlocked'):
                                 _mk.set_blocked(cid, True, cfg['reason'])
                         except Exception:
                             pass
