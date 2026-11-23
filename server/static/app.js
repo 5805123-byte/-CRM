@@ -1987,9 +1987,15 @@ async function mkAuditWin(){
           <span id="bb_st" class="mksub">${MKAUD.bblock.last?('נבדק '+esc_(mkDate(MKAUD.bblock.last))+' · נחסמו '+(MKAUD.bblock.blocked||0)+(MKAUD.bblock.opened?' · בוטלו '+MKAUD.bblock.opened:'')):'עדיין לא רץ'}</span>
         </div></div>
       <div class="audpick" style="margin-top:8px">
-        <div class="mksub" style="font-weight:700;margin-bottom:2px">⛔ מי חסום כרגע + היסטוריה</div>
-        <div class="mktpl"><button class="btn sm" id="bk_adm_load">🔄 הצג מי חסום (טרי מהמקווה)</button><span id="bk_adm_st" class="mksub">${MKAUD.admin?('חסומים כרגע: '+((MKAUD.admin.blocked||[]).length)):''}</span></div>
-        ${MKAUD.admin?`<div style="margin-top:6px"><div class="mklist">${(MKAUD.admin.blocked||[]).map(x=>`<div class="mkrow" data-ao="${esc_(x.id)}" style="grid-template-columns:1fr auto;cursor:pointer"><div class="mknm"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}${x.reason?' · '+esc_(x.reason):''}</div></div><span class="mktag bad" style="align-self:center">חסום</span></div>`).join('')||'<div class="hintxt">✓ אין אף אחד חסום בקבוצות הבחורים.</div>'}</div>
+        <div class="mksub" style="font-weight:700;margin-bottom:2px">🔎 מי נכנס בפעימות בלי מנוי · מי חסום · היסטוריה</div>
+        <div class="mktpl"><button class="btn sm" id="bk_adm_load">🔄 בדוק עכשיו (טרי מהמקווה)</button><span id="bk_adm_st" class="mksub">${MKAUD.admin?('נכנסו בפעימות בלי מנוי: '+((MKAUD.admin.offenders||[]).length)+' · חסומים: '+((MKAUD.admin.blocked||[]).length)):''}</span></div>
+        ${MKAUD.admin?`<div style="margin-top:6px">
+          <div class="mksub" style="font-weight:700">🔎 נכנסו בפעימות בלי מנוי (${(MKAUD.admin.offenders||[]).length})</div>
+          <div class="mklist">${(MKAUD.admin.offenders||[]).map(x=>`<div class="mkrow" data-ao="${esc_(x.id)}" style="grid-template-columns:1fr auto;cursor:pointer"><div class="mknm"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')} · כניסה אחרונה בפעימות ${esc_(mkDate(x.last))}</div></div><span class="mktag ${x.blocked?'bad':'mu'}" style="align-self:center">${x.blocked?'חסום':'לא חסום'}</span></div>`).join('')||'<div class="hintxt">✓ אף אחד לא נכנס בפעימות בלי מנוי בחודש האחרון.</div>'}</div>
+          <div class="mktpl" style="margin-top:6px"><button class="btn sm" id="bk_block_now">⛔ חסום את כולם עכשיו</button></div>
+          <div style="margin-top:8px;border-top:1px solid var(--line);padding-top:6px"><input id="bk_notify_txt" class="audq" style="width:100%;box-sizing:border-box" placeholder="הודעת מסך לשליחה (למשל: נכנסת בלי מנוי — יש להסדיר מנוי בכולל)"><div class="mktpl" style="margin-top:4px"><button class="btn sm" id="bk_notify">📺 שלח הודעה לכל אלה</button><span id="bk_notify_st" class="mksub"></span></div></div>
+          <div class="mksub" style="font-weight:700;margin-top:10px">⛔ חסומים כרגע (${(MKAUD.admin.blocked||[]).length})</div>
+          <div class="mklist">${(MKAUD.admin.blocked||[]).map(x=>`<div class="mkrow" data-ao="${esc_(x.id)}" style="grid-template-columns:1fr auto;cursor:pointer"><div class="mknm"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}${x.reason?' · '+esc_(x.reason):''}</div></div><span class="mktag bad" style="align-self:center">חסום</span></div>`).join('')||'<div class="hintxt">✓ אין אף אחד חסום.</div>'}</div>
           <div class="mksub" style="font-weight:700;margin-top:8px">🕘 היסטוריה</div>
           <div class="mklist">${(MKAUD.admin.history||[]).slice(0,40).map(h=>`<div class="mksub" style="border-bottom:1px solid var(--line);padding:3px 0">${esc_(String(h.at||'').slice(0,16).replace('T',' '))}${h.name?' · '+esc_(h.name):''} — ${esc_(h.summary||'')}</div>`).join('')||'<div class="hintxt">אין היסטוריה.</div>'}</div></div>`:''}
         <div class="mksub" style="margin-top:4px;color:#888">🔑 טוקן API לקלוד נמצא ב-🩺 בדיקת מערכת (הכפתור למעלה).</div>
@@ -2074,6 +2080,24 @@ async function mkAuditWin(){
     const y=await api('GET','/api/mikveh/bachur_admin').catch(()=>null);
     if(!y||!y.ok){l.disabled=false;if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
     MKAUD.admin=y;mkAuditWin();};}
+  // ⛔ חסום את כל מי שנכנס בפעימות בלי מנוי, עכשיו
+  {const bn=document.getElementById('bk_block_now');if(bn)bn.onclick=async()=>{const off=(MKAUD.admin&&MKAUD.admin.offenders)||[];const un=off.filter(x=>!x.blocked);
+    if(!un.length){toast('כולם כבר חסומים');return;}
+    if(!await uiConfirm('לחסום עכשיו את '+un.length+' מי שנכנסו בפעימות בלי מנוי? (חד-כיווני — פתיחה רק ידנית)','⛔ כן, לחסום','ביטול'))return;
+    bn.disabled=true;const st=document.getElementById('bk_adm_st');if(st){st.style.color='#555';st.textContent='⏳ חוסם…';}
+    const y=await api('POST','/api/mikveh/bachur_block',{run:true,fresh:true});
+    if(!y||!y.ok){bn.disabled=false;if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
+    toast('נחסמו '+(y.ran_blocked||0));MKAUD.admin=await api('GET','/api/mikveh/bachur_admin').catch(()=>null);mkAuditWin();};}
+  // 📺 שליחת הודעת מסך לכל מי שנכנס בפעימות בלי מנוי
+  {const nb=document.getElementById('bk_notify');if(nb)nb.onclick=async()=>{const txt=(document.getElementById('bk_notify_txt').value||'').trim();const st=document.getElementById('bk_notify_st');
+    const ids=((MKAUD.admin&&MKAUD.admin.offenders)||[]).map(x=>x.id);
+    if(!txt){if(st){st.style.color='#c0392b';st.textContent='חסר טקסט';}return;}
+    if(!ids.length){if(st){st.style.color='#c0392b';st.textContent='אין למי';}return;}
+    if(!await uiConfirm('לשלוח הודעת מסך ל-'+ids.length+' בחורים?\n"'+txt+'"\n(מתווסף למה שכבר כתוב, בלי למחוק)','📺 כן, לשלוח','ביטול'))return;
+    nb.disabled=true;if(st){st.style.color='#555';st.textContent='⏳ שולח…';}
+    const y=await api('POST','/api/mikveh/bachur_note',{ids,text:txt});nb.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'לא נשלח');}return;}
+    if(st){st.style.color='#1e7a3c';st.textContent='✓ נשלח ל-'+y.done+(y.skipped?' · דילג '+y.skipped:'');}toast('נשלח ✓');};}
   {const b=document.getElementById('aud_self');if(b)b.onclick=()=>mkSelfGroupOpen();}
   {const b=document.getElementById('aud_renew');if(b)b.onclick=()=>mkRenewCheck();}
   const cv=document.getElementById('aud_csv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';

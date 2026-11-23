@@ -21247,27 +21247,22 @@ def mk_bachur_state(con, action='status'):
             hist.append({'cid': r['cid'], 'name': names.get(str(r['cid']), ''), 'at': r['at'], 'summary': r['summary']})
     except Exception:
         pass
-    return {'blocked': blocked, 'history': hist, 'unblocked': unblocked, 'note': ''}
+    offenders = []
+    try:
+        offenders = mk_bachur_offenders(con, 31)
+    except Exception as e:
+        print('  mk bachur state offenders error:', e)
+    return {'blocked': blocked, 'history': hist, 'offenders': offenders, 'unblocked': unblocked, 'note': ''}
 
 
-def mk_bachur_enforce(con):
-    """מדיניות: חוסם בחורים (בקבוצות שנבחרו) שנכנסו בפועל בפעימות — כלומר כניסה מוצלחת שלא כוסתה במנוי —
-    בחודש האחרון. חד-כיווני: המערכת לא פותחת לבד (מי שחסום נשאר חסום עד שפותחים ידנית).
-    לא נוגע בחסימות ידניות (נימוק אחר), וחוסם כל בחור רק פעם אחת לכל כניסה (לא חוסם שוב על אותה כניסה)."""
+def _mk_bachur_scan(con, bg, members, days):
+    """כניסות ב-days הימים האחרונים — מי שנכנס בפועל בלי שמנוי כיסה את הכניסה (= נכנס בפעימות בלי מנוי).
+    מחזיר {cid: createdAt האחרון של כניסה כזו}. קריאה בלבד."""
     import mikveh as _mk
-    bg = mk_bachur_group_ids(con)
-    reason = mk_bachur_block_cfg(con)['reason']
-    if not bg:
-        return {'blocked': 0, 'reset': 0, 'checked': 0, 'offenders': 0, 'empty': True}
-    members = {str(c.get('id')): c for c in _mk.clients()
-               if _mk.visible(c) and str(c.get('groupId') or '') in bg and not (c.get('firstName') or '').strip().startswith('[')}
-    if not members:
-        return {'blocked': 0, 'reset': 0, 'checked': 0, 'offenders': 0, 'empty': False}
-    # כניסות בחודש האחרון — מי שנכנס בפועל בלי שמנוי כיסה את הכניסה (= נכנס בפעימות בלי מנוי)
     d1 = today_iso()[:10]
-    d0 = (il_now().date() - datetime.timedelta(days=31)).isoformat()
+    d0 = (il_now().date() - datetime.timedelta(days=int(days))).isoformat()
     rows = _mk.activity_log(d0, d1) or []
-    offenders = {}        # cid -> createdAt האחרון של כניסה-בפעימות-בלי-מנוי
+    offenders = {}
     for r in rows:
         cid = str(r.get('clientId') or '')
         if cid not in members:
@@ -21279,6 +21274,44 @@ def mk_bachur_enforce(con):
             t = str(r.get('createdAt') or '')
             if t > offenders.get(cid, ''):
                 offenders[cid] = t
+    return offenders
+
+
+def mk_bachur_offenders(con, days=31):
+    """רשימה לתצוגה (בלי לחסום): מי נכנס בפעימות בלי מנוי, עם התאריך והאם כבר חסום."""
+    import mikveh as _mk
+    bg = mk_bachur_group_ids(con)
+    if not bg:
+        return []
+    members = {str(c.get('id')): c for c in _mk.clients()
+               if _mk.visible(c) and str(c.get('groupId') or '') in bg and not (c.get('firstName') or '').strip().startswith('[')}
+    off = _mk_bachur_scan(con, bg, members, days)
+    out = []
+    for cid, t in sorted(off.items(), key=lambda kv: kv[1], reverse=True):
+        c = members[cid]
+        out.append({'id': cid, 'name': ((c.get('firstName') or '') + ' ' + (c.get('lastName') or '')).strip(),
+                    'code': c.get('clientCode'), 'phone': (c.get('phone') or '').strip(),
+                    'last': t, 'blocked': bool(c.get('isBlocked'))})
+    return out
+
+
+def mk_bachur_enforce(con, days=31, fresh=False):
+    """מדיניות: חוסם בחורים (בקבוצות שנבחרו) שנכנסו בפועל בפעימות — כלומר כניסה מוצלחת שלא כוסתה במנוי —
+    ב-days הימים האחרונים. חד-כיווני: המערכת לא פותחת לבד (מי שחסום נשאר חסום עד שפותחים ידנית).
+    fresh=True מאפס את זיכרון הכניסות שטופלו (חוסם מחדש את כל העבריינים כעת).
+    לא נוגע בחסימות ידניות (נימוק אחר), וחוסם כל בחור רק פעם אחת לכל כניסה (לא חוסם שוב על אותה כניסה)."""
+    import mikveh as _mk
+    bg = mk_bachur_group_ids(con)
+    reason = mk_bachur_block_cfg(con)['reason']
+    if not bg:
+        return {'blocked': 0, 'reset': 0, 'checked': 0, 'offenders': 0, 'empty': True}
+    members = {str(c.get('id')): c for c in _mk.clients()
+               if _mk.visible(c) and str(c.get('groupId') or '') in bg and not (c.get('firstName') or '').strip().startswith('[')}
+    if not members:
+        return {'blocked': 0, 'reset': 0, 'checked': 0, 'offenders': 0, 'empty': False}
+    if fresh:
+        kv_set(con, 'mk_bachur_seen', '{}')
+    offenders = _mk_bachur_scan(con, bg, members, days)
     try:
         held = set(str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or []))
     except Exception:
@@ -21550,6 +21583,27 @@ def _mk_diff_loop():
             print('  mk diff loop error:', e)
             MK_DIFF_STATE.update(last_error=str(e)[:200], error_at=now_iso())
         time.sleep(MK_DIFF_FAST)
+
+
+def _mk_bachur_loop():
+    """🧍 בדיקה כל דקה: מי נכנס בפעימות בלי מנוי — חוסם מיד. רק כשהמתג פעיל. חלון קצר (יומיים) כדי
+    לתפוס כניסות חדשות מהר ובזול; הסבב המלא (חודש) רץ כל 5 דקות ב-_mk_diff_loop."""
+    time.sleep(60)
+    while True:
+        try:
+            con = db()
+            try:
+                cfg = mk_bachur_block_cfg(con)
+                if cfg['on']:
+                    r = mk_bachur_enforce(con, days=2)
+                    if r['blocked']:
+                        cfg['last'] = now_iso(); cfg['blocked'] = r['blocked']; cfg['error'] = ''
+                        mk_bachur_block_save(con, cfg); con.commit()
+            finally:
+                con.close()
+        except Exception as e:
+            print('  mk bachur minute loop error:', e)
+        time.sleep(60)
 
 
 def _mk_req_loop():
@@ -31799,7 +31853,7 @@ class H(BaseHTTPRequestHandler):
                     # 🔓 ביטול כל החסימות שלנו, בלי לאפס את הזיכרון (כדי שלא ייחסמו שוב מיד על אותה כניסה)
                     reset = mk_bachur_reset(con, cfg['reason'], clear_seen=False)
                 if b.get('run') or ('on' in b and cfg['on']):
-                    res = mk_bachur_enforce(con)
+                    res = mk_bachur_enforce(con, days=31, fresh=bool(b.get('fresh')))
                     cfg['last'] = now_iso(); cfg['blocked'] = res['blocked']; cfg['opened'] = res.get('reset', 0); cfg['error'] = ''
                 mk_bachur_block_save(con, cfg)
                 con.commit()
@@ -41886,6 +41940,7 @@ def serve():
     threading.Thread(target=_ym_sched_loop, daemon=True).start()
     threading.Thread(target=_mk_req_loop, daemon=True).start()
     threading.Thread(target=_mk_diff_loop, daemon=True).start()
+    threading.Thread(target=_mk_bachur_loop, daemon=True).start()
     threading.Thread(target=_nd_err_loop, daemon=True).start()
     threading.Thread(target=_push_loop, daemon=True).start()
     threading.Thread(target=_weekly_report_loop, daemon=True).start()
