@@ -20041,10 +20041,16 @@ def give_page(base=''):
             'processor and is sent directly to them — it never passes through or is stored on our systems.</div>'
             if key else '<div class="warn">The secure card form is temporarily unavailable. Please contact us.</div>')
     t = open(os.path.join(HERE, 'give_page.html'), encoding='utf-8').read()
-    og = ('<meta name="description" content="Secure online donation to Kollel Chatzos — Torah learning every night at Chatzos.">'
-          '<meta property="og:title" content="Kollel Chatzos · Secure Online Donation">'
-          '<meta property="og:description" content="Donate · Dedicate a night of learning · Yissachar–Zevulun partnership · Names for prayer">'
-          '<meta property="og:image" content="%s/kl_og_en.png?v=1"><meta property="og:type" content="website">' % base)
+    # מאיר: "שזה יהיה יפה וקטן, לא גדול… עם הלוגו של כולל חצות, וכתוב דף מאובטח לתרומות אונליין" — תמונה מרובעת
+    # (בוואטסאפ מוצגת כתמונה קטנה ליד הכותרת), הדף עצמו נפתח רק בלחיצה
+    og = ('<meta name="description" content="Secure online donation page · Kollel Chatzos · Torah learning every night at Chatzos.">'
+          '<meta property="og:title" content="Kollel Chatzos · Secure Online Donation Page">'
+          '<meta property="og:description" content="Donate · A night of learning for your merit · Yissachar–Zevulun · Names for prayer">'
+          '<meta property="og:site_name" content="Kollel Chatzos"><meta property="og:type" content="website">'
+          '<meta property="og:image" content="{b}/give_og.png?v=1"><meta property="og:image:secure_url" content="{b}/give_og.png?v=1">'
+          '<meta property="og:image:type" content="image/png"><meta property="og:image:width" content="600"><meta property="og:image:height" content="600">'
+          '<meta property="og:image:alt" content="Kollel Chatzos · Secure Online Donation"><meta name="twitter:card" content="summary">'
+          '<link rel="icon" href="/icon-192.png">').format(b=base)
     return (t.replace('{{OG}}', og).replace('{{CARD}}', card).replace('{{KEY}}', json.dumps(key or '')).replace('{{JS}}', json.dumps(js))
              .replace('{{LOGO}}', 'data:image/png;base64,' + base64.b64encode(letterhead_logo(300)).decode('ascii')))
 
@@ -20117,9 +20123,13 @@ def give_charge(con, b, ip=''):
                     (did, today_iso(), 'קישור', '📜 שמות לקוויטל מהדף האונליין: ' + ' · '.join(nm), '', now_iso()))
     # 🧾 קבלה אוטומטית למייל שמילא
     sent = ''
+    rurl = ''
     if dn:
         try:
             doc = receipt_issue(con, dn['id'], 'us', send=False)
+            if doc:
+                # מאיר: "ואם הוא ירצה להוציא קבלה, שיוכל להוציא קבלה מיד" — קישור חתום להורדת הקבלה מהדף
+                rurl = '/api/give/rc/%d.%s.pdf' % (doc['id'], give_rc_sig(doc['id']))
             rs = receipt_send(con, doc['id'], email=str(b.get('email') or '').strip()) if doc else {'ok': False}
             if rs and rs.get('ok'):
                 sent = str(b.get('email') or '').strip()
@@ -20132,7 +20142,12 @@ def give_charge(con, b, ip=''):
     if new:
         cardlink_alert(con, did, '• 🌐 תורם חדש מדף התרומה האונליין')
     r['receipt'] = sent
+    r['receipt_url'] = rurl
     return r
+
+
+def give_rc_sig(rid):
+    return hmac.new(_link_secret(), ('give.rc.%d' % int(rid)).encode('ascii'), hashlib.sha256).hexdigest()[:16]
 
 
 def cardlink_note(con, did, b):
@@ -24390,6 +24405,24 @@ class H(BaseHTTPRequestHandler):
                 pre = 0
             base = 'https://' + (self.headers.get('Host') or 'crm-mr9w.onrender.com')
             return self._send(200, give_page(base).replace('{{AMOUNT}}', str(pre)).encode('utf-8'), 'text/html')
+        m = re.match(r'/api/give/rc/(\d+)\.([0-9a-f]{16})\.pdf$', self.path.split('?')[0])
+        if m:
+            rid = int(m.group(1))
+            if not hmac.compare_digest(give_rc_sig(rid), m.group(2)):
+                return self._send(404, {'ok': False})
+            con = db()
+            try:
+                pdf, fname = receipt_pdf(con, rid)
+            finally:
+                con.close()
+            if not pdf:
+                return self._send(404, {'ok': False, 'error': 'not ready'})
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/pdf')
+            self.send_header('Content-Length', str(len(pdf)))
+            self.send_header('Content-Disposition', 'inline; filename="%s"' % re.sub(r'[^A-Za-z0-9_.-]', '_', fname or 'receipt.pdf'))
+            self.end_headers(); self.wfile.write(pdf)
+            return
         if self.path.split('?')[0] == '/api/give/month':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             con = db()

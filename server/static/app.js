@@ -4544,6 +4544,7 @@ function renderDonors(){
   const nafix=DB.filter(addrIssue).length;
   const nanone=DB.filter(d=>!(d.addr||'').trim()).length;
   view.innerHTML=`<button class="btn addbig" id="newDonorBtn">➕ הוסף תורם חדש</button>
+    <button class="btn ghost dngive" type="button" style="width:100%;margin:6px 0">🌐 דף תרומה אונליין — קישור לשליחה לכל תורם (וואטסאפ / מייל)</button>
     ${(()=>{
       const nph=DB.filter(d=>!(d.phone||'').trim()).length;
       const items=[
@@ -7655,6 +7656,7 @@ function cardDetails(d,body){
     <button class="btn dnqc" data-did="${d.id}" type="button">💳 תרומה באשראי — חיוב מהיר + קבלה במייל</button>
     <button class="btn dnman" type="button" style="background:#3b2f7a;color:#fff">✍️ רישום תרומה שנכנסה — סכום, תאריך ועבור מה</button>
     <button class="btn ghost dncl" data-did="${d.id}" type="button">🔗 קישור לתורם לעדכון כרטיס — וואטסאפ / מייל</button>
+    <button class="btn ghost dngive" data-did="${d.id}" type="button">🌐 דף תרומה אונליין (אנגלית) — לשלוח בוואטסאפ / מייל</button>
     <div id="dnrec"></div>
     ${(curd==='₪'||d.region==='il')?`<button class="btn ghost dnkl" data-did="${d.id}" type="button">🇮🇱 קישור אישי בעברית (נדרים פלוס) — פרטים, כרטיס ותרומה</button>`:''}
     ${pdebts.length?`<div class="debtbanner">🌙 פרנס שטרם נגבה: <b>${pdebtsum?(pdebtcur+pdebtsum):(pdebts.length+' ימים')}</b>${pdebts.map(p=>' · '+esc(DAYKIND[p.kind]||'🌙')+' '+esc(p.date_text||'')).join('')}</div>`:''}
@@ -21079,6 +21081,38 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
 // 🔗 מאיר: "כמו שעשית לתורמים של הכולל… תעשה לי כזה לקהילה בעברית — קישור לכל אחד אישי שיכול לעדכן שם
 // וכתובת וטלפון ואימייל… ושיעדכן בנדרים פלוס… עם שורה של תרום עכשיו לכל סכום. בלי פרנס יום… לאימייל או
 // לווצאפ אצל כל כרטיס של אחד מהקהילה או כל אחד". הקישור חתום, 30 יום; כל עדכון — ביומן ומייל אליך
+// 🌐 מאיר: "קישור לתורם בלי קשר אם הוא ישן או חדש… דף מאובטח לתרומות אונליין… שיהיה במערכת ושיהיה ניתן לשלוח
+// משם" — הקישור הכללי (/give), אפשר עם סכום מסומן מראש; וואטסאפ / מייל / העתקה
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.dngive');if(!b)return;
+  e.preventDefault();e.stopPropagation();giveLinkOpen(b.dataset.did?DB.find(x=>x.id==b.dataset.did):null);});
+function giveLinkOpen(d){
+  const nm=d?(String(d.english||'').trim()||((d.first||'')+' '+(d.last||'')).trim()):'';
+  const ph=d?(splitPhones(d.phone||'')[0]||'').trim():'', wa=ph?waHref(ph,d.region):'';
+  const em=d?(String(d.email||'').split(/[,;\s]+/).find(x=>x.includes('@'))||''):'';
+  const url=a=>location.origin+'/give'+(+a?('?amount='+(+a)):'');
+  const msg=a=>(nm&&/^[\x00-\x7F]+$/.test(nm)?('Dear '+nm+',\n\n'):'')
+    +'You can donate securely online to Kollel Chatzos here'+(+a?(' ($'+(+a).toLocaleString('en-US')+')'):'')+':\n'+url(a)
+    +'\n\nYou may also dedicate a night of learning, join our Yissachar-Zevulun partnership, and add names for prayer at Chatzos. A receipt is emailed to you automatically.'
+    +'\n\nIn the merit of supporting Torah at the great Eis Ratzon of Chatzos, may you be blessed with Shemirah, Shefa and Bracha.\n\nKollel Chatzos';
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox qcbox" style="text-align:right"><div class="cm"><b>🌐 דף תרומה אונליין${nm?' — ל'+esc(nm):''}</b></div>
+    <div class="hintxt">דף מאובטח באנגלית לכל תורם: סכום לבחירה, לילה לימוד ($480), יששכר־זבולון ($1,000 לחודש), שמות לקוויטל, ותשלום באשראי שמחויב מיד. הקבלה נשלחת לו במייל ואפשר להוריד אותה מיד מהדף. בוואטסאפ הקישור מופיע קטן עם הלוגו.</div>
+    <label class="fld"><span>סכום מסומן מראש (לא חובה)</span><input id="gv_amt" inputmode="decimal" placeholder="למשל 180"></label>
+    <input id="gv_url" dir="ltr" readonly style="font-size:12px">
+    <label class="fld"><span>ההודעה (אפשר לערוך)</span><textarea id="gv_msg" dir="ltr" rows="8" style="font-family:Arial;font-size:13px"></textarea></label>
+    ${d?`<label class="fld"><span>📧 מייל</span><input id="gv_em" dir="ltr" value="${esc(em)}" placeholder="email@example.com"></label>`:''}
+    <div class="cbtns"><button class="btn gv_copy" type="button">📋 העתק קישור</button><a class="btn gv_wa" target="_blank" rel="noopener">💬 וואטסאפ</a><a class="btn gv_mail">📧 מייל</a><a class="btn ghost" id="gv_open" target="_blank" rel="noopener">👁 לראות את הדף</a><button class="btn ghost cno" type="button">סגור</button></div></div>`;
+  document.body.appendChild(o);
+  const g=id=>o.querySelector('#'+id), waNum=String(wa).replace(/^.*wa\.me\//,'').replace(/[^\d].*$/,'');
+  const sync=(remsg)=>{const a=g('gv_amt').value.replace(/[^\d.]/g,'');g('gv_url').value=url(a);g('gv_open').href=url(a);if(remsg)g('gv_msg').value=msg(a);
+    const t=encodeURIComponent(g('gv_msg').value);o.querySelector('.gv_wa').href='https://wa.me/'+(waNum||'')+'?text='+t;
+    o.querySelector('.gv_mail').href='mailto:'+encodeURIComponent((g('gv_em')&&g('gv_em').value.trim())||'')+'?subject='+encodeURIComponent('Kollel Chatzos · Secure Online Donation')+'&body='+t;};
+  sync(true);g('gv_amt').oninput=()=>sync(true);g('gv_msg').oninput=()=>sync(false);if(g('gv_em'))g('gv_em').oninput=()=>sync(false);
+  o.querySelector('.gv_copy').onclick=async()=>{const u=g('gv_url').value;try{await navigator.clipboard.writeText(u);}catch(x){g('gv_url').select();document.execCommand('copy');}toast('הקישור הועתק ✓');};
+  o.querySelector('.cno').onclick=()=>o.remove();
+  const logIt=ch=>{if(d)api('POST','/api/contact',{donor_id:d.id,date:todayStr(),channel:ch,summary:'🌐 נשלח קישור לדף התרומה האונליין'+(g('gv_amt').value?' ($'+g('gv_amt').value+')':'')}).catch(()=>{});};
+  o.querySelector('.gv_wa').addEventListener('click',()=>logIt('וואטסאפ'));o.querySelector('.gv_mail').addEventListener('click',()=>logIt('מייל'));
+}
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.dnkl');if(!b)return;
   e.preventDefault();e.stopPropagation();const d=DB.find(x=>x.id==b.dataset.did);if(!d)return;
   klinkOpen('donor',d.id,(splitPhones(d.phone||'')[0]||'').trim(),d.region||'il');});
