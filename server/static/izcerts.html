@@ -73,7 +73,7 @@ tr.s-no td.av,tr.s-had td.av{text-decoration:line-through}
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let ROWS=[],Q='',F='all';
-function v(r,k){const s=r.saved||{};return s[k]!==undefined?s[k]:({date:r.date,amt:r.amt,cur:r.cur,note:'',st:'make'})[k];}
+function v(r,k){const s=r.saved||{};return s[k]!==undefined?s[k]:({date:r.date,amt:r.amt,cur:r.cur,note:'',st:'make',donor:r.donor})[k];}
 function vis(r){if(F!=='all'&&v(r,'st')!==F)return false;if(!Q)return true;return (r.av+' '+r.donor+' '+v(r,'note')).includes(Q);}
 function paint(){const L=ROWS.filter(vis);let prev='',i=0;
   const c={make:0,had:0,no:0};ROWS.forEach(r=>c[v(r,'st')]=(c[v(r,'st')]||0)+1);
@@ -81,7 +81,7 @@ function paint(){const L=ROWS.filter(vis);let prev='',i=0;
   $('#tb').innerHTML=L.map(r=>{const first=r.av!==prev;prev=r.av;if(first)i++;const s=v(r,'st');
     return `<tr class="s-${s}${first?' avfirst':''}${s!=='make'?' hidep':''}" data-pid="${r.pid}">
       <td class="n">${first?i:''}</td><td class="av">${first?esc(r.av):''}</td>
-      <td>${esc(r.donor)}${r.old_cert?'<span class="oldc">יש לו תעודה ישנה במערכת</span>':''}</td>
+      <td>${esc(v(r,'donor'))}${v(r,'donor')!==r.donor?' <small style="color:#8a8274">(בכרטיס: '+esc(r.donor)+')</small>':''}${r.old_cert?'<span class="oldc">יש לו תעודה ישנה במערכת</span>':''}</td>
       <td class="dt"><input data-k="date" value="${esc(v(r,'date'))}" placeholder="א׳ אייר תשפ״ז"></td>
       <td class="amt"><div><input data-k="amt" value="${esc(v(r,'amt'))}" inputmode="decimal"><select data-k="cur"><option ${v(r,'cur')==='$'?'selected':''}>$</option><option ${v(r,'cur')==='₪'?'selected':''}>₪</option></select></div></td>
       <td class="nt"><input data-k="note" value="${esc(v(r,'note'))}" placeholder="—"></td>

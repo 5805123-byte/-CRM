@@ -5707,7 +5707,7 @@ function bldAutoPaid(d,x){
 }
 function bldPaid(d,x){return amtNum(x.paid)+bldAutoPaid(d,x);}
 function buildTotals(d){let price=0,paid=0;(d.building||[]).forEach(x=>{price+=amtNum(x.amount);paid+=bldPaid(d,x);});return {price,paid,owed:price-paid};}
-const BLD_SECTIONS=['הבניין הקדוש — כללי','היכל בית המדרש','עזרת נשים','היכלות','חלונות','שולחנות','עמודים','מטרים','ארונות ספרים','מבוא ההיכל — הלובי','היכל הכנסת אורחים','מקווה'];
+const BLD_SECTIONS=['הבניין הקדוש','מבוא ההיכל – הלובי','בית המדרש','עזרת נשים הקטנה – לתפילות ימות החול','המקווה הקדוש','היכל הרשב"י והיכל בעל השדה','אידרא רבה – היכל השיעורים והתפילה','ארונות הספרים','חדר קפה','הבניין הקדוש — כללי','היכל בית המדרש','עזרת נשים','היכלות','חלונות','שולחנות','עמודים','מטרים','ארונות ספרים','מבוא ההיכל — הלובי','היכל הכנסת אורחים','מקווה'];
 function bldSecList(){const s=new Set(BLD_SECTIONS);(DB||[]).forEach(d=>(d.building||[]).forEach(x=>{if(x.section)s.add(x.section);}));return [...s];}
 function cardBuilding(d,body){
   const t=buildTotals(d),cur=curSym(d);
@@ -5780,6 +5780,30 @@ function renderBldgHQ(){
   </div>`;
   view.querySelectorAll('.bhqf .chip').forEach(b=>b.onclick=()=>{bhqF=b.dataset.f;renderBldgHQ();});
   view.querySelectorAll('.bhqrow').forEach(el=>el.onclick=()=>{const d=DB.find(x=>x.id==el.dataset.d);if(d)openDonor(d,'building');});
+  bhqUnlinked();
+}
+// הקדשות מדף "נוסחי ההקדשות" שאין להן עדיין כרטיס תורם — שיוך בבחירת התורם
+async function bhqUnlinked(){
+  let r=null;try{r=await api('GET','/api/building/unlinked');}catch(e){}
+  const rows=(r&&r.rows)||[];const box=view.querySelector('.bhq');if(!box||!rows.length)return;
+  const money=n=>'$'+Math.round(n).toLocaleString();
+  const opts=(DB||[]).map(d=>`<option value="${esc(((d.last||'')+' '+(d.first||'')).trim())} #${d.id}">`).join('');
+  const el=document.createElement('div');el.className='bhqsec bhqun';
+  el.innerHTML=`<h3>🔗 לא משויכים לכרטיס תורם <small>${rows.length} · השם בדף לא התאים בבירור לכרטיס אחד — בחר את התורם והוא ישויך</small></h3>
+    <datalist id="bhqdl">${opts}</datalist>
+    ${rows.map(x=>`<div class="bhqrow" style="cursor:default">
+      <div class="bhqobj"><b>${esc(x.object||'—')}</b><span>${esc(x.section||'')}</span></div>
+      <div class="bhqwho">${esc(x.who||'')}</div>
+      <div class="bhqamt">${amtNum(x.amount)?money(amtNum(x.amount)):''}</div>
+      <div class="bhqded">${esc(x.dedication||'')}</div>
+      <div style="grid-column:1/-1;display:flex;gap:6px"><input list="bhqdl" class="bhqpick" data-id="${x.id}" placeholder="🔍 בחר את התורם — הקלד שם" style="flex:1"><button class="btn sm bhqlink" data-id="${x.id}">שייך</button></div>
+    </div>`).join('')}`;
+  box.insertBefore(el,box.querySelector('.bhqsec')||null);
+  el.querySelectorAll('.bhqlink').forEach(b=>b.onclick=async()=>{
+    const inp=el.querySelector('.bhqpick[data-id="'+b.dataset.id+'"]');const m=String(inp.value||'').match(/#(\d+)\s*$/);
+    if(!m){toast('בחר תורם מהרשימה');inp.focus();return;}
+    b.disabled=true;const x=await api('POST','/api/building/link',{id:+b.dataset.id,donor_id:+m[1]});
+    if(x&&x.ok){toast('שויך ✓');await load();renderBldgHQ();}else{b.disabled=false;toast((x&&x.error)||'לא נשמר');}});
 }
 // סיכום לפי ייעוד — כמה נתרם לכל דבר, השנה ובסך הכל
 // "עבור מה" שמוצג בראש הכרטיס — הייעוד שנקבע לתורם, ואם לא נקבע אז לפי התרומות בפועל
@@ -7548,7 +7572,7 @@ function cardDetails(d,body){
     ${catTotalsHTML(d)}
     ${give}
     ${(d.parnes||[]).length?`<details class="dsec"><summary>🗓️ ימים משובצים (פרנס / קפה / בוקר)${(d.parnes||[]).some(p=>p.status==='suggested')?' <small class="suggn">· יש הצעה לשנה הבאה</small>':''}</summary><div id="parnes"></div></details>`:''}
-    ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון — האברכים שהוא מחזיק</summary><div id="partners"></div>
+    ${d.tier==='יששכר_זבולון'?`<details class="dsec"><summary>🤝 יששכר־זבולון תשפ"ז — האברכים שהוא מחזיק</summary><div id="partners"></div>
       <button type="button" class="opnlink" id="pa_opn" style="margin-top:6px">➕ הוסף עוד אברך</button>
       <div class="opnbox hidden" id="pa_opnbox">
         <div class="addrow"><select id="pa_name">${avOpts('')}</select></div>
@@ -10162,7 +10186,7 @@ function renderPartners(d){
   const shtarHTML=`<div class="izshtar iztop"><div class="izshtar-t">📄 שטר שותפות יששכר־זבולון:</div><div class="avfiles">${izfiles.map(fileChip).join('')||'<span class="hintxt">אין שטר עדיין — אפשר להעלות כאן</span>'}<label class="filebtn">📎 העלה שטר הסכם<input type="file" accept="application/pdf,image/*" class="pshtar" hidden></label></div></div>`;
   // מאיר: "כשתורם מחזיק 2 אברכים או יותר — שכל האברכים שלומדים בשבילו יהיו
   // על אותו דף, גם במקופל וגם בדף שלם, וגם כל אברך דף בפני עצמו"
-  el.innerHTML=shtarHTML+(act.length>1?`<div class="addrow" style="margin-bottom:8px">
+  el.innerHTML=shtarHTML+izYearsCardHTML(d)+(act.length>1?`<div class="addrow" style="margin-bottom:8px">
       <button class="btn sm ghost izall" data-mode="full">🕯️ דף אחד לתורם — כל ${act.length} האברכים</button>
       <button class="btn sm ghost izsep">🕯️ כל אברך בדף נפרד</button></div>`:'')
     +act.map(p=>`<div class="pledge" style="flex-direction:column;align-items:stretch;gap:4px">
@@ -10254,6 +10278,7 @@ function renderPartners(d){
   });
   // מאיר: "אני מנסה להכניס תאריך התחלה… זה נותן לי לכתוב לבד במקום לבחור מהלוח
   // העברי" — התאריך העברי נבחר מיום/חודש/שנה, והלועזי מתעדכן ממנו (וגם להפך).
+  fillIzYearsCard(d);
   el.querySelectorAll('.izall').forEach(b=>b.onclick=()=>window.open('/iz-slips?donor='+d.id+'&grp=donor&mode='+b.dataset.mode,'_blank'));
   el.querySelectorAll('.izsep').forEach(b=>b.onclick=()=>window.open('/iz-slips?donor='+d.id+'&grp=av&mode=full','_blank'));
   el.querySelectorAll('.pstart').forEach(box=>box.querySelectorAll('select').forEach(sl=>sl.onchange=async()=>{
@@ -12326,8 +12351,9 @@ async function renderAvByAv(){
   const st=AVSTAT||{total:AVLIST.length,free:AVLIST.filter(a=>!a.holders.length).length};
   const q2=String(q||'').trim();
   const rows=avFiltered();
-  view.innerHTML=`<h2 class="izttl" style="margin:2px 2px 8px;color:#7a1f1f;font-size:20px">יששכר־זבולון תשפ"ז</h2><div class="avbar">
-      <button class="btn sm ghost" id="avizold" title="הרשימה הקודמת — כמו שהייתה לפני תשפ&quot;ז (לקריאה ולהדפסה)">📂 תשפ"ה–תשפ"ו</button><button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcertlist" title="רשימה לפי שמות האברכים — לעריכה ולהדפסה, למי להכין תעודה חדשה">📜 רשימה לתעודות</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button>
+  view.innerHTML=izYearHeadHTML()+`<div class="avbar">
+      <button class="btn sm" id="avizfull" title="כל רשימת יששכר־זבולון תשפ&quot;ז, כולל מה שלא להדפסה">📄 רשימה מלאה תשפ"ז</button><button class="btn sm" id="avizprt" style="background:#7a1f1f;color:#fff" title="הטבלה שנשלחה לגרפיקאי — רק מי שמקבל תעודה">🖨️ להדפסה שטרות כסליו תשפ"ז</button>
+      <button class="btn sm ghost" id="avizhist">🕘 היסטוריה</button><button class="btn sm ghost" id="avprint">🖨️ הדפסה</button><button class="btn sm" id="avslips">🕯️ דפי קוויטל</button><button class="btn sm" id="avcertlist" title="רשימה לפי שמות האברכים — לעריכה ולהדפסה, למי להכין תעודה חדשה">📜 רשימה לתעודות</button><button class="btn sm" id="avcards2">👥 לפי תורמים</button>
       <button class="btn sm" id="avymbtn2" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
     <div class="avstat">👨‍🎓 <b>${st.total}</b> אברכים בכולל ·
       <button type="button" id="avfreebtn" class="avfreebtn${avFreeOnly?' on':''}"
@@ -12348,8 +12374,52 @@ async function renderAvByAv(){
   document.getElementById('avprint').onclick=()=>{avView='avprint';render();};
   document.getElementById('avslips').onclick=()=>window.open('/iz-slips','_blank');
   document.getElementById('avcertlist').onclick=()=>window.open('/iz-certs','_blank');
-  document.getElementById('avizold').onclick=()=>window.open('/iz-5786','_blank');
+  wireIzYears();
+  document.getElementById('avizfull').onclick=()=>window.open('/api/iz/doc/full','_blank');
+  document.getElementById('avizprt').onclick=()=>window.open('/api/iz/doc/print','_blank');
   wireByAv();
+}
+// 📅 מאיר: "תכניס למערכת ברשימת האברכים בלשונית יששכר זבולון על תשפ"ז, שהקודם יישאר ויהיה כתוב עליו בכותרת
+// תשפ"ה–תשפ"ו… שרואים מיד באופן יפה, וגם אצל התורמים… וגם אצל כל תורם בכרטיס שלו ממתי מתחיל החדש, והיסטוריה של
+// השנים הקודמות — הכל מסונכרן". הרשימה החדשה = השותפויות עצמן (אותו מקור לאברכים, לתורמים ולכרטיס); הקודמת =
+// הצילום שנשמר לפני העדכון (/api/iz/archive).
+let IZARCH=null, izOld=false, izOldBy='av';
+async function loadIzArch(){if(IZARCH)return IZARCH;try{const r=await api('GET','/api/iz/archive');if(r&&r.ok)IZARCH=r;}catch(e){}return IZARCH||{rows:[]};}
+function izYearHeadHTML(){
+  return `<div class="izyears"><button type="button" class="izy${izOld?'':' on'}" data-old="0"><b>🤝 יששכר־זבולון תשפ"ז</b><small>הרשימה הנוכחית</small></button>
+    <button type="button" class="izy${izOld?' on':''}" data-old="1"><b>📂 תשפ"ה–תשפ"ו</b><small>הרשימה הקודמת</small></button></div>`;}
+function wireIzYears(){view.querySelectorAll('.izy').forEach(b=>b.onclick=()=>{const o=b.dataset.old==='1';if(o===izOld)return;izOld=o;render();});}
+async function renderIzOld(){
+  view.innerHTML=izYearHeadHTML()+'<div class="cnt">טוען את הרשימה הקודמת…</div>';wireIzYears();
+  const r=await loadIzArch(), rows=(r.rows||[]).slice(), q2=String(q||'').trim();
+  const L=rows.filter(x=>!q2||(x.av+' '+x.donor).includes(q2));
+  const key=izOldBy==='av'?'av':'donor', oth=izOldBy==='av'?'donor':'av';
+  L.sort((a,b)=>(a[key]||'').localeCompare(b[key]||'','he')||(a[oth]||'').localeCompare(b[oth]||'','he'));
+  let prev='',i=0;
+  const body=L.map(x=>{const first=x[key]!==prev;prev=x[key];if(first)i++;
+    return `<tr class="${first?'izof':''}"><td class="n">${first?i:''}</td><td><b>${first?esc(x[key]):''}</b></td><td${izOldBy==='donor'?'':` class="izodn" data-did="${x.did}"`}>${esc(x[oth])}</td><td>${esc(x.start||'')}</td><td>${esc(x.amt||'')}</td></tr>`;}).join('');
+  view.innerHTML=izYearHeadHTML()+`<div class="avbar"><button class="btn sm${izOldBy==='av'?'':' ghost'}" data-by="av">👨‍🎓 לפי אברכים</button><button class="btn sm${izOldBy==='donor'?'':' ghost'}" data-by="donor">👥 לפי תורמים</button><button class="btn sm ghost" id="izoprint">🖨️ הדפסה</button></div>
+    <div class="avstat">📂 <b>${esc(r.title||'יששכר־זבולון תשפ"ה–תשפ"ו')}</b> · ${new Set(rows.map(x=>x.av)).size} אברכים · ${rows.length} שותפויות · כמו שהייתה לפני תשפ"ז — לקריאה בלבד${q2?` · מוצגים ${L.length}`:''}</div>
+    <div class="avwrap"><table class="izotbl"><thead><tr><th>#</th><th>${izOldBy==='av'?'האברך':'התורם (הזבולון)'}</th><th>${izOldBy==='av'?'הזבולון':'האברך'}</th><th>מתאריך</th><th>סכום</th></tr></thead><tbody>${body||'<tr><td colspan="5" class="empty">אין תוצאות</td></tr>'}</tbody></table></div>`;
+  wireIzYears();
+  view.querySelectorAll('[data-by]').forEach(b=>b.onclick=()=>{izOldBy=b.dataset.by;renderIzOld();});
+  document.getElementById('izoprint').onclick=()=>window.open('/iz-5786','_blank');
+  view.querySelectorAll('.izodn').forEach(t=>t.onclick=()=>{const d=DB.find(y=>y.id==t.dataset.did);if(d)openDonor(d);});
+}
+// בכרטיס התורם: ממתי מתחיל היששכר־זבולון החדש (תשפ"ז), ומה היה בשנים הקודמות
+function izYearsCardHTML(d){
+  const act=(d.partners||[]).filter(p=>p.active!=0&&String(p.avreich||'').trim());
+  const now=act.length?`<div class="izyc"><div class="izyc-t">📅 יששכר־זבולון תשפ"ז — ממתי מתחיל</div>${act.map(p=>`<div class="izrow"><span>👨‍🎓 ${esc(p.avreich)}</span><b>${esc(p.start_date||'—')}</b></div>`).join('')}</div>`:'';
+  return now+`<div class="izyc old" id="izyc_old_${d.id}"></div>`;
+}
+async function fillIzYearsCard(d){
+  const r=await loadIzArch();const el=document.getElementById('izyc_old_'+d.id);if(!el)return;
+  const mine=(r.rows||[]).filter(x=>x.did==d.id);
+  const past=(d.partners||[]).filter(p=>p.active==0&&String(p.avreich||'').trim());
+  if(!mine.length&&!past.length){el.remove();return;}
+  el.innerHTML=`<details><summary>📂 שנים קודמות (${mine.length+past.length})</summary>
+    ${mine.length?`<div class="izyc-s">תשפ"ה–תשפ"ו</div>`+mine.map(x=>`<div class="izrow"><span>👨‍🎓 ${esc(x.av)}</span><b>${esc(x.start||'—')}${x.amt?(' · '+esc(x.amt)):''}</b></div>`).join(''):''}
+    ${past.length?`<div class="izyc-s">הסתיימו</div>`+past.map(p=>`<div class="izrow"><span>👨‍🎓 ${esc(p.avreich)}</span><b>${esc(p.start_date||'?')} — עד ${esc(p.ended_date?(hebOfIso(p.ended_date)||gregLabel(p.ended_date)):'?')}</b></div>`).join(''):''}</details>`;
 }
 // יומן כללי — כל שינוי שנעשה ביששכר־זבולון, אצל כל האברכים והתורמים
 async function renderIzHistory(){
@@ -12697,11 +12767,12 @@ function renderAvTable(){
 }
 function renderAvreich(){
   chips.innerHTML='';
+  if(izOld) return renderIzOld();
   if(avView==='table') return renderAvTable();
   if(avView==='byav') return renderAvByAv();
   if(avView==='avprint') return renderAvPrint();
   const totalAv=DB.reduce((s,d)=>s+(d.partners||[]).filter(p=>p.active!=0).length,0);
-  view.innerHTML=`<div class="avbar">
+  view.innerHTML=izYearHeadHTML()+`<div class="avbar">
       ${avSortSel('avsort')}
       <button class="btn sm" id="avbyavbtn">👨‍🎓 לפי אברכים</button><button class="btn sm" id="avtablebtn">🖨️ טבלה</button><button class="btn sm" id="avrptbtn" style="background:#6b1d1d;color:#fff">📊 דו"ח תשלומים</button>
       <button class="btn sm" id="avymbtn" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button></div>
@@ -12732,6 +12803,7 @@ function renderAvreich(){
   document.getElementById('avtablebtn').onclick=()=>{avView='table';render();};
   document.getElementById('avbyavbtn').onclick=()=>{avView='byav';render();};
   document.getElementById('avymbtn').onclick=avYmOpen;
+  wireIzYears();
   sortSel.onchange=()=>{avSort=sortSel.value;paintList();};
   paintList();
 }
@@ -15234,14 +15306,46 @@ async function avCard(name){
     MKPAY[cid]=p&&p.ok?p:{ok:false,error:(p&&p.error)||'לא נטען'};MKPAY[cid]._at=Date.now();
     const el=document.getElementById('avmkpay');if(el)el.innerHTML=mkPayHTML(cid);}
 }
+// 📋 מאיר: "לשונית מיוחדת שיש שם ממוספר את שמות האברכים העדכני לפי אלף בית שם משפחה, גם בכולל הוראה…
+// ולהדפסה, וכשזה מדפיס תמיד שיהיה בדף טור להערות בצד"
+async function renderAvRoster(){
+  const kol=stipKollel, kl=(STIP_KOL.find(x=>x[0]===kol)||['',''])[1].replace(/^\S+ /,'');
+  view.innerHTML='<div class="cnt">טוען את רשימת האברכים…</div>';
+  let r=null;try{r=await api('GET','/api/avreichim/roster?kollel='+encodeURIComponent(kol));}catch(e){}
+  if(kol!==stipKollel||stipView!=='list')return;
+  const rows=(r&&r.rows)||[], qq=String(q||'').trim();
+  const shown=qq?rows.filter(x=>(x.name+' '+x.phone).includes(qq)):rows;
+  const src=r&&r.period?('לפי המלגות של '+(r.label||r.period)):'';
+  view.innerHTML=`<div class="avbar"><button class="btn sm" id="rosprint" style="background:#7a1f1f;color:#fff">🖨️ הדפסה</button></div>
+    <div class="avstat">📋 <b>${rows.length}</b> אברכים ב${esc(kl)}${src?' · '+esc(src):''} · מסודר לפי א"ב של שם המשפחה${qq?` · מוצגים ${shown.length}`:''}</div>
+    <div class="avwrap"><table class="izotbl rostbl"><thead><tr><th style="width:36px">#</th><th>שם משפחה</th><th>שם פרטי</th><th>טלפון</th><th style="width:40%">הערות</th></tr></thead><tbody>
+    ${shown.map((x,i)=>`<tr><td class="n">${rows.indexOf(x)+1}</td><td><b>${esc(x.last)}</b></td><td>${esc(x.first)}</td><td dir="ltr" style="text-align:right">${esc(x.phone||'')}</td><td></td></tr>`).join('')||'<tr><td colspan="5" class="empty">אין אברכים ברשימה — עדיין לא נטענו מלגות חודשיות לכולל הזה</td></tr>'}
+    </tbody></table></div>`;
+  document.getElementById('rosprint').onclick=()=>{
+    const w=window.open('','_blank');if(!w){toast('הדפדפן חסם חלון — אפשר חלונות קופצים');return;}
+    const today=new Date().toLocaleDateString('he-IL');
+    w.document.write(`<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>רשימת האברכים — ${esc(kl)}</title><style>
+      @page{size:A4 portrait;margin:12mm}body{font-family:Arial,sans-serif;color:#111;font-size:13px;margin:0}
+      h1{font-size:19px;margin:0 0 2px}.sub{color:#555;font-size:12px;margin-bottom:8px}
+      table{width:100%;border-collapse:collapse}th{background:#e6e6e6;border:1px solid #888;padding:5px 6px;text-align:right}
+      td{border:1px solid #999;padding:6px;height:20px}td.n{width:28px;text-align:center;color:#444}td.nt{width:45%}
+      thead{display:table-header-group}tr{page-break-inside:avoid}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      </style></head><body><h1>רשימת האברכים — ${esc(kl)}</h1><div class="sub">${rows.length} אברכים${src?' · '+esc(src):''} · הודפס ${esc(today)}</div>
+      <table><thead><tr><th>#</th><th>שם משפחה</th><th>שם פרטי</th><th>הערות</th></tr></thead><tbody>
+      ${rows.map((x,i)=>`<tr><td class="n">${i+1}</td><td><b>${esc(x.last)}</b></td><td>${esc(x.first)}</td><td class="nt"></td></tr>`).join('')}
+      </tbody></table><script>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+    w.document.close();};
+}
 async function renderStip(){
   if(!STIP){chips.innerHTML='';view.innerHTML='<div class="cnt">טוען מלגות…</div>';await loadStip();}
   // מאיר: "איפה מופיע פה הטלפונים" — הטלפון של כל אברך (מכרטיס האברך) ליד השם
   if(!(AVLIST||[]).length)await loadAvList();
   const has=k=>STIP.some(r=>r.kollel===k);
-  chips.innerHTML=STIP_KOL.filter(([k])=>k!=='חיים טובים'||has(k)).map(([k,l])=>`<button class="chip ${stipKollel===k?'on':''}" data-k="${k}">${l}</button>`).join('')
+  // מאיר: "כולל חיים טובים נסגר — תמחק את הריבוע הזה"
+  if(stipKollel==='חיים טובים')stipKollel='חצות';
+  chips.innerHTML=STIP_KOL.filter(([k])=>k!=='חיים טובים').map(([k,l])=>`<button class="chip ${stipKollel===k?'on':''}" data-k="${k}">${l}</button>`).join('')
     +'<span style="flex-basis:100%"></span>'
-    +[['monthly','📅 מלגות חודשיות'],['holiday','🎉 מלגות חגים']].concat(stipKollel==='חצות'?[['iz','🤝 יששכר־זבולון']]:[]).map(([k,l])=>`<button class="chip ${stipView===k?'on':''}" data-v="${k}">${l}</button>`).join('')
+    +[['list','📋 רשימת האברכים'],['monthly','📅 מלגות חודשיות'],['holiday','🎉 מלגות חגים']].concat(stipKollel==='חצות'?[['iz','🤝 יששכר־זבולון']]:[]).map(([k,l])=>`<button class="chip ${stipView===k?'on':''}" data-v="${k}">${l}</button>`).join('')
     // מאיר: "אני רוצה את זה כאן בלשונית אברכים, זה הכי ריאלי" — השיחה הקולית לכל האברכים מכאן
     +'<button class="chip" id="stymbtn" style="background:#2d2a6e;color:#fff" title="שיחה קולית לכל האברכים דרך ימות המשיח — עם השם של כל אחד, והקשה 1 להרשמה ותשלום">📞 הודעה קולית לאברכים</button>'
     +'<button class="chip" id="stpaidbtn" title="מי שילם בנדרים פלוס מאז שעה מסוימת, בסכום מסוים (למשל 20 ₪ על מירון)">💳 מי שילם בנדרים פלוס</button>';
@@ -15252,6 +15356,7 @@ async function renderStip(){
     chips.querySelectorAll('.chip[data-k]').forEach(c=>c.onclick=()=>{stipKollel=c.dataset.k;if(stipKollel!=='חצות')stipView='monthly';renderStip();});
     chips.querySelectorAll('.chip[data-v]').forEach(c=>c.onclick=()=>{stipView=c.dataset.v;renderStip();});
     {const sb=document.getElementById('stymbtn');if(sb)sb.onclick=avYmOpen;const pb=document.getElementById('stpaidbtn');if(pb)pb.onclick=()=>avPaidOpen();}return;}
+  if(stipView==='list')return renderAvRoster();
   const rows=STIP.filter(r=>r.kollel===stipKollel&&r.kind===stipView);
   const qq=String(q||'').trim();
   // קבוצות לפי תקופה — חודשים מהחדש לישן; חגים לפי סדר הוספה (החדש למעלה)
