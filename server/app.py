@@ -16460,6 +16460,7 @@ AUTH_HOURS_ROLE = {'gabbai': 30 * 24, 'comm': 30 * 24, 'parnes': 30 * 24, 'admin
 def auth_hours(role):
     return AUTH_HOURS_ROLE.get(role, AUTH_HOURS)
 AUTH_PUBLIC = ('/api/yemot/ivr/', '/api/yemot/mkgroup/', '/api/yemot/mkrec/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/',
+               '/api/mikveh/ops',   # 🔧 פעולת תחזוקה למקווה — מוגנת בטוקן סודי (MIKVEH_OPS_TOKEN), בלי כניסת מנהל
                '/mcp/',   # ✍️ חיבור ל-Claude (הודעות ליומן) — מוגן בטוקן הסודי שבכתובת (CAL_MCP_TOKEN)
                '/u/', '/api/u/',   # קישור אישי לתורם לעדכון כרטיס (חתום, 30 יום) — בלי כניסה
                '/d/',   # אותו קישור באנגלית בקוד קצר (כמו /k/ בעברית)
@@ -21162,34 +21163,60 @@ def _mk_sub_valid(c):
 
 
 def mk_bachur_reset(con, reason=None, clear_seen=False):
-    """🔓 ביטול כל החסימות האוטומטיות שלנו — פותח כל מי שאנחנו חסמנו בקבוצות הבחורים.
-    clear_seen=True גם מאפס את הזיכרון של הכניסות שטופלו (כך שהמדיניות תיבדק מחדש)."""
+    """🔓 ביטול כל החסימות בקבוצות הבחורים — פותח ללא תנאי כל מי שחסום בקבוצות שסומנו (לא רק מה שאנחנו חסמנו,
+    כי חסימות ישנות עשויות להיות עם נוסח אחר). טרי מהמקווה. לא חוסם מחדש את מי שכבר נכנס — מסמן את כל הכניסות
+    הקיימות כ'טופלו' כך שרק כניסה חדשה תחסום שוב."""
     import mikveh as _mk
-    reason = reason or mk_bachur_block_cfg(con)['reason']
     bg = mk_bachur_group_ids(con)
+    if not bg:
+        return 0
     try:
         held = set(str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or []))
     except Exception:
         held = set()
     cand = set(held)
+    members = {}
     try:
-        for c in _mk.clients():
-            if str(c.get('groupId') or '') in bg and c.get('isBlocked') and str(c.get('blockReason') or '') == reason:
-                cand.add(str(c.get('id')))
-    except Exception:
-        pass
+        for c in _mk.clients(fresh=True):                      # טרי — לראות בדיוק מי חסום עכשיו
+            if str(c.get('groupId') or '') in bg and _mk.visible(c):
+                members[str(c.get('id'))] = c
+                if c.get('isBlocked'):
+                    cand.add(str(c.get('id')))                 # ללא תנאי — כל מי שחסום בקבוצה
+    except Exception as e:
+        print('  mk bachur reset list error:', e)
     opened = 0
     for cid in cand:
         try:
             _mk.set_blocked(cid, False, '')
             con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                        (cid, now_iso(), 'block', '🔓 חסימה אוטומטית בוטלה (איפוס)'))
+                        (cid, now_iso(), 'block', '🔓 חסימה בוטלה (ביטול כל החסימות בקבוצות הבחורים)'))
             opened += 1
         except Exception as e:
             print('  mk bachur reset error:', cid, e)
     kv_set(con, 'mk_bachur_blocked', '[]')
     if clear_seen:
         kv_set(con, 'mk_bachur_seen', '{}')
+    else:
+        # לסמן את כל הכניסות-בלי-מנוי הקיימות כ'טופלו', כדי שהמדיניות לא תחסום אותם שוב מיד (רק כניסה חדשה)
+        try:
+            seen = json.loads(kv_get(con, 'mk_bachur_seen', '') or '{}') or {}
+        except Exception:
+            seen = {}
+        try:
+            d1 = today_iso()[:10]; d0 = (il_now().date() - datetime.timedelta(days=45)).isoformat()
+            for r in (_mk.activity_log(d0, d1) or []):
+                cid = str(r.get('clientId') or '')
+                if cid not in members:
+                    continue
+                if str(r.get('id') or '').startswith('entrance:') and r.get('status') == 1 \
+                        and (r.get('subLine') or {}).get('key') != 'Activity_Log_SubLine_SubscriptionValidUntil':
+                    t = str(r.get('createdAt') or '')
+                    if t > str(seen.get(cid, '')):
+                        seen[cid] = t
+            kv_set(con, 'mk_bachur_seen', json.dumps(seen, ensure_ascii=False))
+            kv_set(con, 'mk_bachur_policy', 'v2')
+        except Exception as e:
+            print('  mk bachur reset seen error:', e)
     con.commit()
     return opened
 
@@ -27128,6 +27155,36 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             return self._send(200, {'ok': True, 'text': ' '.join('[%s]' % x[3:] if x.startswith('z-T') else x for x in segs),
                                     'ivr': '.'.join(x if x.startswith('z-') else 't-' + x for x in segs)})
+        if self.path.split('?')[0] == '/api/mikveh/ops':
+            # 🔧 פעולת תחזוקה מרחוק, מוגנת בטוקן סודי (MIKVEH_OPS_TOKEN ב-Render). בלי הטוקן — חסום.
+            # action=status — כמה חסומים בקבוצות הבחורים; action=unblock_bachur — לבטל את כל החסימות בקבוצות האלה.
+            import mikveh as _mk
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            tok = (qs.get('token') or [self.headers.get('X-Ops-Token') or ''])[0]
+            want = (os.environ.get('MIKVEH_OPS_TOKEN') or '').strip()
+            if not want or not tok or not hmac.compare_digest(str(tok), want):
+                return self._send(403, {'ok': False, 'error': 'forbidden'})
+            action = (qs.get('action') or ['status'])[0]
+            con = db()
+            try:
+                bg = mk_bachur_group_ids(con)
+                if not bg:
+                    return self._send(200, {'ok': True, 'action': action, 'note': 'לא סומנו קבוצות בחורים', 'blocked': 0})
+                reset = None
+                if action == 'unblock_bachur':
+                    reset = mk_bachur_reset(con, clear_seen=False)
+                try:
+                    blocked = [{'id': c.get('id'), 'name': ((c.get('firstName') or '') + ' ' + (c.get('lastName') or '')).strip(),
+                                'reason': c.get('blockReason') or ''}
+                               for c in _mk.clients(fresh=True)
+                               if str(c.get('groupId') or '') in bg and _mk.visible(c) and c.get('isBlocked')]
+                except Exception as e:
+                    blocked = []
+                    print('  mk ops list error:', e)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'action': action, 'unblocked': reset,
+                                    'still_blocked': len(blocked), 'blocked': blocked[:100]})
         if self.path.split('?')[0] == '/api/mikveh/status':
             # מאיר: "צריך לחבר את מערכת המקווה" — בדיקה חיה: כניסה + פרטי המועדון
             import mikveh as _mk

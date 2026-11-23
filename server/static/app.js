@@ -2039,7 +2039,7 @@ async function mkAuditWin(){
     bbStatus(y);if(st){st.style.color='#1e7a3c';st.textContent='✓ נחסמו '+(y.ran_blocked||0)+(y.ran_reset?' · בוטלו '+y.ran_reset+' (מעבר מדיניות)':'')+' · נבדקו '+(y.ran_offenders||0);}
     toast('הורץ ✓');};}
   {const rb=document.getElementById('bb_reset');if(rb)rb.onclick=async()=>{const st=document.getElementById('bb_st');
-    if(!await uiConfirm('לבטל את כל החסימות שהמערכת עשתה? כל מי שהמערכת חסמה ייפתח עכשיו (חסימות ידניות שלך לא ייגעו).','🔓 כן, לבטל הכל','ביטול'))return;
+    if(!await uiConfirm('לבטל את כל החסימות בקבוצות הבחורים? כל מי שחסום כרגע בקבוצות שסימנת ייפתח עכשיו — כולל חסימות ידניות שבקבוצות האלה. (רק כניסה חדשה בפעימות בלי מנוי תחסום שוב.)','🔓 כן, לבטל הכל','ביטול'))return;
     rb.disabled=true;if(st){st.style.color='#555';st.textContent='⏳ מבטל…';}
     const y=await api('POST','/api/mikveh/bachur_block',{reset:true,reason:bbReason()});rb.disabled=false;
     if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
