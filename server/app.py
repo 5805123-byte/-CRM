@@ -16519,6 +16519,7 @@ AUTH_PUBLIC = ('/api/yemot/ivr/', '/api/yemot/mkgroup/', '/api/yemot/mkrec/', '/
                '/u/', '/api/u/',   # קישור אישי לתורם לעדכון כרטיס (חתום, 30 יום) — בלי כניסה
                '/d/',   # אותו קישור באנגלית בקוד קצר (כמו /k/ בעברית)
                '/k/', '/api/k/',   # 🔗 הקישור האישי בעברית — קהילה / תורמים בארץ (חתום, 30 יום) — בלי כניסה
+               '/give', '/api/give/',   # 🌐 דף התרומה הכללי באנגלית — לכל תורם, ישן או חדש
                '/o.png')   # פיקסל מעקב הפתיחות — נטען אצל מי שקיבל את המייל, בלי כניסה (חתום בטוקן)   # תחיליות; הכניסה עצמה מטופלת לפני
 # כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
 #     GOOGLE_CLIENT_ID     מזהה הלקוח (…apps.googleusercontent.com) — ציבורי, בלי סוד
@@ -20025,6 +20026,113 @@ def cardlink_charge(con, did, b):
                         alt=('ref-%s' % res.get('reference_number')) if res.get('reference_number') else '')
     return {'ok': True, 'amount': amt_s, 'auth': out.get('auth') or out.get('ref') or '', 'night': nres if (nres and nres.get('ok')) else None,
             'night_error': (nres or {}).get('error') if (nres and not nres.get('ok')) else ''}
+
+
+_GIVE_HITS = {}
+
+
+def give_page(base=''):
+    """🌐 מאיר: "קישור לתורם בלי קשר אם הוא תורם ישן או חדש… שיוכל לבחור מה לתרום, כרטיס אשראי שיחויב מיד, לילה
+    בכולל, יששכר זבולון אברך לשנה, שמות לקוויטל עד 4 עם שם האמא, אימייל לקבלה אוטומטית וטלפון… באנגלית, מעוצב
+    ולא ארוך". הכרטיס בטופס המאובטח של בנק ווסט (Banquest) — המספר לא עובר אצלנו."""
+    import banquest as _bq
+    key, js = _bq.token_key(), _bq.token_js()
+    card = ('<div id="card" class="cardbox"></div><div class="small">&#128274; Your card is entered in the encrypted form of our payment '
+            'processor and is sent directly to them — it never passes through or is stored on our systems.</div>'
+            if key else '<div class="warn">The secure card form is temporarily unavailable. Please contact us.</div>')
+    t = open(os.path.join(HERE, 'give_page.html'), encoding='utf-8').read()
+    og = ('<meta name="description" content="Secure online donation to Kollel Chatzos — Torah learning every night at Chatzos.">'
+          '<meta property="og:title" content="Kollel Chatzos · Secure Online Donation">'
+          '<meta property="og:description" content="Donate · Dedicate a night of learning · Yissachar–Zevulun partnership · Names for prayer">'
+          '<meta property="og:image" content="%s/kl_og_en.png?v=1"><meta property="og:type" content="website">' % base)
+    return (t.replace('{{OG}}', og).replace('{{CARD}}', card).replace('{{KEY}}', json.dumps(key or '')).replace('{{JS}}', json.dumps(js))
+             .replace('{{LOGO}}', 'data:image/png;base64,' + base64.b64encode(letterhead_logo(300)).decode('ascii')))
+
+
+def give_donor(con, b):
+    """תורם לפי המייל או הטלפון (התאמה אחת בלבד) — ואם אין, כרטיס חדש מהפרטים שמילא."""
+    em = str(b.get('email') or '').strip().lower()[:120]
+    ph = re.sub(r'\D', '', str(b.get('phone') or ''))
+    hit = []
+    for r in con.execute("SELECT id,email,phone FROM donors"):
+        if em and em in [x.lower() for x in emails_of(r['email'] or '')]:
+            hit.append(r['id'])
+    if len(set(hit)) != 1 and len(ph) >= 9:
+        hit = [r['id'] for r in con.execute("SELECT id,phone FROM donors") if ph[-9:] in re.sub(r'\D', '', r['phone'] or '')]
+    if len(set(hit)) == 1:
+        did = hit[0]
+        d = con.execute("SELECT email,phone FROM donors WHERE id=?", (did,)).fetchone()
+        if em and em not in [x.lower() for x in emails_of(d['email'] or '')]:
+            con.execute("UPDATE donors SET email=TRIM(COALESCE(email,'') || CASE WHEN COALESCE(email,'')='' THEN '' ELSE ', ' END || ?) WHERE id=?", (em, did))
+        if ph and not (d['phone'] or '').strip():
+            con.execute("UPDATE donors SET phone=? WHERE id=?", (str(b.get('phone') or '').strip()[:40], did))
+        return did, False
+    first, last = str(b.get('first') or '').strip()[:60], str(b.get('last') or '').strip()[:60]
+    us = ph.startswith('1') or (len(ph) == 10 and not ph.startswith('0'))
+    cur = con.cursor()
+    cur.execute("INSERT INTO donors(last,first,english,email,phone,addr,region,tier) VALUES(?,?,?,?,?,?,?,?)",
+                (last, first, (first + ' ' + last).strip(), em, str(b.get('phone') or '').strip()[:40], str(b.get('addr') or '').strip()[:200],
+                 'us' if us else '', 'קוויטל_זמנים'))
+    did = cur.lastrowid
+    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                (did, today_iso(), 'קישור', '🌐 תורם חדש מדף התרומה האונליין', '', now_iso()))
+    return did, True
+
+
+def give_charge(con, b, ip=''):
+    """חיוב מדף התרומה הכללי: תורם (קיים או חדש) → חיוב מיד בכרטיס שהוקלד עכשיו → שמות לקוויטל → קבלה במייל."""
+    now = time.time()
+    hits = [t for t in _GIVE_HITS.get(ip, []) if now - t < 3600]
+    if len(hits) >= 8:
+        return {'ok': False, 'error': 'Too many attempts. Please contact our office.'}
+    _GIVE_HITS[ip] = hits + [now]
+    kind = str(b.get('kind') or 'donate')
+    if not str(b.get('first') or '').strip() or not str(b.get('last') or '').strip():
+        return {'ok': False, 'error': 'Please enter your name.'}
+    if not re.match(r'^\S+@\S+\.\S+$', str(b.get('email') or '').strip()):
+        return {'ok': False, 'error': 'Please enter your email.'}
+    amt = 480 if kind == 'night' else (1000 if kind == 'iz' else round(_amt2(b.get('amount')), 2))
+    did, new = give_donor(con, b)
+    con.commit()
+    purpose = {'night': '', 'iz': 'Yissachar-Zevulun partnership — first month'}.get(kind, 'Donation — online page')
+    r = cardlink_charge(con, did, dict(b, amount=amt, purpose=purpose))
+    if not r.get('ok'):
+        return r
+    dn = con.execute("SELECT id FROM donations WHERE donor_id=? ORDER BY id DESC LIMIT 1", (did,)).fetchone()
+    if dn and kind == 'iz':
+        con.execute("UPDATE donations SET category='יששכר־זבולון' WHERE id=?", (dn['id'],))
+        con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                    (did, today_iso(), 'followup', '🤝 נרשם מהדף האונליין ליששכר־זבולון $1,000 לחודש לשנה — החודש הראשון נגבה; להקים הוראת קבע ולשבץ אברך'))
+    # 📜 שמות לקוויטל (עד 4, עם שם האם)
+    nm = []
+    for x in (b.get('names') or [])[:4]:
+        if isinstance(x, dict) and str(x.get('name') or '').strip():
+            n, m = str(x.get('name') or '').strip()[:80], str(x.get('mother') or '').strip()[:80]
+            heb = bool(re.search(r'[֐-׿]', n + m))
+            nm.append(n + ((' בן/בת ' if heb else ' ben/bas ') + m if m else ''))
+    if nm:
+        tier = (con.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone()['tier'] or '') or 'קוויטל_זמנים'
+        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,?,?,?)", (did, '', '\n'.join(nm), tier))
+        con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                    (did, today_iso(), 'קישור', '📜 שמות לקוויטל מהדף האונליין: ' + ' · '.join(nm), '', now_iso()))
+    # 🧾 קבלה אוטומטית למייל שמילא
+    sent = ''
+    if dn:
+        try:
+            doc = receipt_issue(con, dn['id'], 'us', send=False)
+            rs = receipt_send(con, doc['id'], email=str(b.get('email') or '').strip()) if doc else {'ok': False}
+            if rs and rs.get('ok'):
+                sent = str(b.get('email') or '').strip()
+        except Exception as e:
+            print('  give receipt error:', e)
+        if not sent:
+            con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                        (did, today_iso(), 'email', '🧾 הקבלה מהדף האונליין לא נשלחה אוטומטית — לשלוח'))
+    con.commit()
+    if new:
+        cardlink_alert(con, did, '• 🌐 תורם חדש מדף התרומה האונליין')
+    r['receipt'] = sent
+    return r
 
 
 def cardlink_note(con, did, b):
@@ -24273,6 +24381,23 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, build_ics().encode('utf-8'), 'text/calendar')
         if self.path.split('?')[0] == '/donate':
             return self._send(200, open(os.path.join(STATIC, 'donate.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] in ('/give', '/give/'):
+            # 🌐 דף התרומה הכללי — ?amount=180 ממלא סכום מראש
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                pre = max(0, min(100000, int(float((qs.get('amount') or ['0'])[0] or 0))))
+            except ValueError:
+                pre = 0
+            base = 'https://' + (self.headers.get('Host') or 'crm-mr9w.onrender.com')
+            return self._send(200, give_page(base).replace('{{AMOUNT}}', str(pre)).encode('utf-8'), 'text/html')
+        if self.path.split('?')[0] == '/api/give/month':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            con = db()
+            try:
+                r = cardlink_month(con, 0, (qs.get('m') or [''])[0], (qs.get('y') or [''])[0])
+            finally:
+                con.close()
+            return self._send(200, r or {'ok': False})
         if self.path.split('?')[0] == '/receipt':
             return self._send(200, open(os.path.join(STATIC, 'receipt.html'), 'rb').read(), 'text/html')
         # רקע העמוד להדפסה — הבלאנק עם שוליים מתוחים, בלי תוכן כפול
@@ -36216,6 +36341,17 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'id': tid_})
+        if self.path == '/api/give/charge':
+            con = db()
+            try:
+                ip = (self.headers.get('X-Forwarded-For') or self.client_address[0] or '').split(',')[0].strip()
+                out = give_charge(con, b, ip)
+            except Exception as e:
+                print('  give charge error:', e)
+                out = {'ok': False, 'error': 'Something went wrong. Please contact our office.'}
+            finally:
+                con.close()
+            return self._send(200, out)
         if self.path == '/api/building/link':
             # 🏛️ שיוך הקדשה שלא שויכה — לכרטיס התורם שמאיר בחר
             try:

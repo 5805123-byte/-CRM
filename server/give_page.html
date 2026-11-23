@@ -1,0 +1,180 @@
+<!doctype html><html lang="en" translate="no" class="notranslate"><head><meta charset="utf-8"><meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kollel Chatzos · Secure Online Donation</title>{{OG}}
+<style>
+:root{--bg:#efe9db;--paper:#fffdf8;--ink:#3a2f1a;--soft:#6b6249;--wine:#7a1f1f;--gold:#9c7a2e;--line:#d9cfb5;--band:#f6f1e5;--ok:#2e7d4f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font-family:Georgia,'Times New Roman',serif;color:var(--ink)}
+.wrap{max-width:620px;margin:22px auto;background:var(--paper);border:1px solid #c9b57a;border-radius:6px;box-shadow:0 0 0 5px var(--paper),0 0 0 6px #d9c89a,0 10px 30px rgba(90,70,30,.12);overflow:hidden}
+@media(max-width:660px){.wrap{margin:10px 8px}}
+.top{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;background:var(--band);border-bottom:1px solid #e3d3a3;padding:8px 12px;font-size:13px}
+.top a{color:var(--wine);text-decoration:none;white-space:nowrap}
+.hd{text-align:center;padding:18px 16px 14px;border-bottom:1px solid #c9b57a;margin:0 22px}
+.hd img{width:70px}
+.hd h1{font-size:23px;color:var(--wine);margin:8px 0 2px;letter-spacing:.3px}
+.hd .sub{font-size:13px;letter-spacing:2px;color:var(--gold);text-transform:uppercase}
+.hd .lock{font-size:12.5px;color:var(--soft);margin-top:6px}
+.in{padding:4px 22px 24px}
+h3{font-size:16px;color:var(--wine);margin:24px 0 10px;display:flex;align-items:center;gap:8px}
+h3 .n{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--wine);color:#fff;font-size:13px}
+h3 .he{font-family:Arial,sans-serif;font-weight:normal;font-size:13px;color:var(--soft);margin-left:auto;direction:rtl}
+.opt{border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0;cursor:pointer;background:#fffdf7;transition:.12s}
+.opt.on{border-color:var(--wine);box-shadow:0 0 0 2px rgba(122,31,31,.12);background:#fffaf0}
+.opt .t{display:flex;justify-content:space-between;gap:10px;font-weight:bold;font-size:16px}
+.opt .t b{color:var(--wine);white-space:nowrap}
+.opt .d{font-size:13.5px;color:var(--soft);margin-top:3px;line-height:1.45}
+.amts{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+.amts button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:9px 0;font:inherit;font-size:15px;cursor:pointer;color:var(--ink)}
+.amts button.on{background:var(--wine);color:#fff;border-color:var(--wine)}
+label{display:block;font-size:13px;color:var(--soft);margin:10px 0 3px}
+input,textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit;font-size:16px;background:#fffdf7;color:var(--ink)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.nm{display:grid;grid-template-columns:22px 1fr 1fr;gap:6px;align-items:center;margin-top:6px}
+.nm span{font-size:12px;color:var(--soft);text-align:center}
+.nm input{padding:8px 9px;font-size:15px}
+.small{font-size:12.5px;color:var(--soft);margin-top:6px;line-height:1.45}
+.link{background:none;border:0;color:var(--wine);text-decoration:underline;font:inherit;font-size:15px;cursor:pointer;padding:8px 0 0}
+.cardbox{background:#fffdf7;border:1px solid var(--line);border-radius:8px;padding:6px 8px 0;overflow:hidden}.cardbox iframe{height:64px!important;max-height:64px}
+@media(max-width:560px){.cardbox iframe{height:132px!important;max-height:none}}
+.warn{background:#fff3cd;border:1px solid #e0c36a;border-radius:8px;padding:10px;font-size:14px}
+.go{width:100%;margin-top:16px;background:var(--wine);color:#fff;border:2px solid var(--gold);border-radius:12px;padding:15px;font:inherit;font-size:18px;font-weight:bold;cursor:pointer}
+.go:disabled{opacity:.55;cursor:default}
+.err{color:#8f2a1b;font-size:15px;margin-top:10px}.err:not(:empty){background:#fde8e4;border:1px solid #e3a094;border-radius:8px;padding:10px 12px}
+.ok{background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:16px;font-size:16px;margin-top:14px;line-height:1.5}
+.cal{background:#fffdf7;border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:10px}
+.calhd{display:flex;align-items:center;justify-content:space-between;font-weight:bold;color:var(--wine);font-size:16px}
+.calhd .he{font-family:Arial,sans-serif;font-weight:normal;font-size:13px;color:var(--soft)}
+.calnav{border:1px solid var(--line);background:#fff;color:var(--wine);border-radius:8px;padding:4px 14px;font-size:20px;cursor:pointer}
+.calgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px}
+.cd{border:1px solid var(--line);border-radius:8px;padding:6px 2px;text-align:center;font-size:12px;cursor:pointer;background:#e8f3ea;line-height:1.25}
+.cd b{display:block;font-size:16px}.cd .h{font-family:Arial,sans-serif;font-size:12px;color:var(--wine)}
+.cd.taken{background:#ececec;color:#9a9a9a;cursor:not-allowed}.cd.block{background:#f6f1e5;color:#b0a890;cursor:not-allowed}.cd.sel{outline:3px solid var(--wine)}
+.callg{font-size:11px;color:var(--soft);margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.lg{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid var(--line)}.lg.f{background:#e8f3ea}.lg.t{background:#ececec}.lg.b{background:#f6f1e5}
+.sig{margin-top:26px;border-top:1px solid #e3d3a3;padding-top:16px;text-align:center;font-size:14px;line-height:1.75;color:var(--ink)}
+.sig b{color:var(--wine);font-size:16px}.sig a{color:var(--wine)}
+.site{display:inline-block;margin-top:10px;border:1.5px solid var(--gold);border-radius:10px;padding:8px 18px;color:var(--wine);text-decoration:none;font-weight:bold}
+[hidden]{display:none!important}
+</style></head>
+<body><div class="wrap">
+<div class="top"><a href="https://www.kollelchatzot.com" target="_blank" rel="noopener">&#127760; kollelchatzot.com</a>
+  <a href="mailto:chatzot18@gmail.com">&#9993; chatzot18@gmail.com</a>
+  <a href="https://wa.me/972527628272" target="_blank" rel="noopener">&#128172; WhatsApp</a>
+  <a href="tel:+16464033750">&#128222; 1-646-403-3750</a></div>
+<div class="hd"><img src="{{LOGO}}" alt="Kollel Chatzos">
+  <h1>Secure Online Donation</h1><div class="sub">Kollel Chatzos · Eretz Yisroel</div>
+  <div class="lock">&#128274; Torah learning at the great Eis Ratzon of Chatzos — every night, for your merit</div></div>
+<div class="in">
+
+<h3><span class="n">1</span>Choose your donation<span class="he">בחירת התרומה</span></h3>
+<div class="opt on" data-k="donate"><div class="t">Donate to Kollel Chatzos<b id="a_show"></b></div>
+  <div class="amts" id="amts"><button type="button" data-a="18">$18</button><button type="button" data-a="36">$36</button><button type="button" data-a="72">$72</button><button type="button" data-a="180">$180</button><button type="button" data-a="360">$360</button><button type="button" data-a="500">$500</button><button type="button" data-a="1000">$1,000</button><button type="button" data-a="">Other</button></div>
+  <div id="a_other" hidden><label>Amount ($)</label><input id="a_amt" inputmode="decimal" placeholder="0"></div></div>
+<div class="opt" data-k="night"><div class="t">One night of learning for your merit<b>$480</b></div>
+  <div class="d">The entire Kollel learns through the night of Chatzos l'zechus you or your loved ones — for a birthday, yahrtzeit, refuah or any special occasion.</div>
+  <button type="button" class="link" id="n_open">Click here to choose a night &rsaquo;</button>
+  <div id="n_box" hidden>
+    <div class="cal"><div class="calhd"><button type="button" class="calnav" id="cal_prev">&lsaquo;</button><div id="cal_title"></div><button type="button" class="calnav" id="cal_next">&rsaquo;</button></div>
+    <div class="calgrid" id="cal_grid"></div><div class="callg"><span class="lg f"></span> available <span class="lg t"></span> taken <span class="lg b"></span> Shabbos / Yom Tov</div></div>
+    <div class="small" id="n_status"></div>
+    <label>Dedicated l'zechus / l'ilui nishmas</label><input id="n_names" placeholder="e.g. Avraham ben Sarah">
+    <label>Occasion (optional)</label><input id="n_occ" placeholder="e.g. birthday, yahrtzeit"></div></div>
+<div class="opt" data-k="iz"><div class="t">Yissachar–Zevulun partnership<b>$1,000 / month</b></div>
+  <div class="d">Sponsor an Avreich for a full year — his nightly learning at Chatzos is shared with you as a true partner. The first month is donated now; our office will contact you to arrange the monthly donation.</div></div>
+
+<h3><span class="n">2</span>Names for prayer at Chatzos<span class="he">שמות לתפילה — קוויטל</span></h3>
+<div class="small" style="margin-top:0">Up to 4 names with the mother's name — in English or Hebrew. We daven for them every night at Chatzos.</div>
+<div id="kv"></div>
+
+<h3><span class="n">3</span>Your details<span class="he">פרטים</span></h3>
+<div class="two"><div><label>First name</label><input id="first" autocomplete="given-name"></div><div><label>Last name</label><input id="last" autocomplete="family-name"></div></div>
+<div class="two"><div><label>Email — your receipt is sent here</label><input id="email" type="email" autocomplete="email"></div><div><label>Phone</label><input id="phone" type="tel" autocomplete="tel"></div></div>
+<label>Mailing address (optional)</label><input id="addr" autocomplete="street-address" placeholder="Street, City, State, ZIP">
+
+<h3><span class="n">4</span>Secure payment<span class="he">תשלום מאובטח</span></h3>
+{{CARD}}
+<button type="button" class="go" id="go">Donate now</button>
+<div class="err" id="err"></div><div class="ok" id="done" hidden></div>
+
+<div class="sig"><b>Kollel Chatzos Eretz Yisroel</b><br>
+Rabbi Yehoshua Meir Deutsch · Rosh HaKollel<br>
+&#9993; <a href="mailto:chatzot18@gmail.com">chatzot18@gmail.com</a> &nbsp;·&nbsp; &#128222; <a href="tel:+16464033750">1-646-403-3750</a><br>
+&#128172; WhatsApp &amp; phone in Israel: <a href="https://wa.me/972527628272" target="_blank" rel="noopener">+972-52-762-8272</a><br>
+<span style="font-size:12.5px;color:var(--soft)">501(c)(3) · EIN 20-0447034 · Tax-deductible receipt by email</span><br>
+<a class="site" href="https://www.kollelchatzot.com" target="_blank" rel="noopener">To visit our website, click here &rsaquo;</a></div>
+</div></div>
+<script>
+var KEY={{KEY}},HT=null,API='/api/give',PRE={{AMOUNT}};
+function mount(){if(!KEY||!window.HostedTokenization)return;try{HT=new HostedTokenization(KEY,{target:'#card',showZip:false,showFieldErrors:false,
+  styles:{card:'border:1px solid #d9cfb5;border-radius:8px;padding:8px;font-size:16px',expiryMonth:'border:1px solid #d9cfb5;border-radius:8px',
+  expiryYear:'border:1px solid #d9cfb5;border-radius:8px',cvv2:'border:1px solid #d9cfb5;border-radius:8px',labelType:'static-top'}});}
+  catch(e){document.getElementById('card').innerHTML='<div class="warn">The card form could not be loaded. Please contact us.</div>';}}
+if(KEY){var sc=document.createElement('script');sc.src={{JS}};sc.onload=mount;document.head.appendChild(sc);}
+var g=function(id){return document.getElementById(id);},v=function(id){return g(id).value.trim();};
+var K='donate',AMT=PRE||0,CAL={m:'',y:'',sel:null,data:null,loaded:false},MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function usd(a){return '$'+Number(a).toLocaleString('en-US',{maximumFractionDigits:2});}
+function amount(){return K==='night'?480:(K==='iz'?1000:AMT);}
+function paint(){var a=amount();g('a_show').textContent=K==='donate'&&AMT?usd(AMT):'';g('go').textContent=a?('Donate '+usd(a)+' now'):'Donate now';}
+// options
+Array.prototype.forEach.call(document.querySelectorAll('.opt'),function(o){o.addEventListener('click',function(e){if(e.target.closest('input,textarea,.cal,.calnav,.cd'))return;
+  K=o.dataset.k;Array.prototype.forEach.call(document.querySelectorAll('.opt'),function(x){x.classList.toggle('on',x===o);});paint();});});
+// amounts
+var AB=document.querySelectorAll('#amts button');
+function pickAmt(a){AMT=+a||0;var other=true;Array.prototype.forEach.call(AB,function(b){var on=b.dataset.a!==''&&+b.dataset.a===AMT;b.classList.toggle('on',on);if(on)other=false;});
+  if(other&&AMT){AB[AB.length-1].classList.add('on');g('a_other').hidden=false;g('a_amt').value=AMT;}paint();}
+Array.prototype.forEach.call(AB,function(b){b.onclick=function(){K='donate';if(b.dataset.a===''){Array.prototype.forEach.call(AB,function(x){x.classList.toggle('on',x===b);});g('a_other').hidden=false;AMT=parseFloat(v('a_amt'))||0;g('a_amt').focus();paint();return;}
+  g('a_other').hidden=true;pickAmt(b.dataset.a);};});
+g('a_amt').oninput=function(){AMT=parseFloat(String(this.value).replace(/[^\d.]/g,''))||0;paint();};
+if(PRE)pickAmt(PRE);
+// kvittel rows
+g('kv').innerHTML=[1,2,3,4].map(function(i){return '<div class="nm"><span>'+i+'</span><input class="kvn" placeholder="Name · שם"><input class="kvm" placeholder="Mother\'s name · שם האם"></div>';}).join('');
+// night calendar
+function gshort(gg){if(!gg)return '';var p=gg.split('-');return MON[+p[1]-1]+' '+(+p[2]);}
+g('n_open').onclick=function(e){e.stopPropagation();K='night';Array.prototype.forEach.call(document.querySelectorAll('.opt'),function(x){x.classList.toggle('on',x.dataset.k==='night');});
+  g('n_box').hidden=false;this.hidden=true;paint();if(!CAL.loaded)calLoad('','');};
+async function calLoad(m,y){var r=null;try{r=await (await fetch(API+'/month?m='+encodeURIComponent(m||'')+'&y='+encodeURIComponent(y||''))).json();}catch(e){}
+  if(!r||!r.ok){g('cal_title').textContent='Calendar unavailable';return;}
+  CAL.loaded=true;CAL.data=r;CAL.m=r.month;CAL.y=r.year;CAL.sel=null;g('n_status').textContent='';
+  g('cal_title').innerHTML=r.en+' '+(r.ynum||r.year)+' <span class="he">'+r.month+' '+r.year+'</span>';
+  var h='';for(var d=1;d<=r.len;d++){var dv=r.days[String(d)]||{};var cls=dv.block?'block':(dv.taken?'taken':'free');
+    h+='<div class="cd '+cls+'" data-d="'+d+'"><b>'+d+'</b><span class="h">'+(dv.he||'')+'</span><br>'+(dv.block?(/Shabbos/.test(dv.why||'')?'Shabbos':'Yom Tov'):(dv.taken?'Taken':gshort(dv.greg)))+'</div>';}
+  var grid=g('cal_grid');grid.innerHTML=h;
+  Array.prototype.forEach.call(grid.querySelectorAll('.cd'),function(el){el.onclick=function(){var d=+el.dataset.d,dv=r.days[String(d)]||{},st=g('n_status');
+    if(dv.block){st.innerHTML='<span style="color:#8f2a1b">'+d+' '+r.en+' is '+(dv.why||'Shabbos')+'. Please choose another night.</span>';return;}
+    if(dv.taken){st.innerHTML='<span style="color:#8f2a1b"><b>This night is already taken.</b> Please choose another night.</span>';return;}
+    Array.prototype.forEach.call(grid.querySelectorAll('.cd.sel'),function(x){x.classList.remove('sel');});el.classList.add('sel');CAL.sel=d;
+    st.innerHTML='<span style="color:#2e7d4f"><b>'+d+' '+r.en+' '+(r.ynum||'')+' · '+(dv.he||'')+' '+r.month+'</b> ('+gshort(dv.greg)+') is available.</span>';};});}
+g('cal_prev').onclick=function(e){e.stopPropagation();if(CAL.data&&CAL.data.prev)calLoad(CAL.data.prev.m,CAL.data.prev.y);};
+g('cal_next').onclick=function(e){e.stopPropagation();if(CAL.data&&CAL.data.next)calLoad(CAL.data.next.m,CAL.data.next.y);};
+// card
+async function getCard(){if(!HT)throw new Error('The secure card form is not loaded yet. Please wait a moment.');
+  try{var tk=await HT.getNonceToken();return {nonce:tk.nonce,exp_m:tk.expiryMonth,exp_y:tk.expiryYear,last4:tk.last4,card_type:tk.cardType};}
+  catch(e){var fe=(e&&e.fieldErrors)||[];if(fe.length&&fe.some(function(x){return /card\s*number.*required/i.test(String(x));}))return null;
+    throw new Error('Please check the card number, expiry date and CVV.');}}
+g('go').onclick=async function(){var err=g('err'),btn=this;err.textContent='';
+  var a=amount();if(!a||a<1){err.textContent='Please choose or enter the amount.';return;}
+  if(K==='night'&&!CAL.sel){err.textContent='Please choose a night in the calendar.';g('n_box').hidden=false;return;}
+  if(K==='night'&&!v('n_names')){err.textContent='Please enter the names for the night.';g('n_names').focus();return;}
+  if(!v('first')||!v('last')){err.textContent='Please enter your name.';g('first').focus();return;}
+  if(!/^\S+@\S+\.\S+$/.test(v('email'))){err.textContent='Please enter your email — your receipt is sent there.';g('email').focus();return;}
+  if(!v('phone')){err.textContent='Please enter your phone number.';g('phone').focus();return;}
+  btn.disabled=true;btn.textContent='Checking your card...';var tk=null;
+  try{tk=await getCard();}catch(e){btn.disabled=false;paint();err.innerHTML='<b>Not charged.</b> '+e.message;return;}
+  if(!tk){btn.disabled=false;paint();err.innerHTML='<b>Not charged.</b> Please enter your card number, expiry date and CVV.';return;}
+  btn.textContent='Processing your donation...';
+  var kv=[];Array.prototype.forEach.call(document.querySelectorAll('.nm'),function(r){var n=r.querySelector('.kvn').value.trim(),m=r.querySelector('.kvm').value.trim();if(n)kv.push({name:n,mother:m});});
+  var body=Object.assign({kind:K,amount:a,first:v('first'),last:v('last'),email:v('email'),phone:v('phone'),addr:v('addr'),names:kv},tk);
+  if(K==='night')body.night={m:CAL.m,y:CAL.y,d:CAL.sel,names:v('n_names'),occasion:v('n_occ')};
+  var r=null;try{r=await (await fetch(API+'/charge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}catch(e){}
+  btn.disabled=false;paint();
+  if(!r||!r.ok){err.innerHTML='<b>Not charged.</b> '+((r&&r.error)||'Something went wrong. Please try again or contact us.');if(K==='night'&&r&&/taken/i.test(r.error||''))calLoad(CAL.m,CAL.y);return;}
+  try{HT.resetForm();}catch(e){}
+  var d=g('done');d.hidden=false;btn.hidden=true;
+  d.innerHTML='<b>Thank you!</b> Your donation of <b>'+r.amount+'</b> was received'+(r.auth?' (confirmation '+r.auth+')':'')+'.'
+    +(r.night?' The night of <b>'+r.night.en+' · '+r.night.date_text+' '+r.night.year+'</b> is dedicated for you.':'')
+    +(K==='iz'?' Our office will contact you to arrange the monthly partnership.':'')
+    +(r.receipt?' Your receipt was sent to <b>'+r.receipt+'</b>.':' Your receipt will be emailed to you shortly.')
+    +'<br><br>In the merit of supporting Torah at the great Eis Ratzon of Chatzos, may you and your family be blessed with Shemirah, Shefa and Bracha.';
+  d.scrollIntoView({behavior:'smooth',block:'center'});};
+paint();
+</script></body></html>
