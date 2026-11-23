@@ -635,6 +635,10 @@ async function openHealth(){
   sh.innerHTML=`<button class="x" id="hx3">✕</button><h2>🩺 בדיקת מערכת</h2>
     <div class="hintxt">📱 גרסת האפליקציה אצלך: <b id="appver">בודק…</b></div>
     <div class="hintxt">${esc(h.when)} · ${h.bad?('❌ '+h.bad+' תקלות'):'✅ אין תקלות'}${h.warn?(' · ⚠️ '+h.warn+' לתשומת לב'):''}</div>
+    <div class="hrow" style="display:block;background:var(--soft,#faf7f0)">
+      <div class="hn"><b>🔑 טוקן API לקלוד</b><small>מאפשר לקלוד לבצע כל פעולה באתר כמנהל (לראות, לחסום, לפתוח, לעדכן). שקול לסיסמת המנהל — מסור רק למי שאתה סומך עליו, אפשר לבטל בכל רגע.</small></div>
+      <div id="apitok_box" style="margin-top:6px"><span class="mkspin"></span> טוען…</div>
+    </div>
     ${h.rows.map(r=>`<div class="hrow ${r.state}"><span class="hi">${ic[r.state]||''}</span>
       <span class="hn"><b>${esc(r.name)}</b><small>${esc(r.detail)}</small></span></div>`).join('')}
     <button class="btn" id="hagain" style="width:100%;margin-top:10px">🔄 בדוק שוב</button>
@@ -651,11 +655,24 @@ async function openHealth(){
   document.getElementById('hx3').onclick=()=>ov.classList.remove('show');
   const ci=document.getElementById('callimp'); if(ci)ci.onchange=()=>uploadCallLog(ci);
   showVer();
+  apiTokRender();
   document.getElementById('hagain').onclick=openHealth;
   const hb=document.getElementById('hbackup');
   if(hb)hb.onclick=()=>toast('מכין גיבוי מלא… ההורדה תתחיל בעוד רגע');
   const hl=document.getElementById('hbacklite');
   if(hl)hl.onclick=()=>toast('מכין קובץ קטן לשליחה…');
+}
+// 🔑 טוקן API כללי לקלוד — יצירה/ביטול מתוך בדיקת המערכת (מקום כללי, למעלה)
+async function apiTokRender(){const box=document.getElementById('apitok_box');if(!box)return;
+  const r=await api('GET','/api/api_token').catch(()=>null);const tok=r&&r.ok?(r.token||''):'';
+  const esc_=esc;
+  box.innerHTML=tok?`<div dir="ltr" id="apitok_val" style="word-break:break-all;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:.9rem">${esc_(tok)}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn sm ghost" id="apitok_copy">📋 העתק</button><button class="btn sm ghost" id="apitok_new">🔁 טוקן חדש</button><button class="btn sm ghost" id="apitok_rev">🗑 בטל</button></div>`
+    :`<button class="btn sm" id="apitok_new">🔑 צור טוקן</button>`;
+  const post=async act=>{const y=await api('POST','/api/api_token',{action:act}).catch(()=>null);if(!y||!y.ok){toast('שגיאה');return;}apiTokRender();};
+  const nb=document.getElementById('apitok_new');if(nb)nb.onclick=async()=>{if(tok&&!await uiConfirm('ליצור טוקן חדש? הישן יפסיק לעבוד.','🔁 כן','ביטול'))return;await post('generate');toast('נוצר טוקן ✓');};
+  const rv=document.getElementById('apitok_rev');if(rv)rv.onclick=async()=>{if(!await uiConfirm('לבטל את הטוקן? חיבור חיצוני יפסיק לעבוד.','🗑 כן, לבטל','ביטול'))return;await post('revoke');toast('הטוקן בוטל');};
+  const cp=document.getElementById('apitok_copy');if(cp)cp.onclick=()=>{try{navigator.clipboard.writeText(tok);toast('הועתק ✓');}catch(e){toast('העתק ידנית');}};
 }
 // ===== פנקס ההכתבה — להכתיב הוראות ותיקונים ולהעתיק אותם במכה אחת =====
 const DICTKEY='kc_dict_hist';
@@ -1975,14 +1992,7 @@ async function mkAuditWin(){
         ${MKAUD.admin?`<div style="margin-top:6px"><div class="mklist">${(MKAUD.admin.blocked||[]).map(x=>`<div class="mkrow" data-ao="${esc_(x.id)}" style="grid-template-columns:1fr auto;cursor:pointer"><div class="mknm"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}${x.reason?' · '+esc_(x.reason):''}</div></div><span class="mktag bad" style="align-self:center">חסום</span></div>`).join('')||'<div class="hintxt">✓ אין אף אחד חסום בקבוצות הבחורים.</div>'}</div>
           <div class="mksub" style="font-weight:700;margin-top:8px">🕘 היסטוריה</div>
           <div class="mklist">${(MKAUD.admin.history||[]).slice(0,40).map(h=>`<div class="mksub" style="border-bottom:1px solid var(--line);padding:3px 0">${esc_(String(h.at||'').slice(0,16).replace('T',' '))}${h.name?' · '+esc_(h.name):''} — ${esc_(h.summary||'')}</div>`).join('')||'<div class="hintxt">אין היסטוריה.</div>'}</div></div>`:''}
-      </div>
-      <div class="audpick" style="margin-top:8px;border-color:#cdd6e6">
-        <div class="mksub" style="font-weight:700;margin-bottom:2px">🔑 טוקן API כללי — לקלוד, לכל פונקציה באתר</div>
-        <div class="mksub">הטוקן מזהה את קלוד כ<b>מנהל</b> בכל בקשה — כך הוא יכול לבצע כל פעולה באתר (לראות, לחסום, לפתוח, לעדכן). <b>שקול לסיסמת המנהל</b> — מסור רק למי שאתה סומך עליו, ואפשר לבטל בכל רגע.</div>
-        ${MKAUD.admin&&MKAUD.admin.token?`<div class="mksub" dir="ltr" style="word-break:break-all;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-top:4px" id="bk_tok_val">${esc_(MKAUD.admin.token)}</div>
-          <div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bk_tok_copy">📋 העתק</button><button class="btn sm ghost" id="bk_tok_new">🔁 טוקן חדש</button><button class="btn sm ghost" id="bk_tok_rev">🗑 בטל טוקן</button></div>`
-          :`<div class="mksub" style="margin-top:4px">אין טוקן פעיל.</div>
-          <div class="mktpl" style="margin-top:4px"><button class="btn sm" id="bk_tok_new">🔑 צור טוקן API</button></div>`}
+        <div class="mksub" style="margin-top:4px;color:#888">🔑 טוקן API לקלוד נמצא ב-🩺 בדיקת מערכת (הכפתור למעלה).</div>
       </div>`;
   }
   const fnone=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();
@@ -2064,12 +2074,6 @@ async function mkAuditWin(){
     const y=await api('GET','/api/mikveh/bachur_admin').catch(()=>null);
     if(!y||!y.ok){l.disabled=false;if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
     MKAUD.admin=y;mkAuditWin();};}
-  // 🔑 טוקן
-  const tokPost=async act=>{const y=await api('POST','/api/mikveh/ops_token',{action:act}).catch(()=>null);
-    if(!y||!y.ok){toast('שגיאה');return;}MKAUD.admin=Object.assign(MKAUD.admin||{},{token:y.token});mkAuditWin();};
-  {const n=document.getElementById('bk_tok_new');if(n)n.onclick=async()=>{if(MKAUD.admin&&MKAUD.admin.token&&!await uiConfirm('ליצור טוקן חדש? הטוקן הישן יפסיק לעבוד.','🔁 כן','ביטול'))return;tokPost('generate');toast('נוצר טוקן');};}
-  {const rv=document.getElementById('bk_tok_rev');if(rv)rv.onclick=async()=>{if(!await uiConfirm('לבטל את הטוקן? חיבור חיצוני יפסיק לעבוד.','🗑 כן, לבטל','ביטול'))return;tokPost('revoke');toast('הטוקן בוטל');};}
-  {const cp=document.getElementById('bk_tok_copy');if(cp)cp.onclick=()=>{const v=(document.getElementById('bk_tok_val')||{}).textContent||'';try{navigator.clipboard.writeText(v);toast('הועתק ✓');}catch(e){toast('העתק ידנית');}};}
   {const b=document.getElementById('aud_self');if(b)b.onclick=()=>mkSelfGroupOpen();}
   {const b=document.getElementById('aud_renew');if(b)b.onclick=()=>mkRenewCheck();}
   const cv=document.getElementById('aud_csv');if(cv)cv.onclick=()=>{const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';

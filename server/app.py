@@ -23975,6 +23975,14 @@ class H(BaseHTTPRequestHandler):
             if isinstance(hr, dict):
                 hr['ver'] = (os.environ.get('RENDER_GIT_COMMIT') or '')[:7]   # איזו גרסה רצה עכשיו (לבדיקה שהעדכון עלה)
             return self._send(200, hr)
+        if self.path == '/api/api_token':
+            # 🔑 מצב טוקן ה-API הכללי (מנהל בלבד — דרך _gate). מראה אם קיים וכמה מהתווים, לא חושף אם לא צריך
+            con = db()
+            try:
+                tok = (kv_get(con, 'api_token', '') or '').strip()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'token': tok})
         return self._get2()
 
     def _build_data(self):
