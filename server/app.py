@@ -5922,6 +5922,16 @@ def ensure_schema():
             print('  משימות לשמעון ברלב (23.11): נוספו', _n)
     except Exception as e:
         print('  cm jobs barlev v2 error:', e)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='cm_jobs_barlev_v3'").fetchone():
+            for _t in reversed(CM_JOBS_BARLEV_V3):
+                if not con.execute("SELECT 1 FROM cm_job WHERE title=? AND to_who='שמעון ברלב'", (_t,)).fetchone():
+                    con.execute("INSERT INTO cm_job(title,note,to_who,by_who,due,status,created) VALUES(?,?,?,?,?,'open',?)",
+                                (_t, 'מראש הכולל · 23.11.2026', 'שמעון ברלב', 'ראש הכולל', '', now_iso()))
+            con.execute("INSERT INTO seed_flags(name) VALUES('cm_jobs_barlev_v3')")
+            con.commit()
+    except Exception as e:
+        print('  cm jobs barlev v3 error:', e)
 
     # 📞 "רק פעם ביום" — גם בהגדרה שכבר נשמרה: בלי שיחה לפני כל אירוע
     try:
@@ -39440,6 +39450,9 @@ CM_JOBS_BARLEV_V2 = [
     '5. להתקין מכונת ייבוש ידיים בלובי הגדול.',
     '6. ללמד את הפועל להשתמש במכשיר הניקיון של המקווה, ולנקות איתו את הלובי מדי שבוע.',
     '7. תנובה (חשוב מאוד): לבקש מתנובה את כל חשבוניות המס מתחילת השנה עד היום – לא תעודות משלוח – ולהעביר לראש הכולל.',
+]
+CM_JOBS_BARLEV_V3 = [
+    '8. לקנות בשפע ספלים לנטילת ידיים – ללובי למעלה וללובי הגדול.',
 ]
 
 
