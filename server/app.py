@@ -8959,6 +8959,60 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  sims 700 error:', e)
+    # מאיר (23.11.2026): "אתמול מיזגנו לטפפר את טברסקי ולמוקאי את עליס — וברשימה אצל התורמים כתוב שאין להם, המקום
+    # פתוח" — אצלם היה מקום פתוח (גוטליב חיים / פיליפס יונתן יצאו מהכולל), והאברך החדש צריך להיכנס *למקום הזה*:
+    # השותפות הפתוחה מקבלת את האברך, התאריך והסכום; שורה כפולה שנפתחה בנפרד (אם נפתחה) נסגרת.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_slots_fill_v1'").fetchone():
+            _log = []
+            for _prev, _dl, _df, _avs, _hd, _amt in (('גוטליב', 'טעפפער', 'נתן', ('טברסקי שמואל', 'טברסקי'), 'א\' כסלו תשפ"ז', '1000'),
+                                                    ('פיליפס', 'מוקאי', 'יעקב', ('עליס שמואל דוד', 'עליס'), 'א\' טבת תשפ"ז', '700')):
+                _sl = con.execute("SELECT p.id, p.donor_id, p.prev_avreich FROM partners p JOIN donors d ON d.id=p.donor_id "
+                                  "WHERE COALESCE(p.active,1)<>0 AND COALESCE(TRIM(p.avreich),'')='' AND COALESCE(p.prev_avreich,'') LIKE ? "
+                                  "AND d.last LIKE ?", ('%' + _prev + '%', '%' + _dl + '%')).fetchall()
+                _an = con.execute("SELECT name FROM avreichim WHERE TRIM(name)=?", (_avs[0],)).fetchone()
+                if not _an:
+                    _c = con.execute("SELECT name FROM avreichim WHERE TRIM(name) LIKE ? AND COALESCE(TRIM(ended),'')=''", (_avs[1] + '%',)).fetchall()
+                    _an = _c[0] if len(_c) == 1 else None
+                if not _an:
+                    con.execute("INSERT OR IGNORE INTO avreichim(name,last,first,note,started,created) VALUES(?,?,?,'','',?)",
+                                (_avs[0], _avs[0].split()[0], ' '.join(_avs[0].split()[1:]), today_iso()))
+                    _an = {'name': _avs[0]}
+                _anm = _an['name'].strip()
+                if len(_sl) != 1:
+                    _log.append('✗ %s: נמצאו %d מקומות פתוחים' % (_dl, len(_sl)))
+                    continue
+                _s = _sl[0]
+                _g = None
+                try:
+                    _pt = _hd.split(); _g = heb_greg_year(' '.join(_pt[:-1]), _pt[-1])
+                except Exception:
+                    pass
+                _rn = heb_anniv(_hd)
+                con.execute("UPDATE partners SET avreich=?, start_date=?, start_greg=?, renew_date=?, "
+                            "amount=CASE WHEN COALESCE(TRIM(amount),'')='' THEN ? ELSE amount END, prev_avreich='', prev_ended='' WHERE id=?",
+                            (_anm, _hd, _g.isoformat() if _g else None, _rn.isoformat() if _rn else None, _amt, _s['id']))
+                # שורה נוספת לאותו אברך אצל אותו תורם שנפתחה בנפרד — יוצאת (אחרת הוא נספר פעמיים)
+                _dup = con.execute("SELECT id FROM partners WHERE donor_id=? AND TRIM(avreich)=? AND id<>? AND COALESCE(active,1)<>0",
+                                   (_s['donor_id'], _anm, _s['id'])).fetchall()
+                for _x in _dup:
+                    con.execute("DELETE FROM partners WHERE id=?", (_x['id'],))
+                _why = '↩️ %s נכנס במקומו של %s מ%s' % (_anm, (_s['prev_avreich'] or '').strip(), _hd)
+                iz_log(con, _anm, _s['donor_id'], _why, now_iso(), _hd)
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)", (_s['donor_id'], today_iso(), 'הערה', _why))
+                con.execute("UPDATE avreichim SET ended='' WHERE TRIM(name)=? AND COALESCE(TRIM(ended),'')<>''", (_anm,))
+                _log.append('✓ %s ← %s (%d כפולים הוסרו)' % (_dl, _anm, len(_dup)))
+            try:
+                _rep = json.loads(kv_get(con, 'iz_5787_report', '') or '{}')
+            except ValueError:
+                _rep = {}
+            _rep['slots'] = _log
+            kv_set(con, 'iz_5787_report', json.dumps(_rep, ensure_ascii=False))
+            con.execute("INSERT INTO seed_flags(name) VALUES('iz_slots_fill_v1')")
+            con.commit()
+            print('  מקומות פתוחים: ' + ' · '.join(_log))
+    except Exception as e:
+        print('  iz slots fill error:', e)
     # מאיר (23.11.2026): "איפה הווב שעשינו על הבניין? זה לא במערכת, בדף הבניין יש רק 3 תרומות" — דף "נוסחי ההקדשות"
     # (99 הקדשות, מאיר אישר 85 ומחק 9) נכנס ללשונית "הבניין הקדוש": כל הקדשה לכרטיס התורם כשיש התאמה ברורה אחת
     # בלבד; בלי התאמה ברורה — נשמרת עם השם מהדף ומוצגת ב"לא משויכים", למאיר לשייך בלחיצה (לא מנחשים).
