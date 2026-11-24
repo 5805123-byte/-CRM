@@ -5943,6 +5943,23 @@ def ensure_schema():
         con.rollback()
         print('  stetfeld meat error:', e)
 
+    # 🍗 מאיר: "זה גם בשביל בשר ועופות" — גם $14,344 מ-23.9 (שלא סווג) → סוכות תשפ"ז
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stetfeld_meat_v2'").fetchone():
+            _cat = 'סוכות תשפ"ז'
+            _n = 0
+            for _did in [r[0] for r in con.execute("SELECT id FROM donors WHERE last LIKE 'שטטפלד%' AND first LIKE '%יצחק%'")]:
+                _n += con.execute("UPDATE donations SET category=?, note=REPLACE(COALESCE(note,''),' · לא סווג — לבדוק עבור מה','')"
+                                  "||' · קמחא דסוכות — בשר ועופות' "
+                                  "WHERE donor_id=? AND date='2026-09-23' AND ROUND(CAST(amount AS REAL),2)=14344 "
+                                  "AND COALESCE(category,'')<>?", (_cat, _did, _cat)).rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('stetfeld_meat_v2')")
+            con.commit()
+            print('  שטטפלד 23.9 בשר ועופות → סוכות תשפ"ז:', _n)
+    except Exception as e:
+        con.rollback()
+        print('  stetfeld meat v2 error:', e)
+
     # 📋 משימות הגבאים מהדף של מאיר — לשמעון ברלב (פעם אחת; משימה שכבר קיימת לא נכנסת שוב)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='cm_jobs_barlev_v1'").fetchone():
