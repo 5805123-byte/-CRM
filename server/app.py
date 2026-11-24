@@ -21596,8 +21596,8 @@ def mk_bachur_state(con, action='status'):
         ent = _mk_il(t)[:16]                       # הכניסה בפועל (שעון ישראל)
         se = _mk_il(c.get('subscriptionEndDate'))[:10]
         se_ok = re.fullmatch(r'\d{4}-\d{2}-\d{2}', se or '')
-        if not se_ok:
-            sub = 'אין מנוי כלל'
+        if not se_ok or se < '2010-01-01':      # ריק או תאריך-אפס (1970) = אין מנוי אמיתי
+            sub = 'אין מנוי בתוקף'
         else:
             sub = ('המנוי פג ב-%s' % se) if se < today else ('מנוי בתוקף עד %s' % se)
         bal = (c.get('balance') or 0) / 100.0
