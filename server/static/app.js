@@ -2003,8 +2003,10 @@ async function mkAuditWin(){
           <div style="margin-top:8px"><input id="bk_notify_txt" class="audq" style="width:100%;box-sizing:border-box" placeholder="הודעת מסך לכל אלה (למשל: נכנסת בלי מנוי — יש להסדיר מנוי בכולל)"><div class="mktpl" style="margin-top:4px"><button class="btn sm" id="bk_notify">📺 שלח הודעה לכל אלה</button><span id="bk_notify_st" class="mksub"></span></div></div>`:''}`;
       // ⛔ חסומים כרגע + ריקון + החזרות
       const blockedHTML=A?`<div class="mksub" style="font-weight:700">⛔ חסומים כרגע (${(A.blocked||[]).length})</div>
-          <div class="mklist">${(A.blocked||[]).map(x=>`<div class="mkrow" data-ao="${esc_(x.id)}" style="grid-template-columns:1fr auto;cursor:pointer"><div class="mknm"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}${x.reason?' · '+esc_(x.reason):''}</div></div><span class="mktag bad" style="align-self:center">חסום</span></div>`).join('')||'<div class="hintxt">✓ אין אף אחד חסום.</div>'}</div>
-          ${(A.blocked||[]).length?`<div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bb_reset" title="לפתוח את כל מי שחסום בקבוצות הבחורים">🔓 בטל את כל החסימות</button><button class="btn sm ghost" id="bk_drain">🧹 רוקן ערך צבור לכל החסומים</button><span id="bk_drain_st" class="mksub"></span></div>`:''}
+          ${(A.blocked||[]).length?'<div class="hintxt" style="margin:2px 0 4px">סמן את מי לשחרר ולחץ "🔓 שחרר את המסומנים" (או לחיצה על שם פותחת את הכרטיס).</div>':''}
+          <div class="mklist">${(A.blocked||[]).map(x=>`<div class="mkrow" style="grid-template-columns:auto 1fr auto;align-items:center"><input type="checkbox" class="bk_upick" data-upick="${esc_(x.id)}" style="width:18px;height:18px;margin:0 2px"><div class="mknm" data-ao="${esc_(x.id)}" style="cursor:pointer"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}${x.reason?' · '+esc_(x.reason):''}</div></div><span class="mktag bad" style="align-self:center">חסום</span></div>`).join('')||'<div class="hintxt">✓ אין אף אחד חסום.</div>'}</div>
+          ${(A.blocked||[]).length?`<div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bk_upick_all">☑️ סמן/בטל הכל</button><button class="btn sm" id="bk_unblock_sel">🔓 שחרר את המסומנים</button><span id="bk_unblock_st" class="mksub"></span></div>
+          <div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bb_reset" title="לפתוח את כל מי שחסום בקבוצות הבחורים">🔓 בטל את כל החסימות</button><button class="btn sm ghost" id="bk_drain">🧹 רוקן ערך צבור לכל החסומים</button><span id="bk_drain_st" class="mksub"></span></div>`:''}
           ${MKAUD.drained&&MKAUD.drained.rows&&MKAUD.drained.rows.length?`<div class="mksub" style="font-weight:700;margin-top:12px">🧹 ערך צבור שרוקן — לשמירה ולהחזרה (${MKAUD.drained.rows.length} · ₪${MKAUD.drained.total||0})</div>
           <div class="mklist">${MKAUD.drained.rows.map(x=>`<div class="mkrow" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc_(x.name||x.cid)}</b><div class="mksub">פעימות ₪${x.bal||0}${x.temp?' · זיכוי ₪'+x.temp:''} · ${esc_(String(x.at||'').slice(0,16))}${x.refunded?' · ✔️ הוחזר':''}</div></div>${x.refunded?'<span class="mktag mu" style="align-self:center">הוחזר</span>':`<button class="btn sm ghost" data-refund="${esc_(x.cid)}">↩️ החזר</button>`}</div>`).join('')}</div>
           <div class="mktpl" style="margin-top:4px"><button class="btn sm ghost" id="bk_refund_all">↩️ החזר לכולם</button></div>`:''}`:'<div class="hintxt">⏳ טוען…</div>';
@@ -2129,8 +2131,19 @@ async function mkAuditWin(){
     const y=await api('POST','/api/mikveh/bachur_drain',{});dr.disabled=false;
     if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
     if(st){st.style.color='#1e7a3c';st.textContent='✓ רוקנו '+y.count+' · סה״כ ₪'+(y.total_ils||0)+(y.failed?' · '+y.failed+' נכשלו':'');}toast('רוקן ✓');};}
-  // ☑️ סמן / בטל הכל
+  // ☑️ סמן / בטל הכל (חסימה)
   {const pa=document.getElementById('bk_pick_all');if(pa)pa.onclick=()=>{const bx=[...document.querySelectorAll('.bk_pick')];const any=bx.some(b=>!b.checked);bx.forEach(b=>b.checked=any);};}
+  // ☑️ סמן / בטל הכל (שחרור)
+  {const ua=document.getElementById('bk_upick_all');if(ua)ua.onclick=()=>{const bx=[...document.querySelectorAll('.bk_upick')];const any=bx.some(b=>!b.checked);bx.forEach(b=>b.checked=any);};}
+  // 🔓 שחרר את המסומנים
+  {const us=document.getElementById('bk_unblock_sel');if(us)us.onclick=async()=>{const ids=[...document.querySelectorAll('.bk_upick:checked')].map(b=>b.getAttribute('data-upick'));
+    const st=document.getElementById('bk_unblock_st');
+    if(!ids.length){if(st){st.style.color='#c0392b';st.textContent='לא סומן אף אחד';}return;}
+    if(!await uiConfirm('לשחרר '+ids.length+' חסומים שסומנו? (הבדיקה האוטומטית לא תחסום אותם שוב על אותה כניסה — רק אם ייכנסו שוב בפעימות בלי מנוי)','🔓 כן, לשחרר','ביטול'))return;
+    us.disabled=true;if(st){st.style.color='#555';st.textContent='⏳ משחרר…';}
+    const y=await api('POST','/api/mikveh/bachur_block',{unblock_ids:ids});us.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
+    toast('שוחררו '+((y.unblock||{}).unblocked||0));MKAUD.admin=await api('GET','/api/mikveh/bachur_admin').catch(()=>null);mkAuditWin();};}
   // ⛔ חסום את המסומנים — בשרת נחסמים רק מי שיש עליהם הוכחה (עבריין לפי הסריקה); השאר נדחים
   {const bs=document.getElementById('bk_block_sel');if(bs)bs.onclick=async()=>{const ids=[...document.querySelectorAll('.bk_pick:checked')].map(b=>b.getAttribute('data-pick'));
     const st=document.getElementById('bk_block_sel_st');

@@ -32782,7 +32782,7 @@ class H(BaseHTTPRequestHandler):
                                 _mk.set_blocked(cid, True, cfg['reason'])
                         except Exception:
                             pass
-                res = None; reset = None; batch = None
+                res = None; reset = None; batch = None; unblk = None
                 if b.get('reset'):
                     # 🔓 ביטול כל החסימות שלנו, בלי לאפס את הזיכרון (כדי שלא ייחסמו שוב מיד על אותה כניסה)
                     reset = mk_bachur_reset(con, cfg['reason'], clear_seen=False)
@@ -32816,6 +32816,36 @@ class H(BaseHTTPRequestHandler):
                     kv_set(con, 'mk_bachur_blocked', json.dumps(sorted(held)))
                     kv_set(con, 'mk_bachur_seen', json.dumps(seen, ensure_ascii=False))
                     batch = {'blocked': len(done), 'denied': len(denied)}
+                if b.get('unblock_ids'):
+                    # 🔓 שחרור מסומנים — פותח רק את מי שסומן; מסמן אותם כ'טופל' כדי שהבדיקה האוטומטית לא תחסום שוב מיד אותה כניסה
+                    uwant = set(str(x) for x in (b.get('unblock_ids') or []))
+                    umembers = _mk_bachur_members(con, fresh=True)
+                    uoff = _mk_bachur_scan(con, umembers, 31)
+                    try:
+                        uheld = set(str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or []))
+                    except Exception:
+                        uheld = set()
+                    try:
+                        useen = json.loads(kv_get(con, 'mk_bachur_seen', '') or '{}') or {}
+                    except Exception:
+                        useen = {}
+                    udone = []
+                    for cid in uwant:
+                        c = umembers.get(cid) or {}
+                        try:
+                            if c.get('isBlocked'):
+                                _mk.set_blocked(cid, False, '')
+                                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                            (cid, now_iso(), 'block', '🔓 חסימה בוטלה (שחרור מהרשימה)'))
+                            uheld.discard(cid)
+                            if cid in uoff:
+                                useen[cid] = uoff[cid]      # שלא ייחסם שוב מיד על אותה כניסה (עד כניסה חדשה)
+                            udone.append(cid)
+                        except Exception as e:
+                            print('  mk bachur unblock error:', cid, e)
+                    kv_set(con, 'mk_bachur_blocked', json.dumps(sorted(uheld)))
+                    kv_set(con, 'mk_bachur_seen', json.dumps(useen, ensure_ascii=False))
+                    unblk = {'unblocked': len(udone)}
                 if b.get('run') or ('on' in b and cfg['on']):
                     res = mk_bachur_enforce(con, days=31, fresh=bool(b.get('fresh')))
                     cfg['last'] = now_iso(); cfg['blocked'] = res['blocked']; cfg['opened'] = res.get('reset', 0); cfg['error'] = ''
@@ -32829,7 +32859,7 @@ class H(BaseHTTPRequestHandler):
                                     'blocked': cfg['blocked'], 'opened': cfg['opened'],
                                     'ran': res is not None, 'ran_blocked': (res or {}).get('blocked', 0),
                                     'ran_reset': (res or {}).get('reset', 0), 'ran_offenders': (res or {}).get('offenders', 0),
-                                    'reset': reset, 'batch': batch})
+                                    'reset': reset, 'batch': batch, 'unblock': unblk})
         if self.path in ('/api/mikveh/ops_token', '/api/api_token'):
             # 🔑 טוקן API כללי (ל-Claude) — מזהה כמנהל לכל פונקציה באתר. נוצר/מתבטל מהאתר, נשמר ב-api_token (בלי Render).
             import secrets
