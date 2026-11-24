@@ -1965,46 +1965,46 @@ async function mkAuditWin(){
   // 🧍 לשונית בחורים: בורר קבוצות הבחורים + הסבר על הבדיקה
   if(T==='bachur'){
     const sorted=MK.groups.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name),'he'));
-    hint=`<div class="mksub" style="margin:2px 2px 6px;color:#555">בחורים שבקבוצת בחורים, <b>אין להם מנוי בתוקף</b>, ו<b>נכנסו בפועל בחודש האחרון</b> (כלומר נכנסים בפעימות בלי מנוי). בחר אילו קבוצות הן "בחורים":</div>
-      <div class="audpick"><div class="mksub" style="font-weight:700;margin-bottom:4px">🧍 קבוצות הבחורים — <span id="bg_cnt">${MKAUD.bg.size}</span> נבחרו</div>
+    const A=MKAUD.admin, BT=(MKAUD.btab||'check');
+    const subtab=(k,ico,lbl,n)=>`<button class="mkchip${BT===k?' on':''}" data-btab="${k}">${ico} ${lbl}${n!=null?` <b style="background:${BT===k?'rgba(255,255,255,.3)':'#8a6d1a'};color:#fff;border-radius:10px;padding:0 7px">${n}</b>`:''}</button>`;
+    const pickerHTML=`<div class="audpick"><div class="mksub" style="font-weight:700;margin-bottom:4px">🧍 קבוצות הבחורים — <span id="bg_cnt">${MKAUD.bg.size}</span> נבחרו</div>
+        <div class="mksub" style="margin-bottom:4px;color:#555">בחר אילו קבוצות נחשבות "בחורים". הבדיקה תרוץ רק עליהן.</div>
         <div class="bgwrap">${sorted.map(g=>`<label class="bgchk${MKAUD.bg.has(String(g.id))?' on':''}"><input type="checkbox" data-bg="${esc_(g.id)}"${MKAUD.bg.has(String(g.id))?' checked':''}><span>${esc_(g.name)}</span></label>`).join('')}</div>
-        <div class="mktpl" style="margin-top:8px"><button class="btn sm" id="bg_save">💾 שמור קבוצות בחורים</button><span id="bg_st" class="mksub"${MKAUD.bgDirty?' style="color:#b9770e"':''}>${MKAUD.bgDirty?'יש שינוי שלא נשמר':''}</span></div></div>
-      <div class="audpick" style="margin-top:8px">
-        <div class="mksub" style="font-weight:700;margin-bottom:2px">📺 הודעת מסך לכל הבחורים ברשימה</div>
-        <div class="mksub">מתווספת למה שכבר כתוב אצל כל אחד — <b>בלי למחוק</b>. (למשל: "אין מנוי בתוקף — יש להסדיר מנוי בכולל").</div>
-        <textarea id="bn_txt" rows="2" class="audq" style="width:100%;box-sizing:border-box;margin-top:6px" placeholder="טקסט ההודעה שתופיע במסך המקווה"></textarea>
-        <div class="mktpl" style="margin-top:6px"><button class="btn sm" id="bn_go">📺 הוסף לכל הבחורים ברשימה</button><span id="bn_st" class="mksub"></span></div></div>
-      <div class="audpick" style="margin-top:8px;border-color:#e0b4b4;background:#fff6f4">
-        <div class="mksub" style="font-weight:700;margin-bottom:2px">⛔ חסימה אוטומטית — בחור שנכנס בפעימות בלי מנוי</div>
-        <div class="mksub">כש<b>פעיל</b>: <b>כל דקה</b> המערכת בודקת (וסבב מלא של חודש כל 5 דק'), וחוסמת בחור (רק בקבוצות שסימנת) ש<b>נכנס בפעימות בלי לשלם על מנוי חודשי</b>. החסימה <b>חד-כיוונית</b> — המערכת לא פותחת לבד; פותחים ידנית מהכרטיס אחרי שמסדירים מנוי. חסימות ידניות לא נגעים בהן.</div>
-        <label class="mksub" style="display:block;margin-top:6px">נוסח החסימה (הטקסט שיופיע כסיבת החסימה):
-          <input id="bb_reason" class="audq" style="width:100%;box-sizing:border-box;margin-top:3px" value="${esc_(MKAUD.bblock.reason||'')}" placeholder="למשל: אין מנוי בתוקף — יש להסדיר מנוי"></label>
-        <div class="mktpl" style="margin-top:6px">
-          <button class="btn sm" id="bb_savecfg">💾 שמור נוסח</button>
-          <button class="btn sm${MKAUD.bblock.on?'':' ghost'}" id="bb_toggle">${MKAUD.bblock.on?'🟢 פעיל — לכבות':'⚪ כבוי — להפעיל'}</button>
-          <button class="btn sm ghost" id="bb_run">▶️ הרץ עכשיו</button>
-          <button class="btn sm ghost" id="bb_reset" title="לפתוח את כל מי שחסום בקבוצות הבחורים">🔓 בטל את כל החסימות</button>
-          <span id="bb_st" class="mksub">${MKAUD.bblock.last?('נבדק '+esc_(mkDate(MKAUD.bblock.last))+' '+esc_(String(MKAUD.bblock.last).slice(11,16))+' · נחסמו '+(MKAUD.bblock.blocked||0)+(MKAUD.bblock.opened?' · בוטלו '+MKAUD.bblock.opened:'')):'עדיין לא רץ'}</span>
-        </div></div>
-      <div class="audpick" style="margin-top:8px">
-        <div class="mksub" style="font-weight:700;margin-bottom:2px">🔎 מי נכנס בפעימות בלי מנוי · מי חסום · היסטוריה</div>
-        <div class="mktpl"><button class="btn sm" id="bk_adm_load">🔄 בדוק עכשיו (טרי מהמקווה)</button><span id="bk_adm_st" class="mksub">${MKAUD.admin?('נכנסו בפעימות בלי מנוי: '+((MKAUD.admin.offenders||[]).length)+' · חסומים: '+((MKAUD.admin.blocked||[]).length)):''}</span></div>
-        ${MKAUD.admin?`<div style="margin-top:6px">
-          <div class="mksub" style="font-weight:700">🔎 מי אמור להיחסם — נכנס בפעימות בלי מנוי (${(MKAUD.admin.offenders||[]).length})</div>
-          <div class="hintxt" style="margin:2px 0 4px">לכל אחד הוכחה מפורשת למטה (מתי נכנס, שהמנוי פג/אין, כמה בפעימות). סמן את מי לחסום ולחץ "חסום את המסומנים". מי שיש לו מנוי בתוקף כלל לא מופיע כאן.</div>
-          <div class="mklist">${(MKAUD.admin.offenders||[]).map(x=>`<div class="mkrow" style="grid-template-columns:auto 1fr auto;align-items:center"><input type="checkbox" class="bk_pick" data-pick="${esc_(x.id)}" ${x.blocked?'':'checked'} style="width:18px;height:18px;margin:0 2px"><div class="mknm" data-ao="${esc_(x.id)}" style="cursor:pointer"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}</div><div class="mksub" style="color:#b23">📌 ${esc_(x.proof&&x.proof.text?x.proof.text:('כניסה אחרונה בפעימות '+mkDate(x.last)))}</div></div><span class="mktag ${x.blocked?'bad':'mu'}" style="align-self:center">${x.blocked?'כבר חסום':'לא חסום'}</span></div>`).join('')||'<div class="hintxt">✓ אף אחד לא נכנס בפעימות בלי מנוי בחודש האחרון.</div>'}</div>
-          <div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bk_pick_all">☑️ סמן/בטל הכל</button><button class="btn sm" id="bk_block_sel">⛔ חסום את המסומנים</button><span id="bk_block_sel_st" class="mksub"></span></div>
-          <div style="margin-top:8px;border-top:1px solid var(--line);padding-top:6px"><input id="bk_notify_txt" class="audq" style="width:100%;box-sizing:border-box" placeholder="הודעת מסך לשליחה (למשל: נכנסת בלי מנוי — יש להסדיר מנוי בכולל)"><div class="mktpl" style="margin-top:4px"><button class="btn sm" id="bk_notify">📺 שלח הודעה לכל אלה</button><span id="bk_notify_st" class="mksub"></span></div></div>
-          <div class="mksub" style="font-weight:700;margin-top:10px">⛔ חסומים כרגע (${(MKAUD.admin.blocked||[]).length})</div>
-          <div class="mklist">${(MKAUD.admin.blocked||[]).map(x=>`<div class="mkrow" data-ao="${esc_(x.id)}" style="grid-template-columns:1fr auto;cursor:pointer"><div class="mknm"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}${x.reason?' · '+esc_(x.reason):''}</div></div><span class="mktag bad" style="align-self:center">חסום</span></div>`).join('')||'<div class="hintxt">✓ אין אף אחד חסום.</div>'}</div>
-          ${(MKAUD.admin.blocked||[]).length?`<div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bk_drain">🧹 רוקן ערך צבור לכל החסומים</button><span id="bk_drain_st" class="mksub"></span></div>`:''}
-          ${MKAUD.drained&&MKAUD.drained.rows&&MKAUD.drained.rows.length?`<div class="mksub" style="font-weight:700;margin-top:10px">🧹 ערך צבור שרוקן — לשמירה ולהחזרה (${MKAUD.drained.rows.length} · סה״כ ₪${MKAUD.drained.total||0})</div>
-          <div class="mklist">${MKAUD.drained.rows.map(x=>`<div class="mkrow" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc_(x.name||x.cid)}</b><div class="mksub">פעימות ₪${x.bal||0}${x.temp?' · זיכוי ₪'+x.temp:''} · ${esc_(String(x.at||'').slice(0,16))}</div></div><button class="btn sm ghost" data-refund="${esc_(x.cid)}">↩️ החזר</button></div>`).join('')}</div>
-          <div class="mktpl" style="margin-top:4px"><button class="btn sm ghost" id="bk_refund_all">↩️ החזר לכולם</button></div>`:''}
-          <div class="mksub" style="font-weight:700;margin-top:8px">🕘 היסטוריה</div>
-          <div class="mklist">${(MKAUD.admin.history||[]).slice(0,40).map(h=>`<div class="mksub" style="border-bottom:1px solid var(--line);padding:3px 0">${esc_(String(h.at||'').slice(0,16).replace('T',' '))}${h.name?' · '+esc_(h.name):''} — ${esc_(h.summary||'')}${h.who?' <span class="mktag mu" style="font-size:10px">בוצע ע״י '+esc_(h.who)+'</span>':''}</div>`).join('')||'<div class="hintxt">אין היסטוריה.</div>'}</div></div>`:''}
-        <div class="mksub" style="margin-top:4px;color:#888">🔑 טוקן API לקלוד נמצא ב-🩺 בדיקת מערכת (הכפתור למעלה).</div>
-      </div>`;
+        <div class="mktpl" style="margin-top:8px"><button class="btn sm" id="bg_save">💾 שמור קבוצות בחורים</button><span id="bg_st" class="mksub"${MKAUD.bgDirty?' style="color:#b9770e"':''}>${MKAUD.bgDirty?'יש שינוי שלא נשמר':''}</span></div></div>`;
+    if(!MKAUD.bg.size){
+      hint=`<div class="mksub" style="margin:2px 2px 8px;color:#555">בחורים שבקבוצת בחורים, <b>אין להם מנוי בתוקף</b>, ו<b>נכנסו בחודש האחרון</b> (נכנסים בפעימות בלי מנוי). קודם בחר אילו קבוצות הן "בחורים":</div>`+pickerHTML;
+    }else{
+      // 📋 מי אמור להיחסם — הוכחה לכל אחד + חסימת מסומנים
+      const checkHTML=`<div class="mktpl"><button class="btn sm ghost" id="bk_adm_load">🔄 רענן מהמקווה</button><span id="bk_adm_st" class="mksub">${A?('נמצאו '+((A.offenders||[]).length)+' שנכנסו בפעימות בלי מנוי'):'⏳ טוען…'}</span></div>
+        ${A?`<div class="hintxt" style="margin:4px 0">לכל אחד <b>הוכחה מפורשת</b>: מתי נכנס, שהמנוי פג/אין, וכמה בפעימות. סמן את מי לחסום ולחץ "⛔ חסום את המסומנים". מי שיש לו מנוי בתוקף כלל לא מופיע כאן.</div>
+          <div class="mklist">${(A.offenders||[]).map(x=>`<div class="mkrow" style="grid-template-columns:auto 1fr auto;align-items:center"><input type="checkbox" class="bk_pick" data-pick="${esc_(x.id)}" ${x.blocked?'':'checked'} style="width:18px;height:18px;margin:0 2px"><div class="mknm" data-ao="${esc_(x.id)}" style="cursor:pointer"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}</div><div class="mksub" style="color:#b23">📌 ${esc_(x.proof&&x.proof.text?x.proof.text:('כניסה בפעימות '+mkDate(x.last)))}</div></div><span class="mktag ${x.blocked?'bad':'mu'}" style="align-self:center">${x.blocked?'כבר חסום':'לא חסום'}</span></div>`).join('')||'<div class="hintxt">✓ אף אחד לא נכנס בפעימות בלי מנוי בחודש האחרון.</div>'}</div>
+          <div class="mktpl" style="margin-top:6px;position:sticky;bottom:0;background:var(--card,#fff);padding:6px 0;border-top:1px solid var(--line)"><button class="btn sm ghost" id="bk_pick_all">☑️ סמן/בטל הכל</button><button class="btn sm" id="bk_block_sel">⛔ חסום את המסומנים</button><span id="bk_block_sel_st" class="mksub"></span></div>
+          <div style="margin-top:8px"><input id="bk_notify_txt" class="audq" style="width:100%;box-sizing:border-box" placeholder="הודעת מסך לכל אלה (למשל: נכנסת בלי מנוי — יש להסדיר מנוי בכולל)"><div class="mktpl" style="margin-top:4px"><button class="btn sm" id="bk_notify">📺 שלח הודעה לכל אלה</button><span id="bk_notify_st" class="mksub"></span></div></div>`:''}`;
+      // ⛔ חסומים כרגע + ריקון + החזרות
+      const blockedHTML=A?`<div class="mksub" style="font-weight:700">⛔ חסומים כרגע (${(A.blocked||[]).length})</div>
+          <div class="mklist">${(A.blocked||[]).map(x=>`<div class="mkrow" data-ao="${esc_(x.id)}" style="grid-template-columns:1fr auto;cursor:pointer"><div class="mknm"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}${x.reason?' · '+esc_(x.reason):''}</div></div><span class="mktag bad" style="align-self:center">חסום</span></div>`).join('')||'<div class="hintxt">✓ אין אף אחד חסום.</div>'}</div>
+          ${(A.blocked||[]).length?`<div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bb_reset" title="לפתוח את כל מי שחסום בקבוצות הבחורים">🔓 בטל את כל החסימות</button><button class="btn sm ghost" id="bk_drain">🧹 רוקן ערך צבור לכל החסומים</button><span id="bk_drain_st" class="mksub"></span></div>`:''}
+          ${MKAUD.drained&&MKAUD.drained.rows&&MKAUD.drained.rows.length?`<div class="mksub" style="font-weight:700;margin-top:12px">🧹 ערך צבור שרוקן — לשמירה ולהחזרה (${MKAUD.drained.rows.length} · ₪${MKAUD.drained.total||0})</div>
+          <div class="mklist">${MKAUD.drained.rows.map(x=>`<div class="mkrow" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc_(x.name||x.cid)}</b><div class="mksub">פעימות ₪${x.bal||0}${x.temp?' · זיכוי ₪'+x.temp:''} · ${esc_(String(x.at||'').slice(0,16))}${x.refunded?' · ✔️ הוחזר':''}</div></div>${x.refunded?'<span class="mktag mu" style="align-self:center">הוחזר</span>':`<button class="btn sm ghost" data-refund="${esc_(x.cid)}">↩️ החזר</button>`}</div>`).join('')}</div>
+          <div class="mktpl" style="margin-top:4px"><button class="btn sm ghost" id="bk_refund_all">↩️ החזר לכולם</button></div>`:''}`:'<div class="hintxt">⏳ טוען…</div>';
+      // 🕘 היסטוריה — עם "מי ביצע"
+      const historyHTML=A?`<div class="mklist">${(A.history||[]).slice(0,60).map(h=>`<div class="mksub" style="border-bottom:1px solid var(--line);padding:3px 0">${esc_(String(h.at||'').slice(0,16).replace('T',' '))}${h.name?' · '+esc_(h.name):''} — ${esc_(h.summary||'')}${h.who?' <span class="mktag mu" style="font-size:10px">בוצע ע״י '+esc_(h.who)+'</span>':''}</div>`).join('')||'<div class="hintxt">אין היסטוריה.</div>'}</div>`:'<div class="hintxt">⏳ טוען…</div>';
+      // ⚙️ הגדרות — קבוצות + חסימה אוטומטית + הודעת מסך לכולם
+      const settingsHTML=pickerHTML+`
+        <div class="audpick" style="margin-top:8px;border-color:#e0b4b4;background:#fff6f4">
+          <div class="mksub" style="font-weight:700;margin-bottom:2px">⛔ חסימה אוטומטית ברקע</div>
+          <div class="mksub">כש<b>פעיל</b>: כל דקה המערכת חוסמת בחור (בקבוצות שסימנת) ש<b>נכנס בפעימות בלי מנוי בתוקף</b>. חד-כיוונית — פותחים ידנית מהכרטיס. חסימות ידניות לא נגעים בהן.</div>
+          <label class="mksub" style="display:block;margin-top:6px">נוסח החסימה:<input id="bb_reason" class="audq" style="width:100%;box-sizing:border-box;margin-top:3px" value="${esc_(MKAUD.bblock.reason||'')}" placeholder="למשל: אין מנוי בתוקף — יש להסדיר מנוי"></label>
+          <div class="mktpl" style="margin-top:6px"><button class="btn sm" id="bb_savecfg">💾 שמור נוסח</button><button class="btn sm${MKAUD.bblock.on?'':' ghost'}" id="bb_toggle">${MKAUD.bblock.on?'🟢 פעיל — לכבות':'⚪ כבוי — להפעיל'}</button><span id="bb_st" class="mksub">${MKAUD.bblock.last?('נבדק '+esc_(mkDate(MKAUD.bblock.last))+' · נחסמו '+(MKAUD.bblock.blocked||0)):'עדיין לא רץ'}</span></div></div>
+        <div class="audpick" style="margin-top:8px">
+          <div class="mksub" style="font-weight:700;margin-bottom:2px">📺 הודעת מסך לכל הבחורים ברשימה</div>
+          <div class="mksub">מתווספת למה שכבר כתוב אצל כל אחד — <b>בלי למחוק</b>.</div>
+          <textarea id="bn_txt" rows="2" class="audq" style="width:100%;box-sizing:border-box;margin-top:6px" placeholder="טקסט ההודעה שתופיע במסך המקווה"></textarea>
+          <div class="mktpl" style="margin-top:6px"><button class="btn sm" id="bn_go">📺 הוסף לכל הבחורים ברשימה</button><span id="bn_st" class="mksub"></span></div></div>
+        <div class="mksub" style="margin-top:8px;color:#888">🔑 טוקן API לקלוד נמצא ב-🩺 בדיקת מערכת.</div>`;
+      hint=`<div class="mktpl" style="margin:2px 0 8px;flex-wrap:wrap;gap:4px">${subtab('check','📋','מי אמור להיחסם',A?(A.offenders||[]).length:null)}${subtab('blocked','⛔','חסומים',A?(A.blocked||[]).length:null)}${subtab('history','🕘','היסטוריה')}${subtab('settings','⚙️','הגדרות')}</div>`
+        +(BT==='check'?checkHTML:BT==='blocked'?blockedHTML:BT==='history'?historyHTML:settingsHTML);
+    }
   }
   const fnone=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();
   const empty=fnone?'אין לקוח שמתאים לסינון.':T==='group'?'✓ כל הלקוחות בקבוצות רגילות.':T==='special'?'אין לקוחות עם מחיר מיוחד.':T==='noted'?'אין הערות.':T==='everyone'?'אין לקוחות.':T==='bachur'?(MKAUD.bg.size?'✓ אין בחורים בלי מנוי שנכנסו החודש.':'בחר קבוצות בחורים למעלה כדי לראות את הבדיקה.'):'✓ אין חריגים — כולם בקבוצה רגילה ובלי מחיר מיוחד.';
@@ -2012,16 +2012,16 @@ async function mkAuditWin(){
     <div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">🔎</div><div><h2>בדיקת המקווה — מעקב וחריגים</h2>
       <div class="mksub">${flagged.length} חריגים · ${irr.length} בקבוצה חריגה · ${special.length} מחיר מיוחד · ${noted.length} עם הערה · ${clients.length} לקוחות</div></div></div>
     <div class="mktpl" style="margin:8px 0;flex-wrap:wrap">${chip('all','📋','הכל',flagged.length,'#2f6fb0')}${chip('group','🔴','קבוצה חריגה',irr.length,'#c0392b')}${chip('special','💎','מחיר מיוחד',special.length,'#8a6d1a')}${chip('noted','📝','הערות',noted.length,'#2f6fb0')}${chip('bachur','🧍','בחורים בפעימות',bachur.length,'#8a6d1a')}${chip('everyone','👥','כל הלקוחות',clients.length,'#555')}</div>
-    <div class="audfilters">
+    ${T!=='bachur'?`<div class="audfilters">
       <select id="aud_grp" class="audsel"><option value="">כל הקבוצות</option>${gopts}</select>
       <select id="aud_val" class="audsel"><option value="all"${MKAUD.val==='all'?' selected':''}>כל התוקף</option><option value="valid"${MKAUD.val==='valid'?' selected':''}>בתוקף</option><option value="exp"${MKAUD.val==='exp'?' selected':''}>פג תוקף / אין</option></select>
       <input id="aud_q" class="audq" placeholder="🔍 שם / טלפון / מספר לקוח" value="${esc_(MKAUD.q)}">
       ${fnone?'<button class="btn sm ghost" id="aud_clr">✕ נקה סינון</button>':''}
-    </div>
+    </div>`:''}
     ${hint}
-    <div class="mksub" id="aud_cnt" style="margin:2px 2px 6px;font-weight:700">${curList.length} לקוחות ברשימה</div>
+    ${T!=='bachur'?`<div class="mksub" id="aud_cnt" style="margin:2px 2px 6px;font-weight:700">${curList.length} לקוחות ברשימה</div>
     <div class="mklist" id="aud_list">${curList.map(row).join('')||'<div class="hintxt">'+empty+'</div>'}</div>
-    <div class="mktpl" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;flex-wrap:wrap"><button class="btn sm ghost" id="aud_self">🔄 קבוצות רגילות (שלוחת שינוי סוג מנוי)</button><button class="btn sm ghost" id="aud_renew">🧾 מנוי בלי חיוב »</button><button class="btn sm ghost" id="aud_csv">⬇️ אקסל</button></div>`;
+    <div class="mktpl" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;flex-wrap:wrap"><button class="btn sm ghost" id="aud_self">🔄 קבוצות רגילות (שלוחת שינוי סוג מנוי)</button><button class="btn sm ghost" id="aud_renew">🧾 מנוי בלי חיוב »</button><button class="btn sm ghost" id="aud_csv">⬇️ אקסל</button></div>`:''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   const wireRows=()=>rs.querySelectorAll('[data-ao]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.ao);if(!c)return;const sc=rs.scrollTop;MK_BACK={cid:c.id,go:()=>{mkAuditWin();rs.scrollTop=sc;}};mkOpen(c);});
   const repaint=()=>{curList=sortF(applyF(baseOf()));const lst=document.getElementById('aud_list'),cnt=document.getElementById('aud_cnt');
@@ -2029,6 +2029,12 @@ async function mkAuditWin(){
     if(lst){const fn=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();lst.innerHTML=curList.map(row).join('')||'<div class="hintxt">'+(fn?'אין לקוח שמתאים לסינון.':empty)+'</div>';wireRows();}};
   wireRows();
   rs.querySelectorAll('[data-aud]').forEach(b=>b.onclick=()=>{MKAUD.tab=b.dataset.aud;mkAuditWin();});
+  // 🧍 תת-לשוניות של הבחורים (מי אמור להיחסם / חסומים / היסטוריה / הגדרות)
+  rs.querySelectorAll('[data-btab]').forEach(b=>b.onclick=()=>{MKAUD.btab=b.dataset.btab;mkAuditWin();});
+  // טעינה אוטומטית של נתוני הבחורים בכניסה ללשונית — בלי ללחוץ "רענן" (כולל רשימת הריקונים)
+  if(T==='bachur'&&MKAUD.bg.size&&!MKAUD.admin&&!MKAUD._admLoading){MKAUD._admLoading=true;
+    Promise.all([api('GET','/api/mikveh/bachur_admin').catch(()=>null),api('GET','/api/mikveh/bachur_drained').catch(()=>null)])
+      .then(([a,d])=>{MKAUD._admLoading=false;MKAUD.admin=(a&&a.ok)?a:{ok:false,offenders:[],blocked:[],history:[]};if(d&&d.ok)MKAUD.drained=d;if(MKAUD.tab==='bachur')mkAuditWin();});}
   {const g=document.getElementById('aud_grp');if(g)g.onchange=()=>{MKAUD.grp=g.value;repaint();};}
   {const v=document.getElementById('aud_val');if(v)v.onchange=()=>{MKAUD.val=v.value;repaint();};}
   {const qi=document.getElementById('aud_q');if(qi)qi.oninput=()=>{MKAUD.q=qi.value;repaint();};}
