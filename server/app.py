@@ -5891,6 +5891,32 @@ def ensure_schema():
     except Exception as e:
         print('  cardmail log dedup error:', e)
 
+    # 🍗 מאיר: "שטטפלד זה לא יששכר זבולון — התשלום הזה זה בשביל קמחא דסוכות בשר ועופות" — $14,344 מ-23.11
+    # (הוראת קבע בבנק ווסט "Meat and chicken"): הייעוד מתוקן, וההוראה עצמה + כלל לסכום הזה — לסוכות תשפ"ז,
+    # כדי שגם החיוב הבא לא ייכנס ליששכר־זבולון
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stetfeld_meat_v1'").fetchone():
+            _cat = 'סוכות תשפ"ז'
+            _ids = [r[0] for r in con.execute("SELECT id FROM donors WHERE last LIKE 'שטטפלד%' AND first LIKE '%יצחק%'")]
+            _n = 0
+            for _did in _ids:
+                _n += con.execute("UPDATE donations SET category=?, note=COALESCE(note,'')||' · קמחא דסוכות — בשר ועופות' "
+                                  "WHERE donor_id=? AND date='2026-11-23' AND ROUND(CAST(amount AS REAL),2)=14344 "
+                                  "AND COALESCE(category,'')<>?", (_cat, _did, _cat)).rowcount
+                con.execute("UPDATE recon SET category=? WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=14344 "
+                            "AND source LIKE 'Banquest%' AND COALESCE(category,'') IN ('','יששכר־זבולון')", (_cat, _did))
+                con.execute("UPDATE bq_sched SET for_cat=?, for_note='קמחא דסוכות — בשר ועופות' "
+                            "WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=14344", (_cat, _did))
+                con.execute("INSERT INTO donor_rules(donor_id,amount,category,note,created) VALUES(?,14344,?,?,?) "
+                            "ON CONFLICT(donor_id,amount) DO UPDATE SET category=excluded.category, note=excluded.note",
+                            (_did, _cat, 'קמחא דסוכות — בשר ועופות (מאיר)', today_iso()))
+            con.execute("INSERT INTO seed_flags(name) VALUES('stetfeld_meat_v1')")
+            con.commit()
+            print('  שטטפלד בשר ועופות → סוכות תשפ"ז:', _n)
+    except Exception as e:
+        con.rollback()
+        print('  stetfeld meat error:', e)
+
     # 📋 משימות הגבאים מהדף של מאיר — לשמעון ברלב (פעם אחת; משימה שכבר קיימת לא נכנסת שוב)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='cm_jobs_barlev_v1'").fetchone():
