@@ -5943,6 +5943,38 @@ def ensure_schema():
         con.rollback()
         print('  stetfeld meat error:', e)
 
+    # 📜 מאיר: "השמות של שלווין… בעברית, לתוך הקוויטל שלו וגם לפרנס לילה במקום באנגלית — השמות שהוא כתב והברכות
+    # שהוא ביקש" (מהמייל שלו מ-15.11 ומ-23.11, ומההקדשה שמילא בדף התרומה לליל ט"ז כסלו — יארצייט חותנו)
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='shevlin_heb_v1'").fetchone():
+            _d = con.execute("SELECT id, tier FROM donors WHERE id=673 AND (COALESCE(last,'')||' '||COALESCE(english,'')) LIKE '%Shevlin%'").fetchone() \
+                or con.execute("SELECT id, tier FROM donors WHERE (COALESCE(last,'')||' '||COALESCE(english,'')) LIKE '%Shevlin%' "
+                               "AND COALESCE(first,'')||COALESCE(english,'') LIKE '%Neil%' ORDER BY id DESC LIMIT 1").fetchone()
+            if _d:
+                _kv = ('בנימין בן נחמה וזוגתו אסתר גיטל בת מירל — לבריאות, פרנסה בשפע והצלחה בכל הענינים\n'
+                       'שלמה חיים בן אסתר גיטל — להצלחה וסייעתא דשמיא בכל הענינים\n'
+                       'מרים אדירה בת אסתר גיטל, חנה קיילא בת אסתר גיטל, נחמיה אברהם בן אסתר גיטל — לבריאות, הצלחה ונחת')
+                _ded = 'לעילוי נשמת שלמה בן אברהם אבא ז"ל · לזכות אסתר גיטל בת מירל · לזכות בנימין בן נחמה'
+                # הקוויטל: שורות באנגלית בלבד יוצאות, נכנס הנוסח בעברית
+                for _p in con.execute("SELECT id, text FROM prayers WHERE donor_id=?", (_d['id'],)).fetchall():
+                    if (_p['text'] or '').strip() and not re.search(r'[֐-׿]', _p['text'] or ''):
+                        con.execute("DELETE FROM prayers WHERE id=?", (_p['id'],))
+                if not con.execute("SELECT 1 FROM prayers WHERE donor_id=? AND text LIKE '%אסתר גיטל%'", (_d['id'],)).fetchone():
+                    con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,?,?,?)",
+                                (_d['id'], '', _kv, (_d['tier'] or '') or 'קוויטל_זמנים'))
+                # פרנס לילה ט"ז כסלו — ההקדשה בעברית
+                _n = con.execute("UPDATE parnes SET dedication=? WHERE donor_id=? AND (COALESCE(dedication,'') LIKE '%Shlomo%' "
+                                 "OR COALESCE(dedication,'') LIKE '%Esther%' OR COALESCE(date_text,'') LIKE 'ט\"ז כסלו%')",
+                                 (_ded, _d['id'])).rowcount
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,1,?)",
+                            (_d['id'], today_iso(), 'הערה', '📜 השמות הוכנסו בעברית לקוויטל ולפרנס לילה ט"ז כסלו (במקום אנגלית)', '', now_iso()))
+                print('  שלווין — קוויטל ופרנס בעברית · פרנס:', _n)
+            con.execute("INSERT INTO seed_flags(name) VALUES('shevlin_heb_v1')")
+            con.commit()
+    except Exception as e:
+        con.rollback()
+        print('  shevlin heb error:', e)
+
     # 🍗 מאיר: "זה גם בשביל בשר ועופות" — גם $14,344 מ-23.9 (שלא סווג) → סוכות תשפ"ז
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='stetfeld_meat_v2'").fetchone():
