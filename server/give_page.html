@@ -1,0 +1,207 @@
+<!doctype html><html lang="en" translate="no" class="notranslate"><head><meta charset="utf-8"><meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kollel Chatzos · Secure Online Donation</title>{{OG}}
+<style>
+:root{--bg:#efe9db;--paper:#fffdf8;--ink:#3a2f1a;--soft:#6b6249;--wine:#7a1f1f;--gold:#9c7a2e;--line:#d9cfb5;--band:#f6f1e5;--ok:#2e7d4f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font-family:Georgia,'Times New Roman',serif;color:var(--ink)}
+.wrap{max-width:560px;margin:16px auto;background:var(--paper);border:1px solid #c9b57a;border-radius:6px;box-shadow:0 0 0 4px var(--paper),0 0 0 5px #d9c89a,0 8px 24px rgba(90,70,30,.12);overflow:hidden}
+@media(max-width:600px){.wrap{margin:8px 6px}}
+.top{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;background:var(--band);border-bottom:1px solid #e3d3a3;padding:6px 10px;font-size:12.5px}
+.top a{color:var(--wine);text-decoration:none;white-space:nowrap}
+.hd{display:flex;align-items:center;gap:12px;padding:12px 18px 10px;border-bottom:1px solid #e3d3a3}
+.hd img{width:54px;flex:none}
+.hd h1{font-size:20px;color:var(--wine);margin:0}
+.hd .tag{font-size:12.5px;line-height:1.4;color:var(--ink);margin-top:2px}
+.hd .lock{font-size:11.5px;color:var(--gold);letter-spacing:1px;text-transform:uppercase;margin-top:2px}
+.in{padding:2px 18px 18px}
+h3{font-size:15px;color:var(--wine);margin:16px 0 8px;display:flex;align-items:center;gap:7px}
+h3 .n{display:inline-grid;place-items:center;width:21px;height:21px;border-radius:50%;background:var(--wine);color:#fff;font-size:12px}
+.chips{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+@media(max-width:480px){.chips{grid-template-columns:repeat(2,1fr)}}
+.ch{position:relative;border:1.5px solid var(--line);background:#fffdf7;border-radius:10px;padding:9px 6px 8px;font:inherit;color:var(--ink);cursor:pointer;text-align:center;line-height:1.2}
+.ch .cn{display:block;font-size:13.5px}
+.ch .ca{display:block;font-weight:bold;color:var(--wine);font-size:15.5px;margin-top:3px}
+.ch .mo{position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:var(--gold);color:#fff;font-size:9.5px;letter-spacing:1px;border-radius:4px;padding:1px 6px;font-weight:bold;white-space:nowrap}
+.ch .cy{display:block;font-size:12px;font-weight:bold;color:var(--gold);margin-top:1px}
+.ch.on{border-color:var(--wine);background:var(--wine);color:#fff}.ch.on .ca,.ch.on .cy{color:#fff}
+.ch.any{grid-column:1/-1;border:2px solid var(--wine);padding:11px 8px}
+.ch.any .cn{font-size:17px;font-weight:bold;color:var(--wine)}.ch.any .ca{font-size:13px;font-weight:normal;color:var(--soft)}
+.ch.any.on .cn,.ch.any.on .ca{color:#fff}
+
+.kvnote{text-align:center;font-size:13px;font-weight:bold;color:var(--gold);margin-top:8px}
+.pane{font-size:13.5px;color:var(--soft);line-height:1.45;margin-top:9px;background:var(--band);border-radius:8px;padding:9px 11px}
+.pane b{color:var(--wine)}
+.link{background:none;border:0;color:var(--wine);text-decoration:underline;font:inherit;font-size:14.5px;font-weight:bold;cursor:pointer;padding:6px 0 0;text-align:left}
+label{display:block;font-size:12.5px;color:var(--soft);margin:8px 0 3px}
+input{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:inherit;font-size:16px;background:#fffdf7;color:var(--ink)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.nm{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.nm input{padding:8px 9px;font-size:15px}
+.small{font-size:12px;color:var(--soft);margin-top:5px;line-height:1.4}
+.cardwrap{border:2px solid var(--gold);border-radius:10px;padding:8px 10px 6px;background:#fffaf0}
+.cardwrap .ct{font-weight:bold;color:var(--wine);font-size:15px;margin-bottom:4px}
+.cardbox{background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 8px 0;overflow:hidden}.cardbox iframe{height:64px!important;max-height:64px}
+@media(max-width:560px){.cardbox iframe{height:132px!important;max-height:none}}
+.warn{background:#fff3cd;border:1px solid #e0c36a;border-radius:8px;padding:10px;font-size:14px}
+.go{width:100%;margin-top:12px;background:var(--wine);color:#fff;border:2px solid var(--gold);border-radius:12px;padding:13px;font:inherit;font-size:17px;font-weight:bold;cursor:pointer}
+.go:disabled{opacity:.55;cursor:default}
+.err{color:#8f2a1b;font-size:14.5px;margin-top:8px}.err:not(:empty){background:#fde8e4;border:1px solid #e3a094;border-radius:8px;padding:9px 11px}
+.ok{background:#e8f3ea;border:1px solid #9fc8a8;border-radius:10px;padding:14px;font-size:15.5px;margin-top:12px;line-height:1.5}
+.cal{background:#fffdf7;border:1px solid var(--line);border-radius:10px;padding:9px;margin-top:8px}
+.calhd{display:flex;align-items:center;justify-content:space-between;font-weight:bold;color:var(--wine);font-size:15px}
+.calhd .he{font-family:Arial,sans-serif;font-weight:normal;font-size:12.5px;color:var(--soft)}
+.calnav{border:1px solid var(--line);background:#fff;color:var(--wine);border-radius:8px;padding:3px 13px;font-size:19px;cursor:pointer}
+.calgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:8px}
+.cd{border:1px solid var(--line);border-radius:8px;padding:5px 2px;text-align:center;font-size:11.5px;cursor:pointer;background:#e8f3ea;line-height:1.25;color:var(--ink)}
+.cd b{display:block;font-size:15px}.cd .h{font-family:Arial,sans-serif;font-size:11.5px;color:var(--wine)}
+.cd.taken{background:#ececec;color:#9a9a9a;cursor:not-allowed}.cd.block{background:#f6f1e5;color:#b0a890;cursor:not-allowed}.cd.sel{outline:3px solid var(--wine)}
+.callg{font-size:11px;color:var(--soft);margin-top:7px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.lg{display:inline-block;width:11px;height:11px;border-radius:3px;border:1px solid var(--line)}.lg.f{background:#e8f3ea}.lg.t{background:#ececec}.lg.b{background:#f6f1e5}
+.sig{margin-top:18px;border-top:1px solid #e3d3a3;padding-top:12px;text-align:center;font-size:13px;line-height:1.65;color:var(--ink)}
+.sig b{color:var(--wine)}.sig a{color:var(--wine)}
+.site{display:inline-block;margin-top:8px;border:1.5px solid var(--gold);border-radius:10px;padding:7px 16px;color:var(--wine);text-decoration:none;font-weight:bold}
+[hidden]{display:none!important}
+</style></head>
+<body><div class="wrap">
+<div class="top"><a href="https://www.kollelchatzot.com" target="_blank" rel="noopener">&#127760; kollelchatzot.com</a>
+  <a href="mailto:chatzot18@gmail.com">&#9993; chatzot18@gmail.com</a>
+  <a href="https://wa.me/972527628272" target="_blank" rel="noopener">&#128172; WhatsApp</a>
+  <a href="tel:+972527628272">&#128222; +972-52-762-8272</a></div>
+<div class="hd"><img src="{{LOGO}}" alt="Kollel Chatzos"><div>
+  <h1>Kollel Chatzos</h1>
+  <div class="tag">Over <b style="color:var(--wine)">100 Avreichim</b> learn every night at the great Eis Ratzon of Chatzos HaLailah, when the Gates of Heaven are open</div>
+  <div class="lock">&#128274; Secure online donation</div></div></div>
+<div class="in">
+
+<h3><span class="n">1</span>Choose your donation</h3>
+<div class="chips" id="chips">
+  <button type="button" class="ch any" data-k="donate"><span class="cn">Donate Any Amount</span><span class="ca">a donation of your choice to the Kollel</span></button>
+  <button type="button" class="ch" data-k="night"><span class="cn">Sponsor One Night for your Zechus</span><span class="ca">$480</span></button>
+  <button type="button" class="ch" data-k="breakfast"><span class="cn">Sponsor Breakfast for the Avreichim of Kollel Chatzos</span><span class="ca">$360</span></button>
+  <button type="button" class="ch" data-k="monthly180"><span class="mo">MONTHLY · 1 YEAR</span><span class="cn">3 Avreichim davening for you every night</span><span class="ca">$180 / month</span><span class="cy">for 1 year</span></button>
+  <button type="button" class="ch" data-k="monthly101"><span class="mo">MONTHLY · 1 YEAR</span><span class="cn">Your names in the Kollel's Kvittel all year</span><span class="ca">$101 / month</span><span class="cy">for 1 year</span></button>
+  <button type="button" class="ch" data-k="ner"><span class="cn">Ner LaMaor · one week</span><span class="ca">$1,200</span></button>
+  <button type="button" class="ch" data-k="iz"><span class="mo">MONTHLY · 1 YEAR</span><span class="cn">Yissachar–Zevulun</span><span class="ca">$1,000 / month</span><span class="cy">for 1 year</span></button>
+</div>
+<div class="kvnote">&#10022; Every monthly donation is entered into the Kvittel of Kollel Chatzos &#10022;</div>
+
+<div class="pane" data-p="night">The whole Kollel learns through the night of Chatzos l'zechus you or your loved ones — a birthday, yahrtzeit, refuah or any special occasion.<br>
+  <button type="button" class="link" id="n_open">&#128197; Click here to choose a night and check if it is available &rsaquo;</button>
+  <div id="n_box" hidden>
+    <div class="cal"><div class="calhd"><button type="button" class="calnav" id="cal_prev">&lsaquo;</button><div id="cal_title"></div><button type="button" class="calnav" id="cal_next">&rsaquo;</button></div>
+    <div class="calgrid" id="cal_grid"></div><div class="callg"><span class="lg f"></span> available <span class="lg t"></span> taken <span class="lg b"></span> Shabbos / Yom Tov</div></div>
+    <div class="small" id="n_status"></div>
+    <label>The night is l'zechus / l'ilui nishmas</label><input id="n_names" placeholder="e.g. Avraham ben Sarah"><div id="n_more"></div>
+    <button type="button" class="link" id="n_add">&#65291; Add another name</button>
+    <label>Occasion (optional)</label><input id="n_occ" placeholder="e.g. birthday, yahrtzeit"></div></div>
+<div class="pane" data-p="breakfast" hidden>Sponsor breakfast for all the Avreichim of Kollel Chatzos after a night of learning, l'zechus you and your family.</div>
+<div class="pane" data-p="monthly180" hidden><b>$180 monthly for 1 year.</b> Every night at Chatzos, 3 Avreichim are learning and davening for you and your family by name. $180 today, then automatically every month — 12 donations in total.</div>
+<div class="pane" data-p="monthly101" hidden><b>$101 monthly for 1 year.</b> Your names are listed in the Kvittel of Kollel Chatzos all year, and the Avreichim learn and daven for you at the great Eis Ratzon of Chatzos. $101 today, then automatically every month — 12 donations in total.</div>
+<div class="pane" data-p="ner" hidden>A full week of Torah learning at Chatzos l'zechus or l'ilui nishmas your loved ones. One-time donation.</div>
+<div class="pane" data-p="iz" hidden><b>$1,000 monthly for 1 year.</b> One Avreich learns every night for a full year as your true partner. $1,000 today, then automatically every month — 12 donations in total.</div>
+<div class="pane" data-p="donate" hidden>A donation to the nightly Torah learning of the Avreichim at Chatzos.
+  <label>Amount ($)</label><input id="a_amt" inputmode="decimal" placeholder="Enter the amount"></div>
+
+<button type="button" class="link" id="kv_open">&#65291; Click here to add names for davening at Chatzos</button>
+<div id="kv_box" hidden><div class="small">Names with the mother's name, in English or Hebrew — the Avreichim learn and daven l'zechus them every night at Chatzos.</div>
+  <div id="kv"></div><button type="button" class="link" id="kv_add">&#65291; Add another name</button></div>
+
+<h3><span class="n">2</span>Your details</h3>
+<div class="two"><div><label>First name</label><input id="first" autocomplete="given-name"></div><div><label>Last name</label><input id="last" autocomplete="family-name"></div></div>
+<div class="two"><div><label>Email (for your receipt)</label><input id="email" type="email" autocomplete="email"></div><div><label>Phone</label><input id="phone" type="tel" autocomplete="tel"></div></div>
+<button type="button" class="link" id="ad_open" style="font-weight:normal;font-size:13px">&#65291; Mailing address (optional)</button>
+<div id="ad_box" hidden><input id="addr" autocomplete="street-address" placeholder="Street, City, State, ZIP"></div>
+
+<h3><span class="n">3</span>Credit card</h3>
+<div class="cardwrap"><div class="ct">&#128179; Enter your card here</div>{{CARD}}</div>
+<button type="button" class="go" id="go">Donate now</button>
+<div class="err" id="err"></div><div class="ok" id="done" hidden></div>
+
+<div class="sig"><b>Kollel Chatzos Eretz Yisroel</b> · Rabbi Yehoshua Meir Deutsch, Rosh HaKollel<br>
+&#9993; <a href="mailto:chatzot18@gmail.com">chatzot18@gmail.com</a> · &#128172; <a href="https://wa.me/972527628272" target="_blank" rel="noopener">+972-52-762-8272</a><br>
+<span style="font-size:12px;color:var(--soft)">501(c)(3) · EIN 20-0447034 · Tax-deductible receipt by email</span><br>
+<a class="site" href="https://www.kollelchatzot.com" target="_blank" rel="noopener">To visit our website, click here &rsaquo;</a></div>
+</div></div>
+<script>
+var KEY={{KEY}},HT=null,API='/api/give',PRE={{AMOUNT}};
+function mount(){if(!KEY||!window.HostedTokenization)return;try{HT=new HostedTokenization(KEY,{target:'#card',showZip:false,showFieldErrors:false,
+  styles:{card:'border:1px solid #d9cfb5;border-radius:8px;padding:8px;font-size:16px',expiryMonth:'border:1px solid #d9cfb5;border-radius:8px',
+  expiryYear:'border:1px solid #d9cfb5;border-radius:8px',cvv2:'border:1px solid #d9cfb5;border-radius:8px',labelType:'static-top'}});}
+  catch(e){document.getElementById('card').innerHTML='<div class="warn">The card form could not be loaded. Please contact us.</div>';}}
+if(KEY){var sc=document.createElement('script');sc.src={{JS}};sc.onload=mount;document.head.appendChild(sc);}
+var g=function(id){return document.getElementById(id);},v=function(id){return g(id).value.trim();},each=function(q,f){Array.prototype.forEach.call(document.querySelectorAll(q),f);};
+var K='night',AMT=PRE||0,CAL={m:'',y:'',sel:null,data:null,loaded:false},MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function usd(a){return '$'+Number(a).toLocaleString('en-US',{maximumFractionDigits:2});}
+var FIX={night:480,iz:1000,breakfast:360,ner:1200,monthly180:180,monthly101:101},MONTHLY={iz:1,monthly180:1,monthly101:1};
+function amount(){return FIX[K]||AMT;}
+function paint(){var a=amount();
+  g('go').textContent=MONTHLY[K]?'Donate '+usd(a)+' today · 12 monthly donations':(a?('Donate '+usd(a)+' now'):'Donate now');}
+function pick(k){K=k;each('.ch',function(x){x.classList.toggle('on',x.dataset.k===k);});each('.pane',function(x){x.hidden=x.dataset.p!==k;});paint();
+  if((k==='monthly180'||k==='monthly101')&&!g('kv_open').hidden)g('kv_open').click();}
+each('.ch',function(b){b.onclick=function(){pick(b.dataset.k);if(K==='donate')g('a_amt').focus();};});
+// other amount
+g('a_amt').oninput=function(){AMT=parseFloat(String(this.value).replace(/[^\d.]/g,''))||0;paint();};
+if(PRE)g('a_amt').value=PRE;
+// names for davening — one row, ＋ up to 4
+function addName(){var n=document.querySelectorAll('#kv .nm').length;if(n>=4)return;var d=document.createElement('div');d.className='nm';
+  d.innerHTML='<input class="kvn" placeholder="Name · שם"><input class="kvm" placeholder="Mother\'s name · שם האם">';g('kv').appendChild(d);
+  g('kv_add').hidden=n+1>=4;d.querySelector('.kvn').focus();}
+g('kv_open').onclick=function(){g('kv_box').hidden=false;this.hidden=true;addName();};
+g('kv_add').onclick=addName;
+// more names for the night (up to 6)
+g('n_add').onclick=function(){var n=document.querySelectorAll('#n_more input').length;if(n>=5)return;var i=document.createElement('input');i.className='nmore';i.style.marginTop='6px';i.placeholder='Another name';g('n_more').appendChild(i);i.focus();this.hidden=n+1>=5;};
+function nightNames(){var a=[v('n_names')];each('#n_more input',function(x){a.push(x.value.trim());});return a.filter(Boolean).join(', ');}
+g('ad_open').onclick=function(){g('ad_box').hidden=false;this.hidden=true;g('addr').focus();};
+// night calendar — opens only when clicked
+function gshort(gg){if(!gg)return '';var p=gg.split('-');return MON[+p[1]-1]+' '+(+p[2]);}
+g('n_open').onclick=function(){g('n_box').hidden=false;this.hidden=true;if(!CAL.loaded)calLoad('','');};
+async function calLoad(m,y){var r=null;try{r=await (await fetch(API+'/month?m='+encodeURIComponent(m||'')+'&y='+encodeURIComponent(y||''))).json();}catch(e){}
+  if(!r||!r.ok){g('cal_title').textContent='Calendar unavailable';return;}
+  CAL.loaded=true;CAL.data=r;CAL.m=r.month;CAL.y=r.year;CAL.sel=null;g('n_status').textContent='';
+  g('cal_title').innerHTML=r.en+' '+(r.ynum||r.year)+' <span class="he">'+r.month+' '+r.year+'</span>';
+  var h='';for(var d=1;d<=r.len;d++){var dv=r.days[String(d)]||{};var cls=dv.block?'block':(dv.taken?'taken':'free');
+    h+='<div class="cd '+cls+'" data-d="'+d+'"><b>'+d+'</b><span class="h">'+(dv.he||'')+'</span><br>'+(dv.block?(/Shabbos/.test(dv.why||'')?'Shabbos':'Yom Tov'):(dv.taken?'Taken':gshort(dv.greg)))+'</div>';}
+  var grid=g('cal_grid');grid.innerHTML=h;
+  Array.prototype.forEach.call(grid.querySelectorAll('.cd'),function(el){el.onclick=function(){var d=+el.dataset.d,dv=r.days[String(d)]||{},st=g('n_status');
+    if(dv.block){st.innerHTML='<span style="color:#8f2a1b">'+d+' '+r.en+' is '+(dv.why||'Shabbos')+'. Please choose another night.</span>';return;}
+    if(dv.taken){st.innerHTML='<span style="color:#8f2a1b"><b>This night is already taken.</b> Please choose another night.</span>';return;}
+    Array.prototype.forEach.call(grid.querySelectorAll('.cd.sel'),function(x){x.classList.remove('sel');});el.classList.add('sel');CAL.sel=d;
+    st.innerHTML='<span style="color:#2e7d4f"><b>'+d+' '+r.en+' '+(r.ynum||'')+' · '+(dv.he||'')+' '+r.month+'</b> ('+gshort(dv.greg)+') is available.</span>';};});}
+g('cal_prev').onclick=function(){if(CAL.data&&CAL.data.prev)calLoad(CAL.data.prev.m,CAL.data.prev.y);};
+g('cal_next').onclick=function(){if(CAL.data&&CAL.data.next)calLoad(CAL.data.next.m,CAL.data.next.y);};
+// card
+async function getCard(){if(!HT)throw new Error('The secure card form is not loaded yet. Please wait a moment.');
+  try{var tk=await HT.getNonceToken();return {nonce:tk.nonce,exp_m:tk.expiryMonth,exp_y:tk.expiryYear,last4:tk.last4,card_type:tk.cardType};}
+  catch(e){var fe=(e&&e.fieldErrors)||[];if(fe.length&&fe.some(function(x){return /card\s*number.*required/i.test(String(x));}))return null;
+    throw new Error('Please check the card number, expiry date and CVV.');}}
+g('go').onclick=async function(){var err=g('err'),btn=this;err.textContent='';
+  var a=amount();if(!a||a<1){err.textContent=K==='donate'?'Please enter the amount.':'Please choose a donation.';if(K==='donate')g('a_amt').focus();return;}
+  if(K==='night'&&!CAL.sel){err.textContent='Please choose a night in the calendar.';if(g('n_box').hidden)g('n_open').click();g('n_box').scrollIntoView({behavior:'smooth',block:'center'});return;}
+  if(K==='night'&&!nightNames()){err.textContent='Please enter the names for the night.';g('n_names').focus();return;}
+  if(!v('first')||!v('last')){err.textContent='Please enter your name.';g('first').focus();return;}
+  if(!/^\S+@\S+\.\S+$/.test(v('email'))){err.textContent='Please enter your email — your receipt is sent there.';g('email').focus();return;}
+  if(!v('phone')){err.textContent='Please enter your phone number.';g('phone').focus();return;}
+  btn.disabled=true;btn.textContent='Checking your card...';var tk=null;
+  try{tk=await getCard();}catch(e){btn.disabled=false;paint();err.innerHTML='<b>Not charged.</b> '+e.message;return;}
+  if(!tk){btn.disabled=false;paint();err.innerHTML='<b>Not charged.</b> Please enter your card number, expiry date and CVV.';return;}
+  btn.textContent='Processing your donation...';
+  var kv=[];each('.nm',function(r){var n=r.querySelector('.kvn').value.trim(),m=r.querySelector('.kvm').value.trim();if(n)kv.push({name:n,mother:m});});
+  var body=Object.assign({kind:K,amount:a,first:v('first'),last:v('last'),email:v('email'),phone:v('phone'),addr:v('addr'),names:kv},tk);
+  if(K==='night')body.night={m:CAL.m,y:CAL.y,d:CAL.sel,names:nightNames(),occasion:v('n_occ')};
+  var r=null;try{r=await (await fetch(API+'/charge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}catch(e){}
+  btn.disabled=false;paint();
+  if(!r||!r.ok){err.innerHTML='<b>Not charged.</b> '+((r&&r.error)||'Something went wrong. Please try again or contact us.');if(K==='night'&&r&&/taken/i.test(r.error||''))calLoad(CAL.m,CAL.y);return;}
+  try{HT.resetForm();}catch(e){}
+  var d=g('done');d.hidden=false;btn.hidden=true;
+  d.innerHTML='<b>Thank you!</b> Your donation of <b>'+r.amount+'</b> was received'+(r.auth?' (confirmation '+r.auth+')':'')+'.'
+    +(r.night?' The night of <b>'+r.night.en+' · '+r.night.date_text+' '+r.night.year+'</b> is dedicated l\'zechus you.':'')
+    +(MONTHLY[K]?(r.sched?' The next 11 monthly donations of '+r.amount+' will be charged automatically, starting '+r.next+'.':' Our office will contact you to complete the monthly arrangement.'):'')
+    +(K==='monthly180'?' From tonight, 3 Avreichim will learn and daven l\'zechus you every night at Chatzos.':'')
+    +(K==='monthly101'?' Your names are now listed in the Kvittel of Kollel Chatzos for the whole year.':'')
+    +(r.receipt?' Your receipt was sent to <b>'+r.receipt+'</b>.':' Your receipt will be emailed to you shortly.')
+    +(r.receipt_url?'<br><a class="site" style="margin-top:10px" href="'+r.receipt_url+'" target="_blank" rel="noopener">&#129534; Download your receipt (PDF)</a>':'')
+    +'<br><br>In the zechus of upholding Torah at the great Eis Ratzon of Chatzos, may you and your family be blessed with Shemirah, Shefa and Bracha.';
+  d.scrollIntoView({behavior:'smooth',block:'center'});};
+pick(PRE?'donate':'night');
+</script></body></html>

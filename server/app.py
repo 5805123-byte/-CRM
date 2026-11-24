@@ -5891,6 +5891,32 @@ def ensure_schema():
     except Exception as e:
         print('  cardmail log dedup error:', e)
 
+    # 🍗 מאיר: "שטטפלד זה לא יששכר זבולון — התשלום הזה זה בשביל קמחא דסוכות בשר ועופות" — $14,344 מ-23.11
+    # (הוראת קבע בבנק ווסט "Meat and chicken"): הייעוד מתוקן, וההוראה עצמה + כלל לסכום הזה — לסוכות תשפ"ז,
+    # כדי שגם החיוב הבא לא ייכנס ליששכר־זבולון
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='stetfeld_meat_v1'").fetchone():
+            _cat = 'סוכות תשפ"ז'
+            _ids = [r[0] for r in con.execute("SELECT id FROM donors WHERE last LIKE 'שטטפלד%' AND first LIKE '%יצחק%'")]
+            _n = 0
+            for _did in _ids:
+                _n += con.execute("UPDATE donations SET category=?, note=COALESCE(note,'')||' · קמחא דסוכות — בשר ועופות' "
+                                  "WHERE donor_id=? AND date='2026-11-23' AND ROUND(CAST(amount AS REAL),2)=14344 "
+                                  "AND COALESCE(category,'')<>?", (_cat, _did, _cat)).rowcount
+                con.execute("UPDATE recon SET category=? WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=14344 "
+                            "AND source LIKE 'Banquest%' AND COALESCE(category,'') IN ('','יששכר־זבולון')", (_cat, _did))
+                con.execute("UPDATE bq_sched SET for_cat=?, for_note='קמחא דסוכות — בשר ועופות' "
+                            "WHERE donor_id=? AND ROUND(CAST(amount AS REAL),2)=14344", (_cat, _did))
+                con.execute("INSERT INTO donor_rules(donor_id,amount,category,note,created) VALUES(?,14344,?,?,?) "
+                            "ON CONFLICT(donor_id,amount) DO UPDATE SET category=excluded.category, note=excluded.note",
+                            (_did, _cat, 'קמחא דסוכות — בשר ועופות (מאיר)', today_iso()))
+            con.execute("INSERT INTO seed_flags(name) VALUES('stetfeld_meat_v1')")
+            con.commit()
+            print('  שטטפלד בשר ועופות → סוכות תשפ"ז:', _n)
+    except Exception as e:
+        con.rollback()
+        print('  stetfeld meat error:', e)
+
     # 📋 משימות הגבאים מהדף של מאיר — לשמעון ברלב (פעם אחת; משימה שכבר קיימת לא נכנסת שוב)
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='cm_jobs_barlev_v1'").fetchone():
@@ -8964,6 +8990,60 @@ def ensure_schema():
             con.commit()
     except Exception as e:
         print('  sims 700 error:', e)
+    # מאיר (23.11.2026): "אתמול מיזגנו לטפפר את טברסקי ולמוקאי את עליס — וברשימה אצל התורמים כתוב שאין להם, המקום
+    # פתוח" — אצלם היה מקום פתוח (גוטליב חיים / פיליפס יונתן יצאו מהכולל), והאברך החדש צריך להיכנס *למקום הזה*:
+    # השותפות הפתוחה מקבלת את האברך, התאריך והסכום; שורה כפולה שנפתחה בנפרד (אם נפתחה) נסגרת.
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='iz_slots_fill_v1'").fetchone():
+            _log = []
+            for _prev, _dl, _df, _avs, _hd, _amt in (('גוטליב', 'טעפפער', 'נתן', ('טברסקי שמואל', 'טברסקי'), 'א\' כסלו תשפ"ז', '1000'),
+                                                    ('פיליפס', 'מוקאי', 'יעקב', ('עליס שמואל דוד', 'עליס'), 'א\' טבת תשפ"ז', '700')):
+                _sl = con.execute("SELECT p.id, p.donor_id, p.prev_avreich FROM partners p JOIN donors d ON d.id=p.donor_id "
+                                  "WHERE COALESCE(p.active,1)<>0 AND COALESCE(TRIM(p.avreich),'')='' AND COALESCE(p.prev_avreich,'') LIKE ? "
+                                  "AND d.last LIKE ?", ('%' + _prev + '%', '%' + _dl + '%')).fetchall()
+                _an = con.execute("SELECT name FROM avreichim WHERE TRIM(name)=?", (_avs[0],)).fetchone()
+                if not _an:
+                    _c = con.execute("SELECT name FROM avreichim WHERE TRIM(name) LIKE ? AND COALESCE(TRIM(ended),'')=''", (_avs[1] + '%',)).fetchall()
+                    _an = _c[0] if len(_c) == 1 else None
+                if not _an:
+                    con.execute("INSERT OR IGNORE INTO avreichim(name,last,first,note,started,created) VALUES(?,?,?,'','',?)",
+                                (_avs[0], _avs[0].split()[0], ' '.join(_avs[0].split()[1:]), today_iso()))
+                    _an = {'name': _avs[0]}
+                _anm = _an['name'].strip()
+                if len(_sl) != 1:
+                    _log.append('✗ %s: נמצאו %d מקומות פתוחים' % (_dl, len(_sl)))
+                    continue
+                _s = _sl[0]
+                _g = None
+                try:
+                    _pt = _hd.split(); _g = heb_greg_year(' '.join(_pt[:-1]), _pt[-1])
+                except Exception:
+                    pass
+                _rn = heb_anniv(_hd)
+                con.execute("UPDATE partners SET avreich=?, start_date=?, start_greg=?, renew_date=?, "
+                            "amount=CASE WHEN COALESCE(TRIM(amount),'')='' THEN ? ELSE amount END, prev_avreich='', prev_ended='' WHERE id=?",
+                            (_anm, _hd, _g.isoformat() if _g else None, _rn.isoformat() if _rn else None, _amt, _s['id']))
+                # שורה נוספת לאותו אברך אצל אותו תורם שנפתחה בנפרד — יוצאת (אחרת הוא נספר פעמיים)
+                _dup = con.execute("SELECT id FROM partners WHERE donor_id=? AND TRIM(avreich)=? AND id<>? AND COALESCE(active,1)<>0",
+                                   (_s['donor_id'], _anm, _s['id'])).fetchall()
+                for _x in _dup:
+                    con.execute("DELETE FROM partners WHERE id=?", (_x['id'],))
+                _why = '↩️ %s נכנס במקומו של %s מ%s' % (_anm, (_s['prev_avreich'] or '').strip(), _hd)
+                iz_log(con, _anm, _s['donor_id'], _why, now_iso(), _hd)
+                con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary) VALUES(?,?,?,?)", (_s['donor_id'], today_iso(), 'הערה', _why))
+                con.execute("UPDATE avreichim SET ended='' WHERE TRIM(name)=? AND COALESCE(TRIM(ended),'')<>''", (_anm,))
+                _log.append('✓ %s ← %s (%d כפולים הוסרו)' % (_dl, _anm, len(_dup)))
+            try:
+                _rep = json.loads(kv_get(con, 'iz_5787_report', '') or '{}')
+            except ValueError:
+                _rep = {}
+            _rep['slots'] = _log
+            kv_set(con, 'iz_5787_report', json.dumps(_rep, ensure_ascii=False))
+            con.execute("INSERT INTO seed_flags(name) VALUES('iz_slots_fill_v1')")
+            con.commit()
+            print('  מקומות פתוחים: ' + ' · '.join(_log))
+    except Exception as e:
+        print('  iz slots fill error:', e)
     # מאיר (23.11.2026): "איפה הווב שעשינו על הבניין? זה לא במערכת, בדף הבניין יש רק 3 תרומות" — דף "נוסחי ההקדשות"
     # (99 הקדשות, מאיר אישר 85 ומחק 9) נכנס ללשונית "הבניין הקדוש": כל הקדשה לכרטיס התורם כשיש התאמה ברורה אחת
     # בלבד; בלי התאמה ברורה — נשמרת עם השם מהדף ומוצגת ב"לא משויכים", למאיר לשייך בלחיצה (לא מנחשים).
@@ -11133,13 +11213,15 @@ def get_all():
         d['declined'] = []
         d['declined_open'] = 0; d.setdefault('unseen', 0)
     try:
-        ok, okmon = {}, set()
+        ok, okmon, last_ok = {}, set(), {}
         for r in c.execute("SELECT donor_id,amount,date FROM recon "
                            "WHERE donor_id IS NOT NULL AND COALESCE(status,'settled') IN ('settled','')"):
             iso = _recon_iso(r['date']) or (r['date'] or '')[:10]
             if iso:
                 ok.setdefault((r['donor_id'], _amt2(r['amount'])), []).append(_days(iso))
                 okmon.add((r['donor_id'], _amt2(r['amount']), iso[:7]))
+                if _amt2(r['amount']) > 0.5 and _days(iso):
+                    last_ok[r['donor_id']] = max(last_ok.get(r['donor_id'], 0), _days(iso))
         for r in c.execute("SELECT donor_id,amount,date FROM donations "
                            "WHERE donor_id IS NOT NULL AND CAST(amount AS REAL)>0"):
             iso = (r['date'] or '')[:10]
@@ -11147,6 +11229,8 @@ def get_all():
                 okmon.add((r['donor_id'], _amt2(r['amount']), iso[:7]))
                 if len(iso) == 10:
                     ok.setdefault((r['donor_id'], _amt2(r['amount'])), []).append(_days(iso))
+                    if _amt2(r['amount']) > 0.5 and _days(iso):
+                        last_ok[r['donor_id']] = max(last_ok.get(r['donor_id'], 0), _days(iso))
         for r in c.execute("SELECT tid,first,last,amount,date,source,status,donor_id,"
                            "COALESCE(no_debt,0) no_debt, COALESCE(is_debt,0) is_debt FROM recon "
                            "WHERE donor_id IS NOT NULL "
@@ -11159,6 +11243,10 @@ def get_all():
             amt = _amt2(r['amount'])
             hit = [x for x in ok.get((r['donor_id'], amt), []) if dd and -3 <= x - dd <= 14]
             if not hit and iso and (r['donor_id'], amt, iso[:7]) in okmon:
+                hit = [1]
+            # מאיר: "החלון הזה לא עבר… לא מעודכן… גאלד יעקב לא עבר, וכן עבר לו בסוף… צריך להיות עדכני מיד" —
+            # אם אחרי הדחייה נכנסה ממנו תרומה מוצלחת (כל סכום, כל דרך) — הכרטיס כבר עובר, זה לא "לא עבר"
+            if not hit and dd and last_ok.get(r['donor_id'], 0) >= dd:
                 hit = [1]
             row = dict(r)
             row['date_iso'] = iso
@@ -16465,10 +16553,12 @@ AUTH_HOURS_ROLE = {'gabbai': 30 * 24, 'comm': 30 * 24, 'parnes': 30 * 24, 'admin
 def auth_hours(role):
     return AUTH_HOURS_ROLE.get(role, AUTH_HOURS)
 AUTH_PUBLIC = ('/api/yemot/ivr/', '/api/yemot/mkgroup/', '/api/yemot/mkrec/', '/unsub', '/api/authorize/webhook', '/api/health', '/api/nd/hook/',
+               '/api/mikveh/ops',   # 🔧 פעולת תחזוקה למקווה — מוגנת בטוקן סודי (MIKVEH_OPS_TOKEN), בלי כניסת מנהל
                '/mcp/',   # ✍️ חיבור ל-Claude (הודעות ליומן) — מוגן בטוקן הסודי שבכתובת (CAL_MCP_TOKEN)
                '/u/', '/api/u/',   # קישור אישי לתורם לעדכון כרטיס (חתום, 30 יום) — בלי כניסה
                '/d/',   # אותו קישור באנגלית בקוד קצר (כמו /k/ בעברית)
                '/k/', '/api/k/',   # 🔗 הקישור האישי בעברית — קהילה / תורמים בארץ (חתום, 30 יום) — בלי כניסה
+               '/give', '/api/give/', '/KollelChatzos', '/kollelchatzos', '/kc',   # 🌐 דף התרומה הכללי באנגלית — לכל תורם, ישן או חדש
                '/o.png')   # פיקסל מעקב הפתיחות — נטען אצל מי שקיבל את המייל, בלי כניסה (חתום בטוקן)   # תחיליות; הכניסה עצמה מטופלת לפני
 # כניסה עם חשבון גוגל — מאיר: "או אפשרות לגשת דרך שלי גוגל של 5805123". ב-Render:
 #     GOOGLE_CLIENT_ID     מזהה הלקוח (…apps.googleusercontent.com) — ציבורי, בלי סוד
@@ -17035,6 +17125,9 @@ def missing_report(con, days_grace=5):
         a = _amt2(r['amount'])
         dd = _days(iso)
         hit = any(abs(x - a) < 0.005 and (-3 <= _days(i) - dd <= 14 or i[:7] == iso[:7]) for i, x in ok.get(r['donor_id'], []))
+        # כמו במסך "לא עבר": תרומה מוצלחת אחרי הדחייה (כל סכום) — הכרטיס עובר, לא מדווחים
+        if not hit and dd:
+            hit = any(x > 0.5 and len(i) == 10 and _days(i) >= dd for i, x in ok.get(r['donor_id'], []))
         if hit:
             continue
         k = (r['donor_id'], a, iso[:7])
@@ -18564,7 +18657,7 @@ def globe_png(width=108):
     return _LH_CACHE[k]
 
 
-CL_FOOTER = ('Kollel Chatzos \u00b7 38 Knesset Yechezkel St., Beitar Illit, Israel \u00b7 Tel 972-2-580-3545 \u00b7 From U.S. 646-403-3750<br>'
+CL_FOOTER = ('Kollel Chatzos \u00b7 38 Knesset Yechezkel St., Beitar Illit, Israel \u00b7 Tel 972-2-580-3545<br>'
              'U.S.A.: Kollel Chatzos c/o Friedman Family, 1540 40th Street, Brooklyn, NY 11218 \u00b7 Tel 718-972-7169<br>'
              'chatzot18@gmail.com \u00b7 www.kollelchatzot.com')
 
@@ -19977,6 +20070,237 @@ def cardlink_charge(con, did, b):
             'night_error': (nres or {}).get('error') if (nres and not nres.get('ok')) else ''}
 
 
+_GIVE_HITS = {}
+
+
+def give_page(base=''):
+    """🌐 מאיר: "קישור לתורם בלי קשר אם הוא תורם ישן או חדש… שיוכל לבחור מה לתרום, כרטיס אשראי שיחויב מיד, לילה
+    בכולל, יששכר זבולון אברך לשנה, שמות לקוויטל עד 4 עם שם האמא, אימייל לקבלה אוטומטית וטלפון… באנגלית, מעוצב
+    ולא ארוך". הכרטיס בטופס המאובטח של בנק ווסט (Banquest) — המספר לא עובר אצלנו."""
+    import banquest as _bq
+    key, js = _bq.token_key(), _bq.token_js()
+    card = ('<div id="card" class="cardbox"></div><div class="small">&#128274; Your card is entered in the encrypted form of our card '
+            'processor and is sent directly to them — it never passes through or is stored on our systems.</div>'
+            if key else '<div class="warn">The secure card form is temporarily unavailable. Please contact us.</div>')
+    t = open(os.path.join(HERE, 'give_page.html'), encoding='utf-8').read()
+    # מאיר: "שזה יהיה יפה וקטן, לא גדול… עם הלוגו של כולל חצות, וכתוב דף מאובטח לתרומות אונליין" — תמונה מרובעת
+    # (בוואטסאפ מוצגת כתמונה קטנה ליד הכותרת), הדף עצמו נפתח רק בלחיצה
+    og = ('<meta name="description" content="Secure online donation page · Kollel Chatzos · Torah learning every night at Chatzos.">'
+          '<meta property="og:title" content="Kollel Chatzos — Secure Online Donation">'
+          '<meta property="og:description" content="Sponsor a night of learning · Breakfast for the Avreichim · 3 Avreichim learn and daven l\'zechus you every night">'
+          '<meta property="og:site_name" content="Kollel Chatzos"><meta property="og:type" content="website">'
+          '<meta property="og:image" content="{b}/give_og.png?v=2"><meta property="og:image:secure_url" content="{b}/give_og.png?v=2">'
+          '<meta property="og:image:type" content="image/png"><meta property="og:image:width" content="600"><meta property="og:image:height" content="600">'
+          '<meta property="og:image:alt" content="Kollel Chatzos · Secure Online Donation"><meta name="twitter:card" content="summary">'
+          '<link rel="icon" href="/icon-192.png">').format(b=base)
+    return (t.replace('{{OG}}', og).replace('{{CARD}}', card).replace('{{KEY}}', json.dumps(key or '')).replace('{{JS}}', json.dumps(js))
+             .replace('{{LOGO}}', 'data:image/png;base64,' + base64.b64encode(letterhead_logo(300)).decode('ascii')))
+
+
+def give_donor(con, b):
+    """תורם לפי המייל או הטלפון (התאמה אחת בלבד) — ואם אין, כרטיס חדש מהפרטים שמילא."""
+    em = str(b.get('email') or '').strip().lower()[:120]
+    ph = re.sub(r'\D', '', str(b.get('phone') or ''))
+    hit = []
+    for r in con.execute("SELECT id,email,phone FROM donors"):
+        if em and em in [x.lower() for x in emails_of(r['email'] or '')]:
+            hit.append(r['id'])
+    if len(set(hit)) != 1 and len(ph) >= 9:
+        hit = [r['id'] for r in con.execute("SELECT id,phone FROM donors") if ph[-9:] in re.sub(r'\D', '', r['phone'] or '')]
+    if len(set(hit)) == 1:
+        did = hit[0]
+        d = con.execute("SELECT email,phone FROM donors WHERE id=?", (did,)).fetchone()
+        if em and em not in [x.lower() for x in emails_of(d['email'] or '')]:
+            con.execute("UPDATE donors SET email=TRIM(COALESCE(email,'') || CASE WHEN COALESCE(email,'')='' THEN '' ELSE ', ' END || ?) WHERE id=?", (em, did))
+        if ph and not (d['phone'] or '').strip():
+            con.execute("UPDATE donors SET phone=? WHERE id=?", (str(b.get('phone') or '').strip()[:40], did))
+        return did, False
+    first, last = str(b.get('first') or '').strip()[:60], str(b.get('last') or '').strip()[:60]
+    us = ph.startswith('1') or (len(ph) == 10 and not ph.startswith('0'))
+    cur = con.cursor()
+    cur.execute("INSERT INTO donors(last,first,english,email,phone,addr,region,tier) VALUES(?,?,?,?,?,?,?,?)",
+                (last, first, (first + ' ' + last).strip(), em, str(b.get('phone') or '').strip()[:40], str(b.get('addr') or '').strip()[:200],
+                 'us' if us else '', 'קוויטל_זמנים'))
+    did = cur.lastrowid
+    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                (did, today_iso(), 'קישור', '🌐 תורם חדש מדף התרומה האונליין', '', now_iso()))
+    return did, True
+
+
+def give_iz(con, did, b, amt=1000, cat='יששכר־זבולון', en='Yissachar-Zevulun partnership', he_title='יששכר־זבולון — אברך לשנה (12 חודשים)',
+            tier='יששכר_זבולון', task='לשבץ אברך ולשלוח שטר'):
+    """🤝 מאיר: "ביששכר זבולון שיוכלו לעשות רק 12 חודשים בלבד — אברך ל-12 חודשים, כל חודש $1,000; אי אפשר לקחת
+    יששכר זבולון לחודש" — הכרטיס נשמר בבנק ווסט, $1,000 נגבים עכשיו, והוראת קבע ל-11 חודשים נוספים (סה"כ 12).
+    אותו דבר ל-$180 לחודש לשנה ("3 אברכים יתפללו עליך כל לילה") — עם הסכום, הייעוד והדרגה שלו."""
+    import banquest as _bq
+    nonce = re.sub(r'[^A-Za-z0-9_\-]', '', str(b.get('nonce') or ''))
+    if not nonce:
+        return {'ok': False, 'error': 'Please enter your card details first.'}
+    d = con.execute("SELECT * FROM donors WHERE id=?", (did,)).fetchone()
+    em = str(b.get('email') or '').strip()
+    nm = ((b.get('first') or '') + ' ' + (b.get('last') or '')).strip()
+    cu = con.execute("SELECT * FROM bq_cust WHERE donor_id=? ORDER BY active DESC, id DESC", (did,)).fetchone()
+    cid = cu['id'] if cu else 0
+    if not cid:
+        code, res = _bq.create_customer(nm, first=str(b.get('first') or ''), last=str(b.get('last') or ''), email=em,
+                                        phone=str(b.get('phone') or ''), number=did)
+        if code not in (200, 201) or not isinstance(res, dict) or not res.get('id'):
+            return {'ok': False, 'error': 'The payment system did not respond. Please try again or contact us.'}
+        cid = res['id']
+        con.execute("INSERT OR REPLACE INTO bq_cust(id,identifier,first,last,email,phone,number,active,donor_id,manual,synced) "
+                    "VALUES(?,?,?,?,?,?,?,1,?,1,?)", (cid, nm, res.get('first_name') or '', res.get('last_name') or '', em,
+                                                    str(b.get('phone') or ''), str(did), did, now_iso()))
+        con.commit()
+    code, pm = _bq.create_pm_or_existing(cid, 'nonce-' + nonce, b.get('exp_m'), b.get('exp_y'), last4=str(b.get('last4') or ''))
+    if code not in (200, 201) or not isinstance(pm, dict) or not pm.get('id'):
+        err = bq_hint(_bq.LAST.get('error') or '') or 'the card could not be saved'
+        return {'ok': False, 'error': 'The card was not accepted: %s. Please check the details and try again.' % err}
+    con.execute("INSERT OR REPLACE INTO bq_pm(id,customer_id,card_type,last4,exp_m,exp_y,is_default,name) VALUES(?,?,?,?,?,?,?,?)",
+                (pm['id'], cid, pm.get('card_type') or '', pm.get('last4') or '', pm.get('expiry_month') or 0, pm.get('expiry_year') or 0, 1, pm.get('name') or ''))
+    con.commit()
+    amt = int(amt)
+    usd = '$' + format(amt, ',')
+    desc = en + ' — month 1 of 12'
+    code, res = _bq.charge_pm(pm['id'], amt, description=desc, customer_id=cid, email=em, cit=True)
+    if code != 200 or not isinstance(res, dict):
+        err = bq_hint(_bq.LAST.get('error') or '') or 'the card was declined'
+        return {'ok': False, 'error': 'The charge did not go through: %s. Please check the card details and try again.' % err}
+    out = bq_record_charge(con, res, amt, desc, cat, did, cid, ('%s %s' % (pm.get('card_type') or '', pm.get('last4') or '')).strip(), nm)
+    if not out.get('ok'):
+        con.commit()
+        return {'ok': False, 'error': 'The charge did not go through: %s. Please check the card details and try again.' % (out.get('error') or 'declined')}
+    nxt = datetime.date.today()
+    nxt = (nxt.replace(day=1) + datetime.timedelta(days=32)).replace(day=min(nxt.day, 28))
+    title = he_title + ' · מהדף האונליין'
+    sc, sr = _bq.create_schedule(cid, title, amt, pm['id'], next_run_date=nxt.isoformat(), num_left=11, receipt_email=em)
+    if sc in (200, 201) and isinstance(sr, dict) and sr.get('id'):
+        con.execute("""INSERT OR REPLACE INTO bq_sched(id,customer_id,title,amount,freq,next_run,prev_run,num_left,active,status,pm_id,
+                         receipt_email,tx_count,created,donor_id,for_cat,for_note,synced) VALUES(?,?,?,?,?,?,'',?,1,?,?,?,0,?,?,?,?,?)""",
+                    (sr['id'], cid, title, amt, sr.get('frequency') or 'monthly', sr.get('next_run_date') or nxt.isoformat(),
+                     int(sr.get('num_left') or 11), sr.get('status') or 'active', pm['id'], em, today_iso(), did, cat, he_title, now_iso()))
+        sched_ok = True
+    else:
+        sched_ok = False
+    con.execute("INSERT INTO pledges(donor_id,category,amount,permo,monthly,status,note,date,since,cur) VALUES(?,?,?,?,1,?,?,?,?,'$')",
+                (did, cat, str(amt), str(amt), 'נתן', 'מהדף האונליין — %s, 12 חודשים מ-%s' % (he_title, today_iso()), today_iso(), today_iso()))
+    # מאיר: "כל תרומה חודשית נכנסת לקוויטל של הכולל" — מעלים דרגה לפי הסדר, אף פעם לא מורידים
+    _prio = {'יששכר_זבולון': 3, 'קוויטל_101': 2, 'קוויטל_שבועי': 1}
+    _cur = (con.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone() or {'tier': ''})['tier'] or ''
+    if tier and _prio.get(tier, 0) > _prio.get(_cur, 0):
+        con.execute("UPDATE donors SET tier=? WHERE id=?", (tier, did))
+    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                (did, today_iso(), 'followup', '🤝 נרשם מהדף האונליין: %s, %s × 12. החודש הראשון נגבה; ' % (he_title, usd)
+                 + ('הוראת קבע ל-11 חודשים הוקמה בבנק ווסט. ' if sched_ok else '⚠️ הוראת הקבע לא הוקמה — להקים ידנית ל-11 חודשים. ') + task))
+    con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                (did, today_iso(), 'קישור', '🤝 %s מהדף האונליין: %s נגבו (אישור %s)%s' % (cat, usd, out.get('auth') or out.get('ref') or '',
+                 ' · הוראת קבע 11 חודשים מ-' + nxt.isoformat() if sched_ok else ' · הוראת הקבע לא הוקמה'), '', now_iso()))
+    con.commit()
+    cardlink_alert(con, did, '• 🤝 %s מהדף האונליין: %s × 12' % (cat, usd) + ('' if sched_ok else ' — ⚠️ הוראת הקבע לא הוקמה, להקים ידנית'))
+    return {'ok': True, 'amount': usd, 'auth': out.get('auth') or out.get('ref') or '', 'night': None, 'night_error': '', 'sched': sched_ok,
+            'next': nxt.strftime('%B %-d, %Y')}
+
+
+GIVE_KINDS = {'night': (480, ''), 'iz': (1000, 'יששכר־זבולון'), 'breakfast': (360, 'ארוחת בוקר'), 'ner': (1200, 'נר למאור'),
+              'monthly180': (180, 'תרומה חודשית — 3 אברכים מתפללים'),
+              'monthly101': (101, 'תרומה חודשית — קוויטל כל השנה')}
+
+
+def give_charge(con, b, ip=''):
+    """חיוב מדף התרומה הכללי: תורם (קיים או חדש) → חיוב מיד בכרטיס שהוקלד עכשיו → שמות לקוויטל → קבלה במייל."""
+    now = time.time()
+    hits = [t for t in _GIVE_HITS.get(ip, []) if now - t < 3600]
+    if len(hits) >= 8:
+        return {'ok': False, 'error': 'Too many attempts. Please contact our office.'}
+    _GIVE_HITS[ip] = hits + [now]
+    kind = str(b.get('kind') or 'donate')
+    if not str(b.get('first') or '').strip() or not str(b.get('last') or '').strip():
+        return {'ok': False, 'error': 'Please enter your name.'}
+    if not re.match(r'^\S+@\S+\.\S+$', str(b.get('email') or '').strip()):
+        return {'ok': False, 'error': 'Please enter your email.'}
+    amt = GIVE_KINDS[kind][0] if kind in GIVE_KINDS else round(_amt2(b.get('amount')), 2)
+    did, new = give_donor(con, b)
+    con.commit()
+    purpose = {'night': '', 'breakfast': 'Breakfast for the Avreichim', 'ner': 'Ner LaMaor — one week'}.get(kind, 'Donation — online page')
+    if kind == 'iz':
+        r = give_iz(con, did, b)
+    elif kind == 'monthly180':
+        # 🙏 מאיר: "$180 לחודש. 3 אברכים יתפללו עליך כל לילה… יחייב אותו כל חודש… מודגש מונטלי. לשנה."
+        r = give_iz(con, did, b, amt=180, cat=GIVE_KINDS[kind][1], en='Monthly donation — 3 Avreichim daven for you every night',
+                    he_title='$180 לחודש לשנה — 3 אברכים מתפללים כל לילה (12 חודשים)', tier='קוויטל_101',
+                    task='לוודא שהשמות נכנסו לקוויטל של 3 האברכים')
+    elif kind == 'monthly101':
+        # 📜 מאיר: "101 לחודש לשנה להיות רשום בקוויטל של הכולל כל השנה"
+        r = give_iz(con, did, b, amt=101, cat=GIVE_KINDS[kind][1], en='Monthly donation — names in the Kollel Kvittel all year',
+                    he_title='$101 לחודש לשנה — רשום בקוויטל של הכולל כל השנה (12 חודשים)', tier='קוויטל_שבועי',
+                    task='לוודא שהשמות נכנסו לקוויטל של הכולל לכל השנה')
+    else:
+        r = cardlink_charge(con, did, dict(b, amount=amt, purpose=purpose))
+    if not r.get('ok'):
+        return r
+    dn = con.execute("SELECT id FROM donations WHERE donor_id=? ORDER BY id DESC LIMIT 1", (did,)).fetchone()
+    if dn and kind in ('iz', 'breakfast', 'ner', 'monthly180', 'monthly101'):
+        con.execute("UPDATE donations SET category=? WHERE id=?", (GIVE_KINDS[kind][1], dn['id']))
+    # 📜 שמות לקוויטל (עד 4, עם שם האם)
+    nm = []
+    for x in (b.get('names') or [])[:4]:
+        if isinstance(x, dict) and str(x.get('name') or '').strip():
+            n, m = str(x.get('name') or '').strip()[:80], str(x.get('mother') or '').strip()[:80]
+            heb = bool(re.search(r'[֐-׿]', n + m))
+            nm.append(n + ((' בן/בת ' if heb else ' ben/bas ') + m if m else ''))
+    if nm:
+        tier = (con.execute("SELECT tier FROM donors WHERE id=?", (did,)).fetchone()['tier'] or '') or 'קוויטל_זמנים'
+        con.execute("INSERT INTO prayers(donor_id,name,text,tier) VALUES(?,?,?,?)", (did, '', '\n'.join(nm), tier))
+        con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date,seen,at) VALUES(?,?,?,?,?,0,?)",
+                    (did, today_iso(), 'קישור', '📜 שמות לקוויטל מהדף האונליין: ' + ' · '.join(nm), '', now_iso()))
+    # 🧾 קבלה אוטומטית למייל שמילא
+    sent = ''
+    rurl = ''
+    if dn:
+        try:
+            doc = receipt_issue(con, dn['id'], 'us', send=False)
+            if doc:
+                # מאיר: "ואם הוא ירצה להוציא קבלה, שיוכל להוציא קבלה מיד" — קישור חתום להורדת הקבלה מהדף
+                rurl = '/api/give/rc/%d.%s.pdf' % (doc['id'], give_rc_sig(doc['id']))
+            rs = receipt_send(con, doc['id'], email=str(b.get('email') or '').strip()) if doc else {'ok': False}
+            if rs and rs.get('ok'):
+                sent = str(b.get('email') or '').strip()
+        except Exception as e:
+            print('  give receipt error:', e)
+        if not sent:
+            con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                        (did, today_iso(), 'email', '🧾 הקבלה מהדף האונליין לא נשלחה אוטומטית — לשלוח'))
+    con.commit()
+    if new:
+        cardlink_alert(con, did, '• 🌐 תורם חדש מדף התרומה האונליין')
+    r['receipt'] = sent
+    r['receipt_url'] = rurl
+    return r
+
+
+GIVE_SHORT = 'https://donate.kollelchatzot.com'
+_GIVE_SHORT_OK = {'t': 0, 'ok': False}
+
+
+def give_short_base():
+    """🔗 מאיר: "donate.kollelchatzot.com מתאים" — ה-CRM שולח את הכתובת הקצרה רק כשהיא באמת עובדת (DNS ב-Namecheap +
+    Custom Domain ב-Render). עד אז — הכתובת הארוכה /kc. נבדק פעם ב-10 דקות (שעה אחרי שעבד)."""
+    import urllib.request
+    now = time.time()
+    if now - _GIVE_SHORT_OK['t'] > (3600 if _GIVE_SHORT_OK['ok'] else 600):
+        ok = False
+        try:
+            with urllib.request.urlopen(urllib.request.Request(GIVE_SHORT + '/', headers={'User-Agent': 'KC-check'}), timeout=6) as rs:
+                ok = rs.status == 200 and b'id="chips"' in rs.read(400000)
+        except Exception:
+            ok = False
+        _GIVE_SHORT_OK.update(t=now, ok=ok)
+    return GIVE_SHORT if _GIVE_SHORT_OK['ok'] else ''
+
+
+def give_rc_sig(rid):
+    return hmac.new(_link_secret(), ('give.rc.%d' % int(rid)).encode('ascii'), hashlib.sha256).hexdigest()[:16]
+
+
 def cardlink_note(con, did, b):
     """מאיר: "וכפתור לכתוב הערות" — הערה מהתורם: שורה בקשר ומשימה למשרד."""
     note = str(b.get('note') or '').strip()[:2000]
@@ -21166,80 +21490,262 @@ def _mk_sub_valid(c):
         return False
 
 
-def mk_bachur_enforce(con):
-    """חוסם בחורים (בקבוצות שנבחרו) בלי מנוי בתוקף, ופותח את מי שחסמנו אוטומטית וכעת יש לו מנוי.
-    רק קריאה/כתיבה למקווה דרך set_blocked. לא נוגע בחסימות ידניות (נימוק אחר)."""
+def mk_bachur_reset(con, reason=None, clear_seen=False):
+    """🔓 ביטול כל החסימות בקבוצות הבחורים — פותח ללא תנאי כל מי שחסום בקבוצות שסומנו (לא רק מה שאנחנו חסמנו,
+    כי חסימות ישנות עשויות להיות עם נוסח אחר). טרי מהמקווה. לא חוסם מחדש את מי שכבר נכנס — מסמן את כל הכניסות
+    הקיימות כ'טופלו' כך שרק כניסה חדשה תחסום שוב."""
     import mikveh as _mk
     bg = mk_bachur_group_ids(con)
-    the_reason = mk_bachur_block_cfg(con)['reason']   # הנוסח שמאיר כתב (מזהה את החסימות שלנו)
-    blocked = opened = 0
     if not bg:
-        return {'blocked': 0, 'opened': 0, 'checked': 0, 'empty': True}
-    rows = [c for c in _mk.clients() if _mk.visible(c) and str(c.get('groupId') or '') in bg]
+        return 0
     try:
-        held = set(json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or [])
+        held = set(str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or []))
     except Exception:
         held = set()
-    for c in rows:
-        cid = c.get('id')
-        if not cid:
-            continue
-        valid = _mk_sub_valid(c)
-        is_blk = bool(c.get('isBlocked'))
-        reason = str(c.get('blockReason') or '')
-        ours = str(cid) in held or reason == the_reason
+    cand = set(held)
+    members = {}
+    try:
+        for c in _mk.clients(fresh=True):                      # טרי — לראות בדיוק מי חסום עכשיו
+            if str(c.get('groupId') or '') in bg and _mk.visible(c):
+                members[str(c.get('id'))] = c
+                if c.get('isBlocked'):
+                    cand.add(str(c.get('id')))                 # ללא תנאי — כל מי שחסום בקבוצה
+    except Exception as e:
+        print('  mk bachur reset list error:', e)
+    opened = 0
+    for cid in cand:
         try:
-            if not valid and not is_blk:
-                _mk.set_blocked(cid, True, the_reason)
-                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                            (cid, now_iso(), 'block', '⛔ נחסם אוטומטית — בחור בלי מנוי בתוקף'))
-                held.add(str(cid)); blocked += 1
-            elif valid and is_blk and ours:
-                _mk.set_blocked(cid, False, '')
-                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                            (cid, now_iso(), 'block', '✅ נפתח אוטומטית — יש מנוי בתוקף'))
-                held.discard(str(cid)); opened += 1
-            elif not valid and is_blk and ours:
-                held.add(str(cid))      # עדיין חסום על ידינו — לשמור במעקב לפתיחה מהירה
+            _mk.set_blocked(cid, False, '')
+            con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                        (cid, now_iso(), 'block', '🔓 חסימה בוטלה (ביטול כל החסימות בקבוצות הבחורים)'))
+            opened += 1
+        except Exception as e:
+            print('  mk bachur reset error:', cid, e)
+    kv_set(con, 'mk_bachur_blocked', '[]')
+    if clear_seen:
+        kv_set(con, 'mk_bachur_seen', '{}')
+    else:
+        # לסמן את כל הכניסות-בלי-מנוי הקיימות כ'טופלו', כדי שהמדיניות לא תחסום אותם שוב מיד (רק כניסה חדשה)
+        try:
+            seen = json.loads(kv_get(con, 'mk_bachur_seen', '') or '{}') or {}
+        except Exception:
+            seen = {}
+        try:
+            d1 = today_iso()[:10]; d0 = (il_now().date() - datetime.timedelta(days=45)).isoformat()
+            for r in (_mk.activity_log(d0, d1) or []):
+                cid = str(r.get('clientId') or '')
+                if cid not in members:
+                    continue
+                if str(r.get('id') or '').startswith('entrance:') and r.get('status') == 1 \
+                        and (r.get('subLine') or {}).get('key') != 'Activity_Log_SubLine_SubscriptionValidUntil':
+                    t = str(r.get('createdAt') or '')
+                    if t > str(seen.get(cid, '')):
+                        seen[cid] = t
+            kv_set(con, 'mk_bachur_seen', json.dumps(seen, ensure_ascii=False))
+            kv_set(con, 'mk_bachur_policy', 'v2')
+        except Exception as e:
+            print('  mk bachur reset seen error:', e)
+    con.commit()
+    return opened
+
+
+def mk_bachur_state(con, action='status'):
+    """מצב החסימה לבחורים: מי נכנס בפעימות בלי מנוי, מי חסום, ויומן. פנייה אחת בלבד למקווה (לא להעמיס).
+    action='unblock_bachur' מבטל קודם את כל החסימות."""
+    bg = mk_bachur_group_ids(con)
+    if not bg:
+        return {'note': 'לא סומנו קבוצות בחורים', 'blocked': [], 'offenders': [], 'history': [], 'unblocked': None}
+    unblocked = None
+    if action == 'unblock_bachur':
+        unblocked = mk_bachur_reset(con, clear_seen=False)
+    # מהמטמון (עד 2 דק') — הלולאה שרצה כל דקה שומרת אותו טרי; כך צפייה בלשונית לא מעמיסה על המקווה
+    members = _mk_bachur_members(con, fresh=False)
+    nm = lambda c: ((c.get('firstName') or '') + ' ' + (c.get('lastName') or '')).strip()
+    names = {cid: nm(c) for cid, c in members.items()}
+    blocked = [{'id': cid, 'name': names[cid], 'code': c.get('clientCode'),
+                'phone': (c.get('phone') or '').strip(), 'reason': c.get('blockReason') or ''}
+               for cid, c in members.items() if c.get('isBlocked')]
+    off = _mk_bachur_scan(con, members, 31)
+    offenders = [{'id': cid, 'name': names.get(cid, ''), 'code': members[cid].get('clientCode'),
+                  'phone': (members[cid].get('phone') or '').strip(), 'last': t, 'blocked': bool(members[cid].get('isBlocked'))}
+                 for cid, t in sorted(off.items(), key=lambda kv: kv[1], reverse=True)]
+    hist = []
+    try:
+        for r in con.execute("SELECT cid,at,summary FROM mk_log WHERE kind='block' ORDER BY id DESC LIMIT 80"):
+            hist.append({'cid': r['cid'], 'name': names.get(str(r['cid']), ''), 'at': r['at'], 'summary': r['summary']})
+    except Exception:
+        pass
+    return {'blocked': blocked, 'history': hist, 'offenders': offenders, 'unblocked': unblocked, 'note': ''}
+
+
+def _mk_bachur_members(con, fresh=False):
+    """בחורים בקבוצות שסומנו (raw מהמקווה). fresh=True — טרי, לתפוס כניסה אחרונה מעודכנת."""
+    import mikveh as _mk
+    bg = mk_bachur_group_ids(con)
+    if not bg:
+        return {}
+    return {str(c.get('id')): c for c in _mk.clients(fresh=fresh)
+            if _mk.visible(c) and str(c.get('groupId') or '') in bg and not (c.get('firstName') or '').strip().startswith('[')}
+
+
+def _mk_il(ts):
+    """timestamp של המקווה (UTC ISO) → 'YYYY-MM-DD HH:MM:SS' בשעון ישראל (כמו שהלוגים אצלנו), או ''"""
+    ts = str(ts or '')
+    if not ts:
+        return ''
+    try:
+        d = datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=datetime.timezone.utc)
+        if IL_TZ is not None:
+            d = d.astimezone(IL_TZ)
+        return d.strftime('%Y-%m-%d %H:%M:%S')
+    except Exception:
+        return ts[:19].replace('T', ' ')
+
+
+def _mk_bachur_group_since(con):
+    """ממתי כל לקוח בקבוצה הנוכחית — לפי שינויי הקבוצה שתועדו אצלנו (mk_log kind='group' ו-mkg_log).
+    {cid: 'YYYY-MM-DD HH:MM' בשעון ישראל של השינוי האחרון}. אם אין תיעוד — אין מגבלה (ותיק)."""
+    since = {}
+    try:
+        for r in con.execute("SELECT cid, MAX(at) a FROM mk_log WHERE kind='group' GROUP BY cid"):
+            if r['cid'] and r['a']:
+                since[str(r['cid'])] = str(r['a'])
+    except Exception:
+        pass
+    try:
+        for r in con.execute("SELECT cid, MAX(at) a FROM mkg_log WHERE ok=1 GROUP BY cid"):
+            cid, a = str(r['cid'] or ''), str(r['a'] or '')
+            if cid and a and a > since.get(cid, ''):
+                since[cid] = a
+    except Exception:
+        pass
+    return since
+
+
+def mk_drain_backfill(con):
+    """מגבה למאגר mk_drain ריקונים שתועדו ב-mk_log (kind='drain') אך עוד לא נרשמו במאגר (למשל ריקונים שנעשו
+    לפני שהמאגר קם). מזהה לפי (cid, at) כדי לא לכפול."""
+    con.execute("CREATE TABLE IF NOT EXISTS mk_drain(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, "
+                "name TEXT, bal REAL, temp REAL, at TEXT, refunded INTEGER DEFAULT 0, refunded_at TEXT)")
+    have = set((str(r['cid']), str(r['at'])) for r in con.execute("SELECT cid,at FROM mk_drain"))
+    for r in con.execute("SELECT cid,at,summary FROM mk_log WHERE kind='drain'"):
+        key = (str(r['cid']), str(r['at']))
+        if key in have:
+            continue
+        m = re.search(r'פעימות ₪([\d.]+) \+ זיכוי ₪([\d.]+)', r['summary'] or '')
+        if not m:
+            continue
+        con.execute("INSERT INTO mk_drain(cid,name,bal,temp,at) VALUES(?,?,?,?,?)",
+                    (r['cid'], '', float(m.group(1)), float(m.group(2)), r['at']))
+        have.add(key)
+    con.commit()
+
+
+def _mk_bachur_scan(con, members, days):
+    """מי נכנס בפעימות בלי מנוי: הכניסה האחרונה (lastEntrance, בשעון ישראל) מאוחרת מתום המנוי,
+    ו<b>גם מאוחרת מהמעבר שלו לקבוצת הבחורים</b> — כדי שכניסות ישנות מקבוצה אחרת (למשל ערך צבור) לא יחסמו
+    בטעות מי שרק עכשיו עבר לקבוצת בחורים. בתוך חלון days הימים. מחזיר {cid: lastEntrance גולמי} לזיכרון."""
+    cutoff = (il_now().date() - datetime.timedelta(days=int(days))).isoformat()
+    gsince = _mk_bachur_group_since(con)
+    off = {}
+    for cid, c in members.items():
+        li = str(c.get('lastEntrance') or '')
+        li_il = _mk_il(li)                 # בשעון ישראל, להשוואה מול הלוגים ומול תום המנוי
+        lid = li_il[:10]
+        if not (re.fullmatch(r'\d{4}-\d{2}-\d{2}', lid) and lid >= cutoff):
+            continue                       # לא נכנס בחלון — לא רלוונטי
+        se = _mk_il(c.get('subscriptionEndDate'))[:10]
+        se_valid = re.fullmatch(r'\d{4}-\d{2}-\d{2}', se)
+        if not ((not se_valid) or se < lid):
+            continue                       # המנוי כיסה את הכניסה — לא נכנס בפעימות בלי מנוי
+        g = gsince.get(cid)
+        if g and li_il[:16] <= str(g)[:16]:
+            continue                       # הכניסה לפני שעבר לקבוצת הבחורים — לא נספר (עבר עם כניסות ישנות)
+        off[cid] = li
+    return off
+
+
+def mk_bachur_offenders(con, days=31):
+    """רשימה לתצוגה (בלי לחסום): מי נכנס בפעימות בלי מנוי, עם התאריך והאם כבר חסום."""
+    members = _mk_bachur_members(con, fresh=True)
+    off = _mk_bachur_scan(con, members, days)
+    out = []
+    for cid, t in sorted(off.items(), key=lambda kv: kv[1], reverse=True):
+        c = members[cid]
+        out.append({'id': cid, 'name': ((c.get('firstName') or '') + ' ' + (c.get('lastName') or '')).strip(),
+                    'code': c.get('clientCode'), 'phone': (c.get('phone') or '').strip(),
+                    'last': t, 'blocked': bool(c.get('isBlocked'))})
+    return out
+
+
+def mk_bachur_enforce(con, days=31, fresh=False):
+    """מדיניות: חוסם בחורים (בקבוצות שנבחרו) שנכנסו בפועל בפעימות — כלומר כניסה מוצלחת שלא כוסתה במנוי —
+    ב-days הימים האחרונים. חד-כיווני: המערכת לא פותחת לבד (מי שחסום נשאר חסום עד שפותחים ידנית).
+    fresh=True מאפס את זיכרון הכניסות שטופלו (חוסם מחדש את כל העבריינים כעת).
+    לא נוגע בחסימות ידניות (נימוק אחר), וחוסם כל בחור רק פעם אחת לכל כניסה (לא חוסם שוב על אותה כניסה)."""
+    import mikveh as _mk
+    bg = mk_bachur_group_ids(con)
+    reason = mk_bachur_block_cfg(con)['reason']
+    if not bg:
+        return {'blocked': 0, 'reset': 0, 'checked': 0, 'offenders': 0, 'empty': True}
+    members = _mk_bachur_members(con, fresh=True)
+    if not members:
+        return {'blocked': 0, 'reset': 0, 'checked': 0, 'offenders': 0, 'empty': False}
+    if fresh:
+        kv_set(con, 'mk_bachur_seen', '{}')
+    offenders = _mk_bachur_scan(con, members, days)
+    try:
+        held = set(str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or []))
+    except Exception:
+        held = set()
+    try:
+        seen = json.loads(kv_get(con, 'mk_bachur_seen', '') or '{}') or {}
+    except Exception:
+        seen = {}
+    # מעבר חד-פעמי למדיניות החדשה: לבטל את החסימות הישנות שאינן עבריינים לפי המדיניות החדשה
+    reset = 0
+    migrate = kv_get(con, 'mk_bachur_policy', '') != 'v2'
+    if migrate:
+        for cid in list(held):
+            if cid in offenders:
+                continue       # עדיין עבריין — משאירים חסום
+            c = members.get(cid)
+            try:
+                if c is None:
+                    c = _mk.client(cid, max_age=0)
+                if c and c.get('isBlocked') and str(c.get('blockReason') or '') == reason:
+                    _mk.set_blocked(cid, False, '')
+                    con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                (cid, now_iso(), 'block', '🔓 חסימה אוטומטית בוטלה (מעבר למדיניות החדשה)'))
+                    reset += 1
+            except Exception as e:
+                print('  mk bachur migrate error:', cid, e)
+            held.discard(cid)
+        seen = {}              # מתחילים זיכרון נקי — המדיניות החדשה תבדוק את כל החודש האחרון
+        kv_set(con, 'mk_bachur_policy', 'v2')
+    blocked = 0
+    for cid, t in offenders.items():
+        if not migrate and t <= str(seen.get(cid, '')):
+            continue           # כבר טיפלנו בכניסה הזו — לא חוסמים שוב (כדי שפתיחה ידנית תישאר)
+        seen[cid] = t
+        c = members[cid]
+        if c.get('isBlocked'):
+            if str(c.get('blockReason') or '') == reason:
+                held.add(cid)
+            continue           # כבר חסום (ידנית או על ידינו) — לא נוגעים
+        try:
+            _mk.set_blocked(cid, True, reason)
+            con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                        (cid, now_iso(), 'block', '⛔ נחסם — נכנס בפעימות בלי מנוי בחודש האחרון'))
+            held.add(cid); blocked += 1
         except Exception as e:
             print('  mk bachur enforce error:', cid, e)
     kv_set(con, 'mk_bachur_blocked', json.dumps(sorted(held)))
+    kv_set(con, 'mk_bachur_seen', json.dumps(seen, ensure_ascii=False))
     con.commit()
-    return {'blocked': blocked, 'opened': opened, 'checked': len(rows), 'empty': False}
-
-
-def mk_bachur_fast_open(con):
-    """פתיחה כמעט-מיידית: בודק רק את הבחורים שאנחנו חסמנו (רשימה קצרה), טרי מהמקווה —
-    מי שכבר יש לו מנוי בתוקף נפתח מיד, בלי לחכות לסבב המלא."""
-    import mikveh as _mk
-    the_reason = mk_bachur_block_cfg(con)['reason']
-    try:
-        held = [str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or [])]
-    except Exception:
-        held = []
-    if not held:
-        return 0
-    opened = 0
-    keep = []
-    for cid in held:
-        try:
-            c = _mk.client(cid, max_age=0)        # טרי — בלי מטמון
-            if not c or not c.get('isBlocked') or str(c.get('blockReason') or '') != the_reason:
-                continue                            # כבר לא חסום על ידינו — מסירים מהמעקב
-            if _mk_sub_valid(c):
-                _mk.set_blocked(cid, False, '')
-                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                            (cid, now_iso(), 'block', '✅ נפתח מיד — נטען מנוי בתוקף'))
-                opened += 1
-            else:
-                keep.append(cid)
-        except Exception as e:
-            print('  mk bachur fast-open error:', cid, e)
-            keep.append(cid)
-    if opened:
-        kv_set(con, 'mk_bachur_blocked', json.dumps(sorted(set(keep))))
-        con.commit()
-    return opened
+    return {'blocked': blocked, 'reset': reset, 'checked': len(members), 'offenders': len(offenders), 'empty': False}
 
 
 def con_open_blocks(cid, except_id):
@@ -21435,14 +21941,14 @@ def _mk_diff_loop():
                 MK_DIFF_STATE['closed'] += mk_diff_check() or 0
                 last_full = time.time()
                 MK_DIFF_STATE['last_full'] = now_iso()
-                # 🧍 חסימת בחורים בלי מנוי — סבב מלא כל 5 דקות, רק אם המתג פעיל (ברירת מחדל כבוי)
+                # 🧍 חסימת בחורים שנכנסו בפעימות בלי מנוי — סבב כל 5 דקות, רק אם המתג פעיל (ברירת מחדל כבוי)
                 try:
                     con = db()
                     try:
                         cfg = mk_bachur_block_cfg(con)
                         if cfg['on']:
                             r = mk_bachur_enforce(con)
-                            cfg['last'] = now_iso(); cfg['blocked'] = r['blocked']; cfg['opened'] = r['opened']; cfg['error'] = ''
+                            cfg['last'] = now_iso(); cfg['blocked'] = r['blocked']; cfg['opened'] = r.get('reset', 0); cfg['error'] = ''
                             mk_bachur_block_save(con, cfg); con.commit()
                     finally:
                         con.close()
@@ -21464,26 +21970,24 @@ def _mk_diff_loop():
 
 
 def _mk_bachur_loop():
-    """🧍 פתיחה מהירה: רק את הבחורים שאנחנו חסמנו (רשימה קצרה), כל cfg.secs שניות — ורק כשהמתג פעיל.
-    לא עושה כלום כשהמתג כבוי או כשאין אף בחור חסום (לולאה זולה)."""
-    time.sleep(45)
+    """🧍 בדיקה כל דקה: מי נכנס בפעימות בלי מנוי — חוסם מיד. רק כשהמתג פעיל. חלון קצר (יומיים) כדי
+    לתפוס כניסות חדשות מהר ובזול; הסבב המלא (חודש) רץ כל 5 דקות ב-_mk_diff_loop."""
+    time.sleep(60)
     while True:
-        secs = 5
         try:
             con = db()
             try:
                 cfg = mk_bachur_block_cfg(con)
-                secs = cfg['secs']
                 if cfg['on']:
-                    op = mk_bachur_fast_open(con)
-                    if op:
-                        cfg['last'] = now_iso(); cfg['opened'] = op; cfg['error'] = ''
+                    r = mk_bachur_enforce(con, days=2)
+                    if r['blocked']:
+                        cfg['last'] = now_iso(); cfg['blocked'] = r['blocked']; cfg['error'] = ''
                         mk_bachur_block_save(con, cfg); con.commit()
             finally:
                 con.close()
         except Exception as e:
-            print('  mk bachur fast loop error:', e)
-        time.sleep(max(3, min(120, secs)))
+            print('  mk bachur minute loop error:', e)
+        time.sleep(60)
 
 
 def _mk_req_loop():
@@ -22965,7 +23469,57 @@ MCP_TOOLS = [
     {'name': 'today',
      'description': 'התאריך של היום בישראל — לועזי, עברי ויום בשבוע.',
      'inputSchema': {'type': 'object', 'properties': {}}},
+    # מאיר: "כלי חדש add_gabbai_reminder שמכניס תזכורת לדף תזכורות הגבאים… וכלי list_gabbai_reminders"
+    # — הדף "✅ משימות הצוות" בלשונית הקהילה (cm_job): למי, מה, עד מתי, הערות
+    {'name': 'add_gabbai_reminder',
+     'description': 'מכניס תזכורת / משימה לגבאי בדף "משימות הצוות" (תזכורות הגבאים) במערכת של כולל חצות. '
+                    'gabbai = שם הגבאי (אפשר גם רק שם משפחה או שם פרטי — למשל "ברלב"). '
+                    'date בפורמט YYYY-MM-DD — רשות; אם נאמר "מחר" / "יום שלישי" / תאריך עברי, שלח ב-when. '
+                    'כמה משימות — קריאה נפרדת לכל אחת.',
+     'inputSchema': {'type': 'object', 'properties': {
+         'gabbai': {'type': 'string', 'description': 'שם הגבאי'},
+         'task': {'type': 'string', 'description': 'הנושא / המשימה — בעברית, קצר וברור'},
+         'date': {'type': 'string', 'description': 'YYYY-MM-DD — רשות'},
+         'when': {'type': 'string', 'description': 'התאריך כמו שנאמר, כשאין date — רשות'},
+         'note': {'type': 'string', 'description': 'הערות — רשות'}},
+         'required': ['gabbai', 'task']}},
+    {'name': 'list_gabbai_reminders',
+     'description': 'התזכורות / המשימות הפתוחות של הגבאים (דף "משימות הצוות"), מסודרות לפי גבאי. '
+                    'gabbai — רשות: רק של גבאי אחד.',
+     'inputSchema': {'type': 'object', 'properties': {'gabbai': {'type': 'string', 'description': 'שם הגבאי — רשות'}}}},
 ]
+
+
+def _mcp_when(wh, title=''):
+    """תאריך שנאמר בדיבור ("מחר", "יום שלישי", "ט"ו חשון", "25.11") → YYYY-MM-DD, או '' כשלא הובן."""
+    import calparse as _cp
+    wh = str(wh or '')
+    its = _cp.simple((wh + ' ' + str(title or '')).strip())
+    it = next((x for x in its if x.get('date')), None)
+    if it:
+        return it['date']
+    wd = re.search(r'(?:יום\s+)?(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת)', wh)
+    if wd:
+        td = il_now().date()
+        k = MCP_DOW.index(wd.group(1))
+        return (td + datetime.timedelta(days=(k - td.weekday()) % 7 or 7)).isoformat()
+    return ''
+
+
+def _mcp_gabbai(con, name):
+    """שם הגבאי כמו שנאמר → השם בצוות. מחזיר (שם, None) או (None, הודעת שגיאה)."""
+    team = cm_team(con)
+    nm = re.sub(r'\s+', ' ', str(name or '')).strip().replace('ר\' ', '').replace('הרב ', '')
+    if not nm:
+        return None, '⚠️ חסר שם הגבאי. הגבאים: ' + ', '.join(team)
+    if nm in team:
+        return nm, None
+    toks = [t for t in nm.split(' ') if t]
+    hits = [t for t in team if all(x in t for x in toks)] or [t for t in team if any(x in t.split(' ') for x in toks)]
+    if len(hits) == 1:
+        return hits[0], None
+    return None, ('⚠️ לא מצאתי גבאי בשם "%s". ' % nm if not hits else '⚠️ "%s" מתאים לכמה: %s. ' % (nm, ', '.join(hits))) + \
+        'הגבאים: ' + ', '.join(team)
 
 
 def _mcp_day(iso):
@@ -23017,6 +23571,53 @@ def mcp_tool(name, a):
             con.commit()
             bump_data()
             return '✓ נכנס ליומן (מס׳ %d): %s%s — %s%s' % (cur.lastrowid, _mcp_day(date), (' בשעה ' + tm) if tm else '', title, (' · 📍 ' + place) if place else '')
+        if name == 'add_gabbai_reminder':
+            to, err = _mcp_gabbai(con, a.get('gabbai'))
+            if err:
+                return err
+            title = str(a.get('task') or a.get('title') or '').strip()[:300]
+            if not title:
+                return '⚠️ חסר הנושא / המשימה'
+            due = str(a.get('date') or '').strip()[:10]
+            if due and not re.fullmatch(r'\d{4}-\d{2}-\d{2}', due):
+                due = _mcp_when(due, '') or ''
+            if not due and str(a.get('when') or '').strip():
+                due = _mcp_when(a.get('when'), '')
+                if not due:
+                    return '⚠️ לא הבנתי את התאריך ("%s"). שלח date בפורמט YYYY-MM-DD, או בלי תאריך.' % a.get('when')
+            note = str(a.get('note') or '').strip()[:1000]
+            ex = con.execute("SELECT id FROM cm_job WHERE status<>'done' AND to_who=? AND title=?", (to, title)).fetchone()
+            if ex:
+                return '✓ כבר קיימת אצל %s (מס׳ %d): %s' % (to, ex['id'], title)
+            cur = con.execute("INSERT INTO cm_job(title,note,to_who,by_who,due,status,created) VALUES(?,?,?,?,?,'open',?)",
+                              (title, note, to, 'ראש הכולל', due, now_iso()))
+            con.commit()
+            bump_data()
+            return '✓ נכנס לתזכורות הגבאים (מס׳ %d) — ל%s: %s%s%s' % (cur.lastrowid, to, title, (' · 📅 ' + _mcp_day(due)) if due else '',
+                                                                     (' · 📝 ' + note) if note else '')
+        if name == 'list_gabbai_reminders':
+            team = cm_team(con)
+            only = None
+            if str(a.get('gabbai') or '').strip():
+                only, err = _mcp_gabbai(con, a.get('gabbai'))
+                if err:
+                    return err
+            td = il_now().date().isoformat()
+            rows = con.execute("SELECT id,title,note,to_who,due,created FROM cm_job WHERE COALESCE(status,'open')<>'done' "
+                               "ORDER BY CASE WHEN COALESCE(due,'')='' THEN 1 ELSE 0 END, due, id").fetchall()
+            out = []
+            for g in ([only] if only else team + sorted({r['to_who'] for r in rows if r['to_who'] not in team})):
+                mine = [r for r in rows if r['to_who'] == g]
+                if only is None and not mine:
+                    continue
+                out.append('\n👤 %s — %d פתוחות:' % (g, len(mine)))
+                for r in mine:
+                    late = ' ⚠️ באיחור' if r['due'] and r['due'] < td else ''
+                    out.append('  • [%d] %s%s%s' % (r['id'], r['title'] or '', (' · 📅 ' + _mcp_day(r['due']) + late) if r['due'] else '',
+                                                   (' · 📝 ' + r['note']) if r['note'] else ''))
+                if not mine:
+                    out.append('  אין משימות פתוחות ✓')
+            return '\n'.join(out).strip() or 'אין תזכורות פתוחות לגבאים ✓'
         if name == 'lookup_phone':
             def _d(x):
                 x = re.sub(r'\D', '', str(x or ''))
@@ -23120,9 +23721,11 @@ def mcp_handle(msg):
     if meth == 'initialize':
         return ok({'protocolVersion': prm.get('protocolVersion') or '2025-06-18',
                    'capabilities': {'tools': {'listChanged': False}},
-                   'serverInfo': {'name': 'kollel-chatzos-calendar', 'version': '1.0'},
+                   'serverInfo': {'name': 'kollel-chatzos-calendar', 'version': '1.1'},
                    'instructions': 'היומן של המערכת של כולל חצות. כשהמשתמש מבקש להכניס משהו ליומן / תזכורת / משימה עם תאריך — '
-                                   'קרא ל-add_to_calendar (לכל משימה בנפרד) וענה לו בקצרה בעברית מה נכנס ולאיזה יום.'})
+                                   'קרא ל-add_to_calendar (לכל משימה בנפרד) וענה לו בקצרה בעברית מה נכנס ולאיזה יום. '
+                                   'כשהתזכורת / המשימה היא לגבאי (שמעון ברלב, אברהם רובינפלד, יוסף אורדנטליך וכו׳) — '
+                                   'add_gabbai_reminder, ולרשימה לפי גבאי — list_gabbai_reminders.'})
     if meth == 'ping':
         return ok({})
     if meth == 'tools/list':
@@ -23667,6 +24270,22 @@ class H(BaseHTTPRequestHandler):
         path = self.path.split('?')[0]
         if path in ('/api/login', '/api/login/google', '/api/logout', '/api/logout_all', '/api/me'):
             return self._auth_routes(path)
+        # 🔑 טוקן API כללי — מזהה את הבקשה כמנהל לכל פונקציה באתר (נוצר/מתבטל מהאתר, נשמר ב-api_token).
+        # רק כש-header כזה נשלח (אחרת אין פנייה למסד). הטוקן שקול לסיסמת המנהל — למי שאתה סומך עליו בלבד.
+        tk = (self.headers.get('X-Api-Token') or '').strip()
+        if not tk:
+            _az = (self.headers.get('Authorization') or '').strip()
+            if _az[:7].lower() == 'bearer ':
+                tk = _az[7:].strip()
+        if tk:
+            con = db()
+            try:
+                want = (kv_get(con, 'api_token', '') or '').strip()
+            finally:
+                con.close()
+            if want and hmac.compare_digest(str(tk), str(want)):
+                self.role = 'admin'
+                return True
         if not auth_on():
             self.role = 'admin'
             return True
@@ -23893,6 +24512,14 @@ class H(BaseHTTPRequestHandler):
             if isinstance(hr, dict):
                 hr['ver'] = (os.environ.get('RENDER_GIT_COMMIT') or '')[:7]   # איזו גרסה רצה עכשיו (לבדיקה שהעדכון עלה)
             return self._send(200, hr)
+        if self.path == '/api/api_token':
+            # 🔑 מצב טוקן ה-API הכללי (מנהל בלבד — דרך _gate). מראה אם קיים וכמה מהתווים, לא חושף אם לא צריך
+            con = db()
+            try:
+                tok = (kv_get(con, 'api_token', '') or '').strip()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'token': tok})
         return self._get2()
 
     def _build_data(self):
@@ -24019,6 +24646,48 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, build_ics().encode('utf-8'), 'text/calendar')
         if self.path.split('?')[0] == '/donate':
             return self._send(200, open(os.path.join(STATIC, 'donate.html'), 'rb').read(), 'text/html')
+        _gh = (self.headers.get('Host') or '').split(':')[0].lower()
+        if self.path.split('?')[0].lower() in ('/give', '/give/', '/kollelchatzos', '/kollelchatzos/', '/kc', '/kc/') or (
+                _gh.split('.')[0] in ('give', 'donate') and self.path.split('?')[0] in ('/', '')):
+            # מאיר: "הלינק אני רוצה אותו קצר… כולל חצות… בלי כל ה-CRM" — כתובת משנה של האתר (donate.kollelchatzot.com)
+            # שמופנית לכאן מציגה את הדף ישר מהשורש
+            # מאיר: "שהקישור יהיה כתוב שם כולל חצות" — /KollelChatzos הוא אותו דף
+            # 🌐 דף התרומה הכללי — ?amount=180 ממלא סכום מראש
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                pre = max(0, min(100000, int(float((qs.get('amount') or ['0'])[0] or 0))))
+            except ValueError:
+                pre = 0
+            base = 'https://' + (self.headers.get('Host') or 'crm-mr9w.onrender.com')
+            return self._send(200, give_page(base).replace('{{AMOUNT}}', str(pre)).encode('utf-8'), 'text/html')
+        if self.path.split('?')[0] == '/api/give/base':
+            return self._send(200, {'ok': True, 'base': give_short_base()})
+        m = re.match(r'/api/give/rc/(\d+)\.([0-9a-f]{16})\.pdf$', self.path.split('?')[0])
+        if m:
+            rid = int(m.group(1))
+            if not hmac.compare_digest(give_rc_sig(rid), m.group(2)):
+                return self._send(404, {'ok': False})
+            con = db()
+            try:
+                pdf, fname = receipt_pdf(con, rid)
+            finally:
+                con.close()
+            if not pdf:
+                return self._send(404, {'ok': False, 'error': 'not ready'})
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/pdf')
+            self.send_header('Content-Length', str(len(pdf)))
+            self.send_header('Content-Disposition', 'inline; filename="%s"' % re.sub(r'[^A-Za-z0-9_.-]', '_', fname or 'receipt.pdf'))
+            self.end_headers(); self.wfile.write(pdf)
+            return
+        if self.path.split('?')[0] == '/api/give/month':
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            con = db()
+            try:
+                r = cardlink_month(con, 0, (qs.get('m') or [''])[0], (qs.get('y') or [''])[0])
+            finally:
+                con.close()
+            return self._send(200, r or {'ok': False})
         if self.path.split('?')[0] == '/receipt':
             return self._send(200, open(os.path.join(STATIC, 'receipt.html'), 'rb').read(), 'text/html')
         # רקע העמוד להדפסה — הבלאנק עם שוליים מתוחים, בלי תוכן כפול
@@ -24255,6 +24924,45 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, open(os.path.join(STATIC, 'izcerts.html'), 'rb').read(), 'text/html')
         if self.path.split('?')[0] == '/iz-5786':
             return self._send(200, open(os.path.join(STATIC, 'izarchive.html'), 'rb').read(), 'text/html')
+        if self.path.split('?')[0] == '/api/avreichim/roster':
+            # 📋 מאיר: "לשונית מיוחדת שיש שם ממוספר את שמות האברכים העדכני לפי אלף בית שם משפחה, גם בכולל הוראה…
+            # להדפסה, ותמיד טור להערות בצד" — העדכני = מי שמופיע במלגות החודשיות של החודש האחרון של אותו כולל
+            # (בלי מי שסומן "יצא מהכולל"); שם משפחה ופרטי מרשימת האברכים
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            kol = (qs.get('kollel') or ['חצות'])[0]
+            con = db()
+            try:
+                per = con.execute("SELECT MAX(period) p FROM stipends WHERE kollel=? AND kind='monthly'", (kol,)).fetchone()['p']
+                names = []
+                if per:
+                    seen = set()
+                    for r in con.execute("SELECT TRIM(name) n FROM stipends WHERE kollel=? AND kind='monthly' AND period=? ORDER BY id", (kol, per)):
+                        n = re.sub(r'\s+', ' ', r['n'] or '').strip()
+                        if n and n not in seen:
+                            seen.add(n); names.append(n)
+                av = {}
+                for a in con.execute("SELECT name,last,first,phone,ended FROM avreichim"):
+                    av[re.sub(r'\s+', ' ', (a['name'] or '').strip())] = a
+                rows = []
+                for n in names:
+                    a = av.get(n)
+                    if a is not None and (a['ended'] or '').strip():
+                        continue
+                    l = (a['last'] or '').strip() if a is not None else ''
+                    f = (a['first'] or '').strip() if a is not None else ''
+                    if not l:
+                        l, f = _split_av(n)
+                    rows.append({'name': n, 'last': l, 'first': f, 'phone': (a['phone'] or '') if a is not None else ''})
+                rows.sort(key=lambda x: (x['last'], x['first']))
+                lbl = ''
+                if per and re.match(r'^\d{4}-\d{2}$', per):
+                    try:
+                        lbl = greg_to_heb_monthyear(per + '-15') or ''
+                    except Exception:
+                        lbl = ''
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'kollel': kol, 'period': per or '', 'label': lbl, 'rows': rows})
         if self.path.split('?')[0] == '/api/building/unlinked':
             # 🏛️ הקדשות מדף "נוסחי ההקדשות" שעוד לא שויכו לכרטיס תורם (אין התאמה ברורה אחת)
             con = db()
@@ -27005,7 +27713,14 @@ class H(BaseHTTPRequestHandler):
                                 'groupe': k['groupe'] or '', 'error': (k['error'] or '')[:120], 'last4': k['last4'] or '',
                                 'kind': (k['kind'] if 'kind' in k.keys() else '') or 'card', 'mail': k['mail'] or '',
                                 'at': (last_err['iso'] or '')[:10] if last_err else '',
-                                'donor': {'id': dn['id'], 'name': ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip()} if dn else None})
+                                'donor': {'id': dn['id'], 'name': ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip()} if dn else None,
+                                'is_keva': True})
+                # מאיר: "כל מי שלא עבר לו בנדרים פלוס והוא תורם של הכולל, לא מהקהילה" — גם כל סירוב מיומן הסירובים
+                # (חודשיים אחרונים, חד־פעמי או הו"ק), שלא בא אחריו חיוב מוצלח מאותו טלפון / אותה הוראה
+                try:
+                    out += nd_donor_err_rows(con, ctx_, links, {str(x['id']).split(':')[-1].lstrip('M') for x in out})
+                except Exception as ex:
+                    print('  nd donor errs:', ex)
                 out.sort(key=lambda x: x['at'], reverse=True)
             finally:
                 con.close()
@@ -27079,6 +27794,62 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             return self._send(200, {'ok': True, 'text': ' '.join('[%s]' % x[3:] if x.startswith('z-T') else x for x in segs),
                                     'ivr': '.'.join(x if x.startswith('z-') else 't-' + x for x in segs)})
+        if self.path.split('?')[0] == '/api/mikveh/ops':
+            # 🔧 פעולת תחזוקה מרחוק, מוגנת בטוקן ה-API הכללי (api_token) או MIKVEH_OPS_TOKEN. בלי הטוקן — חסום.
+            # action=status — מי חסום בקבוצות הבחורים; unblock_bachur — לבטל את כל החסימות; history — יומן החסימות/הפתיחות.
+            import mikveh as _mk
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            tok = (qs.get('token') or [self.headers.get('X-Ops-Token') or ''])[0]
+            con0 = db()
+            try:
+                want = (kv_get(con0, 'api_token', '') or os.environ.get('MIKVEH_OPS_TOKEN') or '').strip()
+            finally:
+                con0.close()
+            if not want or not tok or not hmac.compare_digest(str(tok), want):
+                return self._send(403, {'ok': False, 'error': 'forbidden'})
+            action = (qs.get('action') or ['status'])[0]
+            con = db()
+            try:
+                st = mk_bachur_state(con, action)
+            finally:
+                con.close()
+            return self._send(200, dict(st, ok=True, action=action))
+        if self.path.split('?')[0] == '/api/mikveh/bachur_admin':
+            # לשונית הבחורים: מי חסום כרגע (טרי), היסטוריה, והטוקן לחיבור חיצוני
+            con = db()
+            try:
+                st = mk_bachur_state(con, 'status')
+                token = (kv_get(con, 'api_token', '') or '').strip()
+            finally:
+                con.close()
+            host = (self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or '').strip()
+            return self._send(200, dict(st, ok=True, token=token,
+                                        ops_url=('https://%s/api/mikveh/ops' % host) if host else '/api/mikveh/ops'))
+        if self.path.split('?')[0] == '/api/mikveh/bachur_drained':
+            # 🧹 מאגר הריקונים — כמה רוקן לכל אחד, כדי שנוכל להחזיר. מגבה מה-mk_log גם ריקונים ישנים.
+            con = db()
+            try:
+                con.execute("CREATE TABLE IF NOT EXISTS mk_drain(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, "
+                            "name TEXT, bal REAL, temp REAL, at TEXT, refunded INTEGER DEFAULT 0, refunded_at TEXT)")
+                mk_drain_backfill(con)
+                # השלמת שמות חסרים (לריקונים שגובו מהיומן) מרשימת הלקוחות שבמטמון
+                if con.execute("SELECT 1 FROM mk_drain WHERE COALESCE(name,'')='' LIMIT 1").fetchone():
+                    try:
+                        import mikveh as _mk
+                        nm = {str(c.get('id')): ((c.get('firstName') or '') + ' ' + (c.get('lastName') or '')).strip() for c in _mk.clients()}
+                        for cid, name in nm.items():
+                            if name:
+                                con.execute("UPDATE mk_drain SET name=? WHERE cid=? AND COALESCE(name,'')=''", (name, cid))
+                        con.commit()
+                    except Exception as e:
+                        print('  mk drain names error:', e)
+                rows = [dict(r) for r in con.execute(
+                    "SELECT cid,name,bal,temp,at,refunded,refunded_at FROM mk_drain WHERE COALESCE(refunded,0)=0 "
+                    "ORDER BY (bal+temp) DESC, at DESC")]
+                tot = round(sum((r['bal'] or 0) + (r['temp'] or 0) for r in rows), 2)
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'rows': rows, 'total': tot, 'count': len(rows)})
         if self.path.split('?')[0] == '/api/mikveh/status':
             # מאיר: "צריך לחבר את מערכת המקווה" — בדיקה חיה: כניסה + פרטי המועדון
             import mikveh as _mk
@@ -28384,6 +29155,60 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'rows': rows})
+        m = re.match(r'/api/mikveh/drain/([0-9a-fA-F-]{36})$', self.path.split('?')[0])
+        if m:
+            # 🧹 ערך צבור שרוקן ללקוח — לכרטיס: פתוחים (ניתנים להחזרה) ושכבר הוחזרו
+            cid = m.group(1)
+            con = db()
+            try:
+                con.execute("CREATE TABLE IF NOT EXISTS mk_drain(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, "
+                            "name TEXT, bal REAL, temp REAL, at TEXT, refunded INTEGER DEFAULT 0, refunded_at TEXT)")
+                mk_drain_backfill(con)
+                op = [dict(r) for r in con.execute("SELECT bal,temp,at FROM mk_drain WHERE cid=? AND COALESCE(refunded,0)=0 ORDER BY at DESC", (cid,))]
+                rf = [dict(r) for r in con.execute("SELECT bal,temp,at,refunded_at FROM mk_drain WHERE cid=? AND refunded=1 ORDER BY refunded_at DESC", (cid,))]
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'open': op, 'refunded': rf})
+        m = re.match(r'/api/mikveh/sync/([0-9a-fA-F-]{36})$', self.path.split('?')[0])
+        if m:
+            # 🔗 מאיר: "סנכרון מלא — לעקוב אחרי לקוח: הוראת קבע פעילה ובאיזה קטגוריה, ואם לומד בכולל ובאיזה".
+            # התאמה לפי הטלפון (הוראת קבע בנדרים פלוס) ולפי השם (אברך/כולל). קריאה בלבד, חוצה-מערכות.
+            cid = m.group(1)
+            import mikveh as _mk
+            try:
+                c = next((x for x in _mk.clients() if str(x.get('id')) == cid), None)
+            except Exception:
+                c = None
+            if not c:
+                return self._send(200, {'ok': False, 'error': 'הלקוח לא נמצא'})
+            phones = _phones_of(c.get('phone') or '')
+            name = re.sub(r'\s+', ' ', ((c.get('firstName') or '') + ' ' + (c.get('lastName') or '')).strip())
+            con = db()
+            try:
+                keva, seen = [], set()
+                idx = nd_member_index(con)
+                for ph in phones:
+                    mids = sorted(idx.get(ph) or set())
+                    like = '%;' + ph + ';%'
+                    sql = ("SELECT id,name,amount,groupe,active,next_date,last4,COALESCE(mosad,'') mosad,COALESCE(kind,'') kind,COALESCE(off,'') off "
+                           "FROM nd_keva WHERE (';'||COALESCE(phone,'')||';' LIKE ?"
+                           + (" OR member_id IN (%s)" % ','.join('?' * len(mids)) if mids else '') + ")")
+                    for r in con.execute(sql, [like] + mids):
+                        if r['id'] in seen:
+                            continue
+                        seen.add(r['id']); keva.append(dict(r))
+                try:
+                    koll = [r[0] for r in con.execute("SELECT DISTINCT kollel FROM stipends WHERE name=? AND COALESCE(kollel,'')<>'' ORDER BY kollel", (name,))]
+                except Exception:
+                    koll = []
+                try:
+                    is_av = bool(con.execute("SELECT 1 FROM avreichim WHERE name=?", (name,)).fetchone()) or bool(koll)
+                except Exception:
+                    is_av = bool(koll)
+            finally:
+                con.close()
+            keva.sort(key=lambda k: (0 if k.get('active') and not k.get('off') else 1))
+            return self._send(200, {'ok': True, 'name': name, 'phones': phones, 'keva': keva, 'kollel': koll, 'avrech': is_av})
         if self.path.split('?')[0] == '/api/mikveh/templates':
             con = db()
             try:
@@ -31569,6 +32394,78 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True})
+        if self.path == '/api/mikveh/bachur_refund':
+            # ↩️ החזרת ערך צבור שרוקן — מחזיר את היתרה (פעימות) והזיכוי שנרשמו במאגר mk_drain. ids=מסוים, אחרת הכל.
+            import mikveh as _mk
+            con = db()
+            done, total, fail = [], 0, 0
+            try:
+                mk_drain_backfill(con)
+                want = set(str(x) for x in (b.get('ids') or []))
+                q = "SELECT id,cid,name,bal,temp FROM mk_drain WHERE COALESCE(refunded,0)=0"
+                rows = [dict(r) for r in con.execute(q)]
+                if want:
+                    rows = [r for r in rows if str(r['cid']) in want]
+                for r in rows:
+                    try:
+                        bal = int(round((r['bal'] or 0) * 100)); tmp = int(round((r['temp'] or 0) * 100))
+                        if bal:
+                            _mk.add_credit(r['cid'], bal, temp=False)
+                        if tmp:
+                            _mk.add_credit(r['cid'], tmp, temp=True)
+                        con.execute("UPDATE mk_drain SET refunded=1, refunded_at=? WHERE id=?", (now_iso(), r['id']))
+                        con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                    (r['cid'], now_iso(), 'drain', '↩️ הוחזר ערך צבור: ₪%g (פעימות ₪%g + זיכוי ₪%g)'
+                                     % ((r['bal'] or 0) + (r['temp'] or 0), r['bal'] or 0, r['temp'] or 0)))
+                        done.append(r['cid']); total += bal + tmp
+                    except Exception as e:
+                        print('  mk bachur refund error:', r['cid'], e)
+                        fail += 1
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'count': len(done), 'total_ils': round(total / 100.0, 2), 'failed': fail})
+        if self.path == '/api/mikveh/bachur_drain':
+            # 🧹 מאיר: "לרוקן ערך צבור למי שחסמתי" — מאפס את היתרה (פעימות) והיתרה הזמנית (זיכוי) לכל החסומים
+            # בקבוצות הבחורים, כמו כפתור האיפוס במסך המקווה (שתי קריאות Client/AdminPurchase עם סכום שלילי).
+            import mikveh as _mk
+            con = db()
+            drained, total, fail = [], 0, 0
+            try:
+                members = _mk_bachur_members(con, fresh=True)
+                blk = [cid for cid, c in members.items() if c.get('isBlocked')]
+                if 'ids' in b:      # אפשר גם רשימה מפורשת
+                    want = set(str(x) for x in (b.get('ids') or []))
+                    blk = [cid for cid in blk if cid in want] or [cid for cid in (want & set(members))]
+                for cid in blk:
+                    try:
+                        full = _mk.client(cid, max_age=0)
+                        bal = int(full.get('balance') or 0)
+                        tmp = int(full.get('tempBalance') or 0)
+                        if bal:
+                            _mk.add_credit(cid, -bal, temp=False)
+                        if tmp:
+                            _mk.add_credit(cid, -tmp, temp=True)
+                        if bal or tmp:
+                            nm = ((full.get('firstName') or '') + ' ' + (full.get('lastName') or '')).strip()
+                            at = now_iso()
+                            con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                        (cid, at, 'drain', '🧹 רוקן ערך צבור: ₪%g (פעימות ₪%g + זיכוי ₪%g)'
+                                         % ((bal + tmp) / 100.0, bal / 100.0, tmp / 100.0)))
+                            con.execute("CREATE TABLE IF NOT EXISTS mk_drain(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, "
+                                        "name TEXT, bal REAL, temp REAL, at TEXT, refunded INTEGER DEFAULT 0, refunded_at TEXT)")
+                            con.execute("INSERT INTO mk_drain(cid,name,bal,temp,at) VALUES(?,?,?,?,?)",
+                                        (cid, nm, bal / 100.0, tmp / 100.0, at))
+                            drained.append({'id': cid, 'name': nm, 'balance': bal / 100.0, 'temp': tmp / 100.0})
+                            total += bal + tmp
+                    except Exception as e:
+                        print('  mk bachur drain error:', cid, e)
+                        fail += 1
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'count': len(drained), 'total_ils': round(total / 100.0, 2),
+                                    'failed': fail, 'drained': drained})
         if self.path == '/api/mikveh/bachur_groups':
             # 🧍 מאיר: "מי שבקבוצת בחורים, אין לו מנוי, ונכנס בפעימות" — הקבוצות שמאיר מגדיר כ"בחורים". נשמר אצלנו.
             ids = [str(x) for x in (b.get('ids') or []) if re.fullmatch(r'[0-9a-fA-F-]{36}', str(x))][:200]
@@ -31611,8 +32508,7 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             return self._send(200, {'ok': True, 'done': done, 'skipped': skip, 'failed': fail})
         if self.path == '/api/mikveh/bachur_block':
-            # ⛔ חסימה אוטומטית של בחורים בלי מנוי (מתג — כבוי כברירת מחדל). run=הפעלה ידנית עכשיו.
-            # reason=נוסח החסימה שמאיר כותב · secs=כל כמה שניות לבדוק פתיחה
+            # ⛔ חסימת בחורים שנכנסו בפעימות בלי מנוי (מתג — כבוי כברירת מחדל). run=הרצה ידנית · reset=ביטול כל החסימות שלנו.
             import mikveh as _mk
             con = db()
             try:
@@ -31620,16 +32516,11 @@ class H(BaseHTTPRequestHandler):
                 old_reason = cfg['reason']
                 if 'reason' in b:
                     cfg['reason'] = re.sub(r'\s+', ' ', str(b.get('reason') or '')).strip()[:200] or MK_BACHUR_DEFAULT_REASON
-                if 'secs' in b:
-                    try:
-                        cfg['secs'] = max(3, min(120, int(b.get('secs'))))
-                    except Exception:
-                        pass
                 if 'on' in b:
                     cfg['on'] = bool(b.get('on'))
-                # שינוי נוסח: לעדכן את מי שכבר חסום על ידינו, כדי שנמשיך לזהות אותו
-                retag = 0
+                # שינוי נוסח: לעדכן את מי שכבר חסום על ידינו, כדי שנמשיך לזהות אותו לפי הנוסח
                 if cfg['reason'] != old_reason:
+                    # עדכון הנוסח לכל מי שאנחנו חסמנו (לפי הרשימה שלנו) — בלי קשר לנוסח הישן שהיה אצלם
                     try:
                         held = [str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or [])]
                     except Exception:
@@ -31637,22 +32528,44 @@ class H(BaseHTTPRequestHandler):
                     for cid in held:
                         try:
                             cc = _mk.client(cid, max_age=0)
-                            if cc and cc.get('isBlocked') and str(cc.get('blockReason') or '') == old_reason:
-                                _mk.set_blocked(cid, True, cfg['reason']); retag += 1
+                            if cc and cc.get('isBlocked'):
+                                _mk.set_blocked(cid, True, cfg['reason'])
                         except Exception:
                             pass
-                res = None
+                res = None; reset = None
+                if b.get('reset'):
+                    # 🔓 ביטול כל החסימות שלנו, בלי לאפס את הזיכרון (כדי שלא ייחסמו שוב מיד על אותה כניסה)
+                    reset = mk_bachur_reset(con, cfg['reason'], clear_seen=False)
                 if b.get('run') or ('on' in b and cfg['on']):
-                    res = mk_bachur_enforce(con)
-                    cfg['last'] = now_iso(); cfg['blocked'] = res['blocked']; cfg['opened'] = res['opened']; cfg['error'] = ''
+                    res = mk_bachur_enforce(con, days=31, fresh=bool(b.get('fresh')))
+                    cfg['last'] = now_iso(); cfg['blocked'] = res['blocked']; cfg['opened'] = res.get('reset', 0); cfg['error'] = ''
                 mk_bachur_block_save(con, cfg)
                 con.commit()
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:300]})
             finally:
                 con.close()
-            return self._send(200, {'ok': True, 'on': cfg['on'], 'last': cfg['last'], 'reason': cfg['reason'], 'secs': cfg['secs'],
-                                    'blocked': cfg['blocked'], 'opened': cfg['opened'], 'ran': res is not None})
+            return self._send(200, {'ok': True, 'on': cfg['on'], 'last': cfg['last'], 'reason': cfg['reason'],
+                                    'blocked': cfg['blocked'], 'opened': cfg['opened'],
+                                    'ran': res is not None, 'ran_blocked': (res or {}).get('blocked', 0),
+                                    'ran_reset': (res or {}).get('reset', 0), 'ran_offenders': (res or {}).get('offenders', 0),
+                                    'reset': reset})
+        if self.path in ('/api/mikveh/ops_token', '/api/api_token'):
+            # 🔑 טוקן API כללי (ל-Claude) — מזהה כמנהל לכל פונקציה באתר. נוצר/מתבטל מהאתר, נשמר ב-api_token (בלי Render).
+            import secrets
+            act = str(b.get('action') or 'generate')
+            con = db()
+            try:
+                if act == 'revoke':
+                    kv_set(con, 'api_token', '')
+                    tok = ''
+                else:
+                    tok = secrets.token_urlsafe(24)
+                    kv_set(con, 'api_token', tok)
+                con.commit()
+            finally:
+                con.close()
+            return self._send(200, {'ok': True, 'token': tok})
         if self.path == '/api/mikveh/group_sync':
             # 🗂️ "לערוך הכל ביחד": ההגדרות והשעות של מנוי אחד → לכל המנויים שנבחרו (כל אחד נשאר עם השם והמחיר שלו)
             import mikveh as _mk
@@ -35725,6 +36638,17 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'id': tid_})
+        if self.path == '/api/give/charge':
+            con = db()
+            try:
+                ip = (self.headers.get('X-Forwarded-For') or self.client_address[0] or '').split(',')[0].strip()
+                out = give_charge(con, b, ip)
+            except Exception as e:
+                print('  give charge error:', e)
+                out = {'ok': False, 'error': 'Something went wrong. Please contact our office.'}
+            finally:
+                con.close()
+            return self._send(200, out)
         if self.path == '/api/building/link':
             # 🏛️ שיוך הקדשה שלא שויכה — לכרטיס התורם שמאיר בחר
             try:
@@ -36912,7 +37836,7 @@ def bq_refund(tx_id, amount=None, reason='', notify=False):
                            (' ending in ' + card) if card else '', cdt) +
                         'It usually appears on your card statement within a few business days.\n\n'
                         'Thank you for your continued support of the Torah learning at Chatzos.\n\n'
-                        'Kollel Chatzos Eretz Yisroel\nchatzot18@gmail.com · 1-646-403-3750')
+                        'Kollel Chatzos Eretz Yisroel\nchatzot18@gmail.com')
                 try:
                     import mailer
                     if mailer.configured():
@@ -38015,6 +38939,64 @@ def keva_dead(k):
         except ValueError:
             pass
     return False
+
+
+def nd_donor_err_rows(con, ctx, links, skip_kevas, days=60):
+    """סירובים בנדרים פלוס (קופת הכולל) של תורמים — לא חברי קהילה ולא אברכים — שלא כוסו אחר כך בחיוב מוצלח."""
+    since = (il_now() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
+    # טלפון → תורם
+    dph = {}
+    for d_ in con.execute("SELECT id, last, first, phone FROM donors WHERE COALESCE(TRIM(phone),'')<>''").fetchall():
+        for p in _phones_of(d_['phone']):
+            dph.setdefault(p, set()).add(d_['id'])
+    # חיובים מוצלחים אחרונים — לפי טלפון ולפי הוראה
+    ok_ph, ok_kv = {}, {}
+    for t in con.execute("SELECT iso, phone, keva FROM nd_tx WHERE COALESCE(iso,'')>=? AND CAST(amount AS REAL)>0", (since,)).fetchall():
+        iso = str(t['iso'] or '')[:19]
+        for p in _phones_of(t['phone']):
+            ok_ph[p] = max(ok_ph.get(p, ''), iso)
+        kv = str(t['keva'] or '').strip().lstrip('M')
+        if kv and not kv.startswith('-'):
+            ok_kv[kv] = max(ok_kv.get(kv, ''), iso)
+    grp = {}
+    for e in con.execute("SELECT * FROM nd_err WHERE COALESCE(mosad,'')='' AND COALESCE(iso,'')>=? AND COALESCE(done,0)=0 "
+                         "ORDER BY iso DESC", (since,)).fetchall():
+        if e['member_id'] or ND_COMM_RX.search(e['groupe'] or ''):
+            continue
+        kv = str(e['keva'] or '').strip().lstrip('M')
+        if kv in skip_kevas:
+            continue
+        phs = set(_phones_of(e['phone']))
+        if phs & (ctx['mem_ph'] | ctx['av_ph']) or re.sub(r'\s+', ' ', (e['name'] or '')).strip() in ctx['av_nm']:
+            continue
+        if kv and (ctx['cls'].get(kv) == 'comm' or ctx['cls'].get('M' + kv) == 'comm'):
+            continue
+        iso = str(e['iso'] or '')[:19]
+        if (kv and ok_kv.get(kv, '') > iso) or any(ok_ph.get(p, '') > iso for p in phs):
+            continue                                  # עבר אחר כך — לא "לא עבר"
+        key = kv or (sorted(phs)[0] if phs else re.sub(r'\s+', ' ', (e['name'] or '')).strip())
+        if not key:
+            continue
+        g = grp.get(key)
+        if g:
+            g['tries'] += 1
+            continue
+        did_ = links.get(kv) if kv else None
+        if not did_:
+            ds = set().union(*[dph.get(p, set()) for p in phs]) if phs else set()
+            did_ = next(iter(ds)) if len(ds) == 1 else None
+        dn = con.execute("SELECT id, last, first FROM donors WHERE id=?", (did_,)).fetchone() if did_ else None
+        grp[key] = {'id': ('M' + kv) if kv else 'err:' + str(e['id']), 'name': e['name'] or '', 'phone': (e['phone'] or '').split(';')[0],
+                    'amount': _ivr_amt(e['amount']), 'groupe': e['groupe'] or '', 'error': (e['error'] or '')[:120],
+                    'last4': e['last4'] or '', 'kind': 'card', 'mail': '', 'at': iso[:10], 'tries': 1,
+                    'is_keva': bool(kv) and bool(con.execute("SELECT 1 FROM nd_keva WHERE id IN (?,?) AND active=1", (kv, 'M' + kv)).fetchone()),
+                    'donor': {'id': dn['id'], 'name': ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip()} if dn else None}
+    rows = list(grp.values())
+    for r in rows:
+        if r['is_keva']:
+            k = con.execute("SELECT id FROM nd_keva WHERE id IN (?,?) AND active=1", (r['id'][1:], r['id'])).fetchone()
+            r['id'] = k['id'] if k else r['id']
+    return rows
 
 
 def nd_keva_comm_ctx(con):
