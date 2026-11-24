@@ -5975,6 +5975,24 @@ def ensure_schema():
         con.rollback()
         print('  shevlin heb error:', e)
 
+    # 📜 מאיר: "את השמות של הקוויטל שלו תכניס גם לפרנס לילה" — שלווין, ליל ט"ז כסלו: כל המשפחה בהקדשה
+    try:
+        if not con.execute("SELECT 1 FROM seed_flags WHERE name='shevlin_heb_v2'").fetchone():
+            _ded = ('לעילוי נשמת שלמה בן אברהם אבא ז"ל · לזכות בנימין בן נחמה וזוגתו אסתר גיטל בת מירל, '
+                    'שלמה חיים בן אסתר גיטל, מרים אדירה בת אסתר גיטל, חנה קיילא בת אסתר גיטל, נחמיה אברהם בן אסתר גיטל '
+                    '— לבריאות, פרנסה בשפע, הצלחה ונחת')
+            _n = 0
+            for _r in con.execute("SELECT id FROM donors WHERE (COALESCE(last,'')||' '||COALESCE(english,'')) LIKE '%Shevlin%'").fetchall():
+                _n += con.execute("UPDATE parnes SET dedication=? WHERE donor_id=? AND (COALESCE(dedication,'') LIKE '%שלמה בן אברהם אבא%' "
+                                  "OR COALESCE(dedication,'') LIKE '%Shlomo%' OR COALESCE(date_text,'') LIKE 'ט\"ז כסלו%')",
+                                  (_ded, _r['id'])).rowcount
+            con.execute("INSERT INTO seed_flags(name) VALUES('shevlin_heb_v2')")
+            con.commit()
+            print('  שלווין — שמות הקוויטל גם בפרנס לילה:', _n)
+    except Exception as e:
+        con.rollback()
+        print('  shevlin heb v2 error:', e)
+
     # 🍗 מאיר: "זה גם בשביל בשר ועופות" — גם $14,344 מ-23.9 (שלא סווג) → סוכות תשפ"ז
     try:
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='stetfeld_meat_v2'").fetchone():
