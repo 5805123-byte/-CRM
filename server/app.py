@@ -23712,6 +23712,19 @@ MCP_TOOLS = [
                     'אפשר כמה מספרים מופרדים בפסיק.',
      'inputSchema': {'type': 'object', 'properties': {'phones': {'type': 'string', 'description': 'מספר אחד או כמה, מופרדים בפסיק'}},
                      'required': ['phones']}},
+    # מאיר (24.11.2026): "תעשה לו פרנס לילה י"ז כסלו… ותשים את זה גם בפרנס יום" — רושם בלוח הפרנס של המערכת
+    {'name': 'add_parnes',
+     'description': 'רושם פרנס יום / פרנס לילה (לימוד לזכות) לתורם בלוח הפרנס של המערכת. donor = שם התורם (משפחה ו/או פרטי, '
+                    'עברית או אנגלית); אם יש כמה תורמים מתאימים — מחזיר רשימה, ואז שולחים שוב עם donor_id. '
+                    'date_text = היום העברי, למשל י"ז כסלו; hyear = השנה העברית (ברירת מחדל: השנה הנוכחית).',
+     'inputSchema': {'type': 'object', 'properties': {
+         'donor': {'type': 'string'}, 'donor_id': {'type': 'integer'},
+         'date_text': {'type': 'string', 'description': 'למשל: י"ז כסלו'},
+         'hyear': {'type': 'string', 'description': 'למשל: תשפ"ז — רשות'},
+         'dedication': {'type': 'string', 'description': 'לזכות / לעילוי נשמת — רשות'},
+         'amount': {'type': 'string', 'description': 'רשות'},
+         'method': {'type': 'string', 'description': 'דרך התשלום, למשל נדרים פלוס — רשות'}},
+         'required': ['date_text']}},
     {'name': 'today',
      'description': 'התאריך של היום בישראל — לועזי, עברי ויום בשבוע.',
      'inputSchema': {'type': 'object', 'properties': {}}},
@@ -23864,6 +23877,58 @@ def mcp_tool(name, a):
                 if not mine:
                     out.append('  אין משימות פתוחות ✓')
             return '\n'.join(out).strip() or 'אין תזכורות פתוחות לגבאים ✓'
+        if name == 'add_parnes':
+            dt = str(a.get('date_text') or '').strip()
+            if not dt:
+                return '⚠️ חסר תאריך עברי (למשל י"ז כסלו)'
+            did = a.get('donor_id')
+            if not did:
+                q = re.sub(r'\s+', ' ', str(a.get('donor') or '').strip())
+                if not q:
+                    return '⚠️ חסר שם תורם'
+                ws = [w for w in re.split(r'[\s\-]+', q) if w]
+                sql = "SELECT id,last,first,COALESCE(english,'') en FROM donors WHERE " + ' AND '.join(
+                    ["(COALESCE(last,'')||' '||COALESCE(first,'')||' '||COALESCE(english,'')||' '||REPLACE(COALESCE(last,''),' ','')) LIKE ?"] * len(ws))
+                hits = con.execute(sql + " LIMIT 15", ['%' + w + '%' for w in ws]).fetchall()
+                if not hits:
+                    return '⚠️ לא מצאתי תורם בשם "%s". נסה שם אחר / באנגלית.' % q
+                if len(hits) > 1:
+                    return 'יש כמה תורמים מתאימים — שלח שוב עם donor_id:\n' + '\n'.join(
+                        '• %d — %s %s%s' % (h['id'], h['last'] or '', h['first'] or '', (' (' + h['en'] + ')') if h['en'] else '') for h in hits)
+                did = hits[0]['id']
+            dr = con.execute("SELECT id,last,first,region FROM donors WHERE id=?", (int(did),)).fetchone()
+            if not dr:
+                return '⚠️ תורם %s לא נמצא' % did
+            hy = str(a.get('hyear') or '').strip()
+            if not hy:
+                try:
+                    hy = (greg_to_heb_full(il_now().date().isoformat()) or '').split()[-1]
+                except Exception:
+                    hy = ''
+            ex = con.execute("SELECT id FROM parnes WHERE donor_id=? AND COALESCE(kind,'')='parnes' AND COALESCE(date_text,'')=? "
+                             "AND COALESCE(hyear,'')=? AND COALESCE(status,'')<>'suggested'", (dr['id'], dt, hy)).fetchone()
+            who = ((dr['last'] or '') + ' ' + (dr['first'] or '')).strip()
+            if ex:
+                return '✓ כבר רשום בלוח הפרנס (מס׳ %d): %s — %s %s' % (ex['id'], who, dt, hy)
+            ccy = '₪' if (dr['region'] or '') == 'il' else '$'
+            ng = heb_greg_year(dt, hy) or heb_to_greg(dt)
+            m_ = re.match(r'^\s*(\S+)\s+(.+?)\s*$', dt)
+            GV = {'א': 1, 'ב': 2, 'ג': 3, 'ד': 4, 'ה': 5, 'ו': 6, 'ז': 7, 'ח': 8, 'ט': 9, 'י': 10, 'כ': 20, 'ל': 30}
+            day_n = sum(GV.get(ch, 0) for ch in (m_.group(1) if m_ else '')) if m_ else 0
+            cur = con.cursor()
+            cur.execute("INSERT INTO parnes(donor_id,day,month,date_text,amount,dedication,kind,status,night_date,hyear,method,currency) "
+                        "VALUES(?,?,?,?,?,?,'parnes','confirmed',?,?,?,?)",
+                        (dr['id'], day_n, (m_.group(2) if m_ else ''), dt, str(a.get('amount') or ''), str(a.get('dedication') or ''),
+                         ng.isoformat() if ng else '', hy, str(a.get('method') or ''), ccy))
+            pid = cur.lastrowid
+            due = week_before(dt)
+            if due and due < today_iso():
+                due = today_iso()
+            if due:
+                cur.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)",
+                            (dr['id'], due, 'parnes', 'פרנס יום ' + dt + ' — הכן הדפסה וצור קשר'))
+            con.commit(); bump_data()
+            return '✓ נרשם בלוח הפרנס (מס׳ %d): %s — פרנס לילה %s %s%s' % (pid, who, dt, hy, (' · ' + _mcp_day(ng.isoformat())) if ng else '')
         if name == 'lookup_phone':
             def _d(x):
                 x = re.sub(r'\D', '', str(x or ''))
