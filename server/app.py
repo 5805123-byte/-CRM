@@ -20931,6 +20931,44 @@ def ym_units_alert_clear(con):
         pass
 
 
+def ym_gemini_alert_set(con, err=''):
+    """התראה: הקול האנושי (גימני) לא זמין — ההודעות לא יוצאות בקול הרובוטי של ימות, ממתינות וינסו שוב."""
+    try:
+        kv_set(con, 'ym_gemini_alert', json.dumps({'at': now_iso(), 'err': str(err)[:160]}, ensure_ascii=False))
+    except Exception:
+        pass
+
+
+def ym_gemini_alert_clear(con):
+    try:
+        if kv_get(con, 'ym_gemini_alert', ''):
+            kv_set(con, 'ym_gemini_alert', '')
+    except Exception:
+        pass
+
+
+def ym_mail_alert(con, kind, subject, body):
+    """מייל התראה לתיבת המערכת (מאיר) — לכל היותר פעם בשעתיים לכל סוג, כדי לא להציף."""
+    try:
+        import mailer
+        to = (os.environ.get('GMAIL_USER') or '').strip()
+        if not to:
+            return
+        k = 'ym_mail_%s_at' % kind
+        last = kv_get(con, k, '')
+        if last:
+            try:
+                if (il_now().replace(tzinfo=None) - datetime.datetime.strptime(last[:16], '%Y-%m-%d %H:%M')).total_seconds() < 7200:
+                    return      # כבר נשלח מייל כזה בשעתיים האחרונות
+            except Exception:
+                pass
+        r = mailer.send(to, subject, body, rtl=True)
+        if (r or {}).get('ok'):
+            kv_set(con, k, now_iso()); con.commit()
+    except Exception as e:
+        print('  ym mail alert error:', e)
+
+
 def ym_log_card(con, m, text):
     """רישום בכרטיס הלקוח (חבר / תורם / אברך) — גם על כישלון שליחה, כדי שיראו שניסינו ולמה לא יצא."""
     try:
@@ -23407,7 +23445,8 @@ def ym_worker(job_id, wait=True):
                     vt_ = m['text'] if reuse_ else ym_voice_text(m['text'], ym_pron, ym_engine == 'gemini' and ym_nik, trace=_ym._trace,
                                                                   en=ym_en if ym_engine == 'gemini' else None)
                     ok, res = _ym.send_tts(m['phone'], vt_, voice=ym_voice,
-                                           engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=True, gmodel=ym_gm,
+                                           # 🗣️ קול אנושי (גימני): בלי נפילה אוטומטית לקול הרובוטי של ימות — כשל גימני => התראה+מייל+ניסיון חוזר
+                                           engine=ym_engine, gvoice=ym_gv, gstyle=ym_gs, fallback=(ym_engine != 'gemini'), gmodel=ym_gm,
                                            hints=pron_en_for(ym_en, vt_, ym_pron) or pron_en_for(ym_en, m['text']),
                                            gtries=1 if big_job else 3, reuse=reuse_,
                                            # 🛁 הודעה של המקווה: זיהוי 0773412906, לשלוחה 999, ולפני השיחה — המספר ל-999/BlackList.ini
@@ -23449,30 +23488,45 @@ def ym_worker(job_id, wait=True):
                            'params': {'phones': m['phone'] or '—', 'note': 'לא נשלח לימות'}, 'ok': False,
                            'response': json.dumps({'responseStatus': 'NOT_SENT', 'message': str(res)}, ensure_ascii=False), 'ms': 0}]
                 ym_save_trace(con, tr, job_id, m['id'], m['phone'])
-                # נוסח השגיאה, ואם זה כשל בשלב החיוג בימות (ניתן לניסיון חוזר — למשל "אין יחידות")
+                # נוסח השגיאה; ואילו כשלים ניתנים לניסיון חוזר: כשל בשלב החיוג בימות (למשל "אין יחידות"),
+                # וכשל של הקול האנושי גימני (שלא נופל יותר לקול הרובוטי של ימות).
                 err_txt = '' if ok else (str(res.get('error')) if isinstance(res, dict) else str(res))
                 dial_fail = (not ok) and isinstance(res, dict) and bool(res.get('dial_fail'))
+                gemini_fail = (not ok) and isinstance(res, dict) and bool(res.get('gemini_fail'))
                 cid = res.get('campaignId', '') if (ok and isinstance(res, dict)) else ''
                 rc = (m['retry_count'] if 'retry_count' in m.keys() else 0) or 0
-                will_retry = (not ok) and dial_fail and job['channel'] == 'voice' and not job['test'] and rc < YM_FAIL_RETRY_MAX
+                will_retry = (not ok) and (dial_fail or gemini_fail) and job['channel'] == 'voice' and not job['test'] and rc < YM_FAIL_RETRY_MAX
+                def _alert_and_mail():
+                    if gemini_fail:
+                        ym_gemini_alert_set(con, err_txt)
+                        ym_mail_alert(con, 'gemini', '⚠️ כולל חצות — הקול האנושי (גימני) לא זמין',
+                                      'הקול האנושי של גימני נכשל, וההודעות הטלפוניות לא יצאו בקול הרובוטי של ימות (לפי בקשתך).\n'
+                                      'הן ממתינות וינסו שוב אוטומטית כל שעה.\n\nשגיאה: %s\nזמן: %s' % (err_txt[:200], now_iso()))
+                    elif dial_fail:
+                        ym_units_alert_set(con, err_txt)
+                        ym_mail_alert(con, 'units', '⚠️ כולל חצות — אין יחידות בימות המשיח',
+                                      'שליחת הודעה טלפונית נכשלה בימות המשיח (כנראה אין יחידות).\n'
+                                      'ההודעות ממתינות וינסו שוב אוטומטית כל שעה.\n\nשגיאה: %s\nזמן: %s' % (err_txt[:200], now_iso()))
                 if ok:
                     con.execute("UPDATE ym_msg SET status='sent', error='', at=?, campaign=? WHERE id=?", (now_iso(), cid, m['id']))
                     con.execute("UPDATE ym_job SET sent=sent+1 WHERE id=?", (job_id,))
                     if not job['test']:
-                        ym_units_alert_clear(con)      # שליחה הצליחה = יש יחידות
+                        ym_units_alert_clear(con)       # שליחה הצליחה = יש יחידות
+                        ym_gemini_alert_clear(con)      # שליחה הצליחה = המערכת עובדת
                 elif will_retry:
-                    # 🔁 כשל חיוג (אין יחידות וכו') — לנסות שוב בעוד שעה (בשעה מתאימה), באותה הקלטה
+                    # 🔁 ניסיון חוזר בעוד שעה (בשעת חיוג מתאימה): אין יחידות = אותה הקלטה; גימני = יצירה מחדש בתקווה שחזר
                     nxt = ym_next_ok(il_now() + datetime.timedelta(hours=1)).strftime('%Y-%m-%d %H:%M')
+                    note = ('גימני לא זמין' if gemini_fail else 'ימות דחתה') + (' (%s) — ינסה שוב ~%s' % (err_txt[:45], nxt[11:]))
                     con.execute("UPDATE ym_msg SET status='retry', error=?, at=?, retry_at=?, retry_note=? WHERE id=?",
-                                (err_txt[:200], now_iso(), nxt, ('ימות דחתה (%s) — ינסה שוב ~%s' % (err_txt[:50], nxt[11:])), m['id']))
-                    ym_units_alert_set(con, err_txt)
+                                (err_txt[:200], now_iso(), nxt, note, m['id']))
+                    _alert_and_mail()
                     if rc == 0:
-                        ym_log_card(con, m, '⏳ ההודעה הטלפונית לא יצאה (%s) — ינסה שוב כל שעה' % (err_txt[:80] or 'תקלה בימות'))
+                        ym_log_card(con, m, '⏳ ההודעה הטלפונית לא יצאה (%s) — ינסה שוב כל שעה' % (err_txt[:80] or ('גימני' if gemini_fail else 'תקלה')))
                 else:
                     con.execute("UPDATE ym_msg SET status='failed', error=?, at=?, campaign=? WHERE id=?", (err_txt[:200], now_iso(), cid, m['id']))
                     con.execute("UPDATE ym_job SET failed=failed+1 WHERE id=?", (job_id,))
-                    if dial_fail:
-                        ym_units_alert_set(con, err_txt)
+                    if dial_fail or gemini_fail:
+                        _alert_and_mail()
                     if not job['test']:
                         ym_log_card(con, m, '✗ ההודעה לא יצאה — %s' % (err_txt[:120] or 'תקלה'))
                 if ok and not job['test']:
@@ -29878,10 +29932,14 @@ class H(BaseHTTPRequestHandler):
                     alert = json.loads(kv_get(con, 'ym_units_alert', '') or 'null')
                 except Exception:
                     alert = None
+                try:
+                    gemini = json.loads(kv_get(con, 'ym_gemini_alert', '') or 'null')
+                except Exception:
+                    gemini = None
             finally:
                 con.close()
             u = ym_units_now()
-            return self._send(200, {'ok': True, 'units': u, 'low': (u is not None and u <= YM_UNITS_LOW), 'alert': alert})
+            return self._send(200, {'ok': True, 'units': u, 'low': (u is not None and u <= YM_UNITS_LOW), 'alert': alert, 'gemini': gemini})
         if self.path.split('?')[0] == '/api/yemot/status':
             import yemot as _ym
             # מאיר: "זה לפעמים ממש מחכה הרבה זמן עד שמתחבר — תעשה שיהיה מהר מאוד" — בדיקת החיבור לימות

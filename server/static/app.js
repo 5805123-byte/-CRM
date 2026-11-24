@@ -927,9 +927,12 @@ function ymUnitsBanner(){
   if(ROLE!=='admin')return;
   api('GET','/api/yemot/units').then(r=>{
     let bar=document.getElementById('ymunitsbar');
-    const al=r&&r.alert, low=r&&r.low, u=(r&&r.units!=null)?r.units:(al&&al.units!=null?al.units:null);
-    if(!r||r.ok===false||(!al&&!low)){if(bar)bar.remove();return;}
-    const msg=(u!=null&&u<=0)?'⚠️ אין יחידות בימות המשיח — הודעות טלפוניות / SMS לא יוצאות. הודעות קוליות שנכשלו ינסו שוב כל שעה מאליהן.'
+    const al=r&&r.alert, gm=r&&r.gemini, low=r&&r.low, u=(r&&r.units!=null)?r.units:(al&&al.units!=null?al.units:null);
+    if(!r||r.ok===false||(!al&&!low&&!gm)){if(bar)bar.remove();return;}
+    let msg;
+    if(gm)  // 🗣️ הקול האנושי (גימני) לא זמין — לא נופלים לקול הרובוטי של ימות
+      msg='⚠️ הקול האנושי (גימני) לא זמין — הודעות קוליות לא יוצאות בקול הרובוטי של ימות; הן ממתינות וינסו שוב כל שעה. נשלח מייל.';
+    else msg=(u!=null&&u<=0)?'⚠️ אין יחידות בימות המשיח — הודעות טלפוניות / SMS לא יוצאות. הודעות קוליות שנכשלו ינסו שוב כל שעה מאליהן. נשלח מייל.'
       :('⚠️ היחידות בימות המשיח עומדות להיגמר'+(u!=null?' ('+u+')':'')+' — כדאי לטעון יחידות.');
     if(!bar){bar=document.createElement('div');bar.id='ymunitsbar';
       bar.style.cssText='position:sticky;top:0;z-index:9999;background:#c0392b;color:#fff;padding:9px 14px;text-align:center;font-weight:700;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:pointer';

@@ -408,9 +408,9 @@ def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='',
             if ok:
                 used = 'gemini'
             elif not fallback:
-                return False, 'העלאת הקול האנושי נכשלה — ' + str(res)
+                return False, {'error': ('העלאת הקול האנושי נכשלה — ' + str(res))[:200], 'gemini_fail': True}
         elif not fallback:
-            return False, str(wav)
+            return False, {'error': str(wav)[:200], 'gemini_fail': True}
     if used == 'yemot':
         name = '%03d.tts' % n
         ok, res = call('UploadTextFile', {'what': 'ivr2:/Phone/%s/%s' % (phone, name), 'contents': text})
