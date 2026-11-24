@@ -8543,6 +8543,11 @@ def ensure_schema():
                 con.execute("INSERT INTO seed_flags(name) VALUES('frank_out_v1')")
                 con.commit()
                 print('  פראנק שלום: הוסר מ-%d רשימות חודשיות מחשון' % _ns)
+        # מאיר (24.11.2026): "שמעון חזן יצא מהכולל היום אז תעדכן ביששכר זבולון ובמערכת הכולל של האברכים
+        # ובכל המקומות" — יוצא מהכולל (המקום אצל הזבולון שלו נפתח). המלגות שכבר נרשמו לו נשארות — הוא למד עד היום.
+        _sc = con.execute("SELECT name FROM avreichim WHERE name LIKE '%חזן%' AND name LIKE '%שמעון%'").fetchall()
+        if len(_sc) == 1:
+            _out.append(_sc[0]['name'])
         # גלזר מנחם דוד — "רק לומד בכולל הוראה": עובר לרשימת כולל הוראה בלבד, ונמחק מרשימות כולל חצות
         # מחשון. נשאר אברך (בכולל הוראה), ולכן השותפות שלו ביששכר־זבולון לא נוגעים בה כאן.
         if not con.execute("SELECT 1 FROM seed_flags WHERE name='glazer_horaa_only_v1'").fetchone():
