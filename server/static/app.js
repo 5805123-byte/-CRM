@@ -922,6 +922,24 @@ async function pushStatus(){
 // אחרי כניסה: אם כבר אושר פעם — מוודאים שהרישום עדיין קיים (אחרי התקנה מחדש / ניקוי) בלי לשאול
 (function(){try{if(localStorage.getItem('kc_push')==='1'&&'Notification' in window&&Notification.permission==='granted'){PUSH_ON=true;setTimeout(()=>pushEnable(true),4000);}}catch(e){}
   setTimeout(()=>{if(ROLE==='admin')api('GET','/api/push/vapid').then(k=>{if(k&&k.alt){PUSH_ON=true;}}).catch(()=>{});},6000);})();
+// ⚠️ באנר "אין יחידות בימות המשיח" — נבדק אחרי כניסה וכל 3 דק' (מנהל בלבד). נעלם לבד כשחוזרות יחידות.
+function ymUnitsBanner(){
+  if(ROLE!=='admin')return;
+  api('GET','/api/yemot/units').then(r=>{
+    let bar=document.getElementById('ymunitsbar');
+    const al=r&&r.alert, low=r&&r.low, u=(r&&r.units!=null)?r.units:(al&&al.units!=null?al.units:null);
+    if(!r||r.ok===false||(!al&&!low)){if(bar)bar.remove();return;}
+    const msg=(u!=null&&u<=0)?'⚠️ אין יחידות בימות המשיח — הודעות טלפוניות / SMS לא יוצאות. הודעות קוליות שנכשלו ינסו שוב כל שעה מאליהן.'
+      :('⚠️ היחידות בימות המשיח עומדות להיגמר'+(u!=null?' ('+u+')':'')+' — כדאי לטעון יחידות.');
+    if(!bar){bar=document.createElement('div');bar.id='ymunitsbar';
+      bar.style.cssText='position:sticky;top:0;z-index:9999;background:#c0392b;color:#fff;padding:9px 14px;text-align:center;font-weight:700;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:pointer';
+      bar.title='רענן';bar.onclick=()=>ymUnitsBanner();
+      document.body.insertBefore(bar,document.body.firstChild);}
+    bar.textContent=msg;
+  }).catch(()=>{});
+}
+setTimeout(ymUnitsBanner,7000);
+setInterval(ymUnitsBanner,180000);
 function checkReminders(){
   if(ROLE==='comm'||ROLE==='gabbai'){cmRemsLoad().then(()=>{const ban=document.getElementById('rembanner'),td=todayStr(),due=CMREMS.filter(t=>t.due<=td);
       if(!due.length){ban.classList.remove('show');ban.textContent='';return;}

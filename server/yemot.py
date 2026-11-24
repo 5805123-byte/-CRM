@@ -392,7 +392,8 @@ def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='',
         name, used = reuse, 'reuse'
         ok, res = _bridge(phone, timeout, ivr_path, caller_id, pre_call)
         if not ok:
-            return False, res
+            # הקובץ כבר מוכן בימות — נחזיר את שמו כדי שניסיון חוזר יחייג שוב בלי ליצור מחדש
+            return False, {'error': str(res), 'file': name, 'wav': None, 'dial_fail': True}
         return True, {'file': name, 'campaignId': res.get('campaignId') or '', 'callerId': res.get('callerId') or '', 'engine': used, 'wav': None}
     ok, n = next_msg_num(phone, voice)
     if not ok:
@@ -417,7 +418,8 @@ def send_tts(phone, text, timeout=35, voice='', engine='', gvoice='', gstyle='',
             return False, 'העלאת ההודעה נכשלה — ' + str(res)
     ok, res = _bridge(phone, timeout, ivr_path, caller_id, pre_call)
     if not ok:
-        return False, res
+        # ההקלטה כבר הועלתה לימות — נחזיר את שמה (והקול, אם גימני) כדי שניסיון חוזר יחייג שוב בלי ליצור מחדש
+        return False, {'error': str(res), 'file': name, 'wav': (wav if used == 'gemini' else None), 'dial_fail': True}
     return True, {'file': name, 'campaignId': res.get('campaignId') or '', 'callerId': res.get('callerId') or '', 'engine': used,
                   'wav': wav if used == 'gemini' else None}
 

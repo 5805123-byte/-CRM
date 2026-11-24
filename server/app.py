@@ -1157,6 +1157,9 @@ def ensure_schema():
         except Exception: pass
     try: con.execute("ALTER TABLE ym_job ADD COLUMN retry_of INTEGER")
     except Exception: pass
+    # 🔁 ניסיון חוזר על כשל בשלב החיוג (כמו "אין יחידות") — חיוג שוב כל שעה, בלי ליצור שוב בגימני (reuse)
+    try: con.execute("ALTER TABLE ym_msg ADD COLUMN retry_count INTEGER DEFAULT 0")
+    except Exception: pass
     # מאיר (מקווה): "אופציה לשלוח מאוחר יותר" — send_at בשעון ישראל, status='scheduled' עד אז
     try: con.execute("ALTER TABLE ym_job ADD COLUMN send_at TEXT")
     except Exception: pass
@@ -20891,6 +20894,62 @@ def ym_session_cached(max_age=90, wait=2.5):
     return _YM_SESS['ok'], _YM_SESS['res'] if _YM_SESS['ok'] is not None else ''
 
 
+YM_FAIL_RETRY_MAX = 6        # 🔁 כמה פעמים לנסות לחייג שוב על כשל "אין יחידות" (כל שעה)
+YM_UNITS_LOW = 10            # ⚠️ מתחת לזה — מתריעים שהיחידות עומדות להיגמר
+
+
+def ym_units_now(fresh=False):
+    """יתרת היחידות בימות (מספר) או None אם לא ידוע. מ-GetSession, דרך המטמון."""
+    try:
+        ok, res = ym_session_cached(max_age=0 if fresh else 90)
+        if ok and isinstance(res, dict):
+            u = res.get('units')
+            if u is None:
+                u = res.get('Units')
+            if u is not None:
+                return float(u)
+    except Exception:
+        pass
+    return None
+
+
+def ym_units_alert_set(con, err=''):
+    """מסמן התראה 'אין יחידות' לפי היתרה האמיתית בימות — מוצג כבאנר באתר."""
+    try:
+        u = ym_units_now(fresh=True)
+        kv_set(con, 'ym_units_alert', json.dumps({'at': now_iso(), 'units': u, 'err': str(err)[:120]}, ensure_ascii=False))
+    except Exception:
+        pass
+
+
+def ym_units_alert_clear(con):
+    """שליחה שהצליחה = יש יחידות — מורידים את ההתראה."""
+    try:
+        if kv_get(con, 'ym_units_alert', ''):
+            kv_set(con, 'ym_units_alert', '')
+    except Exception:
+        pass
+
+
+def ym_log_card(con, m, text):
+    """רישום בכרטיס הלקוח (חבר / תורם / אברך) — גם על כישלון שליחה, כדי שיראו שניסינו ולמה לא יצא."""
+    try:
+        body = (m['text'] or '')[:300]
+        if m['kind'] == 'm':
+            con.execute("INSERT INTO member_log(member_id,date,channel,summary,body,direction,msg_id,at) VALUES(?,?,?,?,?,'out',?,?)",
+                        (m['ref_id'], today_iso(), 'ימות המשיח', text, m['text'], 'ym:%d' % m['id'], now_iso()))
+        elif m['kind'] == 'd':
+            con.execute("INSERT INTO contacts_log(donor_id,date,channel,summary,next_date) VALUES(?,?,?,?,'')",
+                        (m['ref_id'], today_iso(), 'ימות המשיח', text + (': ' + body if body else '')))
+        elif m['kind'] == 'a':
+            av = con.execute("SELECT name FROM avreichim WHERE id=?", (m['ref_id'],)).fetchone()
+            if av:
+                con.execute("INSERT INTO avreich_log(avreich,donor_id,date,hdate,text,at) VALUES(?,NULL,?,'',?,?)",
+                            (av['name'], today_iso(), text + (': ' + body if body else ''), now_iso()))
+    except Exception:
+        pass
+
+
 def ym_nikud_on(con):
     """מאיר: "שתמיד זה ייצא מנוקד לפי השליחה" — ניקוד אוטומטי לקול של Gemini (ברירת מחדל: פועל)."""
     return kv_get(con, 'ym_nikud', '1') != '0'
@@ -23212,6 +23271,35 @@ def _ym_sched_loop():
             print('  ym repeat error:', e)
 
 
+def ym_fail_retry_scan():
+    """🔁 כשל בשלב החיוג (כמו "אין יחידות") — מחייגים שוב לאותם נמענים כל שעה, באותה הקלטה (בלי גימני),
+    בשעה מתאימה, עד YM_FAIL_RETRY_MAX פעמים. ההודעות ממתינות בסטטוס 'retry' עם retry_at."""
+    con = db()
+    jobs = {}
+    try:
+        now = il_now()
+        cutoff = now.strftime('%Y-%m-%d %H:%M')
+        rows = con.execute("SELECT id, job FROM ym_msg WHERE status='retry' AND COALESCE(retry_at,'')<>'' AND retry_at<=?",
+                           (cutoff,)).fetchall()
+        if not rows:
+            return
+        if not ym_call_ok(now):     # לא שעת חיוג — דוחים לשעה המתאימה הבאה
+            nxt = ym_next_ok(now).strftime('%Y-%m-%d %H:%M')
+            con.execute("UPDATE ym_msg SET retry_at=? WHERE status='retry' AND COALESCE(retry_at,'')<>'' AND retry_at<=?", (nxt, cutoff))
+            con.commit()
+            return
+        for r in rows:
+            con.execute("UPDATE ym_msg SET status='queued', retry_at=NULL, retry_count=COALESCE(retry_count,0)+1 WHERE id=?", (r['id'],))
+            jobs[r['job']] = True
+        con.commit()
+    except Exception as e:
+        print('  ym fail-retry error:', e)
+    finally:
+        con.close()
+    for jid in jobs:        # מריצים שוב את המשלוח — ym_worker מעבד רק את ה'queued', ומחייג לאותה הקלטה
+        threading.Thread(target=ym_worker, args=(jid,), daemon=True).start()
+
+
 def _ym_retry_loop():
     while True:
         time.sleep(120)
@@ -23219,6 +23307,7 @@ def _ym_retry_loop():
             import yemot as _ym
             if _ym.configured():
                 ym_retry_scan()
+                ym_fail_retry_scan()
         except Exception as e:
             print('  ym retry loop error:', e)
 
@@ -23308,9 +23397,11 @@ def ym_worker(job_id, wait=True):
                     # שימות מקריא נכון (סכומים במילים, טלפונים ספרה-ספרה, מילון הגייה)
                     # 🔁 אותו נוסח בדיוק כמו ההודעה האחרונה שיצאה לטלפון הזה — לא יוצרים שוב (Gemini), רק מתקשרים,
                     # אם הקובץ שלה עדיין האחרון בתיקייה שלו בימות (send_tts בודק)
-                    prev_ = con.execute("SELECT id, text, ym_file, engine FROM ym_msg WHERE phone=? AND id<>? AND status='sent' AND COALESCE(ym_file,'')<>'' "
+                    # 🔁 אם כבר נוצרה הקלטה להודעה הזו (למשל בניסיון קודם שנפל על "אין יחידות") — מחייגים שוב לאותו קובץ, בלי גימני
+                    own_file = (m['ym_file'] if 'ym_file' in m.keys() else '') or ''
+                    prev_ = con.execute("SELECT id, text, ym_file, engine FROM ym_msg WHERE phone=? AND id<>? AND status IN ('sent','failed') AND COALESCE(ym_file,'')<>'' "
                                         "ORDER BY id DESC LIMIT 1", (m['phone'], m['id'])).fetchone()
-                    reuse_ = prev_['ym_file'] if prev_ and (prev_['text'] or '') == (m['text'] or '') else ''
+                    reuse_ = own_file or (prev_['ym_file'] if prev_ and (prev_['text'] or '') == (m['text'] or '') else '')
                     if reuse_ and _ym.last_file(m['phone']) != reuse_:
                         reuse_ = ''      # נשלחה לו בינתיים הודעה אחרת — יוצרים מחדש
                     vt_ = m['text'] if reuse_ else ym_voice_text(m['text'], ym_pron, ym_engine == 'gemini' and ym_nik, trace=_ym._trace,
@@ -23324,9 +23415,10 @@ def ym_worker(job_id, wait=True):
                                                'pre_call': (lambda ph_=m['phone']: _ym.blacklist_add(ph_))}
                                               if ((m['line'] if 'line' in m.keys() else '') or ('mk' if ((m['req_off'] or '') == 'mikveh' or m['kind'] == 'k') else 'main')) == 'mk' else {}))
                     if ok and isinstance(res, dict) and res.get('engine') == 'reuse':
-                        res['engine'] = (prev_['engine'] or '') + ' (אותה הקלטה)'
+                        res['engine'] = ((prev_['engine'] if prev_ else '') or '') + ' (אותה הקלטה)'
                         try:
-                            con.execute("INSERT OR REPLACE INTO ym_audio(msg_id,at,wav) SELECT ?, ?, wav FROM ym_audio WHERE msg_id=?", (m['id'], now_iso(), prev_['id']))
+                            if prev_:
+                                con.execute("INSERT OR REPLACE INTO ym_audio(msg_id,at,wav) SELECT ?, ?, wav FROM ym_audio WHERE msg_id=?", (m['id'], now_iso(), prev_['id']))
                         except Exception:
                             pass
                     if ok and isinstance(res, dict) and ym_engine == 'gemini' and res.get('engine') == 'yemot' and big_job:
@@ -23341,16 +23433,48 @@ def ym_worker(job_id, wait=True):
                                 con.execute("DELETE FROM ym_audio WHERE at<?", ((il_now() - datetime.timedelta(days=30)).isoformat(),))
                             except Exception:
                                 pass
+                    elif (not ok) and isinstance(res, dict) and res.get('file'):
+                        # כשל בשלב החיוג (למשל "אין יחידות") — ההקלטה כבר הועלתה לימות; נשמור אותה כדי שהניסיון החוזר יחייג שוב בלי גימני
+                        con.execute("UPDATE ym_msg SET ym_file=? WHERE id=?", (res.get('file'), m['id']))
+                        wav_ = res.get('wav')
+                        if wav_:
+                            try:
+                                con.execute("INSERT OR REPLACE INTO ym_audio(msg_id,at,wav) VALUES(?,?,?)", (m['id'], now_iso(), wav_))
+                                con.execute("DELETE FROM ym_audio WHERE at<?", ((il_now() - datetime.timedelta(days=30)).isoformat(),))
+                            except Exception:
+                                pass
                 tr = _ym.end_trace()
                 if not tr:      # נדחה אצלנו לפני שנשלח לימות — גם זה מופיע בלוג
                     tr = [{'method': 'SendSms' if job['channel'] == 'sms' else 'CallExtensionBridging',
                            'params': {'phones': m['phone'] or '—', 'note': 'לא נשלח לימות'}, 'ok': False,
                            'response': json.dumps({'responseStatus': 'NOT_SENT', 'message': str(res)}, ensure_ascii=False), 'ms': 0}]
                 ym_save_trace(con, tr, job_id, m['id'], m['phone'])
+                # נוסח השגיאה, ואם זה כשל בשלב החיוג בימות (ניתן לניסיון חוזר — למשל "אין יחידות")
+                err_txt = '' if ok else (str(res.get('error')) if isinstance(res, dict) else str(res))
+                dial_fail = (not ok) and isinstance(res, dict) and bool(res.get('dial_fail'))
                 cid = res.get('campaignId', '') if (ok and isinstance(res, dict)) else ''
-                con.execute("UPDATE ym_msg SET status=?, error=?, at=?, campaign=? WHERE id=?",
-                            ('sent' if ok else 'failed', '' if ok else str(res)[:200], now_iso(), cid, m['id']))
-                con.execute("UPDATE ym_job SET sent=sent+?, failed=failed+? WHERE id=?", (1 if ok else 0, 0 if ok else 1, job_id))
+                rc = (m['retry_count'] if 'retry_count' in m.keys() else 0) or 0
+                will_retry = (not ok) and dial_fail and job['channel'] == 'voice' and not job['test'] and rc < YM_FAIL_RETRY_MAX
+                if ok:
+                    con.execute("UPDATE ym_msg SET status='sent', error='', at=?, campaign=? WHERE id=?", (now_iso(), cid, m['id']))
+                    con.execute("UPDATE ym_job SET sent=sent+1 WHERE id=?", (job_id,))
+                    if not job['test']:
+                        ym_units_alert_clear(con)      # שליחה הצליחה = יש יחידות
+                elif will_retry:
+                    # 🔁 כשל חיוג (אין יחידות וכו') — לנסות שוב בעוד שעה (בשעה מתאימה), באותה הקלטה
+                    nxt = ym_next_ok(il_now() + datetime.timedelta(hours=1)).strftime('%Y-%m-%d %H:%M')
+                    con.execute("UPDATE ym_msg SET status='retry', error=?, at=?, retry_at=?, retry_note=? WHERE id=?",
+                                (err_txt[:200], now_iso(), nxt, ('ימות דחתה (%s) — ינסה שוב ~%s' % (err_txt[:50], nxt[11:])), m['id']))
+                    ym_units_alert_set(con, err_txt)
+                    if rc == 0:
+                        ym_log_card(con, m, '⏳ ההודעה הטלפונית לא יצאה (%s) — ינסה שוב כל שעה' % (err_txt[:80] or 'תקלה בימות'))
+                else:
+                    con.execute("UPDATE ym_msg SET status='failed', error=?, at=?, campaign=? WHERE id=?", (err_txt[:200], now_iso(), cid, m['id']))
+                    con.execute("UPDATE ym_job SET failed=failed+1 WHERE id=?", (job_id,))
+                    if dial_fail:
+                        ym_units_alert_set(con, err_txt)
+                    if not job['test']:
+                        ym_log_card(con, m, '✗ ההודעה לא יצאה — %s' % (err_txt[:120] or 'תקלה'))
                 if ok and not job['test']:
                     lbl = '📞 הודעה קולית' if job['channel'] == 'voice' else '💬 SMS'
                     try:
@@ -29746,6 +29870,18 @@ class H(BaseHTTPRequestHandler):
             self.send_header('Content-Disposition', "attachment; filename*=UTF-8''%s.%s" % (urllib.parse.quote((r['title'] or 'recording')[:40]), ext))
             self.end_headers(); self.wfile.write(data)
             return
+        if self.path.split('?')[0] == '/api/yemot/units':
+            # ⚠️ יתרת יחידות בימות + התראת "אין יחידות" — לבאנר באתר. קליל, לא חוסם.
+            con = db()
+            try:
+                try:
+                    alert = json.loads(kv_get(con, 'ym_units_alert', '') or 'null')
+                except Exception:
+                    alert = None
+            finally:
+                con.close()
+            u = ym_units_now()
+            return self._send(200, {'ok': True, 'units': u, 'low': (u is not None and u <= YM_UNITS_LOW), 'alert': alert})
         if self.path.split('?')[0] == '/api/yemot/status':
             import yemot as _ym
             # מאיר: "זה לפעמים ממש מחכה הרבה זמן עד שמתחבר — תעשה שיהיה מהר מאוד" — בדיקת החיבור לימות
