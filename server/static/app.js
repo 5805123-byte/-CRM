@@ -3160,6 +3160,10 @@ function mkOpen(c){
     const idb=document.getElementById('mkident');
     if(idb){if(r.ident){idb.style.display='';idb.textContent='🪪 ת.ז. ••••'+String(r.ident).slice(-3);idb.onclick=e=>{e.preventDefault();idb.textContent='🪪 ת.ז. '+r.ident;};}else idb.style.display='none';}
     if(r.zikui!=null){c.temp_balance=r.zikui;const z=document.getElementById('mkzk');if(z)z.querySelector('b').textContent=mkMoney(r.zikui);}
+    // 🚫 סטטוס החסימה החי — מעדכן את החיווי ואת כפתור החסימה/שחרור בלי לסגור ולפתוח
+    if(r.blocked!=null){c.blocked=r.blocked;c.block_reason=r.block_reason||'';
+      const tg=document.getElementById('mkblktag');if(tg)tg.innerHTML=c.blocked?('<span class="mktag bad">🚫 חסום'+(c.block_reason?' · '+esc(c.block_reason):'')+'</span>'):'';
+      const bb=document.getElementById('mkblock');if(bb){bb.innerHTML=c.blocked?mkIco('block')+' ביטול חסימה':mkIco('block')+' חסימה';bb.title=c.blocked?'לבטל את החסימה במקווה':'לחסום את הלקוח במקווה (לא ייכנס)';}}
     if(r.balance==null)return; c.balance=r.balance;
     const el=document.getElementById('mkbal'); if(!el)return;
     el.classList.toggle('bad',r.balance<0);
@@ -3177,7 +3181,7 @@ function mkOpen(c){
         <div><h2><a href="#" id="mkweb" class="mkweb" title="לפתוח את הכרטיס שלו באתר המקווה">${esc(mkName(c))} <small>↗</small></a></h2><div class="mksub">${c.phone?`<span dir="ltr"${mkPhoneOk(c.phone)?'':' style="color:#c0392b" title="המספר לא תקין"'}>${mkPhoneOk(c.phone)?'':'⚠️ '}${esc(c.phone)}</span>`:'אין טלפון'}<span>#${esc(c.code||'')}</span><span id="mkmail" dir="ltr" style="${c.email?'':'display:none'}">${esc(c.email||'')}</span><a href="#" id="mkident" title="תעודת זהות (מהמקווה) — לחיצה מראה את המספר המלא" style="text-decoration:none;display:${c.ident?'':'none'}">🪪 ת.ז. ${c.ident?'••••'+esc(String(c.ident).slice(-3)):''}</a><a href="#" id="mkwebset" title="לשנות את הקישור לאתר המקווה" style="text-decoration:none">⚙️</a>
           <button class="mkbtn ${c.phone&&!mkPhoneOk(c.phone)?'':'gh'}" id="mkphed" style="padding:6px 12px;font-size:.9rem">📞 ${c.phone&&!mkPhoneOk(c.phone)?'לתקן את הטלפון':'שינוי טלפון'}</button>
           ${c.phone?`<button class="mkbtn gh" id="mkkl" style="padding:6px 12px;font-size:.9rem" title="קישור אישי — לכבוד ר'… עדכון לגבי המקווה: פרטים וכרטיס אשראי בנדרים פלוס">💧 קישור אישי — וואטסאפ / מייל</button>`:''}
-          ${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
+          <span id="mkblktag">${c.blocked?`<span class="mktag bad">🚫 חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</span></div></div></div>
       <div id="mksync" data-id="${esc(c.id)}"></div>
       <div class="mktiles">
         ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`,'','group')}

@@ -29514,7 +29514,10 @@ class H(BaseHTTPRequestHandler):
                         except (TypeError, ValueError): pass
                 return self._send(200, {'ok': True, 'ms': int((time.time() - t0) * 1000), 'balance': bal, 'zikui': zk,
                                         'email': str(cl.get('email') or '').strip() if isinstance(cl, dict) else '',
-                                        'ident': _mk.ident(cl)})
+                                        'ident': _mk.ident(cl),
+                                        # 🚫 סטטוס החסימה החי מהמקווה — כדי שהכרטיס יראה אם חסום ויאפשר לשחרר (לא לפי המטמון הישן)
+                                        'blocked': bool(cl.get('isBlocked')) if isinstance(cl, dict) else None,
+                                        'block_reason': (str(cl.get('blockReason') or '').strip()) if isinstance(cl, dict) else ''})
             except Exception as e:
                 return self._send(200, {'ok': False, 'error': str(e)[:200]})
         m = re.match(r'/api/mikveh/activity/([0-9a-fA-F-]{36})$', self.path.split('?')[0])
