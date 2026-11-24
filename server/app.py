@@ -62,12 +62,33 @@ PORT = int(os.environ.get('PORT', 8000))
 RECEIPT_START = int(os.environ.get('RECEIPT_START', 6000))
 RECEIPT_IL_START = int(os.environ.get('RECEIPT_IL_START', 1))     # סדרת הקבלות הישראליות (סעיף 46) — נפרדת
 
+# 👤 "מי ביצע את הפעולה" — נקבע לכל בקשה ב-_gate (ידני / API-קלוד), וברירת המחדל ברקע היא 'אוטומטי'.
+# נשמר per-thread. כל רישום ל-mk_log בתבנית הרגילה מקבל אוטומטית עמודת who דרך מעטפת מסד הנתונים למטה.
+_MK_ACTOR = threading.local()
+def set_mk_actor(who):
+    _MK_ACTOR.who = who or ''
+def mk_actor():
+    return getattr(_MK_ACTOR, 'who', '') or 'אוטומטי'
+
+_MKLOG4 = "INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)"
+class _Con(sqlite3.Connection):
+    """מעטפת: רישום פעולה רגיל ל-mk_log מקבל אוטומטית עמודת who (מי ביצע). כל שאר השאילתות עוברות כמו שהן."""
+    def execute(self, sql, params=None):
+        try:
+            if sql == _MKLOG4 and params is not None and len(params) == 4:
+                return sqlite3.Connection.execute(self, "INSERT INTO mk_log(cid,at,kind,summary,who) VALUES(?,?,?,?,?)",
+                                                  tuple(params) + (mk_actor(),))
+        except Exception:
+            pass
+        return sqlite3.Connection.execute(self, sql) if params is None else sqlite3.Connection.execute(self, sql, params)
+
+
 def db():
     # מאיר, באמצע משלוח: "database is locked — מה קרה?" — כמה תהליכים כותבים
     # במקביל (משלוח, סריקת מיילים, סנכרון חיובים), וברירת המחדל של SQLite
     # מוותרת אחרי 5 שניות. WAL מאפשר קריאה במקביל לכתיבה, וההמתנה ארוכה
     # יותר — כותב מחכה לתורו במקום להיכשל.
-    con = sqlite3.connect(DB, timeout=60); con.row_factory = sqlite3.Row
+    con = sqlite3.connect(DB, timeout=60, factory=_Con); con.row_factory = sqlite3.Row
     try:
         con.execute('PRAGMA busy_timeout=60000')
         con.execute('PRAGMA journal_mode=WAL')
@@ -950,6 +971,8 @@ def ensure_schema():
     try:
         con.execute("CREATE TABLE IF NOT EXISTS mk_log(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, at TEXT, kind TEXT, summary TEXT, msg_id INTEGER)")
         con.execute("CREATE INDEX IF NOT EXISTS ix_mklog_cid ON mk_log(cid)")
+    except Exception: pass
+    try: con.execute("ALTER TABLE mk_log ADD COLUMN who TEXT")   # 👤 מי ביצע את הפעולה (ידני / אוטומטי / API-קלוד)
     except Exception: pass
     # 📞 שלוחת החלפת קבוצה במקווה — כל ניסיון החלפה (הצליח / נכשל), כדי לספור החלפות בחודש ולחייב קנס
     try:
@@ -21566,13 +21589,30 @@ def mk_bachur_state(con, action='status'):
                 'phone': (c.get('phone') or '').strip(), 'reason': c.get('blockReason') or ''}
                for cid, c in members.items() if c.get('isBlocked')]
     off = _mk_bachur_scan(con, members, 31)
-    offenders = [{'id': cid, 'name': names.get(cid, ''), 'code': members[cid].get('clientCode'),
-                  'phone': (members[cid].get('phone') or '').strip(), 'last': t, 'blocked': bool(members[cid].get('isBlocked'))}
+    today = il_now().date().isoformat()
+    def proof(cid, t):
+        """הוכחה מפורשת שמותר לחסום: מתי נכנס בפועל, שאין/פג המנוי באותו זמן, וכמה פעימות נותרו."""
+        c = members[cid]
+        ent = _mk_il(t)[:16]                       # הכניסה בפועל (שעון ישראל)
+        se = _mk_il(c.get('subscriptionEndDate'))[:10]
+        se_ok = re.fullmatch(r'\d{4}-\d{2}-\d{2}', se or '')
+        if not se_ok:
+            sub = 'אין מנוי כלל'
+        else:
+            sub = ('המנוי פג ב-%s' % se) if se < today else ('מנוי בתוקף עד %s' % se)
+        bal = (c.get('balance') or 0) / 100.0
+        return {'entry': ent, 'sub_end': (se if se_ok else ''), 'sub_txt': sub,
+                'balance': round(bal, 2),
+                'text': 'נכנס %s · %s · נותרו ₪%g בפעימות' % (ent, sub, bal)}
+    offenders = [dict({'id': cid, 'name': names.get(cid, ''), 'code': members[cid].get('clientCode'),
+                       'phone': (members[cid].get('phone') or '').strip(), 'last': t,
+                       'blocked': bool(members[cid].get('isBlocked'))}, **{'proof': proof(cid, t)})
                  for cid, t in sorted(off.items(), key=lambda kv: kv[1], reverse=True)]
     hist = []
     try:
-        for r in con.execute("SELECT cid,at,summary FROM mk_log WHERE kind='block' ORDER BY id DESC LIMIT 80"):
-            hist.append({'cid': r['cid'], 'name': names.get(str(r['cid']), ''), 'at': r['at'], 'summary': r['summary']})
+        for r in con.execute("SELECT cid,at,summary,who FROM mk_log WHERE kind='block' ORDER BY id DESC LIMIT 80"):
+            hist.append({'cid': r['cid'], 'name': names.get(str(r['cid']), ''), 'at': r['at'],
+                         'summary': r['summary'], 'who': (r['who'] if 'who' in r.keys() else '') or ''})
     except Exception:
         pass
     return {'blocked': blocked, 'history': hist, 'offenders': offenders, 'unblocked': unblocked, 'note': ''}
@@ -24279,6 +24319,7 @@ class H(BaseHTTPRequestHandler):
         """כניסה בסיסמה. מחזיר True אם אפשר להמשיך; אחרת כבר נשלחה תשובה (401 / 403).
         קבצי המסך עצמם (index.html, app.js…) פתוחים — מסך הכניסה נמצא בהם; הנתונים לא."""
         path = self.path.split('?')[0]
+        set_mk_actor('ידני')   # 👤 ברירת מחדל לבקשה: אדם מחובר; טוקן API ישנה ל'API (קלוד)'; רקע נשאר 'אוטומטי'
         if path in ('/api/login', '/api/login/google', '/api/logout', '/api/logout_all', '/api/me'):
             return self._auth_routes(path)
         # 🔑 טוקן API כללי — מזהה את הבקשה כמנהל לכל פונקציה באתר (נוצר/מתבטל מהאתר, נשמר ב-api_token).
@@ -24296,6 +24337,7 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             if want and hmac.compare_digest(str(tk), str(want)):
                 self.role = 'admin'
+                set_mk_actor('API (קלוד)')   # 🔑 בקשה דרך טוקן ה-API — קלוד מבצע בשמך
                 return True
         if not auth_on():
             self.role = 'admin'
@@ -32543,10 +32585,40 @@ class H(BaseHTTPRequestHandler):
                                 _mk.set_blocked(cid, True, cfg['reason'])
                         except Exception:
                             pass
-                res = None; reset = None
+                res = None; reset = None; batch = None
                 if b.get('reset'):
                     # 🔓 ביטול כל החסימות שלנו, בלי לאפס את הזיכרון (כדי שלא ייחסמו שוב מיד על אותה כניסה)
                     reset = mk_bachur_reset(con, cfg['reason'], clear_seen=False)
+                if b.get('block_ids'):
+                    # ⛔ חסימת מסומנים בבת אחת — אבל רק מי שיש עליו הוכחה מפורשת (עבריין לפי הסריקה כרגע).
+                    # מי שאין עליו הוכחה (למשל מנוי בתוקף) לא נחסם — נדחה ומדווח.
+                    want = set(str(x) for x in (b.get('block_ids') or []))
+                    members = _mk_bachur_members(con, fresh=True)
+                    off = _mk_bachur_scan(con, members, 31)      # ההוכחות — מי באמת נכנס בפעימות בלי מנוי
+                    try:
+                        held = set(str(x) for x in (json.loads(kv_get(con, 'mk_bachur_blocked', '') or '[]') or []))
+                    except Exception:
+                        held = set()
+                    try:
+                        seen = json.loads(kv_get(con, 'mk_bachur_seen', '') or '{}') or {}
+                    except Exception:
+                        seen = {}
+                    done, denied = [], []
+                    for cid in want:
+                        if cid not in off:
+                            denied.append(cid); continue        # אין הוכחה — לא חוסמים
+                        c = members.get(cid) or {}
+                        try:
+                            if not c.get('isBlocked'):
+                                _mk.set_blocked(cid, True, cfg['reason'])
+                                con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
+                                            (cid, now_iso(), 'block', '⛔ נחסם — נכנס בפעימות בלי מנוי (חסימה יזומה מהרשימה)'))
+                            held.add(cid); seen[cid] = off[cid]; done.append(cid)
+                        except Exception as e:
+                            print('  mk bachur batch block error:', cid, e); denied.append(cid)
+                    kv_set(con, 'mk_bachur_blocked', json.dumps(sorted(held)))
+                    kv_set(con, 'mk_bachur_seen', json.dumps(seen, ensure_ascii=False))
+                    batch = {'blocked': len(done), 'denied': len(denied)}
                 if b.get('run') or ('on' in b and cfg['on']):
                     res = mk_bachur_enforce(con, days=31, fresh=bool(b.get('fresh')))
                     cfg['last'] = now_iso(); cfg['blocked'] = res['blocked']; cfg['opened'] = res.get('reset', 0); cfg['error'] = ''
@@ -32560,7 +32632,7 @@ class H(BaseHTTPRequestHandler):
                                     'blocked': cfg['blocked'], 'opened': cfg['opened'],
                                     'ran': res is not None, 'ran_blocked': (res or {}).get('blocked', 0),
                                     'ran_reset': (res or {}).get('reset', 0), 'ran_offenders': (res or {}).get('offenders', 0),
-                                    'reset': reset})
+                                    'reset': reset, 'batch': batch})
         if self.path in ('/api/mikveh/ops_token', '/api/api_token'):
             # 🔑 טוקן API כללי (ל-Claude) — מזהה כמנהל לכל פונקציה באתר. נוצר/מתבטל מהאתר, נשמר ב-api_token (בלי Render).
             import secrets
