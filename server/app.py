@@ -21629,12 +21629,20 @@ def mk_drain_backfill(con):
     לפני שהמאגר קם). מזהה לפי (cid, at) כדי לא לכפול."""
     con.execute("CREATE TABLE IF NOT EXISTS mk_drain(id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, "
                 "name TEXT, bal REAL, temp REAL, at TEXT, refunded INTEGER DEFAULT 0, refunded_at TEXT)")
+    # ריפוי עצמי: בעבר לוג של החזרה (↩️ הוחזר) נרשם בטעות עם kind='drain', וה-backfill ספר אותו כריקון חדש.
+    # מסמנים כל לוג-החזרה כ-kind='refund', ומוחקים רשומות ריקון מזויפות שנוצרו ממנו — כדי שלא ישולם כפול.
+    con.execute("UPDATE mk_log SET kind='refund' WHERE kind='drain' AND (summary LIKE '↩%' OR summary LIKE '%הוחזר%')")
+    con.execute("DELETE FROM mk_drain WHERE (cid||'|'||at) IN (SELECT cid||'|'||at FROM mk_log WHERE kind='refund')")
+    con.commit()
     have = set((str(r['cid']), str(r['at'])) for r in con.execute("SELECT cid,at FROM mk_drain"))
     for r in con.execute("SELECT cid,at,summary FROM mk_log WHERE kind='drain'"):
         key = (str(r['cid']), str(r['at']))
         if key in have:
             continue
-        m = re.search(r'פעימות ₪([\d.]+) \+ זיכוי ₪([\d.]+)', r['summary'] or '')
+        s = r['summary'] or ''
+        if s.startswith('↩') or 'הוחזר' in s:
+            continue                       # לוג של החזרה, לא ריקון
+        m = re.search(r'פעימות ₪([\d.]+) \+ זיכוי ₪([\d.]+)', s)
         if not m:
             continue
         con.execute("INSERT INTO mk_drain(cid,name,bal,temp,at) VALUES(?,?,?,?,?)",
@@ -21658,6 +21666,9 @@ def _mk_bachur_scan(con, members, days):
             continue                       # לא נכנס בחלון — לא רלוונטי
         se = _mk_il(c.get('subscriptionEndDate'))[:10]
         se_valid = re.fullmatch(r'\d{4}-\d{2}-\d{2}', se)
+        today = il_now().date().isoformat()
+        if se_valid and se >= today:
+            continue                       # יש לו מנוי בתוקף כרגע — לא חוסמים לעולם, גם אם נכנס פעמיים ביום
         if not ((not se_valid) or se < lid):
             continue                       # המנוי כיסה את הכניסה — לא נכנס בפעימות בלי מנוי
         g = gsince.get(cid)
@@ -32415,7 +32426,7 @@ class H(BaseHTTPRequestHandler):
                             _mk.add_credit(r['cid'], tmp, temp=True)
                         con.execute("UPDATE mk_drain SET refunded=1, refunded_at=? WHERE id=?", (now_iso(), r['id']))
                         con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
-                                    (r['cid'], now_iso(), 'drain', '↩️ הוחזר ערך צבור: ₪%g (פעימות ₪%g + זיכוי ₪%g)'
+                                    (r['cid'], now_iso(), 'refund', '↩️ הוחזר ערך צבור: ₪%g (פעימות ₪%g + זיכוי ₪%g)'
                                      % ((r['bal'] or 0) + (r['temp'] or 0), r['bal'] or 0, r['temp'] or 0)))
                         done.append(r['cid']); total += bal + tmp
                     except Exception as e:
