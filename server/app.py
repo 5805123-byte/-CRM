@@ -23438,7 +23438,57 @@ MCP_TOOLS = [
     {'name': 'today',
      'description': 'התאריך של היום בישראל — לועזי, עברי ויום בשבוע.',
      'inputSchema': {'type': 'object', 'properties': {}}},
+    # מאיר: "כלי חדש add_gabbai_reminder שמכניס תזכורת לדף תזכורות הגבאים… וכלי list_gabbai_reminders"
+    # — הדף "✅ משימות הצוות" בלשונית הקהילה (cm_job): למי, מה, עד מתי, הערות
+    {'name': 'add_gabbai_reminder',
+     'description': 'מכניס תזכורת / משימה לגבאי בדף "משימות הצוות" (תזכורות הגבאים) במערכת של כולל חצות. '
+                    'gabbai = שם הגבאי (אפשר גם רק שם משפחה או שם פרטי — למשל "ברלב"). '
+                    'date בפורמט YYYY-MM-DD — רשות; אם נאמר "מחר" / "יום שלישי" / תאריך עברי, שלח ב-when. '
+                    'כמה משימות — קריאה נפרדת לכל אחת.',
+     'inputSchema': {'type': 'object', 'properties': {
+         'gabbai': {'type': 'string', 'description': 'שם הגבאי'},
+         'task': {'type': 'string', 'description': 'הנושא / המשימה — בעברית, קצר וברור'},
+         'date': {'type': 'string', 'description': 'YYYY-MM-DD — רשות'},
+         'when': {'type': 'string', 'description': 'התאריך כמו שנאמר, כשאין date — רשות'},
+         'note': {'type': 'string', 'description': 'הערות — רשות'}},
+         'required': ['gabbai', 'task']}},
+    {'name': 'list_gabbai_reminders',
+     'description': 'התזכורות / המשימות הפתוחות של הגבאים (דף "משימות הצוות"), מסודרות לפי גבאי. '
+                    'gabbai — רשות: רק של גבאי אחד.',
+     'inputSchema': {'type': 'object', 'properties': {'gabbai': {'type': 'string', 'description': 'שם הגבאי — רשות'}}}},
 ]
+
+
+def _mcp_when(wh, title=''):
+    """תאריך שנאמר בדיבור ("מחר", "יום שלישי", "ט"ו חשון", "25.11") → YYYY-MM-DD, או '' כשלא הובן."""
+    import calparse as _cp
+    wh = str(wh or '')
+    its = _cp.simple((wh + ' ' + str(title or '')).strip())
+    it = next((x for x in its if x.get('date')), None)
+    if it:
+        return it['date']
+    wd = re.search(r'(?:יום\s+)?(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת)', wh)
+    if wd:
+        td = il_now().date()
+        k = MCP_DOW.index(wd.group(1))
+        return (td + datetime.timedelta(days=(k - td.weekday()) % 7 or 7)).isoformat()
+    return ''
+
+
+def _mcp_gabbai(con, name):
+    """שם הגבאי כמו שנאמר → השם בצוות. מחזיר (שם, None) או (None, הודעת שגיאה)."""
+    team = cm_team(con)
+    nm = re.sub(r'\s+', ' ', str(name or '')).strip().replace('ר\' ', '').replace('הרב ', '')
+    if not nm:
+        return None, '⚠️ חסר שם הגבאי. הגבאים: ' + ', '.join(team)
+    if nm in team:
+        return nm, None
+    toks = [t for t in nm.split(' ') if t]
+    hits = [t for t in team if all(x in t for x in toks)] or [t for t in team if any(x in t.split(' ') for x in toks)]
+    if len(hits) == 1:
+        return hits[0], None
+    return None, ('⚠️ לא מצאתי גבאי בשם "%s". ' % nm if not hits else '⚠️ "%s" מתאים לכמה: %s. ' % (nm, ', '.join(hits))) + \
+        'הגבאים: ' + ', '.join(team)
 
 
 def _mcp_day(iso):
@@ -23490,6 +23540,53 @@ def mcp_tool(name, a):
             con.commit()
             bump_data()
             return '✓ נכנס ליומן (מס׳ %d): %s%s — %s%s' % (cur.lastrowid, _mcp_day(date), (' בשעה ' + tm) if tm else '', title, (' · 📍 ' + place) if place else '')
+        if name == 'add_gabbai_reminder':
+            to, err = _mcp_gabbai(con, a.get('gabbai'))
+            if err:
+                return err
+            title = str(a.get('task') or a.get('title') or '').strip()[:300]
+            if not title:
+                return '⚠️ חסר הנושא / המשימה'
+            due = str(a.get('date') or '').strip()[:10]
+            if due and not re.fullmatch(r'\d{4}-\d{2}-\d{2}', due):
+                due = _mcp_when(due, '') or ''
+            if not due and str(a.get('when') or '').strip():
+                due = _mcp_when(a.get('when'), '')
+                if not due:
+                    return '⚠️ לא הבנתי את התאריך ("%s"). שלח date בפורמט YYYY-MM-DD, או בלי תאריך.' % a.get('when')
+            note = str(a.get('note') or '').strip()[:1000]
+            ex = con.execute("SELECT id FROM cm_job WHERE status<>'done' AND to_who=? AND title=?", (to, title)).fetchone()
+            if ex:
+                return '✓ כבר קיימת אצל %s (מס׳ %d): %s' % (to, ex['id'], title)
+            cur = con.execute("INSERT INTO cm_job(title,note,to_who,by_who,due,status,created) VALUES(?,?,?,?,?,'open',?)",
+                              (title, note, to, 'ראש הכולל', due, now_iso()))
+            con.commit()
+            bump_data()
+            return '✓ נכנס לתזכורות הגבאים (מס׳ %d) — ל%s: %s%s%s' % (cur.lastrowid, to, title, (' · 📅 ' + _mcp_day(due)) if due else '',
+                                                                     (' · 📝 ' + note) if note else '')
+        if name == 'list_gabbai_reminders':
+            team = cm_team(con)
+            only = None
+            if str(a.get('gabbai') or '').strip():
+                only, err = _mcp_gabbai(con, a.get('gabbai'))
+                if err:
+                    return err
+            td = il_now().date().isoformat()
+            rows = con.execute("SELECT id,title,note,to_who,due,created FROM cm_job WHERE COALESCE(status,'open')<>'done' "
+                               "ORDER BY CASE WHEN COALESCE(due,'')='' THEN 1 ELSE 0 END, due, id").fetchall()
+            out = []
+            for g in ([only] if only else team + sorted({r['to_who'] for r in rows if r['to_who'] not in team})):
+                mine = [r for r in rows if r['to_who'] == g]
+                if only is None and not mine:
+                    continue
+                out.append('\n👤 %s — %d פתוחות:' % (g, len(mine)))
+                for r in mine:
+                    late = ' ⚠️ באיחור' if r['due'] and r['due'] < td else ''
+                    out.append('  • [%d] %s%s%s' % (r['id'], r['title'] or '', (' · 📅 ' + _mcp_day(r['due']) + late) if r['due'] else '',
+                                                   (' · 📝 ' + r['note']) if r['note'] else ''))
+                if not mine:
+                    out.append('  אין משימות פתוחות ✓')
+            return '\n'.join(out).strip() or 'אין תזכורות פתוחות לגבאים ✓'
         if name == 'lookup_phone':
             def _d(x):
                 x = re.sub(r'\D', '', str(x or ''))
@@ -23593,9 +23690,11 @@ def mcp_handle(msg):
     if meth == 'initialize':
         return ok({'protocolVersion': prm.get('protocolVersion') or '2025-06-18',
                    'capabilities': {'tools': {'listChanged': False}},
-                   'serverInfo': {'name': 'kollel-chatzos-calendar', 'version': '1.0'},
+                   'serverInfo': {'name': 'kollel-chatzos-calendar', 'version': '1.1'},
                    'instructions': 'היומן של המערכת של כולל חצות. כשהמשתמש מבקש להכניס משהו ליומן / תזכורת / משימה עם תאריך — '
-                                   'קרא ל-add_to_calendar (לכל משימה בנפרד) וענה לו בקצרה בעברית מה נכנס ולאיזה יום.'})
+                                   'קרא ל-add_to_calendar (לכל משימה בנפרד) וענה לו בקצרה בעברית מה נכנס ולאיזה יום. '
+                                   'כשהתזכורת / המשימה היא לגבאי (שמעון ברלב, אברהם רובינפלד, יוסף אורדנטליך וכו׳) — '
+                                   'add_gabbai_reminder, ולרשימה לפי גבאי — list_gabbai_reminders.'})
     if meth == 'ping':
         return ok({})
     if meth == 'tools/list':
