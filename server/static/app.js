@@ -12723,47 +12723,7 @@ async function openKvPage(did){
 }
 // 📊 מאיר: "מקום מרוכז ששם יש את כל התרומות, כולל נדרים פלוס… מחולק: נדרים פלוס, בנק ווסט, אוטורייז… לפי
 // תאריכים, לבדוק כמה נכנס… מחולק לפי קטגוריות מסודרות יפה"
-let INC={f:'',t:'',q:'',open:{}};
-async function incomeOpen(f,t){
-  const rs=document.getElementById('remsheet'),remov=document.getElementById('remov');
-  const td=todayStr(),iso=x=>x.toISOString().slice(0,10);
-  INC.f=f||INC.f||td.slice(0,8)+'01';INC.t=t||INC.t||td;
-  const money=o=>Object.keys(o||{}).sort().map(c=>'<b>'+c+Math.round(o[c]).toLocaleString('en-US')+'</b>').join(' + ')||'—';
-  const paint=async()=>{
-    rs.innerHTML=`<button class="x" id="rx">✕</button><h2>📊 כל מה שנכנס — לפי מקור</h2>
-      <div class="gfbar"><label class="fld"><span>מתאריך</span><input type="date" id="inc_f" value="${esc(INC.f)}"></label>
-        <label class="fld"><span>עד תאריך</span><input type="date" id="inc_t" value="${esc(INC.t)}"></label>
-        <label class="fld"><span>חיפוש (שם / ייעוד / הערה — למשל אומן)</span><input id="inc_q" value="${esc(INC.q)}" placeholder="🔎 לא חובה"></label></div>
-      <div class="addrow" style="flex-wrap:wrap;gap:6px">${[['היום',td,td],['אתמול',iso(new Date(Date.now()-864e5)),iso(new Date(Date.now()-864e5))],
-        ['7 ימים',iso(new Date(Date.now()-6*864e5)),td],['החודש',td.slice(0,8)+'01',td],
-        ['חודש קודם',(()=>{const d=new Date(td.slice(0,8)+'01');d.setMonth(d.getMonth()-1);return iso(d);})(),iso(new Date(new Date(td.slice(0,8)+'01')-864e5))]]
-        .map(([l,a,b])=>`<button class="chip ${INC.f===a&&INC.t===b?'on':''}" data-incf="${a}" data-inct="${b}">${l}</button>`).join('')}</div>
-      <div id="inc_body" class="hintxt">טוען…</div>`;
-    remov.classList.add('show');
-    document.getElementById('rx').onclick=()=>remov.classList.remove('show');
-    const q=s=>rs.querySelector(s);
-    q('#inc_f').onchange=()=>{INC.f=q('#inc_f').value;paint();};
-    q('#inc_t').onchange=()=>{INC.t=q('#inc_t').value;paint();};
-    q('#inc_q').onchange=()=>{INC.q=q('#inc_q').value.trim();paint();};
-    q('#inc_q').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();INC.q=q('#inc_q').value.trim();paint();}};
-    rs.querySelectorAll('[data-incf]').forEach(b=>b.onclick=()=>{INC.f=b.dataset.incf;INC.t=b.dataset.inct;paint();});
-    const r=await api('GET','/api/income?from='+encodeURIComponent(INC.f)+'&to='+encodeURIComponent(INC.t)+'&q='+encodeURIComponent(INC.q||'')).catch(()=>null);
-    const box=q('#inc_body');if(!box)return;
-    if(!r||!r.ok){box.textContent='לא הצלחתי לטעון.';return;}
-    box.className='';
-    box.innerHTML=`<div class="gfsum">${esc(rcDate(r.from))} – ${esc(rcDate(r.to))}${r.q?' · 🔎 "'+esc(r.q)+'"':''} · ${r.n} תרומות · סה״כ ${money(r.tot)}</div>
-      ${(r.sources||[]).map((s,i)=>`<div class="gfmon"><div class="gfmh" style="cursor:pointer" data-inco="${esc(s.src)}"><b>${INC.open[s.src]?'▲':'▼'} ${esc(s.src)}</b><span>${money(s.tot)} · ${s.n}</span></div>
-        <div style="padding:4px 10px">${s.cats.map(c=>`<div class="gfrow"><span class="gfw">${esc(c.cat)}</span><span class="gfm">${c.n} תרומות</span><b class="gfa">${money(c.tot)}</b></div>`).join('')}</div>
-        ${INC.open[s.src]?`<div style="padding:4px 10px;border-top:1px dashed var(--line)">${s.rows.map(x=>`<div class="gfrow"><span class="gfd">${esc(rcDate(x.date))}</span>
-          ${x.did?`<button class="gfnm" data-incd="${x.did}">${esc(x.name)}</button>`:`<span class="gfnm">${esc(x.name)}</span>`}
-          <b class="gfa">${x.cur}${Math.round(x.amount).toLocaleString('en-US')}</b><span class="gfw">${esc(x.cat)}${x.note?`<small>${esc(x.note)}</small>`:''}</span></div>`).join('')}</div>`:''}</div>`).join('')
-        ||'<div class="empty">לא נכנס כלום בתאריכים האלה.</div>'}
-      <div class="hintxt" style="margin-top:8px">נדרים פלוס = כל התשלומים בקופת הכולל (תורמים וקהילה, בלי המקווה). ₪ ו-$ נספרים בנפרד. לחיצה על מקור — פירוט התרומות.</div>`;
-    box.querySelectorAll('[data-inco]').forEach(h=>h.onclick=()=>{INC.open[h.dataset.inco]=!INC.open[h.dataset.inco];paint();});
-    box.querySelectorAll('[data-incd]').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==b.dataset.incd);if(d){remov.classList.remove('show');openDonor(d);}});
-  };
-  paint();
-}
+let INC={f:'',t:'',q:''};
 function kvSendOpen(d,grab,url){
   const he=(d.region||'')==='il';
   const enName=String(d.english||'').trim()||((d.first||'')+' '+(d.last||'')).trim();
@@ -17798,7 +17758,77 @@ function gfRows(){const out=[];
   DB.forEach(d=>(d.donations||[]).forEach(x=>{const dt=String(x.date||'');if(!dt)return;
     out.push({x,d,dt,c:donCur(x,curSym(d)),fam:gfFamOf(x),nm:((d.last||'')+' '+(d.first||'')).trim()});}));
   out.sort((a,b)=>b.dt.localeCompare(a.dt)||(b.x.id-a.x.id));return out;}
+// 📊 מאיר: "אני רוצה שיהיה בתרומות, שיהיה כתוב מה נכנס נדרים פלוס, מה נכנס מכל מקור… ולפי זה אני אעשה את החיפוש…
+// מתאריך לתאריך… תסדר את זה יותר יפה" — הלשונית נפתחת על "מה נכנס"; הרשימה לעריכה — בכפתור
+let gfMode='sum';
+function gfModeBar(){return `<div class="addrow" style="gap:8px;margin:0 2px 10px">
+  <button class="btn ${gfMode==='sum'?'':'ghost'}" data-gfmode="sum" style="flex:1">📊 מה נכנס — לפי מקור</button>
+  <button class="btn ${gfMode==='list'?'':'ghost'}" data-gfmode="list" style="flex:1">📋 רשימה לעריכה / ➕ תרומה חדשה</button></div>`;}
+function gfModeWire(){view.querySelectorAll('[data-gfmode]').forEach(b=>b.onclick=()=>{gfMode=b.dataset.gfmode;render();});}
+const INC_ICON={'נדרים פלוס':'💚','בנק ווסט':'🏦','אוטורייז':'💳',"צ'קים":'✉️','Zelle':'⚡','העברות בנקאיות':'🏛','קרנות (דונרס / OJC)':'🎁','ידני':'💵','אחר':'•'};
+let INCD=null, incKey='', incSrc='', incLim=300;
+function incDefaults(){const td=todayStr();if(!INC.f)INC.f=td.slice(0,8)+'01';if(!INC.t)INC.t=td;}
+async function incLoad(){
+  const key=INC.f+'|'+INC.t+'|'+INC.q;if(INCD&&incKey===key)return;
+  incKey=key;INCD='loading';
+  const r=await api('GET','/api/income?from='+encodeURIComponent(INC.f)+'&to='+encodeURIComponent(INC.t)+'&q='+encodeURIComponent(INC.q||'')).catch(()=>null);
+  if(incKey!==key)return;
+  INCD=(r&&r.ok)?r:{error:1};if(tab==='gifts'&&gfMode==='sum')render();}
+function renderIncome(){
+  incDefaults();chips.innerHTML='';
+  const td=todayStr(),iso=x=>x.toISOString().slice(0,10);
+  const money=o=>Object.keys(o||{}).sort().map(c=>c+Math.round(o[c]).toLocaleString('en-US')).join(' + ')||'—';
+  const quick=[['היום',td,td],['אתמול',iso(new Date(Date.now()-864e5)),iso(new Date(Date.now()-864e5))],['7 ימים',iso(new Date(Date.now()-6*864e5)),td],
+    ['החודש',td.slice(0,8)+'01',td],['חודש קודם',(()=>{const d=new Date(td.slice(0,8)+'01');d.setMonth(d.getMonth()-1);return iso(d);})(),iso(new Date(new Date(td.slice(0,8)+'01')-864e5))],
+    ['השנה',td.slice(0,5)+'01-01',td]];
+  const D=(INCD&&INCD!=='loading'&&!INCD.error)?INCD:null;
+  const srcs=D?D.sources:[];
+  if(incSrc&&D&&!srcs.some(s=>s.src===incSrc))incSrc='';
+  const sel=incSrc?srcs.filter(s=>s.src===incSrc):srcs;
+  // ייעודים — של המקור שנבחר, או של הכל יחד
+  const cats={};sel.forEach(s=>s.cats.forEach(c=>{const k=c.cat,o=cats[k]=cats[k]||{cat:k,n:0,tot:{}};o.n+=c.n;Object.keys(c.tot).forEach(u=>o.tot[u]=(o.tot[u]||0)+c.tot[u]);}));
+  const catL=Object.values(cats).sort((a,b)=>Object.values(b.tot).reduce((x,y)=>x+y,0)-Object.values(a.tot).reduce((x,y)=>x+y,0));
+  const rows=[].concat(...sel.map(s=>s.rows.map(x=>Object.assign({src:s.src},x)))).sort((a,b)=>b.date.localeCompare(a.date));
+  const totSel={};rows.forEach(x=>totSel[x.cur]=(totSel[x.cur]||0)+x.amount);
+  const days={};rows.slice(0,incLim).forEach(x=>(days[x.date]=days[x.date]||[]).push(x));
+  view.innerHTML=`${gfModeBar()}
+    <div class="incbar">
+      <label class="fld"><span>מתאריך</span><input type="date" id="inc_f" value="${esc(INC.f)}"></label>
+      <label class="fld"><span>עד תאריך</span><input type="date" id="inc_t" value="${esc(INC.t)}"></label>
+      <label class="fld incq"><span>חיפוש — שם / ייעוד / הערה (לא חובה)</span><input id="inc_q" value="${esc(INC.q||'')}" placeholder="למשל: אומן"></label>
+      <button class="btn bqgo incgo" id="inc_go">🔎 חפש</button></div>
+    <div class="addrow" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">${quick.map(([l,a,b])=>`<button class="chip ${INC.f===a&&INC.t===b?'on':''}" data-incf="${a}" data-inct="${b}">${l}</button>`).join('')}
+      ${INC.q?`<button class="chip" id="inc_clr">✕ נקה חיפוש "${esc(INC.q)}"</button>`:''}</div>
+    ${!INCD||INCD==='loading'?'<div class="hintxt" style="padding:16px;text-align:center">⏳ טוען…</div>'
+      :INCD.error?'<div class="hintxt">לא הצלחתי לטעון. נסה שוב.</div>'
+      :`<div class="incsum">${esc(rcDate(D.from))} – ${esc(rcDate(D.to))}${D.q?` · 🔎 "${esc(D.q)}"`:''}<br>נכנס בסך הכל: <b>${money(D.tot)}</b> · ${D.n} תרומות</div>
+      <div class="inccards"><button class="inccard ${incSrc?'':'on'}" data-isrc=""><span>📊 הכל</span><b>${money(D.tot)}</b><small>${D.n} תרומות</small></button>
+        ${srcs.map(s=>`<button class="inccard ${incSrc===s.src?'on':''}" data-isrc="${esc(s.src)}"><span>${INC_ICON[s.src.split(' · ')[0]]||'•'} ${esc(s.src)}</span><b>${money(s.tot)}</b><small>${s.n} תרומות</small></button>`).join('')}</div>
+      ${rows.length?`<div class="gfmon"><div class="gfmh"><b>לפי ייעוד${incSrc?' — '+esc(incSrc):''}</b><span>${money(totSel)}</span></div>
+        ${catL.map(c=>`<div class="gfrow"><span class="gfw"><b>${esc(c.cat)}</b></span><span class="gfm">${c.n} תרומות</span><b class="gfa">${money(c.tot)}</b></div>`).join('')}</div>
+      <div class="rbtitle" style="margin-top:12px">📜 התרומות${incSrc?' — '+esc(incSrc):''}</div>
+      ${Object.keys(days).sort().reverse().map(dd=>{const L=days[dd],t={};L.forEach(x=>t[x.cur]=(t[x.cur]||0)+x.amount);
+        return `<div class="gfmon"><div class="gfmh"><b>${esc(rcDate(dd))}</b><span>${money(t)} · ${L.length}</span></div>${L.map(x=>`<div class="gfrow">
+          ${x.did?`<button class="gfnm" data-incd="${x.did}">${esc(x.name)}</button>`:`<span class="gfnm">${esc(x.name)}</span>`}
+          <b class="gfa">${x.cur}${(Math.round(x.amount*100)%100?x.amount.toLocaleString('en-US',{minimumFractionDigits:2}):Math.round(x.amount).toLocaleString('en-US'))}</b>
+          <span class="gfw">${esc(x.cat)}${x.note?`<small>${esc(x.note)}</small>`:''}</span><span class="gfm">${INC_ICON[x.src.split(' · ')[0]]||''} ${esc(x.src)}</span></div>`).join('')}</div>`;}).join('')}
+      ${rows.length>incLim?`<button class="btn sm ghost" id="inc_more" style="width:100%">📜 הצג עוד (${rows.length-incLim})</button>`:''}`
+      :`<div class="empty">לא נמצאו תרומות${D.q?' עם "'+esc(D.q)+'"':''} בתאריכים האלה.</div>`}
+      <div class="hintxt" style="margin-top:10px">💚 נדרים פלוס = כל הקופה של הכולל — תורמים וקהילה (בלי המקווה). שקלים ודולרים נספרים בנפרד.</div>`}`;
+  gfModeWire();
+  const g=id=>document.getElementById(id);
+  const go=()=>{INC.f=g('inc_f').value||INC.f;INC.t=g('inc_t').value||INC.t;INC.q=g('inc_q').value.trim();incLim=300;incLoad();render();};
+  g('inc_go').onclick=go;
+  g('inc_q').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();go();}};
+  view.querySelectorAll('[data-incf]').forEach(b=>b.onclick=()=>{INC.f=b.dataset.incf;INC.t=b.dataset.inct;INC.q=g('inc_q').value.trim();incLim=300;incLoad();render();});
+  const cl=g('inc_clr');if(cl)cl.onclick=()=>{INC.q='';incLoad();render();};
+  view.querySelectorAll('[data-isrc]').forEach(b=>b.onclick=()=>{incSrc=b.dataset.isrc;incLim=300;render();});
+  view.querySelectorAll('[data-incd]').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==b.dataset.incd);if(d)openDonor(d);});
+  const mo=g('inc_more');if(mo)mo.onclick=()=>{incLim+=300;render();};
+  if(!INCD)incLoad();
+}
 function renderGifts(){
+  if(gfMode==='sum')return renderIncome();
   const all=gfRows();
   let rows=all.filter(r=>(!gfFam||r.fam===gfFam)&&(!gfCur||r.c===gfCur)&&(!gfFrom||r.dt.slice(0,10)>=gfFrom)&&(!gfTo||r.dt.slice(0,10)<=gfTo));
   if((q||'').trim())rows=rows.filter(r=>matchQ([r.nm,r.d.english,r.x.amount,r.x.category,r.x.method,r.x.note,r.x.tid].join(' ')));
@@ -17823,12 +17853,11 @@ function renderGifts(){
   const keys=Object.keys(months).sort().reverse();let shown=0;
   const body=keys.map(m=>{if(shown>=gfLim)return '';const L=months[m].slice(0,Math.max(0,gfLim-shown));shown+=L.length;
     return `<div class="gfmon"><div class="gfmh"><b>${esc(fmtMonth(m))}</b><span>${sum(months[m])} · ${months[m].length} תרומות</span></div>${L.map(row).join('')}</div>`;}).join('');
-  view.innerHTML=`<div class="rbtitle">💵 כל התרומות — לפי תאריך</div>
+  view.innerHTML=`${gfModeBar()}<div class="rbtitle">📋 רשימת התרומות לעריכה</div>
     <div class="hintxt">כל מה שנכנס בכרטיסי התורמים, מכל מקור: בנק ווסט, אוטרייז, צ׳קים, Zelle, Chase, העברות, ידני. 🔒 = חיוב אשראי שעבר אצלנו (מתקנים בדף החיובים, ↩️ ביטול / החזר); את כל השאר אפשר לתקן כאן ✎.</div>
     <div class="gfbar"><label class="fld"><span>מתאריך</span><input type="date" id="gf_from" value="${esc(gfFrom)}"></label><label class="fld"><span>עד תאריך</span><input type="date" id="gf_to" value="${esc(gfTo)}"></label>
       <label class="fld"><span>מטבע</span><select id="gf_cur"><option value="">הכל</option>${['$','₪'].map(c=>`<option ${gfCur===c?'selected':''}>${c}</option>`).join('')}</select></label>
-      <button class="btn sm" id="gf_new">➕ תרומה חדשה</button>
-      <button class="btn sm bqgo" id="gf_inc" title="כל מה שנכנס בטווח התאריכים — כולל נדרים פלוס והקהילה — לפי מקור וייעוד">📊 סיכום לפי מקור — כולל נדרים פלוס</button></div>
+      <button class="btn sm" id="gf_new">➕ תרומה חדשה</button></div>
     ${gfNew?`<div class="gfnewbox"><b>➕ תרומה חדשה</b>
       <input id="gfn_who" list="bq_dl" placeholder="תורם — הקלד שם ובחר מהרשימה…">
       <div class="lgf"><input type="date" id="gfn_date" value="${todayStr()}"><div class="curwrap"><select id="gfn_cur">${curOpts('$')}</select><input id="gfn_amt" inputmode="decimal" placeholder="סכום"></div></div>
@@ -17845,7 +17874,7 @@ function renderGifts(){
   g('gf_from').onchange=()=>{gfFrom=g('gf_from').value;render();}; g('gf_to').onchange=()=>{gfTo=g('gf_to').value;render();};
   g('gf_cur').onchange=()=>{gfCur=g('gf_cur').value;render();};
   g('gf_new').onclick=()=>{gfNew=!gfNew;render();if(gfNew&&g('gfn_who'))g('gfn_who').focus();};
-  g('gf_inc').onclick=()=>incomeOpen(gfFrom,gfTo);
+  gfModeWire();
   const mo=g('gf_more');if(mo)mo.onclick=()=>{gfLim+=300;render();};
   if(!GF_UNL)gfLoadUnlinked();
   const ub=g('gf_unl');if(ub)ub.onclick=()=>{gfUnlOpen=!gfUnlOpen;render();};
