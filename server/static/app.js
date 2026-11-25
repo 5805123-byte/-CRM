@@ -17809,6 +17809,7 @@ function renderIncome(){
       <div class="rbtitle" style="margin-top:12px">📜 התרומות${incSrc?' — '+esc(incSrc):''}</div>
       ${Object.keys(days).sort().reverse().map(dd=>{const L=days[dd],t={};L.forEach(x=>t[x.cur]=(t[x.cur]||0)+x.amount);
         return `<div class="gfmon"><div class="gfmh"><b>${esc(rcDate(dd))}</b><span>${money(t)} · ${L.length}</span></div>${L.map(x=>`<div class="gfrow">
+          <span class="gfd">${esc(rcDate(x.date))}${x.time?'<small> '+esc(x.time)+'</small>':''}</span>
           ${x.did?`<button class="gfnm" data-incd="${x.did}">${esc(x.name)}</button>`:`<span class="gfnm">${esc(x.name)}</span>`}
           <b class="gfa">${x.cur}${(Math.round(x.amount*100)%100?x.amount.toLocaleString('en-US',{minimumFractionDigits:2}):Math.round(x.amount).toLocaleString('en-US'))}</b>
           <span class="gfw">${esc(x.cat)}${x.note?`<small>${esc(x.note)}</small>`:''}</span><span class="gfm">${INC_ICON[x.src.split(' · ')[0]]||''} ${esc(x.src)}</span></div>`).join('')}</div>`;}).join('')}

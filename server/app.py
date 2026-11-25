@@ -39480,13 +39480,17 @@ def income_report(con, f, t, q=''):
     dnames = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() or (r['english'] or '')
               for r in con.execute("SELECT id,last,first,english FROM donors")}
     for r in con.execute(sq, (f, t)).fetchall():
-        if mk and str(r['mosad'] or '') == mk:
-            continue                                     # המקווה — נפרד לגמרי
+        tx_ = ' '.join(str(r[k] or '') for k in ('groupe', 'comments', 'for_local'))
+        in_mk = bool(mk and str(r['mosad'] or '') == mk)
+        if in_mk and re.search(r'מקו?וה|מנוי|טביל', tx_):
+            continue                                     # תשלומי המקווה עצמם — נפרד לגמרי
         nd_ids.add(str(r['id']))
         who = 'קהילה' if r['member_id'] else ('תורם' if r['donor_id'] else '')
         nm = mnames.get(r['member_id']) or dnames.get(r['donor_id']) or (r['name'] or '').strip() or '—'
         cat = (r['for_local'] or '').strip() or (r['groupe'] or '').strip() or 'תרומה'
-        rows.append({'src': 'נדרים פלוס' + ((' · קופה ' + r['mosad']) if r['mosad'] else ''), 'date': str(r['iso'] or '')[:10],
+        # מאיר: "נכנס יותר מזה" — תרומה שנכנסה בטעות לחשבון המקווה בנדרים (למשל "נדרים ונדבות · אומן") — כרטיס משלה
+        rows.append({'src': 'נדרים פלוס' + (' · חשבון המקווה' if in_mk else ((' · קופה ' + r['mosad']) if r['mosad'] else '')),
+                     'date': str(r['iso'] or '')[:10], 'time': str(r['iso'] or '')[11:16],
                      'name': nm, 'amount': float(r['amount'] or 0), 'cur': '₪', 'cat': cat,
                      'note': ((' · '.join(x for x in (who, 'הו"ק' if str(r['keva'] or '').strip() else '', (r['comments'] or '').strip()[:80]) if x))),
                      'did': r['donor_id'] or 0, 'mid': r['member_id'] or 0,
