@@ -21705,6 +21705,7 @@ def mk_bachur_reset(con, reason=None, clear_seen=False):
             _mk.set_blocked(cid, False, '')
             con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                         (cid, now_iso(), 'block', '🔓 חסימה בוטלה (ביטול כל החסימות בקבוצות הבחורים)'))
+            con.commit()   # לשחרר את נעילת ה-DB בין קריאה לקריאה למקווה (שלא יחסום בקשות אחרות)
             opened += 1
         except Exception as e:
             print('  mk bachur reset error:', cid, e)
@@ -21934,6 +21935,7 @@ def mk_bachur_enforce(con, days=31, fresh=False):
                     _mk.set_blocked(cid, False, '')
                     con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                                 (cid, now_iso(), 'block', '🔓 חסימה אוטומטית בוטלה (מעבר למדיניות החדשה)'))
+                    con.commit()   # לשחרר את נעילת ה-DB בין קריאה לקריאה למקווה (שלא יחסום בקשות אחרות)
                     reset += 1
             except Exception as e:
                 print('  mk bachur migrate error:', cid, e)
@@ -21954,6 +21956,7 @@ def mk_bachur_enforce(con, days=31, fresh=False):
             _mk.set_blocked(cid, True, reason)
             con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                         (cid, now_iso(), 'block', '⛔ נחסם — נכנס בפעימות בלי מנוי בחודש האחרון'))
+            con.commit()   # לשחרר את נעילת ה-DB בין קריאה לקריאה למקווה (שלא יחסום בקשות אחרות)
             held.add(cid); blocked += 1
         except Exception as e:
             print('  mk bachur enforce error:', cid, e)
@@ -32853,6 +32856,7 @@ class H(BaseHTTPRequestHandler):
                                     (r['cid'], now_iso(), 'refund', '↩️ הוחזר ערך צבור: ₪%g (פעימות ₪%g + זיכוי ₪%g)'
                                      % ((r['bal'] or 0) + (r['temp'] or 0), r['bal'] or 0, r['temp'] or 0)))
                         done.append(r['cid']); total += bal + tmp
+                        con.commit()   # לשחרר את נעילת ה-DB בין קריאה לקריאה למקווה
                     except Exception as e:
                         print('  mk bachur refund error:', r['cid'], e)
                         fail += 1
@@ -32893,6 +32897,7 @@ class H(BaseHTTPRequestHandler):
                                         (cid, nm, bal / 100.0, tmp / 100.0, at))
                             drained.append({'id': cid, 'name': nm, 'balance': bal / 100.0, 'temp': tmp / 100.0})
                             total += bal + tmp
+                            con.commit()   # לשחרר את נעילת ה-DB בין קריאה לקריאה למקווה
                     except Exception as e:
                         print('  mk bachur drain error:', cid, e)
                         fail += 1
@@ -32996,6 +33001,7 @@ class H(BaseHTTPRequestHandler):
                                 con.execute("INSERT INTO mk_log(cid,at,kind,summary) VALUES(?,?,?,?)",
                                             (cid, now_iso(), 'block', '⛔ נחסם — נכנס בפעימות בלי מנוי (חסימה יזומה מהרשימה)'))
                             held.add(cid); seen[cid] = off[cid]; done.append(cid)
+                            con.commit()   # לשחרר את נעילת ה-DB בין קריאה לקריאה למקווה
                         except Exception as e:
                             print('  mk bachur batch block error:', cid, e); denied.append(cid)
                     kv_set(con, 'mk_bachur_blocked', json.dumps(sorted(held)))
@@ -33026,6 +33032,7 @@ class H(BaseHTTPRequestHandler):
                             if cid in uoff:
                                 useen[cid] = uoff[cid]      # שלא ייחסם שוב מיד על אותה כניסה (עד כניסה חדשה)
                             udone.append(cid)
+                            con.commit()   # לשחרר את נעילת ה-DB בין קריאה לקריאה למקווה
                         except Exception as e:
                             print('  mk bachur unblock error:', cid, e)
                     kv_set(con, 'mk_bachur_blocked', json.dumps(sorted(uheld)))
