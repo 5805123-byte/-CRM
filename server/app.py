@@ -28058,6 +28058,15 @@ class H(BaseHTTPRequestHandler):
                 con.close()
             return self._send(200, {'ok': True, 'last4': l4 or qtxt, 'amount': amt, 'months': months, 'year': yr, 'rows': rows,
                                     'kupot': [x['name'] for x in _nd.accounts()], 'synced': ah})
+        if self.path.split('?')[0] == '/api/income':
+            # 📊 מאיר: "מקום מרוכז ששם יש את כל התרומות, כולל נדרים פלוס, מחולק לפי קטגוריות… לבדוק לפי תאריכים כמה נכנס"
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            con = db()
+            try:
+                out = income_report(con, (qs.get('from') or [''])[0][:10], (qs.get('to') or [''])[0][:10])
+            finally:
+                con.close()
+            return self._send(200, out)
         if self.path.split('?')[0] == '/api/nd/donor_returns':
             # מאיר: "שפרה ג'וזף שייכת לתורמים" — הוראות קבע של תורמים (לא קהילה) שחזרו בנדרים פלוס, לדף "🔴 לא עבר"
             con = db()
@@ -39424,6 +39433,104 @@ def keva_dead(k):
         except ValueError:
             pass
     return False
+
+
+INCOME_ORDER = ['נדרים פלוס', 'בנק ווסט', 'אוטורייז', "צ'קים", 'Zelle', 'העברות בנקאיות', 'קרנות (דונרס / OJC)', 'ידני', 'אחר']
+
+
+def _income_src(m):
+    m = str(m or '').strip()
+    if re.search(r'Banquest|בנק\s*ווסט', m, re.I):
+        return 'בנק ווסט'
+    if re.search(r'Authorize|אוט[וו]?ר', m, re.I):
+        return 'אוטורייז'
+    if 'נדרים' in m:
+        return 'נדרים פלוס'
+    if re.search(r"צ['׳]ק|Check", m, re.I):
+        return "צ'קים"
+    if re.search(r'Zelle|^זל|קוויק\s*פיי|QuickPay', m, re.I):
+        return 'Zelle'
+    if re.search(r"ACH|העברה|Wire|קפיטל|Capital|צ['׳]ייס|Chase", m, re.I):
+        return 'העברות בנקאיות'
+    if re.search(r'דונרס|Donors|OJC|Fidelity|Pledger', m, re.I):
+        return 'קרנות (דונרס / OJC)'
+    if not m or re.search(r'מזומן|ידני|Cash', m, re.I):
+        return 'ידני'
+    return 'אחר'
+
+
+def income_report(con, f, t):
+    """כל מה שנכנס בין שני תאריכים, מכל מקור — תרומות התורמים (בנק ווסט, אוטורייז, צ'קים, העברות, ידני),
+    וכל נדרים פלוס של הכולל (תורמים + קהילה; בלי המקווה), ותרומות ידניות של הקהילה. מחולק לפי מקור ולפי ייעוד."""
+    td = il_now().date()
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', f or ''):
+        f = td.replace(day=1).isoformat()
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', t or ''):
+        t = td.isoformat()
+    rows = []
+    nd_ids = set()
+    mk = mk_mosad()
+    ncols = {r[1] for r in con.execute("PRAGMA table_info(nd_tx)")}
+    q = ("SELECT id, iso, name, amount, groupe, comments, keva, member_id, %s mosad, %s donor_id FROM nd_tx "
+         "WHERE substr(COALESCE(iso,''),1,10) BETWEEN ? AND ?" % (
+             "COALESCE(mosad,'')" if 'mosad' in ncols else "''", 'donor_id' if 'donor_id' in ncols else 'NULL'))
+    mnames = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() for r in con.execute("SELECT id,last,first FROM members")}
+    dnames = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() or (r['english'] or '')
+              for r in con.execute("SELECT id,last,first,english FROM donors")}
+    for r in con.execute(q, (f, t)).fetchall():
+        if mk and str(r['mosad'] or '') == mk:
+            continue                                     # המקווה — נפרד לגמרי
+        nd_ids.add(str(r['id']))
+        who = 'קהילה' if r['member_id'] else ('תורם' if r['donor_id'] else '')
+        nm = mnames.get(r['member_id']) or dnames.get(r['donor_id']) or (r['name'] or '').strip() or '—'
+        cat = (r['groupe'] or '').strip() or 'תרומה'
+        rows.append({'src': 'נדרים פלוס' + ((' · קופה ' + r['mosad']) if r['mosad'] else ''), 'date': str(r['iso'] or '')[:10],
+                     'name': nm, 'amount': float(r['amount'] or 0), 'cur': '₪', 'cat': cat,
+                     'note': ((' · '.join(x for x in (who, 'הו"ק' if str(r['keva'] or '').strip() else '', (r['comments'] or '').strip()[:80]) if x))),
+                     'did': r['donor_id'] or 0, 'mid': r['member_id'] or 0})
+    for r in con.execute("SELECT d.id, d.donor_id, d.date, d.amount, d.category, d.method, d.note, d.cur, d.tid, "
+                         "dn.region FROM donations d LEFT JOIN donors dn ON dn.id=d.donor_id "
+                         "WHERE substr(COALESCE(d.date,''),1,10) BETWEEN ? AND ? AND COALESCE(d.paid,1)<>0", (f, t)).fetchall():
+        tid = str(r['tid'] or '')
+        if tid.startswith('ND') and tid[2:] in nd_ids:
+            continue                                     # כבר נספר בנדרים פלוס
+        try:
+            a = float(str(r['amount'] or 0).replace(',', '') or 0)
+        except ValueError:
+            continue
+        src = _income_src(r['method'])
+        cur = (r['cur'] or '').strip() or ('₪' if src == 'נדרים פלוס' or (r['region'] or '') == 'il' else '$')
+        rows.append({'src': src, 'date': str(r['date'] or '')[:10], 'name': dnames.get(r['donor_id'], '—'), 'amount': a, 'cur': cur,
+                     'cat': (r['category'] or '').strip() or 'ללא ייעוד', 'note': (r['method'] or '').strip(),
+                     'did': r['donor_id'] or 0, 'mid': 0})
+    try:
+        for r in con.execute("SELECT member_id, date, amount, method, purpose, name FROM cm_don "
+                             "WHERE substr(COALESCE(date,''),1,10) BETWEEN ? AND ? AND COALESCE(nd_id,'')=''", (f, t)).fetchall():
+            rows.append({'src': 'ידני', 'date': str(r['date'] or '')[:10], 'name': mnames.get(r['member_id']) or (r['name'] or '—'),
+                         'amount': float(r['amount'] or 0), 'cur': '₪', 'cat': (r['purpose'] or '').strip() or 'תרומה',
+                         'note': ' · '.join(x for x in ('קהילה', (r['method'] or '').strip()) if x), 'did': 0, 'mid': r['member_id'] or 0})
+    except Exception:
+        pass
+    srcs = {}
+    for x in rows:
+        s = srcs.setdefault(x['src'], {'src': x['src'], 'n': 0, 'tot': {}, 'cats': {}, 'rows': []})
+        s['n'] += 1
+        s['tot'][x['cur']] = round(s['tot'].get(x['cur'], 0) + x['amount'], 2)
+        c = s['cats'].setdefault(x['cat'], {'cat': x['cat'], 'n': 0, 'tot': {}})
+        c['n'] += 1
+        c['tot'][x['cur']] = round(c['tot'].get(x['cur'], 0) + x['amount'], 2)
+        s['rows'].append(x)
+    rank = lambda s: (INCOME_ORDER.index(s.split(' · ')[0]) if s.split(' · ')[0] in INCOME_ORDER else 99, s)
+    out = []
+    for k in sorted(srcs, key=rank):
+        s = srcs[k]
+        s['cats'] = sorted(s['cats'].values(), key=lambda c: -sum(c['tot'].values()))
+        s['rows'].sort(key=lambda x: x['date'], reverse=True)
+        out.append(s)
+    tot = {}
+    for x in rows:
+        tot[x['cur']] = round(tot.get(x['cur'], 0) + x['amount'], 2)
+    return {'ok': True, 'from': f, 'to': t, 'n': len(rows), 'tot': tot, 'sources': out}
 
 
 def nd_donor_err_rows(con, ctx, links, skip_kevas, days=60):

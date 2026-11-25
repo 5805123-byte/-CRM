@@ -12721,6 +12721,46 @@ async function openKvPage(did){
   // מאיר: "בשלח לתורם צריך שזה יפתח אפשרות מיידית של שליחת האימייל בג'ימייל או וואטסאפ" — חלון עם שתי דרכים
   rs.querySelector('.kvpsend').onclick=()=>kvSendOpen(d,grab,url);
 }
+// 📊 מאיר: "מקום מרוכז ששם יש את כל התרומות, כולל נדרים פלוס… מחולק: נדרים פלוס, בנק ווסט, אוטורייז… לפי
+// תאריכים, לבדוק כמה נכנס… מחולק לפי קטגוריות מסודרות יפה"
+let INC={f:'',t:'',open:{}};
+async function incomeOpen(f,t){
+  const rs=document.getElementById('remsheet'),remov=document.getElementById('remov');
+  const td=todayStr(),iso=x=>x.toISOString().slice(0,10);
+  INC.f=f||INC.f||td.slice(0,8)+'01';INC.t=t||INC.t||td;
+  const money=o=>Object.keys(o||{}).sort().map(c=>'<b>'+c+Math.round(o[c]).toLocaleString('en-US')+'</b>').join(' + ')||'—';
+  const paint=async()=>{
+    rs.innerHTML=`<button class="x" id="rx">✕</button><h2>📊 כל מה שנכנס — לפי מקור</h2>
+      <div class="gfbar"><label class="fld"><span>מתאריך</span><input type="date" id="inc_f" value="${esc(INC.f)}"></label>
+        <label class="fld"><span>עד תאריך</span><input type="date" id="inc_t" value="${esc(INC.t)}"></label></div>
+      <div class="addrow" style="flex-wrap:wrap;gap:6px">${[['היום',td,td],['אתמול',iso(new Date(Date.now()-864e5)),iso(new Date(Date.now()-864e5))],
+        ['7 ימים',iso(new Date(Date.now()-6*864e5)),td],['החודש',td.slice(0,8)+'01',td],
+        ['חודש קודם',(()=>{const d=new Date(td.slice(0,8)+'01');d.setMonth(d.getMonth()-1);return iso(d);})(),iso(new Date(new Date(td.slice(0,8)+'01')-864e5))]]
+        .map(([l,a,b])=>`<button class="chip ${INC.f===a&&INC.t===b?'on':''}" data-incf="${a}" data-inct="${b}">${l}</button>`).join('')}</div>
+      <div id="inc_body" class="hintxt">טוען…</div>`;
+    remov.classList.add('show');
+    document.getElementById('rx').onclick=()=>remov.classList.remove('show');
+    const q=s=>rs.querySelector(s);
+    q('#inc_f').onchange=()=>{INC.f=q('#inc_f').value;paint();};
+    q('#inc_t').onchange=()=>{INC.t=q('#inc_t').value;paint();};
+    rs.querySelectorAll('[data-incf]').forEach(b=>b.onclick=()=>{INC.f=b.dataset.incf;INC.t=b.dataset.inct;paint();});
+    const r=await api('GET','/api/income?from='+encodeURIComponent(INC.f)+'&to='+encodeURIComponent(INC.t)).catch(()=>null);
+    const box=q('#inc_body');if(!box)return;
+    if(!r||!r.ok){box.textContent='לא הצלחתי לטעון.';return;}
+    box.className='';
+    box.innerHTML=`<div class="gfsum">${esc(rcDate(r.from))} – ${esc(rcDate(r.to))} · ${r.n} תרומות · סה״כ ${money(r.tot)}</div>
+      ${(r.sources||[]).map((s,i)=>`<div class="gfmon"><div class="gfmh" style="cursor:pointer" data-inco="${esc(s.src)}"><b>${INC.open[s.src]?'▲':'▼'} ${esc(s.src)}</b><span>${money(s.tot)} · ${s.n}</span></div>
+        <div style="padding:4px 10px">${s.cats.map(c=>`<div class="gfrow"><span class="gfw">${esc(c.cat)}</span><span class="gfm">${c.n} תרומות</span><b class="gfa">${money(c.tot)}</b></div>`).join('')}</div>
+        ${INC.open[s.src]?`<div style="padding:4px 10px;border-top:1px dashed var(--line)">${s.rows.map(x=>`<div class="gfrow"><span class="gfd">${esc(rcDate(x.date))}</span>
+          ${x.did?`<button class="gfnm" data-incd="${x.did}">${esc(x.name)}</button>`:`<span class="gfnm">${esc(x.name)}</span>`}
+          <b class="gfa">${x.cur}${Math.round(x.amount).toLocaleString('en-US')}</b><span class="gfw">${esc(x.cat)}${x.note?`<small>${esc(x.note)}</small>`:''}</span></div>`).join('')}</div>`:''}</div>`).join('')
+        ||'<div class="empty">לא נכנס כלום בתאריכים האלה.</div>'}
+      <div class="hintxt" style="margin-top:8px">נדרים פלוס = כל התשלומים בקופת הכולל (תורמים וקהילה, בלי המקווה). ₪ ו-$ נספרים בנפרד. לחיצה על מקור — פירוט התרומות.</div>`;
+    box.querySelectorAll('[data-inco]').forEach(h=>h.onclick=()=>{INC.open[h.dataset.inco]=!INC.open[h.dataset.inco];paint();});
+    box.querySelectorAll('[data-incd]').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==b.dataset.incd);if(d){remov.classList.remove('show');openDonor(d);}});
+  };
+  paint();
+}
 function kvSendOpen(d,grab,url){
   const he=(d.region||'')==='il';
   const enName=String(d.english||'').trim()||((d.first||'')+' '+(d.last||'')).trim();
@@ -17784,7 +17824,8 @@ function renderGifts(){
     <div class="hintxt">כל מה שנכנס בכרטיסי התורמים, מכל מקור: בנק ווסט, אוטרייז, צ׳קים, Zelle, Chase, העברות, ידני. 🔒 = חיוב אשראי שעבר אצלנו (מתקנים בדף החיובים, ↩️ ביטול / החזר); את כל השאר אפשר לתקן כאן ✎.</div>
     <div class="gfbar"><label class="fld"><span>מתאריך</span><input type="date" id="gf_from" value="${esc(gfFrom)}"></label><label class="fld"><span>עד תאריך</span><input type="date" id="gf_to" value="${esc(gfTo)}"></label>
       <label class="fld"><span>מטבע</span><select id="gf_cur"><option value="">הכל</option>${['$','₪'].map(c=>`<option ${gfCur===c?'selected':''}>${c}</option>`).join('')}</select></label>
-      <button class="btn sm" id="gf_new">➕ תרומה חדשה</button></div>
+      <button class="btn sm" id="gf_new">➕ תרומה חדשה</button>
+      <button class="btn sm bqgo" id="gf_inc" title="כל מה שנכנס בטווח התאריכים — כולל נדרים פלוס והקהילה — לפי מקור וייעוד">📊 סיכום לפי מקור — כולל נדרים פלוס</button></div>
     ${gfNew?`<div class="gfnewbox"><b>➕ תרומה חדשה</b>
       <input id="gfn_who" list="bq_dl" placeholder="תורם — הקלד שם ובחר מהרשימה…">
       <div class="lgf"><input type="date" id="gfn_date" value="${todayStr()}"><div class="curwrap"><select id="gfn_cur">${curOpts('$')}</select><input id="gfn_amt" inputmode="decimal" placeholder="סכום"></div></div>
@@ -17801,6 +17842,7 @@ function renderGifts(){
   g('gf_from').onchange=()=>{gfFrom=g('gf_from').value;render();}; g('gf_to').onchange=()=>{gfTo=g('gf_to').value;render();};
   g('gf_cur').onchange=()=>{gfCur=g('gf_cur').value;render();};
   g('gf_new').onclick=()=>{gfNew=!gfNew;render();if(gfNew&&g('gfn_who'))g('gfn_who').focus();};
+  g('gf_inc').onclick=()=>incomeOpen(gfFrom,gfTo);
   const mo=g('gf_more');if(mo)mo.onclick=()=>{gfLim+=300;render();};
   if(!GF_UNL)gfLoadUnlinked();
   const ub=g('gf_unl');if(ub)ub.onclick=()=>{gfUnlOpen=!gfUnlOpen;render();};
