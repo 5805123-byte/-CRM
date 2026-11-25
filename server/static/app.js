@@ -12723,7 +12723,7 @@ async function openKvPage(did){
 }
 // 📊 מאיר: "מקום מרוכז ששם יש את כל התרומות, כולל נדרים פלוס… מחולק: נדרים פלוס, בנק ווסט, אוטורייז… לפי
 // תאריכים, לבדוק כמה נכנס… מחולק לפי קטגוריות מסודרות יפה"
-let INC={f:'',t:'',open:{}};
+let INC={f:'',t:'',q:'',open:{}};
 async function incomeOpen(f,t){
   const rs=document.getElementById('remsheet'),remov=document.getElementById('remov');
   const td=todayStr(),iso=x=>x.toISOString().slice(0,10);
@@ -12732,7 +12732,8 @@ async function incomeOpen(f,t){
   const paint=async()=>{
     rs.innerHTML=`<button class="x" id="rx">✕</button><h2>📊 כל מה שנכנס — לפי מקור</h2>
       <div class="gfbar"><label class="fld"><span>מתאריך</span><input type="date" id="inc_f" value="${esc(INC.f)}"></label>
-        <label class="fld"><span>עד תאריך</span><input type="date" id="inc_t" value="${esc(INC.t)}"></label></div>
+        <label class="fld"><span>עד תאריך</span><input type="date" id="inc_t" value="${esc(INC.t)}"></label>
+        <label class="fld"><span>חיפוש (שם / ייעוד / הערה — למשל אומן)</span><input id="inc_q" value="${esc(INC.q)}" placeholder="🔎 לא חובה"></label></div>
       <div class="addrow" style="flex-wrap:wrap;gap:6px">${[['היום',td,td],['אתמול',iso(new Date(Date.now()-864e5)),iso(new Date(Date.now()-864e5))],
         ['7 ימים',iso(new Date(Date.now()-6*864e5)),td],['החודש',td.slice(0,8)+'01',td],
         ['חודש קודם',(()=>{const d=new Date(td.slice(0,8)+'01');d.setMonth(d.getMonth()-1);return iso(d);})(),iso(new Date(new Date(td.slice(0,8)+'01')-864e5))]]
@@ -12743,12 +12744,14 @@ async function incomeOpen(f,t){
     const q=s=>rs.querySelector(s);
     q('#inc_f').onchange=()=>{INC.f=q('#inc_f').value;paint();};
     q('#inc_t').onchange=()=>{INC.t=q('#inc_t').value;paint();};
+    q('#inc_q').onchange=()=>{INC.q=q('#inc_q').value.trim();paint();};
+    q('#inc_q').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();INC.q=q('#inc_q').value.trim();paint();}};
     rs.querySelectorAll('[data-incf]').forEach(b=>b.onclick=()=>{INC.f=b.dataset.incf;INC.t=b.dataset.inct;paint();});
-    const r=await api('GET','/api/income?from='+encodeURIComponent(INC.f)+'&to='+encodeURIComponent(INC.t)).catch(()=>null);
+    const r=await api('GET','/api/income?from='+encodeURIComponent(INC.f)+'&to='+encodeURIComponent(INC.t)+'&q='+encodeURIComponent(INC.q||'')).catch(()=>null);
     const box=q('#inc_body');if(!box)return;
     if(!r||!r.ok){box.textContent='לא הצלחתי לטעון.';return;}
     box.className='';
-    box.innerHTML=`<div class="gfsum">${esc(rcDate(r.from))} – ${esc(rcDate(r.to))} · ${r.n} תרומות · סה״כ ${money(r.tot)}</div>
+    box.innerHTML=`<div class="gfsum">${esc(rcDate(r.from))} – ${esc(rcDate(r.to))}${r.q?' · 🔎 "'+esc(r.q)+'"':''} · ${r.n} תרומות · סה״כ ${money(r.tot)}</div>
       ${(r.sources||[]).map((s,i)=>`<div class="gfmon"><div class="gfmh" style="cursor:pointer" data-inco="${esc(s.src)}"><b>${INC.open[s.src]?'▲':'▼'} ${esc(s.src)}</b><span>${money(s.tot)} · ${s.n}</span></div>
         <div style="padding:4px 10px">${s.cats.map(c=>`<div class="gfrow"><span class="gfw">${esc(c.cat)}</span><span class="gfm">${c.n} תרומות</span><b class="gfa">${money(c.tot)}</b></div>`).join('')}</div>
         ${INC.open[s.src]?`<div style="padding:4px 10px;border-top:1px dashed var(--line)">${s.rows.map(x=>`<div class="gfrow"><span class="gfd">${esc(rcDate(x.date))}</span>

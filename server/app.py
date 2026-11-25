@@ -28063,7 +28063,8 @@ class H(BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             con = db()
             try:
-                out = income_report(con, (qs.get('from') or [''])[0][:10], (qs.get('to') or [''])[0][:10])
+                out = income_report(con, (qs.get('from') or [''])[0][:10], (qs.get('to') or [''])[0][:10],
+                                    (qs.get('q') or [''])[0][:80])
             finally:
                 con.close()
             return self._send(200, out)
@@ -39459,7 +39460,7 @@ def _income_src(m):
     return 'אחר'
 
 
-def income_report(con, f, t):
+def income_report(con, f, t, q=''):
     """כל מה שנכנס בין שני תאריכים, מכל מקור — תרומות התורמים (בנק ווסט, אוטורייז, צ'קים, העברות, ידני),
     וכל נדרים פלוס של הכולל (תורמים + קהילה; בלי המקווה), ותרומות ידניות של הקהילה. מחולק לפי מקור ולפי ייעוד."""
     td = il_now().date()
@@ -39471,23 +39472,25 @@ def income_report(con, f, t):
     nd_ids = set()
     mk = mk_mosad()
     ncols = {r[1] for r in con.execute("PRAGMA table_info(nd_tx)")}
-    q = ("SELECT id, iso, name, amount, groupe, comments, keva, member_id, %s mosad, %s donor_id FROM nd_tx "
-         "WHERE substr(COALESCE(iso,''),1,10) BETWEEN ? AND ?" % (
-             "COALESCE(mosad,'')" if 'mosad' in ncols else "''", 'donor_id' if 'donor_id' in ncols else 'NULL'))
+    sq = ("SELECT id, iso, name, amount, groupe, comments, keva, member_id, %s mosad, %s donor_id, %s for_local FROM nd_tx "
+          "WHERE substr(COALESCE(iso,''),1,10) BETWEEN ? AND ?" % (
+              "COALESCE(mosad,'')" if 'mosad' in ncols else "''", 'donor_id' if 'donor_id' in ncols else 'NULL',
+              "COALESCE(for_local,'')" if 'for_local' in ncols else "''"))
     mnames = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() for r in con.execute("SELECT id,last,first FROM members")}
     dnames = {r['id']: ((r['last'] or '') + ' ' + (r['first'] or '')).strip() or (r['english'] or '')
               for r in con.execute("SELECT id,last,first,english FROM donors")}
-    for r in con.execute(q, (f, t)).fetchall():
+    for r in con.execute(sq, (f, t)).fetchall():
         if mk and str(r['mosad'] or '') == mk:
             continue                                     # המקווה — נפרד לגמרי
         nd_ids.add(str(r['id']))
         who = 'קהילה' if r['member_id'] else ('תורם' if r['donor_id'] else '')
         nm = mnames.get(r['member_id']) or dnames.get(r['donor_id']) or (r['name'] or '').strip() or '—'
-        cat = (r['groupe'] or '').strip() or 'תרומה'
+        cat = (r['for_local'] or '').strip() or (r['groupe'] or '').strip() or 'תרומה'
         rows.append({'src': 'נדרים פלוס' + ((' · קופה ' + r['mosad']) if r['mosad'] else ''), 'date': str(r['iso'] or '')[:10],
                      'name': nm, 'amount': float(r['amount'] or 0), 'cur': '₪', 'cat': cat,
                      'note': ((' · '.join(x for x in (who, 'הו"ק' if str(r['keva'] or '').strip() else '', (r['comments'] or '').strip()[:80]) if x))),
-                     'did': r['donor_id'] or 0, 'mid': r['member_id'] or 0})
+                     'did': r['donor_id'] or 0, 'mid': r['member_id'] or 0,
+                     'txt': ' '.join(str(r[k] or '') for k in ('name', 'groupe', 'comments', 'for_local'))})
     for r in con.execute("SELECT d.id, d.donor_id, d.date, d.amount, d.category, d.method, d.note, d.cur, d.tid, "
                          "dn.region FROM donations d LEFT JOIN donors dn ON dn.id=d.donor_id "
                          "WHERE substr(COALESCE(d.date,''),1,10) BETWEEN ? AND ? AND COALESCE(d.paid,1)<>0", (f, t)).fetchall():
@@ -39502,7 +39505,7 @@ def income_report(con, f, t):
         cur = (r['cur'] or '').strip() or ('₪' if src == 'נדרים פלוס' or (r['region'] or '') == 'il' else '$')
         rows.append({'src': src, 'date': str(r['date'] or '')[:10], 'name': dnames.get(r['donor_id'], '—'), 'amount': a, 'cur': cur,
                      'cat': (r['category'] or '').strip() or 'ללא ייעוד', 'note': (r['method'] or '').strip(),
-                     'did': r['donor_id'] or 0, 'mid': 0})
+                     'did': r['donor_id'] or 0, 'mid': 0, 'txt': r['note'] or ''})
     try:
         for r in con.execute("SELECT member_id, date, amount, method, purpose, name FROM cm_don "
                              "WHERE substr(COALESCE(date,''),1,10) BETWEEN ? AND ? AND COALESCE(nd_id,'')=''", (f, t)).fetchall():
@@ -39511,6 +39514,15 @@ def income_report(con, f, t):
                          'note': ' · '.join(x for x in ('קהילה', (r['method'] or '').strip()) if x), 'did': 0, 'mid': r['member_id'] or 0})
     except Exception:
         pass
+    # 🔎 חיפוש — בשם, בייעוד, בהערות (למשל "אומן"), כתיב מלא וחסר
+    qn = re.sub(r'[וי\'"״׳\s]', '', q or '')
+    if (q or '').strip():
+        def _hit(x):
+            s = ' '.join(str(x.get(k) or '') for k in ('name', 'cat', 'note', 'txt'))
+            return q.strip() in s or (len(qn) >= 2 and qn in re.sub(r'[וי\'"״׳\s]', '', s))
+        rows = [x for x in rows if _hit(x)]
+    for x in rows:
+        x.pop('txt', None)
     srcs = {}
     for x in rows:
         s = srcs.setdefault(x['src'], {'src': x['src'], 'n': 0, 'tot': {}, 'cats': {}, 'rows': []})
@@ -39530,7 +39542,7 @@ def income_report(con, f, t):
     tot = {}
     for x in rows:
         tot[x['cur']] = round(tot.get(x['cur'], 0) + x['amount'], 2)
-    return {'ok': True, 'from': f, 'to': t, 'n': len(rows), 'tot': tot, 'sources': out}
+    return {'ok': True, 'from': f, 'to': t, 'q': (q or '').strip(), 'n': len(rows), 'tot': tot, 'sources': out}
 
 
 def nd_donor_err_rows(con, ctx, links, skip_kevas, days=60):
