@@ -30696,6 +30696,49 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, out)
         if not self._gate():
             return
+        if self.path.split('?')[0] == '/api/kvpage/send':
+            # 📤 מאיר: "בשלח לתורם צריך שזה יפתח אפשרות מיידית של שליחת האימייל בג'ימייל או וואטסאפ… כאן זה לא מגיע
+            # למייל" — דף הקוויטל כתמונה מצורפת, מהג'ימייל של הכולל, בנוסח שמאיר ראה וערך בחלון לפני הלחיצה
+            if getattr(self, 'role', 'admin') not in ('admin', ''):
+                return self._send(403, {'ok': False, 'error': 'אין הרשאה'})
+            b = self._body()
+            try:
+                did = int(b.get('donor') or 0)
+            except (TypeError, ValueError):
+                did = 0
+            to = str(b.get('to') or '').strip()
+            subject = str(b.get('subject') or '').strip()[:200]
+            body = str(b.get('body') or '').strip()[:6000]
+            if not did or not re.match(r'^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$', to):
+                return self._send(200, {'ok': False, 'error': 'חסרה כתובת מייל תקינה'})
+            if not subject or not body:
+                return self._send(200, {'ok': False, 'error': 'חסר נושא או נוסח'})
+            con = db()
+            try:
+                d = con.execute("SELECT id,last,first FROM donors WHERE id=?", (did,)).fetchone()
+                if not d:
+                    return self._send(200, {'ok': False, 'error': 'התורם לא נמצא'})
+                img = kvpage_png(con, did, fmt='jpg')
+                try:
+                    import mailer
+                except Exception as e:
+                    return self._send(200, {'ok': False, 'error': 'mailer: %s' % e})
+                if not mailer.configured():
+                    return self._send(200, {'ok': False, 'error': 'שליחת מייל לא מוגדרת ב-Render (GMAIL_USER / GMAIL_APP_PASSWORD)'})
+                fname = 'Kvittel - Kollel Chatzot.jpg' if not re.search(r'[֐-׿]', subject) else 'קוויטל - כולל חצות.jpg'
+                res = mailer.send(to, subject, body, [(fname, 'image/jpeg', img)],
+                                  rtl=bool(re.search(r'[֐-׿]', body[:200])))
+                if res.get('ok'):
+                    try:
+                        log_sent_mail(did, to, subject, body, res.get('msg_id'), 1)
+                    except Exception:
+                        pass
+                    return self._send(200, {'ok': True, 'to': to})
+                err = {'login_failed': 'ההתחברות לג׳ימייל נכשלה', 'not_configured': 'שליחת מייל לא מוגדרת ב-Render'}.get(
+                    res.get('error'), 'השליחה נכשלה: ' + str(res.get('detail') or res.get('error') or '')[:120])
+                return self._send(200, {'ok': False, 'error': err})
+            finally:
+                con.close()
         # התעודה כתמונה, לפי הפריסה שנמדדה על המסך. נשלחת ב-POST ולא בכתובת,
         # כי הפריסה ארוכה מכדי להיכנס לכתובת אינטרנט. אינה משנה נתונים, ולכן
         # לפני bump_data — שלא תבטל את המטמון בכל הקשה במסך התעודה.

@@ -12718,12 +12718,59 @@ async function openKvPage(did){
     try{ await navigator.clipboard.write([new ClipboardItem({'image/png':grab('png')})]); toast('התמונה הועתקה ✓'); return; }catch(e){}
     try{ const b=await grab('png'); await navigator.clipboard.write([new ClipboardItem({'image/png':b})]); toast('התמונה הועתקה ✓'); }
     catch(e){ window.open(url(),'_blank'); }};
-  rs.querySelector('.kvpsend').onclick=async()=>{
-    try{
-      const b=await grab('jpg'); const f=new File([b],'קוויטל — '+nm+'.jpg',{type:'image/jpeg'});
-      if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],text:'קוויטל — כולל חצות 🕯️'});return;}
-      await navigator.clipboard.write([new ClipboardItem({'image/png':await grab('png')})]); toast('התמונה הועתקה — הדבק בוואטסאפ או במייל');
-    }catch(e){ if(e&&e.name==='AbortError')return; window.open(url('jpg'),'_blank'); }};
+  // מאיר: "בשלח לתורם צריך שזה יפתח אפשרות מיידית של שליחת האימייל בג'ימייל או וואטסאפ" — חלון עם שתי דרכים
+  rs.querySelector('.kvpsend').onclick=()=>kvSendOpen(d,grab,url);
+}
+function kvSendOpen(d,grab,url){
+  const he=(d.region||'')==='il';
+  const enName=String(d.english||'').trim()||((d.first||'')+' '+(d.last||'')).trim();
+  const heName=((d.title||'')+' '+(d.first||'')+' '+(d.last||'')).trim();
+  const em=splitEmails(d.email||'')[0]||'', ph=(splitPhones(d.phone||'')[0]||'').trim();
+  const subj=he?'הקוויטל שלך — כולל חצות':'Your Kvittel — Kollel Chatzot';
+  const body=he?('לכבוד '+heName+',\n\nמצורף הקוויטל שלך — השמות שעליהם מתפללים בעת רצון הגדול של חצות הלילה, כששערי שמים פתוחים. '
+      +'בכל לילה אברכי כולל חצות לומדים ומתפללים לזכותך ולזכות משפחתך.\n\nבזכות החזקת התורה בעת רצון של חצות, תזכו לשמירה, שפע וברכה מיוחדת.\n\n'
+      +'אם משהו השתנה — נשמח שתעדכן אותנו.\n\nהרב יהושע מאיר דויטש\nראש כולל חצות')
+    :('Dear '+enName+',\n\nAttached is your Kvittel — the names we daven for at the great Eis Ratzon of Chatzot, when the Gates of Heaven are open. '
+      +'Every night the Avreichim of Kollel Chatzot learn and daven l\'zechus you and your family.\n\nIn the zechus of upholding Torah at Chatzot, '
+      +'may you be blessed with Shemirah, Shefa and Bracha.\n\nIf anything has changed, we would be glad if you would update us.\n\n'
+      +'Rabbi Yehoshua Meir Deutsch\nRosh Kollel Chatzot');
+  const wtxt=he?'הקוויטל שלך מכולל חצות 🕯️ — בזכות החזקת התורה בעת רצון של חצות, תזכו לשמירה, שפע וברכה מיוחדת.'
+    :'Your Kvittel from Kollel Chatzot 🕯️ — in the zechus of upholding Torah at Chatzot, may you be blessed with Shemirah, Shefa and Bracha.';
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox qcbox" style="text-align:right;max-width:520px;width:96vw"><div class="cm"><b>📤 שליחת הקוויטל — ${esc(heName||enName)}</b></div>
+    <div class="addrow" style="gap:8px"><button class="btn" id="ks_wa" style="flex:1;background:#25D366;border-color:#25D366">💬 וואטסאפ${ph?'':' (אין טלפון)'}</button>
+      <button class="btn" id="ks_em" style="flex:1">📧 מייל (ג'ימייל)</button></div>
+    <div id="ks_mail" hidden>
+      <label class="fld"><span>אל</span><input id="ks_to" dir="ltr" value="${esc(em)}" placeholder="email@example.com"></label>
+      <label class="fld"><span>נושא</span><input id="ks_su" dir="${he?'rtl':'ltr'}" value="${esc(subj)}"></label>
+      <label class="fld"><span>הנוסח (אפשר לערוך) — הקוויטל מצורף כתמונה</span><textarea id="ks_bd" dir="${he?'rtl':'ltr'}" rows="10" style="font-family:Arial;font-size:13px">${esc(body)}</textarea></label>
+      ${he?'':'<div class="hintxt">בעברית: שלום, מצורף הקוויטל שלך — השמות שעליהם מתפללים בעת רצון של חצות. כל לילה האברכים לומדים ומתפללים לזכותך ולזכות משפחתך. בזכות החזקת התורה בחצות — שמירה, שפע וברכה. אם משהו השתנה — שיעדכן.</div>'}
+      <button class="btn bqgo" id="ks_send" style="width:100%;margin-top:6px">📧 שלח עכשיו במייל</button></div>
+    <div class="cbtns"><button class="btn ghost" id="ks_other">שיתוף אחר…</button><button class="btn ghost cno">סגור</button></div></div>`;
+  document.body.appendChild(o);
+  const q=s=>o.querySelector(s);
+  q('.cno').onclick=()=>o.remove();o.onclick=e=>{if(e.target===o)o.remove();};
+  q('#ks_em').onclick=()=>{q('#ks_mail').hidden=false;(q('#ks_to').value?q('#ks_bd'):q('#ks_to')).focus();};
+  q('#ks_wa').onclick=async()=>{
+    if(!ph){toast('אין טלפון בכרטיס התורם');return;}
+    // התמונה נכנסת ללוח, והצ'אט נפתח עם הנוסח — רק להדביק (Ctrl+V) את התמונה
+    try{await navigator.clipboard.write([new ClipboardItem({'image/png':grab('png')})]);toast('📋 התמונה הועתקה — בצ\'אט לוחצים Ctrl+V (או "הדבק") ושולחים');}
+    catch(e){toast('לא הצלחתי להעתיק את התמונה — אפשר "📋 העתק תמונה" ואז להדביק');}
+    const h=waHref(ph,d.region),t='text='+encodeURIComponent(wtxt);
+    if(!h){toast('מספר הטלפון לא תקין');return;}
+    window.open(h.startsWith('intent:')?h.replace(/(send\/\?phone=\d+)/,'$1&'+t):h+'?'+t,'_blank');};
+  q('#ks_send').onclick=async function(){
+    const to=q('#ks_to').value.trim(),su=q('#ks_su').value.trim(),bd=q('#ks_bd').value.trim();
+    if(!/^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/.test(to)){toast('כתובת מייל לא תקינה');q('#ks_to').focus();return;}
+    if(!await uiConfirm('לשלוח עכשיו את הקוויטל במייל אל '+to+'?','📧 כן, לשלוח','ביטול'))return;
+    this.disabled=true;this.textContent='⏳ שולח…';
+    const r=await api('POST','/api/kvpage/send',{donor:d.id,to,subject:su,body:bd}).catch(()=>null);
+    if(r&&r.ok){o.remove();toast('✅ הקוויטל נשלח במייל אל '+to);}
+    else{this.disabled=false;this.textContent='📧 שלח עכשיו במייל';uiAlert('המייל לא נשלח:\n'+((r&&r.error)||'שגיאה'));}};
+  q('#ks_other').onclick=async()=>{
+    try{const b=await grab('jpg');const f=new File([b],'קוויטל.jpg',{type:'image/jpeg'});
+      if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],text:wtxt});return;}
+      window.open(url('jpg'),'_blank');}catch(e){if(e&&e.name==='AbortError')return;window.open(url('jpg'),'_blank');}};
 }
 function wireByAv(){
   const nb=document.getElementById('av_newbtn'), ni=document.getElementById('av_new');
