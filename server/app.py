@@ -23493,6 +23493,7 @@ def ym_worker(job_id, wait=True):
             big_job = (job['total'] or 0) > 3
             for m in con.execute("SELECT * FROM ym_msg WHERE job=? AND status='queued' ORDER BY id", (job_id,)).fetchall():
                 con.execute("UPDATE ym_msg SET sent_ts=? WHERE id=?", (il_now().strftime('%Y-%m-%d %H:%M:%S'), m['id']))
+                con.commit()   # לשחרר את נעילת ה-DB לפני הקריאה האיטית לימות (שלא תחסום בקשות אחרות בזמן המשלוח)
                 _ym.begin_trace()
                 if not m['phone']:
                     ok, res = False, 'אין טלפון תקין'
