@@ -23260,30 +23260,36 @@ def cal_day_pdf(con, day):
         if key not in MC:
             st = _pm.Story(html=html_of(it), user_css=css(fs), archive=arch)
             _more, filled = st.place(_pm.Rect(0, 0, box, H * 4))
-            MC[key] = _pm.Rect(filled).height + fs * (0.6 if it[0] == 't' else 0.4)
+            MC[key] = _pm.Rect(filled).height + fs * (0.4 if it[0] == 't' else 0.4)
         return MC[key]
 
-    TOP = M + 92          # מתחת לכותרת
+    TOP = M + 92          # מתחת לכותרת (עמוד ראשון)
+    TOP2 = M + 30         # עמודי המשך — כותרת קטנה
     BOT = H - M - 14
-    avail = BOT - TOP
+    GAP = 18
+    # מאיר (26.11.2026): "הדפסת היומן היומי — מדי אותיות קטנות, תגדיל אותם" — לא מקטינים מתחת ל-12pt:
+    # עמוד אחד כשנכנס בגופן גדול (טור אחד ≥14, או שני טורים ≥12); אחרת שני טורים ב-13pt וממשיכים לעמוד הבא
 
-    def layout(cols, fs):
-        gap = 18
-        cw = (W - 2 * M - gap * (cols - 1)) / cols
-        hs = [measure(it, fs, cw) for it in items]
-        placed, c, y = [], 0, 0
-        for it, h in zip(items, hs):
-            if y + h > avail and y > 0:
+    def layout(cols, fs, max_pages=1):
+        cw = (W - 2 * M - GAP * (cols - 1)) / cols
+        placed, pgi, c, y = [], 0, 0, 0
+        for it in items:
+            h = measure(it, fs, cw)
+            top = TOP if pgi == 0 else TOP2
+            if top + y + h > BOT and y > 0:
                 c += 1; y = 0
                 if c >= cols:
-                    return None
-            x1 = W - M - c * (cw + gap)          # טור ראשון = הימני
-            placed.append((it, x1 - cw, x1, TOP + y, h))
+                    pgi += 1; c = 0
+                    if pgi >= max_pages:
+                        return None
+                top = TOP if pgi == 0 else TOP2
+            x1 = W - M - c * (cw + GAP)          # טור ראשון = הימני
+            placed.append((pgi, it, x1 - cw, x1, top + y, h))
             y += h
         return placed, cw
 
     best = None
-    for cols, lo_fs in ((1, 14.0), (2, 8.0), (3, 6.0)):     # בגופן קטן מ-14 — עדיף שני טורים
+    for cols, lo_fs in ((1, 14.0), (2, 12.0)):
         if layout(cols, 20.0):
             best = (cols, 20.0, layout(cols, 20.0)); break
         if not layout(cols, lo_fs):
@@ -23294,47 +23300,47 @@ def cal_day_pdf(con, day):
             if layout(cols, mid): lo = mid
             else: hi = mid
         best = (cols, lo, layout(cols, lo)); break
-    if not best:                                  # לא נכנס בשום מצב — שלושה טורים בגופן הכי קטן, מה שנכנס
-        fs = 6.0
-        gap = 18; cw = (W - 2 * M - gap * 2) / 3
-        placed, c, y = [], 0, 0
-        for it in items:
-            h = measure(it, fs, cw)
-            if y + h > avail and y > 0:
-                c += 1; y = 0
-            if c >= 3:
-                break
-            x1 = W - M - c * (cw + gap)
-            placed.append((it, x1 - cw, x1, TOP + y, h)); y += h
-        best = (3, fs, (placed, cw))
+    if not best:                                  # הרבה משימות — שני טורים בגופן קריא, על כמה עמודים
+        best = (2, 13.0, layout(2, 13.0, max_pages=60))
     cols, fs, (placed, cw) = best
+    npages = (max(x[0] for x in placed) + 1) if placed else 1
     doc = _pm.open()
-    pg = doc.new_page(width=W, height=H)
-    # כותרת
-    pg.insert_htmlbox(_pm.Rect(M, M, W - M, M + 88),
-                      '<div style="text-align:center"><div class="k">כולל חצות · משימות היום</div><div class="t">%s</div><div class="g">יום %s · %s · %s</div></div>'
-                      % (e(heb or d.strftime('%d/%m/%Y')), DOW[d.weekday()], d.strftime('%d/%m/%Y'), 'משימה אחת' if n == 1 else '%d משימות' % n),
-                      css=FONTS + '*{font-family:fr}body{direction:rtl}.k{color:#9c7a2e;font-weight:bold;font-size:12pt}'
-                                  '.t{color:#3b357a;font-weight:bold;font-size:26pt}.g{color:#6b6249;font-size:13pt}', archive=arch)
-    pg.draw_line(_pm.Point(M, M + 86), _pm.Point(W - M, M + 86), color=GOLD, width=1.6)
-    for ci in range(1, cols):                    # קו בין הטורים
-        xm = W - M - ci * (cw + 18) + 9
-        pg.draw_line(_pm.Point(xm, TOP), _pm.Point(xm, BOT - 4), color=LINE, width=0.8)
-    if not placed:
-        pg.insert_htmlbox(_pm.Rect(M, TOP + 40, W - M, TOP + 120), '<div style="text-align:center">אין משימות פתוחות ביום הזה.</div>',
-                          css=FONTS + '*{font-family:fr}body{direction:rtl;font-size:16pt;color:#6b6249}', archive=arch)
-    for it, x0, x1, y, h in placed:
-        if it[0] == 'h':
-            pg.insert_htmlbox(_pm.Rect(x0, y + fs * 0.2, x1, y + h), html_of(it), css=css(fs), archive=arch)
-            pg.draw_line(_pm.Point(x0, y + h - 2), _pm.Point(x1, y + h - 2), color=GOLD, width=0.8)
-            continue
-        s = fs * 1.05                            # הריבוע — בקצה הימני, בגובה השורה הראשונה
-        sq = _pm.Rect(x1 - s, y + fs * 0.35, x1, y + fs * 0.35 + s)
-        pg.draw_rect(sq, color=BLUE, width=1.4)
-        pg.insert_htmlbox(_pm.Rect(x0, y + fs * 0.25, x1 - fs * 1.6, y + h), html_of(it), css=css(fs), archive=arch)
-        pg.draw_line(_pm.Point(x0, y + h - 1), _pm.Point(x1, y + h - 1), color=LINE, width=0.6)
-    pg.insert_htmlbox(_pm.Rect(M, H - M - 10, W - M, H - M + 6), '<div style="text-align:center">הודפס %s</div>' % il_now().strftime('%d/%m/%Y %H:%M'),
-                      css=FONTS + '*{font-family:fr}body{direction:rtl;font-size:9pt;color:#9a9080}', archive=arch)
+    for pi in range(npages):                     # כל עמוד נבנה עד הסוף לפני שנפתח הבא
+        p_ = doc.new_page(width=W, height=H)
+        if pi == 0:                              # כותרת
+            p_.insert_htmlbox(_pm.Rect(M, M, W - M, M + 88),
+                              '<div style="text-align:center"><div class="k">כולל חצות · משימות היום</div><div class="t">%s</div><div class="g">יום %s · %s · %s%s</div></div>'
+                              % (e(heb or d.strftime('%d/%m/%Y')), DOW[d.weekday()], d.strftime('%d/%m/%Y'), 'משימה אחת' if n == 1 else '%d משימות' % n,
+                                 (' · %d עמודים' % npages) if npages > 1 else ''),
+                              css=FONTS + '*{font-family:fr}body{direction:rtl}.k{color:#9c7a2e;font-weight:bold;font-size:12pt}'
+                                          '.t{color:#3b357a;font-weight:bold;font-size:26pt}.g{color:#6b6249;font-size:13pt}', archive=arch)
+            p_.draw_line(_pm.Point(M, M + 86), _pm.Point(W - M, M + 86), color=GOLD, width=1.6)
+        else:                                    # עמוד המשך — כותרת קטנה
+            p_.insert_htmlbox(_pm.Rect(M, M, W - M, M + 26),
+                              '<div style="text-align:center">%s · המשך (עמוד %d מתוך %d)</div>' % (e(heb or d.strftime('%d/%m/%Y')), pi + 1, npages),
+                              css=FONTS + '*{font-family:fr}body{direction:rtl;font-size:12pt;color:#3b357a;font-weight:bold}', archive=arch)
+            p_.draw_line(_pm.Point(M, M + 24), _pm.Point(W - M, M + 24), color=GOLD, width=1.2)
+        top = TOP if pi == 0 else TOP2
+        for ci in range(1, cols):                # קו בין הטורים
+            xm = W - M - ci * (cw + GAP) + GAP / 2
+            p_.draw_line(_pm.Point(xm, top), _pm.Point(xm, BOT - 4), color=LINE, width=0.8)
+        if not placed:
+            p_.insert_htmlbox(_pm.Rect(M, TOP + 40, W - M, TOP + 120), '<div style="text-align:center">אין משימות פתוחות ביום הזה.</div>',
+                              css=FONTS + '*{font-family:fr}body{direction:rtl;font-size:16pt;color:#6b6249}', archive=arch)
+        for qi, it, x0, x1, y, h in placed:
+            if qi != pi:
+                continue
+            if it[0] == 'h':
+                p_.insert_htmlbox(_pm.Rect(x0, y + fs * 0.2, x1, y + h), html_of(it), css=css(fs), archive=arch)
+                p_.draw_line(_pm.Point(x0, y + h - 2), _pm.Point(x1, y + h - 2), color=GOLD, width=0.8)
+                continue
+            s = fs * 1.05                        # הריבוע — בקצה הימני, בגובה השורה הראשונה
+            sq = _pm.Rect(x1 - s, y + fs * 0.35, x1, y + fs * 0.35 + s)
+            p_.draw_rect(sq, color=BLUE, width=1.4)
+            p_.insert_htmlbox(_pm.Rect(x0, y + fs * 0.25, x1 - fs * 1.6, y + h), html_of(it), css=css(fs), archive=arch)
+            p_.draw_line(_pm.Point(x0, y + h - 1), _pm.Point(x1, y + h - 1), color=LINE, width=0.6)
+        p_.insert_htmlbox(_pm.Rect(M, H - M - 10, W - M, H - M + 6), '<div style="text-align:center">הודפס %s</div>' % il_now().strftime('%d/%m/%Y %H:%M'),
+                          css=FONTS + '*{font-family:fr}body{direction:rtl;font-size:9pt;color:#9a9080}', archive=arch)
     out = doc.tobytes()
     doc.close()
     return out
