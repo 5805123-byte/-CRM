@@ -25126,7 +25126,10 @@ class H(BaseHTTPRequestHandler):
             except ValueError:
                 pre = 0
             base = 'https://' + (self.headers.get('Host') or 'crm-mr9w.onrender.com')
-            return self._send(200, give_page(base).replace('{{AMOUNT}}', str(pre)).encode('utf-8'), 'text/html')
+            # ?k=iz — נפתח ישר על אפשרות מסוימת (מאיר: "נשלח לו את הקישור" לחידוש יששכר־זבולון)
+            k_ = (qs.get('k') or [''])[0]
+            k_ = k_ if k_ in ('night', 'breakfast', 'monthly180', 'monthly101', 'ner', 'iz', 'donate') else ''
+            return self._send(200, give_page(base).replace('{{AMOUNT}}', str(pre)).replace('{{KIND}}', json.dumps(k_)).encode('utf-8'), 'text/html')
         if self.path.split('?')[0] == '/api/give/base':
             return self._send(200, {'ok': True, 'base': give_short_base()})
         m = re.match(r'/api/give/rc/(\d+)\.([0-9a-f]{16})\.pdf$', self.path.split('?')[0])
