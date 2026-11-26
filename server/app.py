@@ -23802,11 +23802,103 @@ MCP_TOOLS = [
          'when': {'type': 'string', 'description': 'התאריך כמו שנאמר, כשאין date — רשות'},
          'note': {'type': 'string', 'description': 'הערות — רשות'}},
          'required': ['gabbai', 'task']}},
+    # 📧 מאיר: "אתה פה ב-CRM… אני חייב אותך כל הזמן" — מיילים דרך החיבור של המערכת עצמה, לא דרך מחבר שמתנתק
+    {'name': 'search_email',
+     'description': 'חיפוש מיילים בתיבה של הכולל (chatzot18) — בתחביר החיפוש של ג\'ימייל: from:, to:, subject:, after:YYYY/MM/DD, '
+                    'מילים חופשיות. מחזיר מהחדש לישן: uid, תאריך, מאת, אל, נושא ותקציר. לקריאה מלאה — read_email עם ה-uid.',
+     'inputSchema': {'type': 'object', 'properties': {
+         'query': {'type': 'string', 'description': 'למשל: from:kollel.co.il  או  Tepper  או  subject:"24 Kislev"'},
+         'limit': {'type': 'integer', 'description': 'כמה תוצאות (ברירת מחדל 15, עד 40)'}}, 'required': ['query']}},
+    {'name': 'read_email',
+     'description': 'קורא מייל אחד במלואו לפי uid (מ-search_email), וגם מציג את כל ההודעות באותו שרשור.',
+     'inputSchema': {'type': 'object', 'properties': {'uid': {'type': 'integer'}}, 'required': ['uid']}},
+    {'name': 'send_email',
+     'description': 'שולח מייל מהתיבה של הכולל (chatzot18). ⚠️ רק אחרי שמאיר ראה ואישר במפורש בצ\'אט את הנוסח המדויק ואת הנמען '
+                    '("שלח"). reply_to_uid = uid של המייל שעונים עליו — המייל יוצא כתשובה באותו שרשור (הנושא "Re: …" נקבע לבד). '
+                    'body בטקסט רגיל; עברית יוצאת מימין לשמאל אוטומטית.',
+     'inputSchema': {'type': 'object', 'properties': {
+         'to': {'type': 'string', 'description': 'כתובת הנמען (בתשובה — אם ריק, לשולח המקורי)'},
+         'subject': {'type': 'string', 'description': 'נושא (בתשובה — לא חובה)'},
+         'body': {'type': 'string'},
+         'reply_to_uid': {'type': 'integer', 'description': 'רשות — לתשובה בתוך שרשור'},
+         'cc': {'type': 'string', 'description': 'רשות'}},
+         'required': ['body']}},
     {'name': 'list_gabbai_reminders',
      'description': 'התזכורות / המשימות הפתוחות של הגבאים (דף "משימות הצוות"), מסודרות לפי גבאי. '
                     'gabbai — רשות: רק של גבאי אחד.',
      'inputSchema': {'type': 'object', 'properties': {'gabbai': {'type': 'string', 'description': 'שם הגבאי — רשות'}}}},
 ]
+
+
+def mcp_mail(con, name, a):
+    """📧 חיפוש / קריאה / שליחה של מיילים מהתיבה של הכולל — דרך החיבור של המערכת (IMAP + SMTP)."""
+    import mail_tools as _mt
+    import html as _h
+    if name == 'search_email':
+        rows = _mt.search(str(a.get('query') or ''), a.get('limit') or 15)
+        if not rows:
+            return 'לא נמצאו מיילים לחיפוש: %s' % (a.get('query') or '')
+        return '\n'.join('• [uid %d] %s · %s%s\n  נושא: %s\n  %s' % (
+            r['uid'], r['date'], ('📤 אל: ' + r['to']) if r['sent'] else ('מאת: ' + r['from']), '',
+            r['subject'] or '(בלי נושא)', r['snippet']) for r in rows)
+    if name == 'read_email':
+        try:
+            uid = int(a.get('uid'))
+        except (TypeError, ValueError):
+            return '⚠️ חסר uid'
+        r = _mt.read(uid)
+        if not r:
+            return '⚠️ מייל %s לא נמצא' % uid
+        out = ['תאריך: %s' % r['date'], 'מאת: %s' % r['from'], 'אל: %s' % r['to']]
+        if r['cc']:
+            out.append('עותק: %s' % r['cc'])
+        out += ['נושא: %s' % r['subject'], '', r['text'] or '(אין טקסט)']
+        if r['attachments']:
+            out += ['', '📎 קבצים: ' + ', '.join(r['attachments'])]
+        if len(r['thread']) > 1:
+            out += ['', '🧵 השרשור (%d הודעות):' % len(r['thread'])]
+            out += ['  [uid %d] %s · %s' % (t['uid'], t['date'], t['from']) for t in r['thread']]
+        return '\n'.join(out)
+    # send_email
+    body = str(a.get('body') or '').strip()
+    if not body:
+        return '⚠️ חסר תוכן המייל'
+    to = str(a.get('to') or '').strip()
+    subject = str(a.get('subject') or '').strip()
+    headers = None
+    if a.get('reply_to_uid') not in (None, '', 0):
+        try:
+            rh = _mt.reply_headers(int(a.get('reply_to_uid')))
+        except (TypeError, ValueError):
+            rh = None
+        if not rh:
+            return '⚠️ המייל שעונים עליו (uid %s) לא נמצא' % a.get('reply_to_uid')
+        headers = rh['headers']
+        subject = subject or rh['subject']
+        if not to:
+            to = rh['from']
+    if not re.match(r'^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$', to):
+        return '⚠️ כתובת נמען לא תקינה: %s' % (to or '(ריק)')
+    if not subject:
+        return '⚠️ חסר נושא'
+    import mailer
+    he = bool(re.search(r'[֐-׿]', body[:300]))
+    d_ = 'rtl' if he else 'ltr'
+    html = ('<div dir="%s" style="direction:%s;text-align:%s;font-family:Arial,sans-serif;font-size:15px;line-height:1.6">%s</div>'
+            % (d_, d_, 'right' if he else 'left', ''.join('<p style="margin:0 0 12px">%s</p>' % _h.escape(p).replace('\n', '<br>')
+                                                          for p in re.split(r'\n\s*\n', body))))
+    res = mailer.send(to, subject, body, html=html, rtl=he, headers=headers, cc=str(a.get('cc') or '').strip() or None)
+    if not res.get('ok'):
+        return '⚠️ המייל לא נשלח: %s %s' % (res.get('error') or '', str(res.get('detail') or '')[:150])
+    # תיוק אצל התורם, אם הכתובת שלו
+    try:
+        for r in con.execute("SELECT id, email FROM donors WHERE COALESCE(email,'') LIKE ?", ('%' + to + '%',)).fetchall():
+            if to.lower() in [x.lower() for x in emails_of(r['email'])]:
+                log_sent_mail(r['id'], to, subject, body, res.get('msg_id'), 0)
+                break
+    except Exception:
+        pass
+    return '✓ נשלח אל %s · נושא: %s%s' % (to, subject, ' · כתשובה בשרשור' if headers else '')
 
 
 def _mcp_when(wh, title=''):
@@ -23890,6 +23982,8 @@ def mcp_tool(name, a):
             con.commit()
             bump_data()
             return '✓ נכנס ליומן (מס׳ %d): %s%s — %s%s' % (cur.lastrowid, _mcp_day(date), (' בשעה ' + tm) if tm else '', title, (' · 📍 ' + place) if place else '')
+        if name in ('search_email', 'read_email', 'send_email'):
+            return mcp_mail(con, name, a)
         if name == 'add_gabbai_reminder':
             to, err = _mcp_gabbai(con, a.get('gabbai'))
             if err:
