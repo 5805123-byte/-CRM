@@ -11,7 +11,8 @@ def configured():
     return bool(os.environ.get('GMAIL_USER') and os.environ.get('GMAIL_APP_PASSWORD'))
 
 
-def send(to, subject, body, attachments=None, reply_to=None, profile=None, pixel='', rtl=True, html='', inline=None, from_name=None):
+def send(to, subject, body, attachments=None, reply_to=None, profile=None, pixel='', rtl=True, html='', inline=None, from_name=None,
+         headers=None, cc=None):
     """שולח מייל. attachments = רשימת (שם, mime, bytes). מחזיר dict תוצאה.
     profile='comm' — מיילי הקהילה, יוצאים מ-neder1818 (COMM_MAIL_PASS; בלעדיו — "מאת" בלבד)."""
     user = os.environ.get('GMAIL_USER')
@@ -41,6 +42,12 @@ def send(to, subject, body, attachments=None, reply_to=None, profile=None, pixel
     msg['Subject'] = subject or 'כולל חצות'
     if reply_to:
         msg['Reply-To'] = reply_to
+    if cc:
+        msg['Cc'] = cc
+    # תשובה בתוך שרשור קיים — In-Reply-To / References (ג'ימייל משרשר לפיהם)
+    for hk, hv in (headers or {}).items():
+        if hv and hk in ('In-Reply-To', 'References'):
+            msg[hk] = hv
     msg.set_content(body or '')
     if html:
         # מייל מעוצב (קבלה) — ה-HTML כמו שהוא, והפיקסל בסופו

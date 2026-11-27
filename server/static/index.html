@@ -2301,6 +2301,18 @@ details.cdnatan>summary{cursor:pointer;color:var(--muted,#777);font-size:13px;ma
   .rcacts{display:flex;flex-direction:column;gap:5px;flex:0 0 auto}.rcacts .btn{white-space:nowrap}
   .rcprev{max-width:min(720px,94vw);max-height:92vh;overflow:auto}
   .gfbar{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin:8px 0}
+  /* 📊 מה נכנס — לפי מקור */
+  .incbar{display:grid;grid-template-columns:1fr 1fr 2fr auto;gap:8px;align-items:end;margin:6px 0 8px}
+  .incbar .fld{margin:0}.incbar input{width:100%}
+  .incgo{height:44px;padding:0 22px;font-size:16px;white-space:nowrap}
+  @media(max-width:640px){.incbar{grid-template-columns:1fr 1fr}.incbar .incq{grid-column:1/-1}.incgo{grid-column:1/-1;width:100%}}
+  .incsum{background:var(--card,#fff);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:15px;line-height:1.7;margin-bottom:10px}
+  .incsum b{font-size:18px}
+  .inccards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:12px}
+  .inccard{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:right;border:1.5px solid var(--line);background:var(--card,#fff);
+    border-radius:12px;padding:10px 12px;cursor:pointer;font:inherit;color:inherit}
+  .inccard span{font-size:14px}.inccard b{font-size:17px}.inccard small{opacity:.7;font-size:12px}
+  .inccard.on{border-color:#3b2f5e;box-shadow:0 0 0 2px rgba(59,47,94,.18);background:#f4f1fb}
   .gfbar .fld{min-width:130px;flex:1}
   .gfnewbox{border:2px solid var(--accent);border-radius:12px;padding:10px;display:grid;gap:6px;margin-bottom:8px}
   .gfnewbox input,.gfnewbox select,.gfedt input,.gfedt select{width:100%;min-width:0;box-sizing:border-box}

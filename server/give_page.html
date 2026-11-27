@@ -124,7 +124,7 @@ input{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px
 <a class="site" href="https://www.kollelchatzot.com" target="_blank" rel="noopener">To visit our website, click here &rsaquo;</a></div>
 </div></div>
 <script>
-var KEY={{KEY}},HT=null,API='/api/give',PRE={{AMOUNT}};
+var KEY={{KEY}},HT=null,API='/api/give',PRE={{AMOUNT}},PREK={{KIND}};
 function mount(){if(!KEY||!window.HostedTokenization)return;try{HT=new HostedTokenization(KEY,{target:'#card',showZip:false,showFieldErrors:false,
   styles:{card:'border:1px solid #d9cfb5;border-radius:8px;padding:8px;font-size:16px',expiryMonth:'border:1px solid #d9cfb5;border-radius:8px',
   expiryYear:'border:1px solid #d9cfb5;border-radius:8px',cvv2:'border:1px solid #d9cfb5;border-radius:8px',labelType:'static-top'}});}
@@ -203,5 +203,5 @@ g('go').onclick=async function(){var err=g('err'),btn=this;err.textContent='';
     +(r.receipt_url?'<br><a class="site" style="margin-top:10px" href="'+r.receipt_url+'" target="_blank" rel="noopener">&#129534; Download your receipt (PDF)</a>':'')
     +'<br><br>In the zechus of upholding Torah at the great Eis Ratzon of Chatzos, may you and your family be blessed with Shemirah, Shefa and Bracha.';
   d.scrollIntoView({behavior:'smooth',block:'center'});};
-pick(PRE?'donate':'night');
+pick(PREK||(PRE?'donate':'night'));
 </script></body></html>

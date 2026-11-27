@@ -922,6 +922,27 @@ async function pushStatus(){
 // אחרי כניסה: אם כבר אושר פעם — מוודאים שהרישום עדיין קיים (אחרי התקנה מחדש / ניקוי) בלי לשאול
 (function(){try{if(localStorage.getItem('kc_push')==='1'&&'Notification' in window&&Notification.permission==='granted'){PUSH_ON=true;setTimeout(()=>pushEnable(true),4000);}}catch(e){}
   setTimeout(()=>{if(ROLE==='admin')api('GET','/api/push/vapid').then(k=>{if(k&&k.alt){PUSH_ON=true;}}).catch(()=>{});},6000);})();
+// ⚠️ באנר "אין יחידות בימות המשיח" — נבדק אחרי כניסה וכל 3 דק' (מנהל בלבד). נעלם לבד כשחוזרות יחידות.
+function ymUnitsBanner(){
+  if(ROLE!=='admin')return;
+  api('GET','/api/yemot/units').then(r=>{
+    let bar=document.getElementById('ymunitsbar');
+    const al=r&&r.alert, gm=r&&r.gemini, low=r&&r.low, u=(r&&r.units!=null)?r.units:(al&&al.units!=null?al.units:null);
+    if(!r||r.ok===false||(!al&&!low&&!gm)){if(bar)bar.remove();return;}
+    let msg;
+    if(gm)  // 🗣️ הקול האנושי (גימני) לא זמין — לא נופלים לקול הרובוטי של ימות
+      msg='⚠️ הקול האנושי (גימני) לא זמין — הודעות קוליות לא יוצאות בקול הרובוטי של ימות; הן ממתינות וינסו שוב כל שעה. נשלח מייל.';
+    else msg=(u!=null&&u<=0)?'⚠️ אין יחידות בימות המשיח — הודעות טלפוניות / SMS לא יוצאות. הודעות קוליות שנכשלו ינסו שוב כל שעה מאליהן. נשלח מייל.'
+      :('⚠️ היחידות בימות המשיח עומדות להיגמר'+(u!=null?' ('+u+')':'')+' — כדאי לטעון יחידות.');
+    if(!bar){bar=document.createElement('div');bar.id='ymunitsbar';
+      bar.style.cssText='position:sticky;top:0;z-index:9999;background:#c0392b;color:#fff;padding:9px 14px;text-align:center;font-weight:700;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:pointer';
+      bar.title='רענן';bar.onclick=()=>ymUnitsBanner();
+      document.body.insertBefore(bar,document.body.firstChild);}
+    bar.textContent=msg;
+  }).catch(()=>{});
+}
+setTimeout(ymUnitsBanner,7000);
+setInterval(ymUnitsBanner,180000);
 function checkReminders(){
   if(ROLE==='comm'||ROLE==='gabbai'){cmRemsLoad().then(()=>{const ban=document.getElementById('rembanner'),td=todayStr(),due=CMREMS.filter(t=>t.due<=td);
       if(!due.length){ban.classList.remove('show');ban.textContent='';return;}
@@ -1965,45 +1986,48 @@ async function mkAuditWin(){
   // 🧍 לשונית בחורים: בורר קבוצות הבחורים + הסבר על הבדיקה
   if(T==='bachur'){
     const sorted=MK.groups.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name),'he'));
-    hint=`<div class="mksub" style="margin:2px 2px 6px;color:#555">בחורים שבקבוצת בחורים, <b>אין להם מנוי בתוקף</b>, ו<b>נכנסו בפועל בחודש האחרון</b> (כלומר נכנסים בפעימות בלי מנוי). בחר אילו קבוצות הן "בחורים":</div>
-      <div class="audpick"><div class="mksub" style="font-weight:700;margin-bottom:4px">🧍 קבוצות הבחורים — <span id="bg_cnt">${MKAUD.bg.size}</span> נבחרו</div>
+    const A=MKAUD.admin, BT=(MKAUD.btab||'check');
+    const subtab=(k,ico,lbl,n)=>`<button class="mkchip${BT===k?' on':''}" data-btab="${k}">${ico} ${lbl}${n!=null?` <b style="background:${BT===k?'rgba(255,255,255,.3)':'#8a6d1a'};color:#fff;border-radius:10px;padding:0 7px">${n}</b>`:''}</button>`;
+    const pickerHTML=`<div class="audpick"><div class="mksub" style="font-weight:700;margin-bottom:4px">🧍 קבוצות הבחורים — <span id="bg_cnt">${MKAUD.bg.size}</span> נבחרו</div>
+        <div class="mksub" style="margin-bottom:4px;color:#555">בחר אילו קבוצות נחשבות "בחורים". הבדיקה תרוץ רק עליהן.</div>
         <div class="bgwrap">${sorted.map(g=>`<label class="bgchk${MKAUD.bg.has(String(g.id))?' on':''}"><input type="checkbox" data-bg="${esc_(g.id)}"${MKAUD.bg.has(String(g.id))?' checked':''}><span>${esc_(g.name)}</span></label>`).join('')}</div>
-        <div class="mktpl" style="margin-top:8px"><button class="btn sm" id="bg_save">💾 שמור קבוצות בחורים</button><span id="bg_st" class="mksub"${MKAUD.bgDirty?' style="color:#b9770e"':''}>${MKAUD.bgDirty?'יש שינוי שלא נשמר':''}</span></div></div>
-      <div class="audpick" style="margin-top:8px">
-        <div class="mksub" style="font-weight:700;margin-bottom:2px">📺 הודעת מסך לכל הבחורים ברשימה</div>
-        <div class="mksub">מתווספת למה שכבר כתוב אצל כל אחד — <b>בלי למחוק</b>. (למשל: "אין מנוי בתוקף — יש להסדיר מנוי בכולל").</div>
-        <textarea id="bn_txt" rows="2" class="audq" style="width:100%;box-sizing:border-box;margin-top:6px" placeholder="טקסט ההודעה שתופיע במסך המקווה"></textarea>
-        <div class="mktpl" style="margin-top:6px"><button class="btn sm" id="bn_go">📺 הוסף לכל הבחורים ברשימה</button><span id="bn_st" class="mksub"></span></div></div>
-      <div class="audpick" style="margin-top:8px;border-color:#e0b4b4;background:#fff6f4">
-        <div class="mksub" style="font-weight:700;margin-bottom:2px">⛔ חסימה אוטומטית — בחור שנכנס בפעימות בלי מנוי</div>
-        <div class="mksub">כש<b>פעיל</b>: <b>כל דקה</b> המערכת בודקת (וסבב מלא של חודש כל 5 דק'), וחוסמת בחור (רק בקבוצות שסימנת) ש<b>נכנס בפעימות בלי לשלם על מנוי חודשי</b>. החסימה <b>חד-כיוונית</b> — המערכת לא פותחת לבד; פותחים ידנית מהכרטיס אחרי שמסדירים מנוי. חסימות ידניות לא נגעים בהן.</div>
-        <label class="mksub" style="display:block;margin-top:6px">נוסח החסימה (הטקסט שיופיע כסיבת החסימה):
-          <input id="bb_reason" class="audq" style="width:100%;box-sizing:border-box;margin-top:3px" value="${esc_(MKAUD.bblock.reason||'')}" placeholder="למשל: אין מנוי בתוקף — יש להסדיר מנוי"></label>
-        <div class="mktpl" style="margin-top:6px">
-          <button class="btn sm" id="bb_savecfg">💾 שמור נוסח</button>
-          <button class="btn sm${MKAUD.bblock.on?'':' ghost'}" id="bb_toggle">${MKAUD.bblock.on?'🟢 פעיל — לכבות':'⚪ כבוי — להפעיל'}</button>
-          <button class="btn sm ghost" id="bb_run">▶️ הרץ עכשיו</button>
-          <button class="btn sm ghost" id="bb_reset" title="לפתוח את כל מי שחסום בקבוצות הבחורים">🔓 בטל את כל החסימות</button>
-          <span id="bb_st" class="mksub">${MKAUD.bblock.last?('נבדק '+esc_(mkDate(MKAUD.bblock.last))+' '+esc_(String(MKAUD.bblock.last).slice(11,16))+' · נחסמו '+(MKAUD.bblock.blocked||0)+(MKAUD.bblock.opened?' · בוטלו '+MKAUD.bblock.opened:'')):'עדיין לא רץ'}</span>
-        </div></div>
-      <div class="audpick" style="margin-top:8px">
-        <div class="mksub" style="font-weight:700;margin-bottom:2px">🔎 מי נכנס בפעימות בלי מנוי · מי חסום · היסטוריה</div>
-        <div class="mktpl"><button class="btn sm" id="bk_adm_load">🔄 בדוק עכשיו (טרי מהמקווה)</button><span id="bk_adm_st" class="mksub">${MKAUD.admin?('נכנסו בפעימות בלי מנוי: '+((MKAUD.admin.offenders||[]).length)+' · חסומים: '+((MKAUD.admin.blocked||[]).length)):''}</span></div>
-        ${MKAUD.admin?`<div style="margin-top:6px">
-          <div class="mksub" style="font-weight:700">🔎 נכנסו בפעימות בלי מנוי (${(MKAUD.admin.offenders||[]).length})</div>
-          <div class="mklist">${(MKAUD.admin.offenders||[]).map(x=>`<div class="mkrow" data-ao="${esc_(x.id)}" style="grid-template-columns:1fr auto;cursor:pointer"><div class="mknm"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')} · כניסה אחרונה בפעימות ${esc_(mkDate(x.last))}</div></div><span class="mktag ${x.blocked?'bad':'mu'}" style="align-self:center">${x.blocked?'חסום':'לא חסום'}</span></div>`).join('')||'<div class="hintxt">✓ אף אחד לא נכנס בפעימות בלי מנוי בחודש האחרון.</div>'}</div>
-          <div class="mktpl" style="margin-top:6px"><button class="btn sm" id="bk_block_now">⛔ חסום את כולם עכשיו</button></div>
-          <div style="margin-top:8px;border-top:1px solid var(--line);padding-top:6px"><input id="bk_notify_txt" class="audq" style="width:100%;box-sizing:border-box" placeholder="הודעת מסך לשליחה (למשל: נכנסת בלי מנוי — יש להסדיר מנוי בכולל)"><div class="mktpl" style="margin-top:4px"><button class="btn sm" id="bk_notify">📺 שלח הודעה לכל אלה</button><span id="bk_notify_st" class="mksub"></span></div></div>
-          <div class="mksub" style="font-weight:700;margin-top:10px">⛔ חסומים כרגע (${(MKAUD.admin.blocked||[]).length})</div>
-          <div class="mklist">${(MKAUD.admin.blocked||[]).map(x=>`<div class="mkrow" data-ao="${esc_(x.id)}" style="grid-template-columns:1fr auto;cursor:pointer"><div class="mknm"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}${x.reason?' · '+esc_(x.reason):''}</div></div><span class="mktag bad" style="align-self:center">חסום</span></div>`).join('')||'<div class="hintxt">✓ אין אף אחד חסום.</div>'}</div>
-          ${(MKAUD.admin.blocked||[]).length?`<div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bk_drain">🧹 רוקן ערך צבור לכל החסומים</button><span id="bk_drain_st" class="mksub"></span></div>`:''}
-          ${MKAUD.drained&&MKAUD.drained.rows&&MKAUD.drained.rows.length?`<div class="mksub" style="font-weight:700;margin-top:10px">🧹 ערך צבור שרוקן — לשמירה ולהחזרה (${MKAUD.drained.rows.length} · סה״כ ₪${MKAUD.drained.total||0})</div>
-          <div class="mklist">${MKAUD.drained.rows.map(x=>`<div class="mkrow" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc_(x.name||x.cid)}</b><div class="mksub">פעימות ₪${x.bal||0}${x.temp?' · זיכוי ₪'+x.temp:''} · ${esc_(String(x.at||'').slice(0,16))}</div></div><button class="btn sm ghost" data-refund="${esc_(x.cid)}">↩️ החזר</button></div>`).join('')}</div>
-          <div class="mktpl" style="margin-top:4px"><button class="btn sm ghost" id="bk_refund_all">↩️ החזר לכולם</button></div>`:''}
-          <div class="mksub" style="font-weight:700;margin-top:8px">🕘 היסטוריה</div>
-          <div class="mklist">${(MKAUD.admin.history||[]).slice(0,40).map(h=>`<div class="mksub" style="border-bottom:1px solid var(--line);padding:3px 0">${esc_(String(h.at||'').slice(0,16).replace('T',' '))}${h.name?' · '+esc_(h.name):''} — ${esc_(h.summary||'')}</div>`).join('')||'<div class="hintxt">אין היסטוריה.</div>'}</div></div>`:''}
-        <div class="mksub" style="margin-top:4px;color:#888">🔑 טוקן API לקלוד נמצא ב-🩺 בדיקת מערכת (הכפתור למעלה).</div>
-      </div>`;
+        <div class="mktpl" style="margin-top:8px"><button class="btn sm" id="bg_save">💾 שמור קבוצות בחורים</button><span id="bg_st" class="mksub"${MKAUD.bgDirty?' style="color:#b9770e"':''}>${MKAUD.bgDirty?'יש שינוי שלא נשמר':''}</span></div></div>`;
+    if(!MKAUD.bg.size){
+      hint=`<div class="mksub" style="margin:2px 2px 8px;color:#555">בחורים שבקבוצת בחורים, <b>אין להם מנוי בתוקף</b>, ו<b>נכנסו בחודש האחרון</b> (נכנסים בפעימות בלי מנוי). קודם בחר אילו קבוצות הן "בחורים":</div>`+pickerHTML;
+    }else{
+      // 📋 מי אמור להיחסם — הוכחה לכל אחד + חסימת מסומנים
+      const checkHTML=`<div class="mktpl"><button class="btn sm ghost" id="bk_adm_load">🔄 רענן מהמקווה</button><span id="bk_adm_st" class="mksub">${A?('נמצאו '+((A.offenders||[]).length)+' שנכנסו בפעימות בלי מנוי'):'⏳ טוען…'}</span></div>
+        ${A?`<div class="hintxt" style="margin:4px 0">לכל אחד <b>הוכחה מפורשת</b>: מתי נכנס, שהמנוי פג/אין, וכמה בפעימות. סמן את מי לחסום ולחץ "⛔ חסום את המסומנים". מי שיש לו מנוי בתוקף כלל לא מופיע כאן.</div>
+          <div class="mklist">${(A.offenders||[]).map(x=>`<div class="mkrow" style="grid-template-columns:auto 1fr auto;align-items:center"><input type="checkbox" class="bk_pick" data-pick="${esc_(x.id)}" ${x.blocked?'':'checked'} style="width:18px;height:18px;margin:0 2px"><div class="mknm" data-ao="${esc_(x.id)}" style="cursor:pointer"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}</div><div class="mksub" style="color:#b23">📌 ${esc_(x.proof&&x.proof.text?x.proof.text:('כניסה בפעימות '+mkDate(x.last)))}</div></div><span class="mktag ${x.blocked?'bad':'mu'}" style="align-self:center">${x.blocked?'כבר חסום':'לא חסום'}</span></div>`).join('')||'<div class="hintxt">✓ אף אחד לא נכנס בפעימות בלי מנוי בחודש האחרון.</div>'}</div>
+          <div class="mktpl" style="margin-top:6px;position:sticky;bottom:0;background:var(--card,#fff);padding:6px 0;border-top:1px solid var(--line)"><button class="btn sm ghost" id="bk_pick_all">☑️ סמן/בטל הכל</button><button class="btn sm" id="bk_block_sel">⛔ חסום את המסומנים</button><span id="bk_block_sel_st" class="mksub"></span></div>
+          <div style="margin-top:8px"><input id="bk_notify_txt" class="audq" style="width:100%;box-sizing:border-box" placeholder="הודעת מסך לכל אלה (למשל: נכנסת בלי מנוי — יש להסדיר מנוי בכולל)"><div class="mktpl" style="margin-top:4px"><button class="btn sm" id="bk_notify">📺 שלח הודעה לכל אלה</button><span id="bk_notify_st" class="mksub"></span></div></div>`:''}`;
+      // ⛔ חסומים כרגע + ריקון + החזרות
+      const blockedHTML=A?`<div class="mksub" style="font-weight:700">⛔ חסומים כרגע (${(A.blocked||[]).length})</div>
+          ${(A.blocked||[]).length?'<div class="hintxt" style="margin:2px 0 4px">סמן את מי לשחרר ולחץ "🔓 שחרר את המסומנים" (או לחיצה על שם פותחת את הכרטיס).</div>':''}
+          <div class="mklist">${(A.blocked||[]).map(x=>`<div class="mkrow" style="grid-template-columns:auto 1fr auto;align-items:center"><input type="checkbox" class="bk_upick" data-upick="${esc_(x.id)}" style="width:18px;height:18px;margin:0 2px"><div class="mknm" data-ao="${esc_(x.id)}" style="cursor:pointer"><b>${esc_(x.name||'—')}</b><div class="mksub"><span dir="ltr">${esc_(x.phone||'')}</span> · #${esc_(x.code||'')}${x.reason?' · '+esc_(x.reason):''}</div></div><span class="mktag bad" style="align-self:center">חסום</span></div>`).join('')||'<div class="hintxt">✓ אין אף אחד חסום.</div>'}</div>
+          ${(A.blocked||[]).length?`<div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bk_upick_all">☑️ סמן/בטל הכל</button><button class="btn sm" id="bk_unblock_sel">🔓 שחרר את המסומנים</button><span id="bk_unblock_st" class="mksub"></span></div>
+          <div class="mktpl" style="margin-top:6px"><button class="btn sm ghost" id="bb_reset" title="לפתוח את כל מי שחסום בקבוצות הבחורים">🔓 בטל את כל החסימות</button><button class="btn sm ghost" id="bk_drain">🧹 רוקן ערך צבור לכל החסומים</button><span id="bk_drain_st" class="mksub"></span></div>`:''}
+          ${MKAUD.drained&&MKAUD.drained.rows&&MKAUD.drained.rows.length?`<div class="mksub" style="font-weight:700;margin-top:12px">🧹 ערך צבור שרוקן — לשמירה ולהחזרה (${MKAUD.drained.rows.length} · ₪${MKAUD.drained.total||0})</div>
+          <div class="mklist">${MKAUD.drained.rows.map(x=>`<div class="mkrow" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc_(x.name||x.cid)}</b><div class="mksub">פעימות ₪${x.bal||0}${x.temp?' · זיכוי ₪'+x.temp:''} · ${esc_(String(x.at||'').slice(0,16))}${x.refunded?' · ✔️ הוחזר':''}</div></div>${x.refunded?'<span class="mktag mu" style="align-self:center">הוחזר</span>':`<button class="btn sm ghost" data-refund="${esc_(x.cid)}">↩️ החזר</button>`}</div>`).join('')}</div>
+          <div class="mktpl" style="margin-top:4px"><button class="btn sm ghost" id="bk_refund_all">↩️ החזר לכולם</button></div>`:''}`:'<div class="hintxt">⏳ טוען…</div>';
+      // 🕘 היסטוריה — עם "מי ביצע"
+      const historyHTML=A?`<div class="mklist">${(A.history||[]).slice(0,60).map(h=>`<div class="mksub" style="border-bottom:1px solid var(--line);padding:3px 0">${esc_(String(h.at||'').slice(0,16).replace('T',' '))}${h.name?' · '+esc_(h.name):''} — ${esc_(h.summary||'')}${h.who?' <span class="mktag mu" style="font-size:10px">בוצע ע״י '+esc_(h.who)+'</span>':''}</div>`).join('')||'<div class="hintxt">אין היסטוריה.</div>'}</div>`:'<div class="hintxt">⏳ טוען…</div>';
+      // ⚙️ הגדרות — קבוצות + חסימה אוטומטית + הודעת מסך לכולם
+      const settingsHTML=pickerHTML+`
+        <div class="audpick" style="margin-top:8px;border-color:#e0b4b4;background:#fff6f4">
+          <div class="mksub" style="font-weight:700;margin-bottom:2px">⛔ חסימה אוטומטית ברקע</div>
+          <div class="mksub">כש<b>פעיל</b>: כל דקה המערכת חוסמת בחור (בקבוצות שסימנת) ש<b>נכנס בפעימות בלי מנוי בתוקף</b>. חד-כיוונית — פותחים ידנית מהכרטיס. חסימות ידניות לא נגעים בהן.</div>
+          <label class="mksub" style="display:block;margin-top:6px">נוסח החסימה:<input id="bb_reason" class="audq" style="width:100%;box-sizing:border-box;margin-top:3px" value="${esc_(MKAUD.bblock.reason||'')}" placeholder="למשל: אין מנוי בתוקף — יש להסדיר מנוי"></label>
+          <div class="mktpl" style="margin-top:6px"><button class="btn sm" id="bb_savecfg">💾 שמור נוסח</button><button class="btn sm${MKAUD.bblock.on?'':' ghost'}" id="bb_toggle">${MKAUD.bblock.on?'🟢 פעיל — לכבות':'⚪ כבוי — להפעיל'}</button><span id="bb_st" class="mksub">${MKAUD.bblock.last?('נבדק '+esc_(mkDate(MKAUD.bblock.last))+' · נחסמו '+(MKAUD.bblock.blocked||0)):'עדיין לא רץ'}</span></div></div>
+        <div class="audpick" style="margin-top:8px">
+          <div class="mksub" style="font-weight:700;margin-bottom:2px">📺 הודעת מסך לכל הבחורים ברשימה</div>
+          <div class="mksub">מתווספת למה שכבר כתוב אצל כל אחד — <b>בלי למחוק</b>.</div>
+          <textarea id="bn_txt" rows="2" class="audq" style="width:100%;box-sizing:border-box;margin-top:6px" placeholder="טקסט ההודעה שתופיע במסך המקווה"></textarea>
+          <div class="mktpl" style="margin-top:6px"><button class="btn sm" id="bn_go">📺 הוסף לכל הבחורים ברשימה</button><span id="bn_st" class="mksub"></span></div></div>
+        <div class="mksub" style="margin-top:8px;color:#888">🔑 טוקן API לקלוד נמצא ב-🩺 בדיקת מערכת.</div>`;
+      hint=`<div class="mktpl" style="margin:2px 0 8px;flex-wrap:wrap;gap:4px">${subtab('check','📋','מי אמור להיחסם',A?(A.offenders||[]).length:null)}${subtab('blocked','⛔','חסומים',A?(A.blocked||[]).length:null)}${subtab('history','🕘','היסטוריה')}${subtab('settings','⚙️','הגדרות')}</div>`
+        +(BT==='check'?checkHTML:BT==='blocked'?blockedHTML:BT==='history'?historyHTML:settingsHTML);
+    }
   }
   const fnone=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();
   const empty=fnone?'אין לקוח שמתאים לסינון.':T==='group'?'✓ כל הלקוחות בקבוצות רגילות.':T==='special'?'אין לקוחות עם מחיר מיוחד.':T==='noted'?'אין הערות.':T==='everyone'?'אין לקוחות.':T==='bachur'?(MKAUD.bg.size?'✓ אין בחורים בלי מנוי שנכנסו החודש.':'בחר קבוצות בחורים למעלה כדי לראות את הבדיקה.'):'✓ אין חריגים — כולם בקבוצה רגילה ובלי מחיר מיוחד.';
@@ -2011,16 +2035,16 @@ async function mkAuditWin(){
     <div class="mkhead"><div class="mkav lg" style="background:#2f6fb0">🔎</div><div><h2>בדיקת המקווה — מעקב וחריגים</h2>
       <div class="mksub">${flagged.length} חריגים · ${irr.length} בקבוצה חריגה · ${special.length} מחיר מיוחד · ${noted.length} עם הערה · ${clients.length} לקוחות</div></div></div>
     <div class="mktpl" style="margin:8px 0;flex-wrap:wrap">${chip('all','📋','הכל',flagged.length,'#2f6fb0')}${chip('group','🔴','קבוצה חריגה',irr.length,'#c0392b')}${chip('special','💎','מחיר מיוחד',special.length,'#8a6d1a')}${chip('noted','📝','הערות',noted.length,'#2f6fb0')}${chip('bachur','🧍','בחורים בפעימות',bachur.length,'#8a6d1a')}${chip('everyone','👥','כל הלקוחות',clients.length,'#555')}</div>
-    <div class="audfilters">
+    ${T!=='bachur'?`<div class="audfilters">
       <select id="aud_grp" class="audsel"><option value="">כל הקבוצות</option>${gopts}</select>
       <select id="aud_val" class="audsel"><option value="all"${MKAUD.val==='all'?' selected':''}>כל התוקף</option><option value="valid"${MKAUD.val==='valid'?' selected':''}>בתוקף</option><option value="exp"${MKAUD.val==='exp'?' selected':''}>פג תוקף / אין</option></select>
       <input id="aud_q" class="audq" placeholder="🔍 שם / טלפון / מספר לקוח" value="${esc_(MKAUD.q)}">
       ${fnone?'<button class="btn sm ghost" id="aud_clr">✕ נקה סינון</button>':''}
-    </div>
+    </div>`:''}
     ${hint}
-    <div class="mksub" id="aud_cnt" style="margin:2px 2px 6px;font-weight:700">${curList.length} לקוחות ברשימה</div>
+    ${T!=='bachur'?`<div class="mksub" id="aud_cnt" style="margin:2px 2px 6px;font-weight:700">${curList.length} לקוחות ברשימה</div>
     <div class="mklist" id="aud_list">${curList.map(row).join('')||'<div class="hintxt">'+empty+'</div>'}</div>
-    <div class="mktpl" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;flex-wrap:wrap"><button class="btn sm ghost" id="aud_self">🔄 קבוצות רגילות (שלוחת שינוי סוג מנוי)</button><button class="btn sm ghost" id="aud_renew">🧾 מנוי בלי חיוב »</button><button class="btn sm ghost" id="aud_csv">⬇️ אקסל</button></div>`;
+    <div class="mktpl" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;flex-wrap:wrap"><button class="btn sm ghost" id="aud_self">🔄 קבוצות רגילות (שלוחת שינוי סוג מנוי)</button><button class="btn sm ghost" id="aud_renew">🧾 מנוי בלי חיוב »</button><button class="btn sm ghost" id="aud_csv">⬇️ אקסל</button></div>`:''}`;
   document.getElementById('rx').onclick=()=>remov.classList.remove('show');
   const wireRows=()=>rs.querySelectorAll('[data-ao]').forEach(el=>el.onclick=()=>{const c=MK.clients.find(z=>z.id===el.dataset.ao);if(!c)return;const sc=rs.scrollTop;MK_BACK={cid:c.id,go:()=>{mkAuditWin();rs.scrollTop=sc;}};mkOpen(c);});
   const repaint=()=>{curList=sortF(applyF(baseOf()));const lst=document.getElementById('aud_list'),cnt=document.getElementById('aud_cnt');
@@ -2028,6 +2052,12 @@ async function mkAuditWin(){
     if(lst){const fn=MKAUD.grp||MKAUD.val!=='all'||MKAUD.q.trim();lst.innerHTML=curList.map(row).join('')||'<div class="hintxt">'+(fn?'אין לקוח שמתאים לסינון.':empty)+'</div>';wireRows();}};
   wireRows();
   rs.querySelectorAll('[data-aud]').forEach(b=>b.onclick=()=>{MKAUD.tab=b.dataset.aud;mkAuditWin();});
+  // 🧍 תת-לשוניות של הבחורים (מי אמור להיחסם / חסומים / היסטוריה / הגדרות)
+  rs.querySelectorAll('[data-btab]').forEach(b=>b.onclick=()=>{MKAUD.btab=b.dataset.btab;mkAuditWin();});
+  // טעינה אוטומטית של נתוני הבחורים בכניסה ללשונית — בלי ללחוץ "רענן" (כולל רשימת הריקונים)
+  if(T==='bachur'&&MKAUD.bg.size&&!MKAUD.admin&&!MKAUD._admLoading){MKAUD._admLoading=true;
+    Promise.all([api('GET','/api/mikveh/bachur_admin').catch(()=>null),api('GET','/api/mikveh/bachur_drained').catch(()=>null)])
+      .then(([a,d])=>{MKAUD._admLoading=false;MKAUD.admin=(a&&a.ok)?a:{ok:false,offenders:[],blocked:[],history:[]};if(d&&d.ok)MKAUD.drained=d;if(MKAUD.tab==='bachur')mkAuditWin();});}
   {const g=document.getElementById('aud_grp');if(g)g.onchange=()=>{MKAUD.grp=g.value;repaint();};}
   {const v=document.getElementById('aud_val');if(v)v.onchange=()=>{MKAUD.val=v.value;repaint();};}
   {const qi=document.getElementById('aud_q');if(qi)qi.oninput=()=>{MKAUD.q=qi.value;repaint();};}
@@ -2101,14 +2131,29 @@ async function mkAuditWin(){
     const y=await api('POST','/api/mikveh/bachur_drain',{});dr.disabled=false;
     if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
     if(st){st.style.color='#1e7a3c';st.textContent='✓ רוקנו '+y.count+' · סה״כ ₪'+(y.total_ils||0)+(y.failed?' · '+y.failed+' נכשלו':'');}toast('רוקן ✓');};}
-  // ⛔ חסום את כל מי שנכנס בפעימות בלי מנוי, עכשיו
-  {const bn=document.getElementById('bk_block_now');if(bn)bn.onclick=async()=>{const off=(MKAUD.admin&&MKAUD.admin.offenders)||[];const un=off.filter(x=>!x.blocked);
-    if(!un.length){toast('כולם כבר חסומים');return;}
-    if(!await uiConfirm('לחסום עכשיו את '+un.length+' מי שנכנסו בפעימות בלי מנוי? (חד-כיווני — פתיחה רק ידנית)','⛔ כן, לחסום','ביטול'))return;
-    bn.disabled=true;const st=document.getElementById('bk_adm_st');if(st){st.style.color='#555';st.textContent='⏳ חוסם…';}
-    const y=await api('POST','/api/mikveh/bachur_block',{run:true,fresh:true});
-    if(!y||!y.ok){bn.disabled=false;if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
-    toast('נחסמו '+(y.ran_blocked||0));MKAUD.admin=await api('GET','/api/mikveh/bachur_admin').catch(()=>null);mkAuditWin();};}
+  // ☑️ סמן / בטל הכל (חסימה)
+  {const pa=document.getElementById('bk_pick_all');if(pa)pa.onclick=()=>{const bx=[...document.querySelectorAll('.bk_pick')];const any=bx.some(b=>!b.checked);bx.forEach(b=>b.checked=any);};}
+  // ☑️ סמן / בטל הכל (שחרור)
+  {const ua=document.getElementById('bk_upick_all');if(ua)ua.onclick=()=>{const bx=[...document.querySelectorAll('.bk_upick')];const any=bx.some(b=>!b.checked);bx.forEach(b=>b.checked=any);};}
+  // 🔓 שחרר את המסומנים
+  {const us=document.getElementById('bk_unblock_sel');if(us)us.onclick=async()=>{const ids=[...document.querySelectorAll('.bk_upick:checked')].map(b=>b.getAttribute('data-upick'));
+    const st=document.getElementById('bk_unblock_st');
+    if(!ids.length){if(st){st.style.color='#c0392b';st.textContent='לא סומן אף אחד';}return;}
+    if(!await uiConfirm('לשחרר '+ids.length+' חסומים שסומנו? (הבדיקה האוטומטית לא תחסום אותם שוב על אותה כניסה — רק אם ייכנסו שוב בפעימות בלי מנוי)','🔓 כן, לשחרר','ביטול'))return;
+    us.disabled=true;if(st){st.style.color='#555';st.textContent='⏳ משחרר…';}
+    const y=await api('POST','/api/mikveh/bachur_block',{unblock_ids:ids});us.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
+    toast('שוחררו '+((y.unblock||{}).unblocked||0));MKAUD.admin=await api('GET','/api/mikveh/bachur_admin').catch(()=>null);mkAuditWin();};}
+  // ⛔ חסום את המסומנים — בשרת נחסמים רק מי שיש עליהם הוכחה (עבריין לפי הסריקה); השאר נדחים
+  {const bs=document.getElementById('bk_block_sel');if(bs)bs.onclick=async()=>{const ids=[...document.querySelectorAll('.bk_pick:checked')].map(b=>b.getAttribute('data-pick'));
+    const st=document.getElementById('bk_block_sel_st');
+    if(!ids.length){if(st){st.style.color='#c0392b';st.textContent='לא סומן אף אחד';}return;}
+    if(!await uiConfirm('לחסום '+ids.length+' בחורים שסומנו? לכל אחד יש הוכחה שנכנס בפעימות בלי מנוי. (חד-כיווני — פתיחה רק ידנית)','⛔ כן, לחסום','ביטול'))return;
+    bs.disabled=true;if(st){st.style.color='#555';st.textContent='⏳ חוסם…';}
+    const y=await api('POST','/api/mikveh/bachur_block',{block_ids:ids});bs.disabled=false;
+    if(!y||!y.ok){if(st){st.style.color='#c0392b';st.textContent='⚠️ '+((y&&y.error)||'שגיאה');}return;}
+    const bt=y.batch||{};toast('נחסמו '+(bt.blocked||0)+(bt.denied?' · נדחו '+bt.denied+' (ללא הוכחה)':''));
+    MKAUD.admin=await api('GET','/api/mikveh/bachur_admin').catch(()=>null);mkAuditWin();};}
   // 📺 שליחת הודעת מסך לכל מי שנכנס בפעימות בלי מנוי
   {const nb=document.getElementById('bk_notify');if(nb)nb.onclick=async()=>{const txt=(document.getElementById('bk_notify_txt').value||'').trim();const st=document.getElementById('bk_notify_st');
     const ids=((MKAUD.admin&&MKAUD.admin.offenders)||[]).map(x=>x.id);
@@ -3128,6 +3173,10 @@ function mkOpen(c){
     const idb=document.getElementById('mkident');
     if(idb){if(r.ident){idb.style.display='';idb.textContent='🪪 ת.ז. ••••'+String(r.ident).slice(-3);idb.onclick=e=>{e.preventDefault();idb.textContent='🪪 ת.ז. '+r.ident;};}else idb.style.display='none';}
     if(r.zikui!=null){c.temp_balance=r.zikui;const z=document.getElementById('mkzk');if(z)z.querySelector('b').textContent=mkMoney(r.zikui);}
+    // 🚫 סטטוס החסימה החי — מעדכן את החיווי ואת כפתור החסימה/שחרור בלי לסגור ולפתוח
+    if(r.blocked!=null){c.blocked=r.blocked;c.block_reason=r.block_reason||'';
+      const tg=document.getElementById('mkblktag');if(tg)tg.innerHTML=c.blocked?('<span class="mktag bad">🚫 חסום'+(c.block_reason?' · '+esc(c.block_reason):'')+'</span>'):'';
+      const bb=document.getElementById('mkblock');if(bb){bb.innerHTML=c.blocked?mkIco('block')+' ביטול חסימה':mkIco('block')+' חסימה';bb.title=c.blocked?'לבטל את החסימה במקווה':'לחסום את הלקוח במקווה (לא ייכנס)';}}
     if(r.balance==null)return; c.balance=r.balance;
     const el=document.getElementById('mkbal'); if(!el)return;
     el.classList.toggle('bad',r.balance<0);
@@ -3145,7 +3194,7 @@ function mkOpen(c){
         <div><h2><a href="#" id="mkweb" class="mkweb" title="לפתוח את הכרטיס שלו באתר המקווה">${esc(mkName(c))} <small>↗</small></a></h2><div class="mksub">${c.phone?`<span dir="ltr"${mkPhoneOk(c.phone)?'':' style="color:#c0392b" title="המספר לא תקין"'}>${mkPhoneOk(c.phone)?'':'⚠️ '}${esc(c.phone)}</span>`:'אין טלפון'}<span>#${esc(c.code||'')}</span><span id="mkmail" dir="ltr" style="${c.email?'':'display:none'}">${esc(c.email||'')}</span><a href="#" id="mkident" title="תעודת זהות (מהמקווה) — לחיצה מראה את המספר המלא" style="text-decoration:none;display:${c.ident?'':'none'}">🪪 ת.ז. ${c.ident?'••••'+esc(String(c.ident).slice(-3)):''}</a><a href="#" id="mkwebset" title="לשנות את הקישור לאתר המקווה" style="text-decoration:none">⚙️</a>
           <button class="mkbtn ${c.phone&&!mkPhoneOk(c.phone)?'':'gh'}" id="mkphed" style="padding:6px 12px;font-size:.9rem">📞 ${c.phone&&!mkPhoneOk(c.phone)?'לתקן את הטלפון':'שינוי טלפון'}</button>
           ${c.phone?`<button class="mkbtn gh" id="mkkl" style="padding:6px 12px;font-size:.9rem" title="קישור אישי — לכבוד ר'… עדכון לגבי המקווה: פרטים וכרטיס אשראי בנדרים פלוס">💧 קישור אישי — וואטסאפ / מייל</button>`:''}
-          ${c.blocked?`<span class="mktag bad">חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</div></div></div>
+          <span id="mkblktag">${c.blocked?`<span class="mktag bad">🚫 חסום${c.block_reason?' · '+esc(c.block_reason):''}</span>`:''}</span></div></div></div>
       <div id="mksync" data-id="${esc(c.id)}"></div>
       <div class="mktiles">
         ${tile('קבוצה',`<span class="mkdot" style="display:inline-block;background:${esc(mkColor(g))};margin-inline-end:6px"></span>${esc(g?g.name:'קבוצה שנמחקה')}`,'','group')}
@@ -3494,7 +3543,7 @@ function mkHistRes(r){
   if(r.y_ans!=null&&+r.y_ans===0)return '<span class="mktag bad">📵 לא ענה'+(+r.y_retried>0?(+r.y_r_ans===1?' · ✅ ענה בניסיון השני':' · 🔁 ניסיון שני יצא'):(r.y_retry_at?' · 🔁 ינסה שוב '+esc(String(r.y_retry_at).slice(5,16)):''))+'</span>';
   return '<span class="mktag mu" title="'+esc(r.y_call||'')+'">⏳ בודק אם ענה…</span>';}
 function mkHistHTML(cid){const L=MKHIST[cid];if(!L)return '<div class="mksub">⏳ טוען…</div>';if(!L.length)return '<div class="mksub">עוד לא נשלחו לו הודעות מכאן ולא הועבר קבוצה.</div>';
-  return '<div class="mklist">'+L.map(r=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc(String(r.at||'').slice(8,10)+'/'+String(r.at||'').slice(5,7)+' '+String(r.at||'').slice(11,16))} · ${esc(r.summary||'')}</b>
+  return '<div class="mklist">'+L.map(r=>`<div class="mkrow schrow" style="grid-template-columns:1fr auto"><div class="mknm"><b>${esc(String(r.at||'').slice(8,10)+'/'+String(r.at||'').slice(5,7)+' '+String(r.at||'').slice(11,16))} · ${esc(r.summary||'')}</b>${r.who?` <span class="mktag mu" style="font-size:10px">בוצע ע״י ${esc(r.who)}</span>`:''}
     ${mkHistBody(r)}</div>${r.can_del?`<button class="btn sm ghost" title="למחוק מהיומן (לא משנה כלום במקווה)" onclick="mkHistDel('${esc(cid)}',${+r.id})">🗑️</button>`:'<span></span>'}</div>`).join('')+'</div>';}
 async function mkHistDel(cid,id){if(!await uiConfirm('למחוק את השורה מהיומן? (במקווה עצמו לא משתנה כלום)'))return;
   const r=await api('POST','/api/mikveh/log_del',{id}).catch(()=>null);if(r&&r.ok){toast('🗑️ נמחק');mkHistLoad(cid);}else uiAlert('לא נמחק');}
@@ -5000,6 +5049,9 @@ function noCatList(){
 // ייעוד שהוא יום (פרנס לילה / חדר קפה / ארוחת בוקר) לא מסתפק בשם הייעוד —
 // צריך לדעת איזה יום נתפס, אחרת הכסף מסווג אבל הלילה לא משובץ לאף אחד.
 const WFDAY={'פרנס לילה':'parnes','חדר קפה':'coffee','ארוחת בוקר':'breakfast'};
+// ייעוד שהוא בעצם לילה / קפה / בוקר גם כשנכתב אחרת (למשל מנדרים פלוס: "הקדשת לילה אחד של לימוד")
+function wfKindOf(c){c=String(c||'');
+  return WFDAY[c]||(/קפה/.test(c)?'coffee':/ארוחת\s*בוקר/.test(c)?'breakfast':/(פרנס|הקדשת)\s.*לילה|^פרנס|לילה\s+(אחד\s+)?של\s+לימוד/.test(c)?'parnes':'');}
 // "בניין" לבד לא אומר כלום — צריך לדעת מה נתרם בו. בכל מקום שבוחרים
 // בניין נפתח שדה חופשי, והייעוד נשמר כ"בניין — שולחן"
 function isBldgCat(c){return /בנין|בניין/.test(String(c||''));}
@@ -5015,7 +5067,7 @@ function openParnesPick(o,cat,note){
   // הכסף כבר נגבה — דרך מה שכתוב על התרומה — ולכן אמצעי התשלום עובר
   // איתה ליום הפרנס, ואינו נשאר "ללא".
   PYPICK={id:o.x.id,donor_id:o.d.id,name:(o.d.last+' '+o.d.first).trim(),
-          amount:o.x.amount,cur:curSym(o.d),cat,kind:WFDAY[cat],
+          amount:o.x.amount,cur:curSym(o.d),cat,kind:wfKindOf(cat)||'parnes',
           meth:(o.x.method||o.d.channel||''),
           note:wfNoteBody(o.x,(note||'').trim()),ded:(note||'').trim()};
   pyPickStart();
@@ -7570,8 +7622,17 @@ function cardDetails(d,body){
       <button class="btn sm ghost pndel" data-pid="${g.pid}" style="width:100%;margin-top:6px;color:var(--bad)">🗑 מחק את היום הזה</button></div>`:'';
     const fb=(g.don&&g.needthx)
       ? `<button class="fbbtn ${g.thanked?'yes':'no'}" data-fb="${g.did}" title="${g.thanked?'קיבל פידבק':'עוד לא קיבל פידבק'}">פידבק</button>` : '';
+    // 🌙 מאיר: "שיהיה לי אפשרות לבחור תאריך לפרנס לילה כשהוא תרם בנדרים או משהו אחר או ידני בכרטיס שלו" —
+    // בכל תרומה, מכל מקור: כפתור שפותח את הלוח, והלילה שנבחר נרשם על התרומה הזאת
+    const pnk = g.don && wfKindOf(g.cat);
+    const pnr = (g.don && g.pnid) ? (d.parnes||[]).find(p=>String(p.id)===g.pnid) : null;
+    const night = pnr ? ((pnr.date_text||'') + (pnr.hyear?(' '+pnr.hyear):'')).trim() : '';
     // חלון אחד לכל תרומה: עבור מה · פירוט · כלל קבוע לאותו סכום
     const pan=g.don?`<div class="gvpanel hidden" data-pan="${g.did}">
+      <div class="gvlbl">🌙 פרנס לילה — תאריך</div>
+      <div class="addrow">${night?`<button class="btn sm ghost gvgo" data-go="parnes" data-pid="${esc(g.pnid)}" style="flex:1">🌙 ${esc(night)} ↗</button>`:''}
+        ${night?'':`<button class="btn sm gvgo pick" data-pick="${g.did}" style="flex:1">🗓️ לבחור תאריך לפרנס לילה בלוח</button>`}</div>
+      <div style="border-top:1px dashed #d9d2bf;margin:8px 0"></div>
       <div class="gvlbl">💳 איך שולם</div>
       <div class="addrow"><select class="gvmeth" data-did="${g.did}"><option value="">— לא ידוע —</option>${[...new Set((g.rm&&!dnMethList().includes(g.rm)?[g.rm]:[]).concat(dnMethList()))].map(x=>`<option value="${esc(x)}"${x===g.rm?' selected':''}>${esc(x==='המחאה'?'המחאה (צ׳ק)':x)}</option>`).join('')}<option value="__new__">➕ דרך חדשה…</option></select>
         <input class="gvchk${isChk(g.rm)?'':' hidden'}" data-did="${g.did}" dir="ltr" inputmode="numeric" placeholder="🧾 מס׳ צ׳ק" value="${esc(chkOf(g.note))}" style="max-width:130px">
@@ -7620,9 +7681,6 @@ function cardDetails(d,body){
     // שאראה את הפרטים ואת השטר — אבל רק לחיצה על הכפתור, פשוט וחלק."
     // תרומה שהייעוד שלה הוא פרנס/קפה/בוקר: אם כבר שובץ לה לילה — הוא
     // כתוב כאן ולוחצים עליו; ואם לא — כפתור שמוביל ללוח לבחור לילה.
-    const pnk = g.don && WFDAY[g.cat];
-    const pnr = (pnk && g.pnid) ? (d.parnes||[]).find(p=>String(p.id)===g.pnid) : null;
-    const night = pnr ? ((pnr.date_text||'') + (pnr.hyear?(' '+pnr.hyear):'')).trim() : '';
     const what=g.don
       ? `<button class="gvcatbtn${g.cat?'':' need'}" data-did="${g.did}" title="לחץ כדי לשנות">${g.cat?esc(g.cat):'עבור מה?'}</button>`
         + (night ? `<button class="gvgo" data-go="parnes" data-pid="${esc(g.pnid)}" title="לפתוח את הלילה הזה — הקדשה, שמות ותעודה">🌙 ${esc(night)} ↗</button>` : '')
@@ -7954,7 +8012,8 @@ function cardDetails(d,body){
     if(!x)return;
     // בלי הערה: שדה "שמות ובקשות לתעודה" נועד לשמות שמאיר כותב, ולא
     // להערת הגבייה של התרומה ("נגבה באוטורייז · על שם ...")
-    openParnesPick({x, d}, x.category||'פרנס לילה', '');
+    // ייעוד שאינו לילה/קפה/בוקר (או ריק) — נרשם כ"פרנס לילה"; "הקדשת לילה…" מנדרים נשאר כמו שהוא
+    openParnesPick({x, d}, wfKindOf(x.category)?x.category:'פרנס לילה', '');
   });
   body.querySelectorAll('.gvgo[data-go]').forEach(b=>b.onclick=e=>{
     e.stopPropagation();
@@ -10832,7 +10891,7 @@ function parnesCertUrl(d,p){
   // פרנס, זה לא שייך לקוויטל" — התעודה מקבלת רק את השמות שנכתבו על יום
   // הפרנס עצמו. אין יותר נפילה לשמות הקוויטל של התורם כשהשדה ריק.
   const names=(p.dedication&&p.dedication.trim())||'';
-  return location.origin+'/parnes-cert?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString();
+  return location.origin+'/parnes-cert?'+new URLSearchParams({kind:p.kind||'parnes',date,names,did:(d&&d.id)||''}).toString();
 }
 // למה יום צמוד לא נכנס לאותה תעודה — מוצג מיד, במקום לנחש
 function runWhyNot(d,p){
@@ -10871,7 +10930,7 @@ function parnesCertUrlMulti(d,list){
   const dd=[...new Set(list.map(p=>(p.dedication||'').trim()).filter(Boolean))];
   const names=dd.join('\n');            // רק שמות הפרנס — לא הקוויטל
   return location.origin+'/parnes-cert?'+new URLSearchParams(
-    {kind:list[0].kind||'parnes',date,names}).toString();
+    {kind:list[0].kind||'parnes',date,names,did:(d&&d.id)||''}).toString();
 }
 // אותה תעודה — כתמונה (PNG) לשליחה ישירה, בלי PDF
 function parnesCertPng(d,p){
@@ -12669,12 +12728,62 @@ async function openKvPage(did){
     try{ await navigator.clipboard.write([new ClipboardItem({'image/png':grab('png')})]); toast('התמונה הועתקה ✓'); return; }catch(e){}
     try{ const b=await grab('png'); await navigator.clipboard.write([new ClipboardItem({'image/png':b})]); toast('התמונה הועתקה ✓'); }
     catch(e){ window.open(url(),'_blank'); }};
-  rs.querySelector('.kvpsend').onclick=async()=>{
-    try{
-      const b=await grab('jpg'); const f=new File([b],'קוויטל — '+nm+'.jpg',{type:'image/jpeg'});
-      if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],text:'קוויטל — כולל חצות 🕯️'});return;}
-      await navigator.clipboard.write([new ClipboardItem({'image/png':await grab('png')})]); toast('התמונה הועתקה — הדבק בוואטסאפ או במייל');
-    }catch(e){ if(e&&e.name==='AbortError')return; window.open(url('jpg'),'_blank'); }};
+  // מאיר: "בשלח לתורם צריך שזה יפתח אפשרות מיידית של שליחת האימייל בג'ימייל או וואטסאפ" — חלון עם שתי דרכים
+  rs.querySelector('.kvpsend').onclick=()=>kvSendOpen(d,grab,url);
+}
+// 📊 מאיר: "מקום מרוכז ששם יש את כל התרומות, כולל נדרים פלוס… מחולק: נדרים פלוס, בנק ווסט, אוטורייז… לפי
+// תאריכים, לבדוק כמה נכנס… מחולק לפי קטגוריות מסודרות יפה"
+let INC={f:'',t:'',q:''};
+function kvSendOpen(d,grab,url){
+  const he=(d.region||'')==='il';
+  const enName=String(d.english||'').trim()||((d.first||'')+' '+(d.last||'')).trim();
+  const heName=((d.title||'')+' '+(d.first||'')+' '+(d.last||'')).trim();
+  const em=splitEmails(d.email||'')[0]||'', ph=(splitPhones(d.phone||'')[0]||'').trim();
+  const subj=he?'הקוויטל שלך — כולל חצות':'Your Kvittel — Kollel Chatzot';
+  const body=he?('לכבוד '+heName+',\n\nמצורף הקוויטל שלך — השמות שעליהם מתפללים בעת רצון הגדול של חצות הלילה, כששערי שמים פתוחים. '
+      +'בכל לילה אברכי כולל חצות לומדים ומתפללים לזכותך ולזכות משפחתך.\n\nבזכות החזקת התורה בעת רצון של חצות, תזכו לשמירה, שפע וברכה מיוחדת.\n\n'
+      +'אם משהו השתנה — נשמח שתעדכן אותנו.\n\nהרב יהושע מאיר דויטש\nראש כולל חצות')
+    :('Dear '+enName+',\n\nAttached is your Kvittel — the names we daven for at the great Eis Ratzon of Chatzot, when the Gates of Heaven are open. '
+      +'Every night the Avreichim of Kollel Chatzot learn and daven l\'zechus you and your family.\n\nIn the zechus of upholding Torah at Chatzot, '
+      +'may you be blessed with Shemirah, Shefa and Bracha.\n\nIf anything has changed, we would be glad if you would update us.\n\n'
+      +'Rabbi Yehoshua Meir Deutsch\nRosh Kollel Chatzot');
+  const wtxt=he?'הקוויטל שלך מכולל חצות 🕯️ — בזכות החזקת התורה בעת רצון של חצות, תזכו לשמירה, שפע וברכה מיוחדת.'
+    :'Your Kvittel from Kollel Chatzot 🕯️ — in the zechus of upholding Torah at Chatzot, may you be blessed with Shemirah, Shefa and Bracha.';
+  const o=document.createElement('div');o.className='confirmov';
+  o.innerHTML=`<div class="confirmbox qcbox" style="text-align:right;max-width:520px;width:96vw"><div class="cm"><b>📤 שליחת הקוויטל — ${esc(heName||enName)}</b></div>
+    <div class="addrow" style="gap:8px"><button class="btn" id="ks_wa" style="flex:1;background:#25D366;border-color:#25D366">💬 וואטסאפ${ph?'':' (אין טלפון)'}</button>
+      <button class="btn" id="ks_em" style="flex:1">📧 מייל (ג'ימייל)</button></div>
+    <div id="ks_mail" hidden>
+      <label class="fld"><span>אל</span><input id="ks_to" dir="ltr" value="${esc(em)}" placeholder="email@example.com"></label>
+      <label class="fld"><span>נושא</span><input id="ks_su" dir="${he?'rtl':'ltr'}" value="${esc(subj)}"></label>
+      <label class="fld"><span>הנוסח (אפשר לערוך) — הקוויטל מצורף כתמונה</span><textarea id="ks_bd" dir="${he?'rtl':'ltr'}" rows="10" style="font-family:Arial;font-size:13px">${esc(body)}</textarea></label>
+      ${he?'':'<div class="hintxt">בעברית: שלום, מצורף הקוויטל שלך — השמות שעליהם מתפללים בעת רצון של חצות. כל לילה האברכים לומדים ומתפללים לזכותך ולזכות משפחתך. בזכות החזקת התורה בחצות — שמירה, שפע וברכה. אם משהו השתנה — שיעדכן.</div>'}
+      <button class="btn bqgo" id="ks_send" style="width:100%;margin-top:6px">📧 שלח עכשיו במייל</button></div>
+    <div class="cbtns"><button class="btn ghost" id="ks_other">שיתוף אחר…</button><button class="btn ghost cno">סגור</button></div></div>`;
+  document.body.appendChild(o);
+  const q=s=>o.querySelector(s);
+  q('.cno').onclick=()=>o.remove();o.onclick=e=>{if(e.target===o)o.remove();};
+  q('#ks_em').onclick=()=>{q('#ks_mail').hidden=false;(q('#ks_to').value?q('#ks_bd'):q('#ks_to')).focus();};
+  q('#ks_wa').onclick=async()=>{
+    if(!ph){toast('אין טלפון בכרטיס התורם');return;}
+    // התמונה נכנסת ללוח, והצ'אט נפתח עם הנוסח — רק להדביק (Ctrl+V) את התמונה
+    try{await navigator.clipboard.write([new ClipboardItem({'image/png':grab('png')})]);toast('📋 התמונה הועתקה — בצ\'אט לוחצים Ctrl+V (או "הדבק") ושולחים');}
+    catch(e){toast('לא הצלחתי להעתיק את התמונה — אפשר "📋 העתק תמונה" ואז להדביק');}
+    const h=waHref(ph,d.region),t='text='+encodeURIComponent(wtxt);
+    if(!h){toast('מספר הטלפון לא תקין');return;}
+    window.open(h.startsWith('intent:')?h.replace(/(send\/\?phone=\d+)/,'$1&'+t):h+'?'+t,'_blank');};
+  q('#ks_send').onclick=async function(){
+    const to=q('#ks_to').value.trim(),su=q('#ks_su').value.trim(),bd=q('#ks_bd').value.trim();
+    if(!/^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/.test(to)){toast('כתובת מייל לא תקינה');q('#ks_to').focus();return;}
+    if(!await uiConfirm('לשלוח עכשיו את הקוויטל במייל אל '+to+'?','📧 כן, לשלוח','ביטול'))return;
+    this.disabled=true;this.textContent='⏳ שולח…';
+    const r=await api('POST','/api/kvpage/send',{donor:d.id,to,subject:su,body:bd}).catch(()=>null);
+    if(r&&r.ok){o.remove();toast('✅ הקוויטל נשלח במייל אל '+to);}
+    else{this.disabled=false;this.textContent='📧 שלח עכשיו במייל';uiAlert('המייל לא נשלח:\n'+((r&&r.error)||'שגיאה'));}};
+  q('#ks_other').onclick=async()=>{
+    try{const b=await grab('jpg');const f=new File([b],'קוויטל.jpg',{type:'image/jpeg'});
+      if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],text:wtxt});return;}
+      window.open(url('jpg'),'_blank');}catch(e){if(e&&e.name==='AbortError')return;window.open(url('jpg'),'_blank');}};
 }
 function wireByAv(){
   const nb=document.getElementById('av_newbtn'), ni=document.getElementById('av_new');
@@ -17659,7 +17768,78 @@ function gfRows(){const out=[];
   DB.forEach(d=>(d.donations||[]).forEach(x=>{const dt=String(x.date||'');if(!dt)return;
     out.push({x,d,dt,c:donCur(x,curSym(d)),fam:gfFamOf(x),nm:((d.last||'')+' '+(d.first||'')).trim()});}));
   out.sort((a,b)=>b.dt.localeCompare(a.dt)||(b.x.id-a.x.id));return out;}
+// 📊 מאיר: "אני רוצה שיהיה בתרומות, שיהיה כתוב מה נכנס נדרים פלוס, מה נכנס מכל מקור… ולפי זה אני אעשה את החיפוש…
+// מתאריך לתאריך… תסדר את זה יותר יפה" — הלשונית נפתחת על "מה נכנס"; הרשימה לעריכה — בכפתור
+let gfMode='sum';
+function gfModeBar(){return `<div class="addrow" style="gap:8px;margin:0 2px 10px">
+  <button class="btn ${gfMode==='sum'?'':'ghost'}" data-gfmode="sum" style="flex:1">📊 מה נכנס — לפי מקור</button>
+  <button class="btn ${gfMode==='list'?'':'ghost'}" data-gfmode="list" style="flex:1">📋 רשימה לעריכה / ➕ תרומה חדשה</button></div>`;}
+function gfModeWire(){view.querySelectorAll('[data-gfmode]').forEach(b=>b.onclick=()=>{gfMode=b.dataset.gfmode;render();});}
+const INC_ICON={'נדרים פלוס':'💚','בנק ווסט':'🏦','אוטורייז':'💳',"צ'קים":'✉️','Zelle':'⚡','העברות בנקאיות':'🏛','קרנות (דונרס / OJC)':'🎁','ידני':'💵','אחר':'•'};
+let INCD=null, incKey='', incSrc='', incLim=300;
+function incDefaults(){const td=todayStr();if(!INC.f)INC.f=td.slice(0,8)+'01';if(!INC.t)INC.t=td;}
+async function incLoad(){
+  const key=INC.f+'|'+INC.t+'|'+INC.q;if(INCD&&incKey===key)return;
+  incKey=key;INCD='loading';
+  const r=await api('GET','/api/income?from='+encodeURIComponent(INC.f)+'&to='+encodeURIComponent(INC.t)+'&q='+encodeURIComponent(INC.q||'')).catch(()=>null);
+  if(incKey!==key)return;
+  INCD=(r&&r.ok)?r:{error:1};if(tab==='gifts'&&gfMode==='sum')render();}
+function renderIncome(){
+  incDefaults();chips.innerHTML='';
+  const td=todayStr(),iso=x=>x.toISOString().slice(0,10);
+  const money=o=>Object.keys(o||{}).sort().map(c=>c+Math.round(o[c]).toLocaleString('en-US')).join(' + ')||'—';
+  const quick=[['היום',td,td],['אתמול',iso(new Date(Date.now()-864e5)),iso(new Date(Date.now()-864e5))],['7 ימים',iso(new Date(Date.now()-6*864e5)),td],
+    ['החודש',td.slice(0,8)+'01',td],['חודש קודם',(()=>{const d=new Date(td.slice(0,8)+'01');d.setMonth(d.getMonth()-1);return iso(d);})(),iso(new Date(new Date(td.slice(0,8)+'01')-864e5))],
+    ['השנה',td.slice(0,5)+'01-01',td]];
+  const D=(INCD&&INCD!=='loading'&&!INCD.error)?INCD:null;
+  const srcs=D?D.sources:[];
+  if(incSrc&&D&&!srcs.some(s=>s.src===incSrc))incSrc='';
+  const sel=incSrc?srcs.filter(s=>s.src===incSrc):srcs;
+  // ייעודים — של המקור שנבחר, או של הכל יחד
+  const cats={};sel.forEach(s=>s.cats.forEach(c=>{const k=c.cat,o=cats[k]=cats[k]||{cat:k,n:0,tot:{}};o.n+=c.n;Object.keys(c.tot).forEach(u=>o.tot[u]=(o.tot[u]||0)+c.tot[u]);}));
+  const catL=Object.values(cats).sort((a,b)=>Object.values(b.tot).reduce((x,y)=>x+y,0)-Object.values(a.tot).reduce((x,y)=>x+y,0));
+  const rows=[].concat(...sel.map(s=>s.rows.map(x=>Object.assign({src:s.src},x)))).sort((a,b)=>b.date.localeCompare(a.date));
+  const totSel={};rows.forEach(x=>totSel[x.cur]=(totSel[x.cur]||0)+x.amount);
+  const days={};rows.slice(0,incLim).forEach(x=>(days[x.date]=days[x.date]||[]).push(x));
+  view.innerHTML=`${gfModeBar()}
+    <div class="incbar">
+      <label class="fld"><span>מתאריך</span><input type="date" id="inc_f" value="${esc(INC.f)}"></label>
+      <label class="fld"><span>עד תאריך</span><input type="date" id="inc_t" value="${esc(INC.t)}"></label>
+      <label class="fld incq"><span>חיפוש — שם / ייעוד / הערה (לא חובה)</span><input id="inc_q" value="${esc(INC.q||'')}" placeholder="למשל: אומן"></label>
+      <button class="btn bqgo incgo" id="inc_go">🔎 חפש</button></div>
+    <div class="addrow" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">${quick.map(([l,a,b])=>`<button class="chip ${INC.f===a&&INC.t===b?'on':''}" data-incf="${a}" data-inct="${b}">${l}</button>`).join('')}
+      ${INC.q?`<button class="chip" id="inc_clr">✕ נקה חיפוש "${esc(INC.q)}"</button>`:''}</div>
+    ${!INCD||INCD==='loading'?'<div class="hintxt" style="padding:16px;text-align:center">⏳ טוען…</div>'
+      :INCD.error?'<div class="hintxt">לא הצלחתי לטעון. נסה שוב.</div>'
+      :`<div class="incsum">${esc(rcDate(D.from))} – ${esc(rcDate(D.to))}${D.q?` · 🔎 "${esc(D.q)}"`:''}<br>נכנס בסך הכל: <b>${money(D.tot)}</b> · ${D.n} תרומות</div>
+      <div class="inccards"><button class="inccard ${incSrc?'':'on'}" data-isrc=""><span>📊 הכל</span><b>${money(D.tot)}</b><small>${D.n} תרומות</small></button>
+        ${srcs.map(s=>`<button class="inccard ${incSrc===s.src?'on':''}" data-isrc="${esc(s.src)}"><span>${INC_ICON[s.src.split(' · ')[0]]||'•'} ${esc(s.src)}</span><b>${money(s.tot)}</b><small>${s.n} תרומות</small></button>`).join('')}</div>
+      ${rows.length?`<div class="gfmon"><div class="gfmh"><b>לפי ייעוד${incSrc?' — '+esc(incSrc):''}</b><span>${money(totSel)}</span></div>
+        ${catL.map(c=>`<div class="gfrow"><span class="gfw"><b>${esc(c.cat)}</b></span><span class="gfm">${c.n} תרומות</span><b class="gfa">${money(c.tot)}</b></div>`).join('')}</div>
+      <div class="rbtitle" style="margin-top:12px">📜 התרומות${incSrc?' — '+esc(incSrc):''}</div>
+      ${Object.keys(days).sort().reverse().map(dd=>{const L=days[dd],t={};L.forEach(x=>t[x.cur]=(t[x.cur]||0)+x.amount);
+        return `<div class="gfmon"><div class="gfmh"><b>${esc(rcDate(dd))}</b><span>${money(t)} · ${L.length}</span></div>${L.map(x=>`<div class="gfrow">
+          <span class="gfd">${esc(rcDate(x.date))}${x.time?'<small> '+esc(x.time)+'</small>':''}</span>
+          ${x.did?`<button class="gfnm" data-incd="${x.did}">${esc(x.name)}</button>`:`<span class="gfnm">${esc(x.name)}</span>`}
+          <b class="gfa">${x.cur}${(Math.round(x.amount*100)%100?x.amount.toLocaleString('en-US',{minimumFractionDigits:2}):Math.round(x.amount).toLocaleString('en-US'))}</b>
+          <span class="gfw">${esc(x.cat)}${x.note?`<small>${esc(x.note)}</small>`:''}</span><span class="gfm">${INC_ICON[x.src.split(' · ')[0]]||''} ${esc(x.src)}</span></div>`).join('')}</div>`;}).join('')}
+      ${rows.length>incLim?`<button class="btn sm ghost" id="inc_more" style="width:100%">📜 הצג עוד (${rows.length-incLim})</button>`:''}`
+      :`<div class="empty">לא נמצאו תרומות${D.q?' עם "'+esc(D.q)+'"':''} בתאריכים האלה.</div>`}
+      <div class="hintxt" style="margin-top:10px">💚 נדרים פלוס = כל הקופה של הכולל — תורמים וקהילה (בלי המקווה). שקלים ודולרים נספרים בנפרד.</div>`}`;
+  gfModeWire();
+  const g=id=>document.getElementById(id);
+  const go=()=>{INC.f=g('inc_f').value||INC.f;INC.t=g('inc_t').value||INC.t;INC.q=g('inc_q').value.trim();incLim=300;incLoad();render();};
+  g('inc_go').onclick=go;
+  g('inc_q').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();go();}};
+  view.querySelectorAll('[data-incf]').forEach(b=>b.onclick=()=>{INC.f=b.dataset.incf;INC.t=b.dataset.inct;INC.q=g('inc_q').value.trim();incLim=300;incLoad();render();});
+  const cl=g('inc_clr');if(cl)cl.onclick=()=>{INC.q='';incLoad();render();};
+  view.querySelectorAll('[data-isrc]').forEach(b=>b.onclick=()=>{incSrc=b.dataset.isrc;incLim=300;render();});
+  view.querySelectorAll('[data-incd]').forEach(b=>b.onclick=()=>{const d=DB.find(x=>x.id==b.dataset.incd);if(d)openDonor(d);});
+  const mo=g('inc_more');if(mo)mo.onclick=()=>{incLim+=300;render();};
+  if(!INCD)incLoad();
+}
 function renderGifts(){
+  if(gfMode==='sum')return renderIncome();
   const all=gfRows();
   let rows=all.filter(r=>(!gfFam||r.fam===gfFam)&&(!gfCur||r.c===gfCur)&&(!gfFrom||r.dt.slice(0,10)>=gfFrom)&&(!gfTo||r.dt.slice(0,10)<=gfTo));
   if((q||'').trim())rows=rows.filter(r=>matchQ([r.nm,r.d.english,r.x.amount,r.x.category,r.x.method,r.x.note,r.x.tid].join(' ')));
@@ -17684,7 +17864,7 @@ function renderGifts(){
   const keys=Object.keys(months).sort().reverse();let shown=0;
   const body=keys.map(m=>{if(shown>=gfLim)return '';const L=months[m].slice(0,Math.max(0,gfLim-shown));shown+=L.length;
     return `<div class="gfmon"><div class="gfmh"><b>${esc(fmtMonth(m))}</b><span>${sum(months[m])} · ${months[m].length} תרומות</span></div>${L.map(row).join('')}</div>`;}).join('');
-  view.innerHTML=`<div class="rbtitle">💵 כל התרומות — לפי תאריך</div>
+  view.innerHTML=`${gfModeBar()}<div class="rbtitle">📋 רשימת התרומות לעריכה</div>
     <div class="hintxt">כל מה שנכנס בכרטיסי התורמים, מכל מקור: בנק ווסט, אוטרייז, צ׳קים, Zelle, Chase, העברות, ידני. 🔒 = חיוב אשראי שעבר אצלנו (מתקנים בדף החיובים, ↩️ ביטול / החזר); את כל השאר אפשר לתקן כאן ✎.</div>
     <div class="gfbar"><label class="fld"><span>מתאריך</span><input type="date" id="gf_from" value="${esc(gfFrom)}"></label><label class="fld"><span>עד תאריך</span><input type="date" id="gf_to" value="${esc(gfTo)}"></label>
       <label class="fld"><span>מטבע</span><select id="gf_cur"><option value="">הכל</option>${['$','₪'].map(c=>`<option ${gfCur===c?'selected':''}>${c}</option>`).join('')}</select></label>
@@ -17705,6 +17885,7 @@ function renderGifts(){
   g('gf_from').onchange=()=>{gfFrom=g('gf_from').value;render();}; g('gf_to').onchange=()=>{gfTo=g('gf_to').value;render();};
   g('gf_cur').onchange=()=>{gfCur=g('gf_cur').value;render();};
   g('gf_new').onclick=()=>{gfNew=!gfNew;render();if(gfNew&&g('gfn_who'))g('gfn_who').focus();};
+  gfModeWire();
   const mo=g('gf_more');if(mo)mo.onclick=()=>{gfLim+=300;render();};
   if(!GF_UNL)gfLoadUnlinked();
   const ub=g('gf_unl');if(ub)ub.onclick=()=>{gfUnlOpen=!gfUnlOpen;render();};

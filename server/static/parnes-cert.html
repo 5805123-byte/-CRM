@@ -1143,7 +1143,65 @@ $('copyBtn').onclick=async()=>{
   preparePng();
 };
 
-$('sendBtn').onclick=async()=>{
+// 📤 מאיר: "אני מנסה לשלוח לתורם ישר אימייל או וואטסאפ את התעודה ולא נפתח לכלום" — חלון בחירה: וואטסאפ / מייל
+const CDID=(q.get('did')||'').trim();
+let CDON=null;
+if(CDID) fetch('/api/cert/donor?did='+encodeURIComponent(CDID)).then(r=>r.json()).then(j=>{ if(j&&j.ok) CDON=j; }).catch(()=>{});
+const KIND_EN={parnes:'a night of learning at Kollel Chatzot',coffee:'the coffee room at Kollel Chatzot',breakfast:'breakfast for the Avreichim of Kollel Chatzot'};
+const KIND_HE={parnes:'לילה של לימוד בכולל חצות',coffee:'חדר הקפה בכולל חצות',breakfast:'ארוחת הבוקר לאברכי כולל חצות'};
+function certSendOpen(){
+  const {date,names}=certText();
+  if(!names.trim()){ alert('אין שמות בתעודה'); return; }
+  const he=!!(CDON&&CDON.il), d=CDON||{};
+  const subj=he?('תעודה — '+(KIND_HE[KIND]||KIND_HE.parnes)+(date?' · '+date:'')):('Your Certificate — Kollel Chatzot'+(date?' · '+date:''));
+  const body=he?('לכבוד '+(d.he||'')+',\n\nמצורפת התעודה על '+(KIND_HE[KIND]||KIND_HE.parnes)+(date?' — '+date:'')+'.\n\nבזכות החזקת התורה בעת רצון הגדול של חצות הלילה, תזכו לשמירה, שפע וברכה מיוחדת.\n\nבידידות ובברכה,\nהרב יהושע מאיר דויטש\nראש כולל חצות')
+    :('Dear '+(d.en||d.he||'')+',\n\nAttached is your certificate for '+(KIND_EN[KIND]||KIND_EN.parnes)+(date?' — '+date:'')+'.\n\nIn the zechus of upholding Torah at the great Eis Ratzon of Chatzot HaLailah, may you and your family be blessed with Shemirah, Shefa and Bracha.\n\nWith warm regards,\nRabbi Yehoshua Meir Deutsch\nRosh Kollel Chatzot');
+  const wtxt=he?('התעודה מכולל חצות 🕯️'+(date?' · '+date:'')+' — בזכות החזקת התורה בעת רצון של חצות, תזכו לשמירה, שפע וברכה.')
+    :('Your certificate from Kollel Chatzot 🕯️'+(date?' · '+date:'')+' — in the zechus of upholding Torah at Chatzot, may you be blessed with Shemirah, Shefa and Bracha.');
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(20,16,40,.45);z-index:99;display:flex;align-items:center;justify-content:center;padding:12px';
+  const ip='width:100%;box-sizing:border-box;padding:8px;border:1px solid #cfc6ad;border-radius:8px;font:14px Arial;margin:3px 0 8px';
+  ov.innerHTML=`<div style="background:#fffdf8;border-radius:14px;max-width:520px;width:100%;max-height:92vh;overflow:auto;padding:16px;direction:rtl;font-family:Arial,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.25)">
+    <div style="font-weight:bold;font-size:17px;color:#3b357a;margin-bottom:10px">📤 שליחת התעודה${d.he?' — '+esc(d.he):''}</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button id="cs_wa" style="flex:1;padding:12px;border:0;border-radius:10px;background:#25D366;color:#fff;font-weight:bold;font-size:15px;cursor:pointer">💬 וואטסאפ${d.wa?'':' (אין טלפון)'}</button>
+      <button id="cs_em" style="flex:1;padding:12px;border:0;border-radius:10px;background:#3b357a;color:#fff;font-weight:bold;font-size:15px;cursor:pointer">📧 מייל</button></div>
+    <div id="cs_mail" style="display:none">
+      <label style="font-size:13px;color:#6b6249">אל</label><input id="cs_to" dir="ltr" style="${ip}" value="${esc(d.email||'')}" placeholder="email@example.com">
+      <label style="font-size:13px;color:#6b6249">נושא</label><input id="cs_su" dir="${he?'rtl':'ltr'}" style="${ip}" value="${esc(subj)}">
+      <label style="font-size:13px;color:#6b6249">הנוסח (אפשר לערוך) — התעודה מצורפת כתמונה</label><textarea id="cs_bd" dir="${he?'rtl':'ltr'}" rows="9" style="${ip}">${esc(body)}</textarea>
+      <button id="cs_send" style="width:100%;padding:12px;border:0;border-radius:10px;background:#7a1f1f;color:#fff;font-weight:bold;font-size:15px;cursor:pointer">📧 שלח עכשיו במייל</button></div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button id="cs_other" style="flex:1;padding:9px;border:1px solid #cfc6ad;border-radius:10px;background:#fff;cursor:pointer">שיתוף אחר…</button>
+      <button id="cs_x" style="flex:1;padding:9px;border:1px solid #cfc6ad;border-radius:10px;background:#fff;cursor:pointer">סגור</button></div>
+    ${CDID?'':'<div style="font-size:12px;color:#8f2a1b;margin-top:8px">התעודה נפתחה בלי כרטיס תורם — צריך למלא את כתובת המייל ידנית.</div>'}</div>`;
+  document.body.appendChild(ov);
+  const g=s=>ov.querySelector(s), close=()=>ov.remove();
+  g('#cs_x').onclick=close; ov.onclick=e=>{ if(e.target===ov) close(); };
+  g('#cs_em').onclick=()=>{ g('#cs_mail').style.display='block'; (g('#cs_to').value?g('#cs_bd'):g('#cs_to')).focus(); };
+  g('#cs_wa').onclick=async()=>{
+    // התמונה נכנסת ללוח, והצ'אט נפתח עם הנוסח — בצ'אט רק להדביק (Ctrl+V) ולשלוח
+    let copied=false;
+    try{ const it=(PNGREADY&&PNGKEY===pngKey())?PNGREADY:preparePng().then(x=>x||Promise.reject());
+      await navigator.clipboard.write([new ClipboardItem({'image/png':it})]); copied=true; }catch(e){}
+    const t='text='+encodeURIComponent(wtxt);
+    window.open(d.wa?('https://wa.me/'+d.wa+'?'+t):('https://wa.me/?'+t),'_blank');
+    alert(copied?'📋 התעודה הועתקה — בצ\'אט שנפתח לוחצים Ctrl+V (או "הדבק") ושולחים':'לא הצלחתי להעתיק את התמונה — לחץ "📋 העתק תמונה" ואז הדבק בצ\'אט');
+  };
+  g('#cs_send').onclick=async function(){
+    const to=g('#cs_to').value.trim();
+    if(!/^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/.test(to)){ alert('כתובת מייל לא תקינה'); g('#cs_to').focus(); return; }
+    if(!confirm('לשלוח עכשיו את התעודה במייל אל '+to+'?')) return;
+    this.disabled=true; this.textContent='⏳ שולח…';
+    let r=null;
+    try{ r=await (await fetch('/api/cert/send',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({did:CDID,to,subject:g('#cs_su').value.trim(),body:g('#cs_bd').value.trim(),cert:certReq('jpg')})})).json(); }catch(e){}
+    if(r&&r.ok){ close(); alert('✅ התעודה נשלחה במייל אל '+to); }
+    else{ this.disabled=false; this.textContent='📧 שלח עכשיו במייל'; alert('המייל לא נשלח:\n'+((r&&r.error)||'שגיאה')); }
+  };
+  g('#cs_other').onclick=()=>{ close(); certShareOld(); };
+}
+$('sendBtn').onclick=certSendOpen;
+async function certShareOld(){
   const b=$('sendBtn'), t0=b.textContent;
   const {date,names}=certText();
   if(!names.trim()){ alert('אין שמות בתעודה'); return; }
