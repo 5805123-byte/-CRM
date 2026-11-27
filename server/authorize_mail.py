@@ -69,9 +69,14 @@ def parse_receipt(text, mail_date=''):
         return None
     resp = _field(text, 'Response')
     desc = _field(text, 'Description')
-    row = {'tid': tid, 'amount': _amt(_field(text, 'Amount')), 'date': _iso(_field(text, 'Date/Time')) or mail_date,
+    dtt = _field(text, 'Date/Time')
+    # הוראות הקבע (ARB) נגבות באוטורייז כל לילה בין 3:00 ל-6:00 (שעון ניו יורק), ובמייל לא כתוב שזו הוראת קבע —
+    # רק "Goods or Services" או התיאור שנקבע במנוי. תרומה שנגבתה מהאתר / מהמערכת כתוב עליה "donation".
+    hm = re.search(r'\s(\d{1,2}):\d{2}:\d{2}', dtt)
+    batch = bool(hm and 3 <= int(hm.group(1)) < 6) and not re.fullmatch(r'\s*donation\s*', desc or '', re.I)
+    row = {'tid': tid, 'amount': _amt(_field(text, 'Amount')), 'date': _iso(dtt) or mail_date,
            'card': _card(_field(text, 'Payment Method')), 'desc': desc, 'reason': '' if 'approved' in resp.lower() else resp,
-           'recurring': 1 if re.search(r'monthly|recurring|subscription', desc, re.I) else 0, 'sub_id': '', 'sub_pay': '',
+           'recurring': 1 if (batch or re.search(r'monthly|recurring|subscription', desc, re.I)) else 0, 'sub_id': '', 'sub_pay': '',
            'st': 'settled' if 'approved' in resp.lower() else 'declined'}
     row.update(_billing(text))
     return row if row['amount'] else None
@@ -204,7 +209,10 @@ def save(con, rows, checked=0):
     added, new_dec = 0, []
     for r in rows:
         if cur.execute("SELECT 1 FROM recon WHERE tid=?", (r['tid'],)).fetchone():
-            # כבר נכנס מהדוח / מה-API — אם שם זה "לא עבר" ופה אישור, לא נוגעים
+            # כבר נכנס מהדוח / מה-API — אם שם זה "לא עבר" ופה אישור, לא נוגעים. רק סימון "הוראת קבע" שהתגלה עכשיו
+            # (גבייה בלילה) מתעדכן, כדי שלא תיחשב כתרומה חדשה
+            if r.get('recurring'):
+                cur.execute("UPDATE recon SET recurring=1 WHERE tid=? AND COALESCE(recurring,0)=0", (r['tid'],))
             continue
         # מאיר: "כשאביא לך את אוטרייז תזכור שלא יהיה כפילויות מהאימייל" — המזהה כאן הוא מספר העסקה של אוטורייז
         # בדיוק כמו בדוח, ולכן הדוח (INSERT OR IGNORE לפי tid) מדלג על מה שכבר נכנס מהמייל. שורה בלי מספר עסקה

@@ -17025,6 +17025,29 @@ def _seen_set(con, k):
         return set()
 
 
+def anet_gift_reset(con):
+    """פעם אחת: הגרסה הראשונה של "תרומה חדשה" לא זיהתה הוראות קבע שנגבות בלילה. כרטיס שנפתח אוטומטית לחיוב
+    שהתברר כהוראת קבע — נמחק, רק אם לא נוסף בו שום דבר אחר (החיוב חוזר לדף החיובים כמו שהיה). משימות "תרומה
+    חדשה" שעוד לא בוצעו — נמחקות ונבנות מחדש."""
+    for dn in con.execute("SELECT donor_id, id, tid FROM donations WHERE note LIKE '%הכרטיס נפתח אוטומטית%'").fetchall():
+        r = con.execute("SELECT recurring FROM recon WHERE tid=?", (dn['tid'],)).fetchone()
+        if not r or not r['recurring']:
+            continue
+        did = dn['donor_id']
+        other = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND id<>?", (did, dn['id'])).fetchone()[0]
+        other += con.execute("SELECT COUNT(*) FROM prayers WHERE donor_id=?", (did,)).fetchone()[0]
+        other += con.execute("SELECT COUNT(*) FROM tasks WHERE donor_id=? AND note NOT LIKE '🆕 תרומה חדשה באוטורייז%'", (did,)).fetchone()[0]
+        if other:
+            continue
+        con.execute("DELETE FROM donations WHERE id=?", (dn['id'],))
+        con.execute("DELETE FROM tasks WHERE donor_id=?", (did,))
+        con.execute("DELETE FROM donors WHERE id=?", (did,))
+        con.execute("UPDATE recon SET donor_id=NULL, processed=0, category='' WHERE donor_id=?", (did,))
+    con.execute("DELETE FROM tasks WHERE note LIKE '🆕 תרומה חדשה באוטורייז%' AND COALESCE(done,0)=0")
+    kv_set(con, 'anet_gift_seen', '[]')
+    kv_set(con, 'anet_gift_from_nov_v1', '')       # שוב מ-1.11
+
+
 def anet_new_gifts(con, days=10):
     """🆕 מאיר: "כל תרומה שנכנסת שאתה רואה באוטורייז זה תרומה חדשה, לא מישהו שיש לו הוראת קבע חודשית… צריך
     יחס… דבר ראשון אתה פותח לו כרטיס… ויומן משימות לטפל בתרומה הזאת, לשלוח לו תודה רבה ולהכניס את השמות שלו
@@ -17091,9 +17114,10 @@ def anet_new_gifts(con, days=10):
         dn = con.execute("SELECT last,first FROM donors WHERE id=?", (did,)).fetchone()
         he = ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip() if dn else ''
         when = iso[8:10] + '.' + iso[5:7]
-        if newc:
-            note = ('🆕 תרומה חדשה באוטורייז $%s (%s) — %s · נפתח לו כרטיס חדש באנגלית: לכתוב את השם בעברית (ואם כבר '
-                    'יש לו כרטיס — לאחד), לשלוח לו תודה רבה ולהכניס את השמות שלו לקוויטל') % (_usd(a), when, en)
+        if newc or (he and not re.search(r'[א-ת]', he)):      # כרטיס בלי שם בעברית
+            note = ('🆕 תרומה חדשה באוטורייז $%s (%s) — %s · %s: לכתוב את השם בעברית (ואם כבר '
+                    'יש לו כרטיס — לאחד), לשלוח לו תודה רבה ולהכניס את השמות שלו לקוויטל') % (
+                _usd(a), when, en or he, 'נפתח לו כרטיס חדש באנגלית' if newc else 'הכרטיס שלו רק באנגלית')
         else:
             note = '🆕 תרומה חדשה באוטורייז $%s (%s) — %s%s · לשלוח לו תודה רבה ולהכניס את השמות שלו לקוויטל' % (
                 _usd(a), when, he or en, (' (%s)' % en) if he and en and en.lower() != he.lower() else '')
@@ -17234,6 +17258,15 @@ def anet_mail_run(con, days=60):
     import time
     _ANET_KICK['at'] = time.time()
     # קריאת המייל נכשלה (IMAP עמוס אחרי כמה עליות, פסק זמן) — לא עוצרים: מה שכבר נכנס ל-recon עדיין נרשם בכרטיסים
+    # 🔁 פעם אחת: קריאה מחדש של קבלות אוטורייז מסוף אוקטובר — כדי לסמן הוראות קבע (גבייה בלילה) שנקלטו
+    # כחיוב רגיל, לפני שנפתחות משימות "תרומה חדשה"
+    rescan = not kv_get(con, 'anet_rescan_rec_v1', '')
+    if rescan:
+        try:
+            con.execute("DELETE FROM anet_mail WHERE kind='receipt' AND at>='2026-10-25'")
+            con.commit()
+        except Exception as e:
+            print('  anet rescan reset:', e)
     try:
         res = _am.scan(con, days=days)
     except Exception as e:
@@ -17280,6 +17313,14 @@ def anet_mail_run(con, days=60):
         bump_data()
     try: anet_declined_alert(con, res)
     except Exception as e: print('  anet mail alert:', e)
+    if rescan and 'שגיאה' not in res:
+        # מה שנפתח בגרסה הקודמת (לפני שהוראות הקבע זוהו) — נמחק ונבנה מחדש בריצה הזו
+        try:
+            anet_gift_reset(con)
+            kv_set(con, 'anet_rescan_rec_v1', now_iso())
+            con.commit()
+        except Exception as e:
+            print('  anet gift reset:', e)
     try: anet_new_gifts(con)
     except Exception as e: print('  anet new gifts:', e)
     return res
