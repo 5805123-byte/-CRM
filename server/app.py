@@ -17048,6 +17048,54 @@ def anet_gift_reset(con):
     kv_set(con, 'anet_gift_from_nov_v1', '')       # שוב מ-1.11
 
 
+def anet_he_match(con, first, last, skip=None):
+    """🔎 מאיר: "תרומות חדשות… שיש להם כרטיס, אתה יכול להכניס אותם כמו אברהם שרייבר, כמו אסתר ברג, הם כבר נמצאים
+    בכרטיסים" — שם באנגלית מאוטורייז ← כרטיס קיים בעברית, לפי שלד העיצורים (_skel): "Esther Berg" = "ברג אסתר",
+    "Abraham Schreiber" = "שרייבר אברהם". רק כשגם המשפחה וגם הפרטי מתאימים, ורק כרטיס אחד בדיוק — אחרת None."""
+    sl, sf = _skel(last), _skel(first)
+    if len(sl) < 2 or not sf:
+        return None
+    nb = lambda x: x.replace('b', '')            # ו/v/w — "Levinson" מול "לוינסון"
+    hits = set()
+    for d in con.execute("SELECT id,last,first FROM donors"):
+        if d['id'] == skip or not re.search(r'[א-ת]', d['last'] or ''):
+            continue
+        dl = _skel(d['last'])
+        if not (dl == sl or (len(nb(sl)) >= 2 and nb(dl) == nb(sl))):
+            continue
+        fr = d['first'] or ''
+        words = [_skel(w) for f in [re.sub(r'\(.*?\)', ' ', fr)] + re.findall(r'\((.*?)\)', fr) for w in f.split() if w.strip()]
+        if any(x and (x == sf or (len(nb(sf)) >= 1 and nb(x) == nb(sf))) for x in words):
+            hits.add(d['id'])
+    return next(iter(hits)) if len(hits) == 1 else None
+
+
+def anet_merge_auto_cards(con):
+    """פעם אחת: כרטיס באנגלית שנפתח אוטומטית לתרומה חדשה, כשיש כבר כרטיס בעברית של אותו אדם — התרומות, החיובים
+    והמשימות עוברים לכרטיס הקיים, והכרטיס הכפול נמחק (רק אם אין בו שמות קוויטל / פרנס)."""
+    matched = _seen_set(con, 'anet_name_matched')
+    n = 0
+    for d in con.execute("SELECT DISTINCT x.id, x.first, x.last, x.english FROM donors x JOIN donations y ON y.donor_id=x.id "
+                         "WHERE COALESCE(x.source,'')='Authorize' AND y.note LIKE '%הכרטיס נפתח אוטומטית%'").fetchall():
+        if re.search(r'[א-ת]', (d['last'] or '') + (d['first'] or '')):
+            continue
+        m = anet_he_match(con, d['first'], d['last'], skip=d['id'])
+        if not m or con.execute("SELECT 1 FROM prayers WHERE donor_id=?", (d['id'],)).fetchone() or \
+                con.execute("SELECT 1 FROM parnes WHERE donor_id=?", (d['id'],)).fetchone():
+            continue
+        for r in con.execute("SELECT tid FROM recon WHERE donor_id=?", (d['id'],)):
+            matched.add(r['tid'])
+        con.execute("UPDATE donations SET donor_id=? WHERE donor_id=?", (m, d['id']))
+        con.execute("UPDATE recon SET donor_id=? WHERE donor_id=?", (m, d['id']))
+        con.execute("DELETE FROM tasks WHERE donor_id=? AND note LIKE '🆕%באוטורייז%'", (d['id'],))
+        con.execute("UPDATE tasks SET donor_id=? WHERE donor_id=?", (m, d['id']))
+        con.execute("UPDATE donors SET english=? WHERE id=? AND COALESCE(TRIM(english),'')=''", (d['english'] or '', m))
+        con.execute("DELETE FROM donors WHERE id=?", (d['id'],))
+        n += 1
+    kv_set(con, 'anet_name_matched', json.dumps(sorted(matched)[-2000:]))
+    return n
+
+
 # 🧪 מאיר: "אסתר אלברט זה לא תורם, זה סתם לבדוק את האתר שזה עבד… אתה יכול להוריד את זה" — חיובי בדיקה של האתר
 ANET_TEST_NAMES = {'estheralbert'}
 
@@ -17107,7 +17155,8 @@ def anet_new_gifts(con, days=10):
         if re.match(r'\d{4}-\d{2}-\d{2}', iso):
             hist.setdefault((_ne((r['first'] or '') + (r['last'] or '')), round(_amt2(r['amount']), 2)), []).append((iso[:10], r['tid']))
     made = 0
-    groups, newcard = {}, {}
+    groups, newcard, matched_d = {}, {}, set()
+    matched = _seen_set(con, 'anet_name_matched')       # חיובים ששויכו לכרטיס לפי השם בלבד — לוודא במשימה
     rows = con.execute("SELECT * FROM recon WHERE source LIKE 'Authorize%' AND COALESCE(status,'settled')='settled' "
                        "AND COALESCE(skipped,0)=0").fetchall()
     rows = sorted(rows, key=lambda x: ((_recon_iso(x['date']) or ''), x['tid']))
@@ -17142,7 +17191,16 @@ def anet_new_gifts(con, days=10):
             if did:
                 # עוד חיוב של מי שנפתח לו כרטיס עכשיו — לאותו כרטיס, לא כרטיס נוסף
                 recon_apply(con.cursor(), tid, {'donor_id': did, 'category': '', 'note': 'תרומה חדשה'})
-                newc = True
+                newc = did not in matched_d
+                if not newc:
+                    matched.add(tid)
+            elif anet_he_match(con, r['first'], r['last']):
+                # יש לו כבר כרטיס בעברית (שרייבר, ברג…) — התרומה נכנסת אליו, בלי כרטיס חדש
+                did = anet_he_match(con, r['first'], r['last'])
+                recon_apply(con.cursor(), tid, {'donor_id': did, 'category': '', 'note': 'תרומה חדשה'})
+                newcard[k] = did
+                matched_d.add(did)
+                matched.add(tid)
             else:
                 st, res = recon_apply(con.cursor(), tid, {'new_donor': {'last': (r['last'] or '').strip(), 'first': (r['first'] or '').strip(),
                                                                'occasional': True},
@@ -17151,8 +17209,9 @@ def anet_new_gifts(con, days=10):
                     continue
                 did, newc = res.get('donor_id'), True
                 newcard[k] = did
-        g = groups.setdefault(did, {'gifts': [], 'newc': False, 'en': en})
+        g = groups.setdefault(did, {'gifts': [], 'newc': False, 'en': en, 'byname': False})
         g['gifts'].append((iso, a))
+        g['byname'] = g['byname'] or tid in matched
         g['newc'] = g['newc'] or newc
     # מאיר: "אם יש 2 תרומות של אותו בן אדם… תכניס את זה למשימה אחת" — משימה אחת לכל תורם; ואם כבר פתוחה לו
     # משימה כזו — התרומה החדשה מצטרפת אליה
@@ -17176,13 +17235,15 @@ def anet_new_gifts(con, days=10):
             note = '%s — %s · %s: לכתוב את השם בעברית (ואם כבר יש לו כרטיס — לאחד), %s' % (
                 head, en or he, 'נפתח לו כרטיס חדש באנגלית' if newc else 'הכרטיס שלו רק באנגלית', thx)
         else:
-            note = '%s — %s%s · %s' % (head, he or en, (' (%s)' % en) if he and en and en.lower() != he.lower() else '', thx)
+            note = '%s — %s%s%s · %s' % (head, he or en, (' (%s)' % en) if he and en and en.lower() != he.lower() else '',
+                                         ' · נכנס לכרטיס שלו לפי השם — לוודא שזה הוא' if g['byname'] else '', thx)
         if old:
             con.execute("UPDATE tasks SET note=?, due_date=? WHERE id=?", (note, today_iso(), old['id']))
             made += 1
         elif _task_once(con, did, note):
             made += 1
     kv_set(con, 'anet_gift_seen', json.dumps(sorted(seen)[-4000:]))
+    kv_set(con, 'anet_name_matched', json.dumps(sorted(matched)[-2000:]))
     if nov and early:
         kv_set(con, 'anet_gift_from_nov_v1', now_iso())
     con.commit()
@@ -17374,12 +17435,14 @@ def anet_mail_run(con, days=60):
         bump_data()
     try: anet_declined_alert(con, res)
     except Exception as e: print('  anet mail alert:', e)
-    if (rescan or not kv_get(con, 'anet_gift_reset_v2', '')) and 'שגיאה' not in res:
-        # מה שנפתח בגרסאות הקודמות (לפני שהוראות הקבע זוהו, ומשימה נפרדת לכל תרומה) — נמחק ונבנה מחדש בריצה הזו
+    if (rescan or not kv_get(con, 'anet_gift_reset_v3', '')) and 'שגיאה' not in res:
+        # מה שנפתח בגרסאות הקודמות (לפני שהוראות הקבע זוהו, משימה נפרדת לכל תרומה, כרטיס באנגלית למי שיש לו כבר
+        # כרטיס בעברית) — מתוקן, והמשימות נבנות מחדש בריצה הזו
         try:
+            anet_merge_auto_cards(con)
             anet_gift_reset(con)
             kv_set(con, 'anet_rescan_rec_v1', now_iso())
-            kv_set(con, 'anet_gift_reset_v2', now_iso())
+            kv_set(con, 'anet_gift_reset_v3', now_iso())
             con.commit()
         except Exception as e:
             print('  anet gift reset:', e)
