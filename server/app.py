@@ -17036,16 +17036,44 @@ def anet_gift_reset(con):
         did = dn['donor_id']
         other = con.execute("SELECT COUNT(*) FROM donations WHERE donor_id=? AND id<>?", (did, dn['id'])).fetchone()[0]
         other += con.execute("SELECT COUNT(*) FROM prayers WHERE donor_id=?", (did,)).fetchone()[0]
-        other += con.execute("SELECT COUNT(*) FROM tasks WHERE donor_id=? AND note NOT LIKE '🆕 תרומה חדשה באוטורייז%'", (did,)).fetchone()[0]
+        other += con.execute("SELECT COUNT(*) FROM tasks WHERE donor_id=? AND note NOT LIKE '🆕%באוטורייז%'", (did,)).fetchone()[0]
         if other:
             continue
         con.execute("DELETE FROM donations WHERE id=?", (dn['id'],))
         con.execute("DELETE FROM tasks WHERE donor_id=?", (did,))
         con.execute("DELETE FROM donors WHERE id=?", (did,))
         con.execute("UPDATE recon SET donor_id=NULL, processed=0, category='' WHERE donor_id=?", (did,))
-    con.execute("DELETE FROM tasks WHERE note LIKE '🆕 תרומה חדשה באוטורייז%' AND COALESCE(done,0)=0")
+    con.execute("DELETE FROM tasks WHERE note LIKE '🆕%באוטורייז%' AND COALESCE(done,0)=0")
     kv_set(con, 'anet_gift_seen', '[]')
     kv_set(con, 'anet_gift_from_nov_v1', '')       # שוב מ-1.11
+
+
+# 🧪 מאיר: "אסתר אלברט זה לא תורם, זה סתם לבדוק את האתר שזה עבד… אתה יכול להוריד את זה" — חיובי בדיקה של האתר
+ANET_TEST_NAMES = {'estheralbert'}
+
+
+def anet_skip_tests(con):
+    """חיובי בדיקה באוטורייז (לפי שם) — לא תרומה: מסומנים "דולג" בדף החיובים, התרומה יוצאת מהכרטיס, ומשימה /
+    כרטיס שנפתחו להם אוטומטית — נמחקים."""
+    n = 0
+    for r in con.execute("SELECT tid,first,last,donor_id FROM recon WHERE source LIKE 'Authorize%' AND COALESCE(skipped,0)=0").fetchall():
+        if re.sub(r'[^a-z0-9]', '', ((r['first'] or '') + (r['last'] or '')).lower()) not in ANET_TEST_NAMES:
+            continue
+        con.execute("UPDATE recon SET skipped=1, processed=1 WHERE tid=?", (r['tid'],))
+        con.execute("DELETE FROM donations WHERE tid=?", (r['tid'],))
+        did = r['donor_id']
+        if did:
+            con.execute("DELETE FROM tasks WHERE donor_id=? AND note LIKE '🆕%באוטורייז%' AND COALESCE(done,0)=0", (did,))
+            dn = con.execute("SELECT source FROM donors WHERE id=?", (did,)).fetchone()
+            # כרטיס שנפתח רק בגלל חיוב הבדיקה (אין בו שום דבר אחר) — נמחק
+            if dn and (dn['source'] or '') == 'Authorize' and not any(
+                    con.execute(q, (did,)).fetchone()[0] for q in (
+                        "SELECT COUNT(*) FROM donations WHERE donor_id=?", "SELECT COUNT(*) FROM prayers WHERE donor_id=?",
+                        "SELECT COUNT(*) FROM tasks WHERE donor_id=?", "SELECT COUNT(*) FROM parnes WHERE donor_id=?")):
+                con.execute("DELETE FROM donors WHERE id=?", (did,))
+                con.execute("UPDATE recon SET donor_id=NULL WHERE donor_id=?", (did,))
+        n += 1
+    return n
 
 
 def anet_new_gifts(con, days=10):
@@ -17079,8 +17107,10 @@ def anet_new_gifts(con, days=10):
         if re.match(r'\d{4}-\d{2}-\d{2}', iso):
             hist.setdefault((_ne((r['first'] or '') + (r['last'] or '')), round(_amt2(r['amount']), 2)), []).append((iso[:10], r['tid']))
     made = 0
+    groups, newcard = {}, {}
     rows = con.execute("SELECT * FROM recon WHERE source LIKE 'Authorize%' AND COALESCE(status,'settled')='settled' "
                        "AND COALESCE(skipped,0)=0").fetchall()
+    rows = sorted(rows, key=lambda x: ((_recon_iso(x['date']) or ''), x['tid']))
     for r in rows:
         tid = r['tid']
         if tid in seen:
@@ -17100,28 +17130,57 @@ def anet_new_gifts(con, days=10):
         d0 = datetime.date.fromisoformat(iso)
         if any(t != tid and 20 <= abs((d0 - datetime.date.fromisoformat(i)).days) <= 45 for i, t in hist.get((k, a), [])):
             continue
+        if k in ANET_TEST_NAMES:                 # חיוב בדיקה של האתר — לא תרומה
+            continue
         en = ' '.join(x for x in ((r['first'] or '').strip(), (r['last'] or '').strip()) if x)
         did, newc = r['donor_id'], False
         if not did:
             if not en:
                 continue
-            st, res = recon_apply(con.cursor(), tid, {'new_donor': {'last': (r['last'] or '').strip(), 'first': (r['first'] or '').strip(),
-                                                           'occasional': True},
-                                             'category': '', 'note': 'תרומה חדשה — הכרטיס נפתח אוטומטית'})
-            if st != 200:
-                continue
-            did, newc = res.get('donor_id'), True
+            cur_ = con.execute("SELECT donor_id FROM recon WHERE tid=?", (tid,)).fetchone()   # אולי שויך הרגע (אותו מייל)
+            did = (cur_['donor_id'] if cur_ else None) or newcard.get(k)
+            if did:
+                # עוד חיוב של מי שנפתח לו כרטיס עכשיו — לאותו כרטיס, לא כרטיס נוסף
+                recon_apply(con.cursor(), tid, {'donor_id': did, 'category': '', 'note': 'תרומה חדשה'})
+                newc = True
+            else:
+                st, res = recon_apply(con.cursor(), tid, {'new_donor': {'last': (r['last'] or '').strip(), 'first': (r['first'] or '').strip(),
+                                                               'occasional': True},
+                                                 'category': '', 'note': 'תרומה חדשה — הכרטיס נפתח אוטומטית'})
+                if st != 200:
+                    continue
+                did, newc = res.get('donor_id'), True
+                newcard[k] = did
+        g = groups.setdefault(did, {'gifts': [], 'newc': False, 'en': en})
+        g['gifts'].append((iso, a))
+        g['newc'] = g['newc'] or newc
+    # מאיר: "אם יש 2 תרומות של אותו בן אדם… תכניס את זה למשימה אחת" — משימה אחת לכל תורם; ואם כבר פתוחה לו
+    # משימה כזו — התרומה החדשה מצטרפת אליה
+    for did, g in groups.items():
+        old = con.execute("SELECT id,note FROM tasks WHERE donor_id=? AND note LIKE '🆕%באוטורייז%' AND COALESCE(done,0)=0 "
+                          "ORDER BY id DESC LIMIT 1", (did,)).fetchone()
+        prev = []
+        if old:
+            for amt_, dd, mm in re.findall(r'\$([\d,]+(?:\.\d+)?) \((\d\d)\.(\d\d)\)', old['note'].split(' — ')[0]):
+                prev.append(('2026-%s-%s' % (mm, dd), float(amt_.replace(',', ''))))
+        gifts = prev + sorted(g['gifts'])
         dn = con.execute("SELECT last,first FROM donors WHERE id=?", (did,)).fetchone()
         he = ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip() if dn else ''
-        when = iso[8:10] + '.' + iso[5:7]
+        en = g['en']
+        lst = ' + '.join('$%s (%s.%s)' % (_usd(x), i[8:10], i[5:7]) for i, x in gifts)
+        head = ('🆕 תרומה חדשה באוטורייז ' + lst) if len(gifts) == 1 else \
+            ('🆕 %d תרומות חדשות באוטורייז: %s · סה"כ $%s' % (len(gifts), lst, _usd(sum(x for _i, x in gifts))))
+        newc = g['newc'] or bool(old and 'נפתח לו כרטיס חדש' in old['note'])
+        thx = 'לשלוח לו תודה רבה ולהכניס את השמות שלו לקוויטל'
         if newc or (he and not re.search(r'[א-ת]', he)):      # כרטיס בלי שם בעברית
-            note = ('🆕 תרומה חדשה באוטורייז $%s (%s) — %s · %s: לכתוב את השם בעברית (ואם כבר '
-                    'יש לו כרטיס — לאחד), לשלוח לו תודה רבה ולהכניס את השמות שלו לקוויטל') % (
-                _usd(a), when, en or he, 'נפתח לו כרטיס חדש באנגלית' if newc else 'הכרטיס שלו רק באנגלית')
+            note = '%s — %s · %s: לכתוב את השם בעברית (ואם כבר יש לו כרטיס — לאחד), %s' % (
+                head, en or he, 'נפתח לו כרטיס חדש באנגלית' if newc else 'הכרטיס שלו רק באנגלית', thx)
         else:
-            note = '🆕 תרומה חדשה באוטורייז $%s (%s) — %s%s · לשלוח לו תודה רבה ולהכניס את השמות שלו לקוויטל' % (
-                _usd(a), when, he or en, (' (%s)' % en) if he and en and en.lower() != he.lower() else '')
-        if _task_once(con, did, note):
+            note = '%s — %s%s · %s' % (head, he or en, (' (%s)' % en) if he and en and en.lower() != he.lower() else '', thx)
+        if old:
+            con.execute("UPDATE tasks SET note=?, due_date=? WHERE id=?", (note, today_iso(), old['id']))
+            made += 1
+        elif _task_once(con, did, note):
             made += 1
     kv_set(con, 'anet_gift_seen', json.dumps(sorted(seen)[-4000:]))
     if nov and early:
@@ -17300,6 +17359,8 @@ def anet_mail_run(con, days=60):
         except Exception as e: print('  anet mail link:', e)
         try: backfill_from_recon(con)
         except Exception as e: print('  anet mail backfill:', e)
+    try: anet_skip_tests(con)                  # חיובי בדיקה של האתר (אסתר אלברט) — לא נרשמים כתרומה
+    except Exception as e: print('  anet skip tests:', e)
     # רישום בכרטיסים — תמיד, גם בלי מיילים חדשים (חיובים שחיכו, כמו 480$ של פרנס לילה)
     try:
         ins, merged, had, unk, by = banquest_post(con, _am.SRC)
@@ -17313,11 +17374,12 @@ def anet_mail_run(con, days=60):
         bump_data()
     try: anet_declined_alert(con, res)
     except Exception as e: print('  anet mail alert:', e)
-    if rescan and 'שגיאה' not in res:
-        # מה שנפתח בגרסה הקודמת (לפני שהוראות הקבע זוהו) — נמחק ונבנה מחדש בריצה הזו
+    if (rescan or not kv_get(con, 'anet_gift_reset_v2', '')) and 'שגיאה' not in res:
+        # מה שנפתח בגרסאות הקודמות (לפני שהוראות הקבע זוהו, ומשימה נפרדת לכל תרומה) — נמחק ונבנה מחדש בריצה הזו
         try:
             anet_gift_reset(con)
             kv_set(con, 'anet_rescan_rec_v1', now_iso())
+            kv_set(con, 'anet_gift_reset_v2', now_iso())
             con.commit()
         except Exception as e:
             print('  anet gift reset:', e)
