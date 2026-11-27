@@ -8,7 +8,7 @@ import gmail_intake as _gi
 
 def _login():
     user = (os.environ.get('GMAIL_USER') or '').strip()
-    pw = (os.environ.get('GMAIL_APP_PASSWORD') or '').strip().replace(' ', '')
+    pw = os.environ.get('GMAIL_APP_PASSWORD') or ''      # בדיוק כמו בקליטת המיילים (gmail_intake)
     if not user or not pw:
         raise RuntimeError('GMAIL_USER / GMAIL_APP_PASSWORD לא מוגדרים ב-Render')
     M = imaplib.IMAP4_SSL('imap.gmail.com', timeout=25)

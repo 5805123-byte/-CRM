@@ -10881,7 +10881,7 @@ function parnesCertUrl(d,p){
   // פרנס, זה לא שייך לקוויטל" — התעודה מקבלת רק את השמות שנכתבו על יום
   // הפרנס עצמו. אין יותר נפילה לשמות הקוויטל של התורם כשהשדה ריק.
   const names=(p.dedication&&p.dedication.trim())||'';
-  return location.origin+'/parnes-cert?'+new URLSearchParams({kind:p.kind||'parnes',date,names}).toString();
+  return location.origin+'/parnes-cert?'+new URLSearchParams({kind:p.kind||'parnes',date,names,did:(d&&d.id)||''}).toString();
 }
 // למה יום צמוד לא נכנס לאותה תעודה — מוצג מיד, במקום לנחש
 function runWhyNot(d,p){
@@ -10920,7 +10920,7 @@ function parnesCertUrlMulti(d,list){
   const dd=[...new Set(list.map(p=>(p.dedication||'').trim()).filter(Boolean))];
   const names=dd.join('\n');            // רק שמות הפרנס — לא הקוויטל
   return location.origin+'/parnes-cert?'+new URLSearchParams(
-    {kind:list[0].kind||'parnes',date,names}).toString();
+    {kind:list[0].kind||'parnes',date,names,did:(d&&d.id)||''}).toString();
 }
 // אותה תעודה — כתמונה (PNG) לשליחה ישירה, בלי PDF
 function parnesCertPng(d,p){

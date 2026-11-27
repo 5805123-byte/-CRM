@@ -25265,6 +25265,39 @@ class H(BaseHTTPRequestHandler):
             finally:
                 con.close()
             return self._send(200, {'ok': True, 'pairs': out})
+        if self.path.split('?')[0] == '/api/cert/donor':
+            # למי שולחים את התעודה — שם, מייל, וואטסאפ ואזור (לחלון "שלח לתורם")
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                did_ = int((qs.get('did') or ['0'])[0] or 0)
+            except ValueError:
+                did_ = 0
+            con = db()
+            try:
+                d = con.execute("SELECT id,last,first,english,email,phone,region,title FROM donors WHERE id=?", (did_,)).fetchone() if did_ else None
+            finally:
+                con.close()
+            if not d:
+                return self._send(200, {'ok': False})
+            wa = ''
+            for tok in re.split(r'[,;/|\n]+', d['phone'] or ''):
+                dg = re.sub(r'\D', '', tok)
+                if len(dg) < 9:
+                    continue
+                if dg.startswith('00'):
+                    dg = dg[2:]
+                if dg.startswith('972') or dg.startswith('1') and len(dg) == 11:
+                    wa = dg
+                elif dg.startswith('0'):
+                    wa = '972' + dg[1:]                     # ישראלי
+                elif len(dg) == 10:
+                    wa = '1' + dg                           # אמריקאי בלי קידומת
+                else:
+                    wa = dg
+                break
+            return self._send(200, {'ok': True, 'id': d['id'], 'he': ((d['title'] or '') + ' ' + (d['first'] or '') + ' ' + (d['last'] or '')).strip(),
+                                    'en': (d['english'] or '').strip(), 'email': (emails_of(d['email']) or [''])[0], 'wa': wa,
+                                    'il': (d['region'] or '') == 'il'})
         if self.path.split('?')[0] == '/api/kvpage':
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             try: did = int((qs.get('donor') or ['0'])[0])
@@ -30813,6 +30846,44 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, out)
         if not self._gate():
             return
+        if self.path.split('?')[0] == '/api/cert/send':
+            # 📤 מאיר: "אני מנסה לשלוח לתורם ישר אימייל או וואטסאפ את התעודה ולא נפתח לכלום" — התעודה (התמונה בדיוק
+            # כמו על המסך) מצורפת למייל מהג'ימייל של הכולל, בנוסח שמאיר ראה וערך בחלון
+            if getattr(self, 'role', 'admin') not in ('admin', ''):
+                return self._send(403, {'ok': False, 'error': 'אין הרשאה'})
+            b = self._body()
+            to = str(b.get('to') or '').strip()
+            subject = str(b.get('subject') or '').strip()[:200]
+            body = str(b.get('body') or '').strip()[:6000]
+            rq = b.get('cert') if isinstance(b.get('cert'), dict) else {}
+            if not re.match(r'^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$', to):
+                return self._send(200, {'ok': False, 'error': 'חסרה כתובת מייל תקינה'})
+            if not subject or not body or not str(rq.get('names') or '').strip():
+                return self._send(200, {'ok': False, 'error': 'חסר נושא, נוסח או שמות בתעודה'})
+            try:
+                img = cert_png(rq.get('kind') or 'parnes', rq.get('date') or '', rq.get('names') or '', rq.get('dedic') or '',
+                               1400, 'jpg', rq.get('roles') or '', rq.get('layout') if isinstance(rq.get('layout'), dict) else None)
+            except Exception as e:
+                return self._send(200, {'ok': False, 'error': 'התעודה לא נוצרה: %s' % str(e)[:120]})
+            import mailer
+            if not mailer.configured():
+                return self._send(200, {'ok': False, 'error': 'שליחת מייל לא מוגדרת ב-Render'})
+            he = bool(re.search(r'[֐-׿]', body[:200]))
+            fname = ('תעודה - כולל חצות.jpg' if he else 'Certificate - Kollel Chatzot.jpg')
+            res = mailer.send(to, subject, body, [(fname, 'image/jpeg', img)], rtl=he)
+            if not res.get('ok'):
+                return self._send(200, {'ok': False, 'error': {'login_failed': 'ההתחברות לג׳ימייל נכשלה'}.get(
+                    res.get('error'), 'השליחה נכשלה: ' + str(res.get('detail') or res.get('error') or '')[:120])})
+            try:
+                did_ = int(b.get('did') or 0)
+            except (TypeError, ValueError):
+                did_ = 0
+            if did_:
+                try:
+                    log_sent_mail(did_, to, subject, body, res.get('msg_id'), 1)
+                except Exception:
+                    pass
+            return self._send(200, {'ok': True, 'to': to})
         if self.path.split('?')[0] == '/api/kvpage/send':
             # 📤 מאיר: "בשלח לתורם צריך שזה יפתח אפשרות מיידית של שליחת האימייל בג'ימייל או וואטסאפ… כאן זה לא מגיע
             # למייל" — דף הקוויטל כתמונה מצורפת, מהג'ימייל של הכולל, בנוסח שמאיר ראה וערך בחלון לפני הלחיצה
