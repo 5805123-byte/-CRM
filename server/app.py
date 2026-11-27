@@ -1184,6 +1184,9 @@ def ensure_schema():
     except Exception: pass
     try: con.execute("ALTER TABLE nd_tx ADD COLUMN donor_id INTEGER")
     except Exception: pass
+    # מטבע העסקה בנדרים פלוס ('1' שקל, '2' דולר) — להתראה על תרומה גדולה (מעל $500)
+    try: con.execute("ALTER TABLE nd_tx ADD COLUMN currency TEXT")
+    except Exception: pass
     # מאיר: "זה רק היה דוגמא, תמחק את הנתונים האלה, מכניסים הכל מחדש" — פעם אחת: לוחות ותבניות שנשמרו עד עכשיו
     try:
         if not con.execute("SELECT 1 FROM app_kv WHERE k='zm_reset_1'").fetchone():
@@ -17003,6 +17006,133 @@ def anet_declined_alert(con, res):
     print('  אוטורייז — לא עברו: ' + ' | '.join(lines))
 
 
+ND_BIG_USD = 500           # תרומה בנדרים פלוס מעל הסכום הזה (בדולרים) → משימה ביומן
+ND_ILS_PER_USD = 3.6       # להשוואה בלבד: תרומה בשקלים נחשבת "מעל $500" מ-₪1,800
+
+
+def _task_once(con, did, note, kind='followup'):
+    """משימה להיום — רק אם אותה משימה בדיוק עוד לא נפתחה לאותו תורם."""
+    if con.execute("SELECT 1 FROM tasks WHERE note=? AND COALESCE(donor_id,0)=?", (note, did or 0)).fetchone():
+        return False
+    con.execute("INSERT INTO tasks(donor_id,due_date,kind,note) VALUES(?,?,?,?)", (did, today_iso(), kind, note))
+    return True
+
+
+def _seen_set(con, k):
+    try:
+        return set(json.loads(kv_get(con, k, '') or '[]'))
+    except Exception:
+        return set()
+
+
+def anet_new_gifts(con, days=10):
+    """🆕 מאיר: "כל תרומה שנכנסת שאתה רואה באוטורייז זה תרומה חדשה, לא מישהו שיש לו הוראת קבע חודשית… צריך
+    יחס… דבר ראשון אתה פותח לו כרטיס… ויומן משימות לטפל בתרומה הזאת, לשלוח לו תודה רבה ולהכניס את השמות שלו
+    לקוויטל". כל חיוב שעבר באוטורייז (מהמייל או מה-API) שאינו הוראת קבע → משימה ביומן להיום; מי שאין לו כרטיס —
+    נפתח לו כרטיס (השם באנגלית, מאיר כותב בעברית). הוראת קבע = מסומן כחיוב קבוע, מנוי פעיל באוטורייז באותו שם
+    וסכום, או חיוב באותו שם וסכום 20–45 יום לפני / אחרי. התרומה עצמה נרשמת בכרטיס לפי מספר העסקה — וכשמאיר מעלה
+    אחר כך את הדוח של אוטורייז, אותו מספר עסקה מדולג (בלי כפילויות)."""
+    seen = _seen_set(con, 'anet_gift_seen')
+    cutoff = (il_now().date() - datetime.timedelta(days=days)).isoformat()
+
+    def _ne(x):
+        return re.sub(r'[^a-z0-9]', '', (x or '').lower())
+    subs = set()
+    for s in (_ANET_SUBS.get('rows') or []):
+        try:
+            subs.add((_ne((s.get('firstName') or '') + (s.get('lastName') or '')), round(float(s.get('amount') or 0), 2)))
+        except Exception:
+            pass
+    hist = {}
+    for r in con.execute("SELECT tid,first,last,amount,date FROM recon WHERE (source LIKE 'Authorize%' OR tid LIKE 'anet-%') "
+                         "AND COALESCE(status,'settled')='settled'"):
+        iso = _recon_iso(r['date']) or ''
+        if re.match(r'\d{4}-\d{2}-\d{2}', iso):
+            hist.setdefault((_ne((r['first'] or '') + (r['last'] or '')), round(_amt2(r['amount']), 2)), []).append((iso[:10], r['tid']))
+    made = 0
+    rows = con.execute("SELECT * FROM recon WHERE source LIKE 'Authorize%' AND COALESCE(status,'settled')='settled' "
+                       "AND COALESCE(skipped,0)=0").fetchall()
+    for r in rows:
+        tid = r['tid']
+        if tid in seen:
+            continue
+        iso = (_recon_iso(r['date']) or '')[:10]
+        if not re.match(r'\d{4}-\d{2}-\d{2}$', iso) or iso < cutoff:
+            continue
+        seen.add(tid)
+        a = round(_amt2(r['amount']), 2)
+        if a <= 0 or r['recurring']:
+            continue
+        k = _ne((r['first'] or '') + (r['last'] or ''))
+        if (k, a) in subs:
+            continue
+        d0 = datetime.date.fromisoformat(iso)
+        if any(t != tid and 20 <= abs((d0 - datetime.date.fromisoformat(i)).days) <= 45 for i, t in hist.get((k, a), [])):
+            continue
+        en = ' '.join(x for x in ((r['first'] or '').strip(), (r['last'] or '').strip()) if x)
+        did, newc = r['donor_id'], False
+        if not did:
+            if not en:
+                continue
+            st, res = recon_apply(con.cursor(), tid, {'new_donor': {'last': (r['last'] or '').strip(), 'first': (r['first'] or '').strip(),
+                                                           'occasional': True},
+                                             'category': '', 'note': 'תרומה חדשה — הכרטיס נפתח אוטומטית'})
+            if st != 200:
+                continue
+            did, newc = res.get('donor_id'), True
+        dn = con.execute("SELECT last,first FROM donors WHERE id=?", (did,)).fetchone()
+        he = ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip() if dn else ''
+        when = iso[8:10] + '.' + iso[5:7]
+        if newc:
+            note = ('🆕 תרומה חדשה באוטורייז $%s (%s) — %s · נפתח לו כרטיס חדש באנגלית: לכתוב את השם בעברית (ואם כבר '
+                    'יש לו כרטיס — לאחד), לשלוח לו תודה רבה ולהכניס את השמות שלו לקוויטל') % (_usd(a), when, en)
+        else:
+            note = '🆕 תרומה חדשה באוטורייז $%s (%s) — %s%s · לשלוח לו תודה רבה ולהכניס את השמות שלו לקוויטל' % (
+                _usd(a), when, he or en, (' (%s)' % en) if he and en and en.lower() != he.lower() else '')
+        if _task_once(con, did, note):
+            made += 1
+    kv_set(con, 'anet_gift_seen', json.dumps(sorted(seen)[-4000:]))
+    con.commit()
+    if made:
+        bump_data()
+        print('  אוטורייז — תרומות חדשות ליומן: %d' % made)
+    return made
+
+
+def nd_big_tasks(con, days=3):
+    """💰 מאיר: "אם מישהו הכניס סכום יפה בנדרים פלוס, מעל $500, אז גם שאני אקבל לזה ביומן משימות התראה שזה נכנס".
+    רק החשבון של הכולל; לא חיוב חודשי של הוראת קבע. בשקלים — לפי ₪3.6 לדולר (מ-₪1,800)."""
+    seen = _seen_set(con, 'nd_big_seen')
+    cutoff = (il_now().date() - datetime.timedelta(days=days)).isoformat()
+    made = 0
+    for t in con.execute("SELECT * FROM nd_tx WHERE COALESCE(mosad,'')='' AND amount>0 AND COALESCE(iso,'')>=?", (cutoff,)).fetchall():
+        if t['id'] in seen:
+            continue
+        seen.add(t['id'])
+        kv = str(t['keva'] or '')
+        if kv and not kv.startswith('-'):
+            continue
+        usd = str(t['currency'] or '1') == '2'
+        a = float(t['amount'] or 0)
+        if (a if usd else a / ND_ILS_PER_USD) < ND_BIG_USD:
+            continue
+        did = t['donor_id']
+        dn = con.execute("SELECT last,first FROM donors WHERE id=?", (did,)).fetchone() if did else None
+        nm = ((dn['last'] or '') + ' ' + (dn['first'] or '')).strip() if dn else (t['name'] or '').strip()
+        amt = ('$' + _usd(a)) if usd else ('₪%s (≈$%s)' % (format(a, ',.0f'), format(a / ND_ILS_PER_USD, ',.0f')))
+        what = (t['groupe'] or '').strip()
+        iso = (t['iso'] or '')[:10]
+        note = '💰 נכנסה תרומה בנדרים פלוס %s (%s) — %s%s · לשלוח לו תודה רבה ולהכניס את השמות שלו לקוויטל' % (
+            amt, iso[8:10] + '.' + iso[5:7], nm or 'לא ידוע', (' · ' + what[:40]) if what else '')
+        if _task_once(con, did, note):
+            made += 1
+    kv_set(con, 'nd_big_seen', json.dumps(sorted(seen)[-4000:]))
+    con.commit()
+    if made:
+        bump_data()
+    return made
+
+
 _ANET_KICK = {'at': 0.0, 'busy': False}
 
 
@@ -17140,6 +17270,8 @@ def anet_mail_run(con, days=60):
         bump_data()
     try: anet_declined_alert(con, res)
     except Exception as e: print('  anet mail alert:', e)
+    try: anet_new_gifts(con)
+    except Exception as e: print('  anet new gifts:', e)
     return res
 
 
@@ -30971,6 +31103,8 @@ class H(BaseHTTPRequestHandler):
                 res = anet.sync(con, link=link_by_identity, only_tid=tid) if tid else {}
                 try: anet_declined_alert(con, res)
                 except Exception as e: print('  anet alert:', e)
+                try: anet_new_gifts(con)
+                except Exception as e: print('  anet new gifts:', e)
                 try: backfill_from_recon(con)
                 except Exception: pass
                 con.close()
@@ -36703,6 +36837,8 @@ class H(BaseHTTPRequestHandler):
                 res = anet.sync(con, days=int(b.get('days') or 10), link=link_by_identity)
                 try: anet_declined_alert(con, res)
                 except Exception as e: print('  anet alert:', e)
+                try: anet_new_gifts(con)
+                except Exception as e: print('  anet new gifts:', e)
                 # 🔄 סנכרון ידני — גם סריקת הוראות הקבע (ניסיונות שנכשלו), כדי שמה שחסר ייכנס מיד
                 try:
                     res2 = anet.sync_arb(con, days=60, link=link_by_identity)
@@ -40552,6 +40688,10 @@ def nd_history_sync(con):
             con.commit()
     except Exception as e:
         print('  nd donor import error:', e)
+    try:
+        nd_big_tasks(con)
+    except Exception as e:
+        print('  nd big tasks error:', e)
     return new, marked
 
 
@@ -40595,6 +40735,8 @@ def _nd_hist_rows(con, rows, mosad, cutoff, midx, nidx):
         if not c.rowcount:
             continue
         new += 1
+        try: con.execute("UPDATE nd_tx SET currency=? WHERE id=?", (str(t.get('currency') or '1'), tid))
+        except Exception: pass
         auto = t['keva'] and not t['keva'].startswith('-')
         if a <= 0 or auto or iso[:10] < cutoff:
             continue
@@ -43280,6 +43422,8 @@ def _authnet_loop():
                                 link=link_by_identity)
                 try: anet_declined_alert(con, res)
                 except Exception as e: print('  anet alert:', e)
+                try: anet_new_gifts(con)
+                except Exception as e: print('  anet new gifts:', e)
                 # הוראות קבע שנכשלו — בעלייה ואחר כך פעם ביום (מאיר: "אין בכלל תרומה שלו של אוקטובר במערכת")
                 if first or time.time() - _ARB_LAST[0] > 86400:
                     try:
