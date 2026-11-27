@@ -17034,6 +17034,12 @@ def anet_new_gifts(con, days=10):
     אחר כך את הדוח של אוטורייז, אותו מספר עסקה מדולג (בלי כפילויות)."""
     seen = _seen_set(con, 'anet_gift_seen')
     cutoff = (il_now().date() - datetime.timedelta(days=days)).isoformat()
+    # מאיר (27.11.2026): "תכניס עכשיו את כל התרומות מאוטורייז מראשון ל-11" — פעם אחת מ-1.11, אחר כך 10 ימים אחורה.
+    # הסימון נשמר רק כשבאמת נמצאו חיובים מתחילת החודש (אם המייל עוד לא נסרק — מנסים שוב בריצה הבאה)
+    nov = not kv_get(con, 'anet_gift_from_nov_v1', '')
+    if nov:
+        cutoff = min(cutoff, '2026-11-01')
+    early = 0
 
     def _ne(x):
         return re.sub(r'[^a-z0-9]', '', (x or '').lower())
@@ -17059,6 +17065,8 @@ def anet_new_gifts(con, days=10):
         iso = (_recon_iso(r['date']) or '')[:10]
         if not re.match(r'\d{4}-\d{2}-\d{2}$', iso) or iso < cutoff:
             continue
+        if iso < '2026-11-11':
+            early += 1
         seen.add(tid)
         a = round(_amt2(r['amount']), 2)
         if a <= 0 or r['recurring']:
@@ -17092,6 +17100,8 @@ def anet_new_gifts(con, days=10):
         if _task_once(con, did, note):
             made += 1
     kv_set(con, 'anet_gift_seen', json.dumps(sorted(seen)[-4000:]))
+    if nov and early:
+        kv_set(con, 'anet_gift_from_nov_v1', now_iso())
     con.commit()
     if made:
         bump_data()
