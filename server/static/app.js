@@ -5049,6 +5049,9 @@ function noCatList(){
 // ייעוד שהוא יום (פרנס לילה / חדר קפה / ארוחת בוקר) לא מסתפק בשם הייעוד —
 // צריך לדעת איזה יום נתפס, אחרת הכסף מסווג אבל הלילה לא משובץ לאף אחד.
 const WFDAY={'פרנס לילה':'parnes','חדר קפה':'coffee','ארוחת בוקר':'breakfast'};
+// ייעוד שהוא בעצם לילה / קפה / בוקר גם כשנכתב אחרת (למשל מנדרים פלוס: "הקדשת לילה אחד של לימוד")
+function wfKindOf(c){c=String(c||'');
+  return WFDAY[c]||(/קפה/.test(c)?'coffee':/ארוחת\s*בוקר/.test(c)?'breakfast':/(פרנס|הקדשת)\s.*לילה|^פרנס|לילה\s+(אחד\s+)?של\s+לימוד/.test(c)?'parnes':'');}
 // "בניין" לבד לא אומר כלום — צריך לדעת מה נתרם בו. בכל מקום שבוחרים
 // בניין נפתח שדה חופשי, והייעוד נשמר כ"בניין — שולחן"
 function isBldgCat(c){return /בנין|בניין/.test(String(c||''));}
@@ -5064,7 +5067,7 @@ function openParnesPick(o,cat,note){
   // הכסף כבר נגבה — דרך מה שכתוב על התרומה — ולכן אמצעי התשלום עובר
   // איתה ליום הפרנס, ואינו נשאר "ללא".
   PYPICK={id:o.x.id,donor_id:o.d.id,name:(o.d.last+' '+o.d.first).trim(),
-          amount:o.x.amount,cur:curSym(o.d),cat,kind:WFDAY[cat],
+          amount:o.x.amount,cur:curSym(o.d),cat,kind:wfKindOf(cat)||'parnes',
           meth:(o.x.method||o.d.channel||''),
           note:wfNoteBody(o.x,(note||'').trim()),ded:(note||'').trim()};
   pyPickStart();
@@ -7619,8 +7622,17 @@ function cardDetails(d,body){
       <button class="btn sm ghost pndel" data-pid="${g.pid}" style="width:100%;margin-top:6px;color:var(--bad)">🗑 מחק את היום הזה</button></div>`:'';
     const fb=(g.don&&g.needthx)
       ? `<button class="fbbtn ${g.thanked?'yes':'no'}" data-fb="${g.did}" title="${g.thanked?'קיבל פידבק':'עוד לא קיבל פידבק'}">פידבק</button>` : '';
+    // 🌙 מאיר: "שיהיה לי אפשרות לבחור תאריך לפרנס לילה כשהוא תרם בנדרים או משהו אחר או ידני בכרטיס שלו" —
+    // בכל תרומה, מכל מקור: כפתור שפותח את הלוח, והלילה שנבחר נרשם על התרומה הזאת
+    const pnk = g.don && wfKindOf(g.cat);
+    const pnr = (g.don && g.pnid) ? (d.parnes||[]).find(p=>String(p.id)===g.pnid) : null;
+    const night = pnr ? ((pnr.date_text||'') + (pnr.hyear?(' '+pnr.hyear):'')).trim() : '';
     // חלון אחד לכל תרומה: עבור מה · פירוט · כלל קבוע לאותו סכום
     const pan=g.don?`<div class="gvpanel hidden" data-pan="${g.did}">
+      <div class="gvlbl">🌙 פרנס לילה — תאריך</div>
+      <div class="addrow">${night?`<button class="btn sm ghost gvgo" data-go="parnes" data-pid="${esc(g.pnid)}" style="flex:1">🌙 ${esc(night)} ↗</button>`:''}
+        ${night?'':`<button class="btn sm gvgo pick" data-pick="${g.did}" style="flex:1">🗓️ לבחור תאריך לפרנס לילה בלוח</button>`}</div>
+      <div style="border-top:1px dashed #d9d2bf;margin:8px 0"></div>
       <div class="gvlbl">💳 איך שולם</div>
       <div class="addrow"><select class="gvmeth" data-did="${g.did}"><option value="">— לא ידוע —</option>${[...new Set((g.rm&&!dnMethList().includes(g.rm)?[g.rm]:[]).concat(dnMethList()))].map(x=>`<option value="${esc(x)}"${x===g.rm?' selected':''}>${esc(x==='המחאה'?'המחאה (צ׳ק)':x)}</option>`).join('')}<option value="__new__">➕ דרך חדשה…</option></select>
         <input class="gvchk${isChk(g.rm)?'':' hidden'}" data-did="${g.did}" dir="ltr" inputmode="numeric" placeholder="🧾 מס׳ צ׳ק" value="${esc(chkOf(g.note))}" style="max-width:130px">
@@ -7669,9 +7681,6 @@ function cardDetails(d,body){
     // שאראה את הפרטים ואת השטר — אבל רק לחיצה על הכפתור, פשוט וחלק."
     // תרומה שהייעוד שלה הוא פרנס/קפה/בוקר: אם כבר שובץ לה לילה — הוא
     // כתוב כאן ולוחצים עליו; ואם לא — כפתור שמוביל ללוח לבחור לילה.
-    const pnk = g.don && WFDAY[g.cat];
-    const pnr = (pnk && g.pnid) ? (d.parnes||[]).find(p=>String(p.id)===g.pnid) : null;
-    const night = pnr ? ((pnr.date_text||'') + (pnr.hyear?(' '+pnr.hyear):'')).trim() : '';
     const what=g.don
       ? `<button class="gvcatbtn${g.cat?'':' need'}" data-did="${g.did}" title="לחץ כדי לשנות">${g.cat?esc(g.cat):'עבור מה?'}</button>`
         + (night ? `<button class="gvgo" data-go="parnes" data-pid="${esc(g.pnid)}" title="לפתוח את הלילה הזה — הקדשה, שמות ותעודה">🌙 ${esc(night)} ↗</button>` : '')
@@ -8003,7 +8012,8 @@ function cardDetails(d,body){
     if(!x)return;
     // בלי הערה: שדה "שמות ובקשות לתעודה" נועד לשמות שמאיר כותב, ולא
     // להערת הגבייה של התרומה ("נגבה באוטורייז · על שם ...")
-    openParnesPick({x, d}, x.category||'פרנס לילה', '');
+    // ייעוד שאינו לילה/קפה/בוקר (או ריק) — נרשם כ"פרנס לילה"; "הקדשת לילה…" מנדרים נשאר כמו שהוא
+    openParnesPick({x, d}, wfKindOf(x.category)?x.category:'פרנס לילה', '');
   });
   body.querySelectorAll('.gvgo[data-go]').forEach(b=>b.onclick=e=>{
     e.stopPropagation();
